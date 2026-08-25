@@ -88,7 +88,6 @@ func (r *Keyring) Key(name string) (Key, error) {
 	default:
 		return Key{}, fmt.Errorf("load signing key %s: %w", name, err)
 	}
-
 	k := Key{ID: keyIDFor(priv), Private: priv}
 	r.keys[name] = k
 	return k, nil
@@ -148,22 +147,48 @@ func loadPEM(path string) (*rsa.PrivateKey, error) {
 	}
 }
 
+// generate creates a signing key and writes it to path, exactly once.
+//
+// The exclusive create is what makes this safe when several services start at
+// the same moment — which is every `docker compose up`, because they all share
+// one key directory and all find it empty. Without it, each process generates
+// its own key, the last writer wins on disk, and every process keeps the one it
+// made in memory. The result is dauth signing with one key while aauth verifies
+// with another, and the error the console eventually sees is "device token
+// expired", which points nowhere near the cause.
 func generate(path string) (*rsa.PrivateKey, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("create key dir: %w", err)
+	}
+
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("generate signing key: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, fmt.Errorf("create key dir: %w", err)
 	}
 	der, err := x509.MarshalPKCS8PrivateKey(priv)
 	if err != nil {
 		return nil, err
 	}
 	buf := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-	// 0600: the private key must not be world-readable.
-	if err := os.WriteFile(path, buf, 0o600); err != nil {
+
+	// O_EXCL: create or fail, never truncate. 0600 because it is a private key.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			// Somebody else got there first. Use their key, not ours.
+			return loadPEM(path)
+		}
+		return nil, fmt.Errorf("create signing key %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.Write(buf); err != nil {
 		return nil, fmt.Errorf("write signing key: %w", err)
+	}
+	// Flush to disk before returning. Another process that sees the file must
+	// see a complete key in it, not a partial write.
+	if err := f.Sync(); err != nil {
+		return nil, fmt.Errorf("sync signing key: %w", err)
 	}
 	return priv, nil
 }

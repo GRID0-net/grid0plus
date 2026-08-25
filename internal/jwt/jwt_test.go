@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"math/big"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -584,5 +586,68 @@ func assertString(t *testing.T, m map[string]any, key, want string) {
 	}
 	if got != want {
 		t.Errorf("%s = %q, want %q", key, got, want)
+	}
+}
+
+// TestConcurrentKeyringsConvergeOnOneKey is the regression test for a race that
+// broke a real first run.
+//
+// Every SwitchNet service shares one key directory, and `docker compose up`
+// starts them all at once. On a fresh volume they all find the key missing. If
+// each generates its own, the last writer wins on disk while every process keeps
+// the one it made in memory — so dauth signs with one key and aauth verifies
+// with another. The console is then told "device token expired", which points
+// nowhere near the cause.
+func TestConcurrentKeyringsConvergeOnOneKey(t *testing.T) {
+	dir := t.TempDir()
+
+	const goroutines = 8
+	keys := make([]Key, goroutines)
+	errs := make([]error, goroutines)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range goroutines {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// Release them together, to make the collision likely rather than
+			// theoretical.
+			<-start
+			// A separate keyring per goroutine: that is the point. Sharing one
+			// would be serialised by its own mutex and prove nothing about two
+			// processes.
+			keys[i], errs[i] = NewKeyring(dir, true).Key(IssuerDevice)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("keyring %d: %v", i, err)
+		}
+	}
+
+	// Every keyring must have ended up with the same key, and it must be the one
+	// on disk.
+	onDisk, err := NewKeyring(dir, false).Key(IssuerDevice)
+	if err != nil {
+		t.Fatalf("reload the key from disk: %v", err)
+	}
+	for i, k := range keys {
+		if k.ID != onDisk.ID {
+			t.Errorf("keyring %d has key %s, but %s is on disk: the services would "+
+				"sign and verify with different keys", i, k.ID, onDisk.ID)
+		}
+	}
+
+	// And there is exactly one key file, not eight.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("%d files in the key directory, want 1: %v", len(entries), entries)
 	}
 }
