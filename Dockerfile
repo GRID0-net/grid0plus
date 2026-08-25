@@ -15,6 +15,8 @@ COPY . .
 # against. -trimpath keeps the build directory out of the binary, so the same
 # source produces the same bytes on any machine.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+        -o /out/dns        ./cmd/dns && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
         -o /out/dauth      ./cmd/dauth && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
         -o /out/aauth      ./cmd/aauth && \
@@ -48,6 +50,12 @@ COPY --from=build /out/ /usr/local/bin/
 RUN mkdir -p /var/lib/switchnet/keys /var/lib/switchnet/images && \
     chown -R switchnet /var/lib/switchnet && \
     chmod 700 /var/lib/switchnet/keys
+
+# cap_net_bind_service so the DNS server can bind port 53 without running as
+# root. A console cannot be told to use a different port, so 53 is not optional.
+RUN apk add --no-cache libcap && \
+    setcap cap_net_bind_service=+ep /usr/local/bin/dns && \
+    apk del libcap
 
 USER switchnet
 WORKDIR /var/lib/switchnet

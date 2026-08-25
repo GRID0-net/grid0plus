@@ -41,6 +41,43 @@ network:
   edge_tls_port: 443
 
 # ---------------------------------------------------------------------------
+# dns: how a console finds SwitchNet
+# ---------------------------------------------------------------------------
+# This is the preferred way to redirect a console, and it needs NOTHING on the
+# console's SD card. Either the router hands this server out over DHCP -- in
+# which case the console needs no configuration at all -- or the console's DNS
+# is set manually under System Settings -> Internet.
+#
+# If you would rather use a resolver you already have (a router running dnsmasq,
+# Pi-hole, Unbound), run 'make gen-dns' instead and add the generated
+# configuration there. Same host list either way.
+dns:
+  # A console cannot be told to use a port other than 53.
+  listen: ":53"
+
+  # Resolvers for every name SwitchNet does not own.
+  #
+  # These MUST be IP addresses: this server is the resolver, so it cannot look
+  # up a hostname to find them. And they must not point back here, directly or
+  # via a router that forwards here -- that is a loop, and the symptom is every
+  # non-Nintendo lookup timing out while Nintendo's work fine.
+  upstream:
+    - "9.9.9.9:53"
+    - "1.1.1.1:53"
+
+  # TTL of the answers SwitchNet synthesises, in seconds. Short on purpose:
+  # switching a console back to Nintendo should take effect in a minute, not
+  # after an hour of cached records.
+  ttl: 60
+
+  upstream_timeout: 3
+
+  # Log every forwarded name, not just the redirected ones. Useful once, to spot
+  # a Nintendo host missing from the list. A console resolves a lot of names, so
+  # this is very chatty.
+  log_forwarded: false
+
+# ---------------------------------------------------------------------------
 # database
 # ---------------------------------------------------------------------------
 database:

@@ -254,3 +254,79 @@ func TestRequiredFieldsAreEnforced(t *testing.T) {
 		}
 	}
 }
+
+// ---- DNS ----------------------------------------------------------------
+
+func TestDNSUpstreamValidation(t *testing.T) {
+	clearEnv(t)
+
+	for name, body := range map[string]string{
+		"no upstream": "dns:\n  upstream: []\n",
+		// This server IS the resolver, so it cannot look up a hostname to find
+		// its own upstream.
+		"hostname instead of an IP": "dns:\n  upstream: [\"dns.quad9.net:53\"]\n",
+		"missing port":              "dns:\n  upstream: [\"9.9.9.9\"]\n",
+		"negative ttl":              "dns:\n  ttl: -1\n",
+		// Pointing the upstream at ourselves is a loop: every non-Nintendo
+		// lookup would time out while Nintendo's kept working, which is a
+		// confusing way to find out.
+		"upstream is ourselves": "network:\n  public_ip: 192.168.1.50\n" +
+			"dns:\n  upstream: [\"192.168.1.50:53\"]\n",
+	} {
+		if _, err := Load(writeConfig(t, body)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+
+	// A valid list is accepted.
+	cfg, err := Load(writeConfig(t, "dns:\n  upstream: [\"9.9.9.9:53\", \"1.1.1.1:53\"]\n"))
+	if err != nil {
+		t.Fatalf("rejected a valid upstream list: %v", err)
+	}
+	if len(cfg.DNS.Upstream) != 2 {
+		t.Errorf("upstream = %v, want two entries", cfg.DNS.Upstream)
+	}
+}
+
+func TestDNSUpstreamFromEnvironment(t *testing.T) {
+	clearEnv(t)
+
+	// A YAML list has to be expressible as one environment variable, because
+	// that is all a container gives us.
+	t.Setenv("SWITCHNET_DNS_UPSTREAM", "8.8.8.8:53, 8.8.4.4:53")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"8.8.8.8:53", "8.8.4.4:53"}
+	if len(cfg.DNS.Upstream) != len(want) {
+		t.Fatalf("upstream = %v, want %v", cfg.DNS.Upstream, want)
+	}
+	for i := range want {
+		if cfg.DNS.Upstream[i] != want[i] {
+			t.Errorf("upstream[%d] = %q, want %q", i, cfg.DNS.Upstream[i], want[i])
+		}
+	}
+}
+
+func TestDNSDefaultsAreUsable(t *testing.T) {
+	clearEnv(t)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A console cannot be told to use a port other than 53.
+	if cfg.DNS.Listen != ":53" {
+		t.Errorf("dns.listen = %q, want :53", cfg.DNS.Listen)
+	}
+	if len(cfg.DNS.Upstream) == 0 {
+		t.Error("no default upstream, so a fresh install resolves nothing")
+	}
+	// Short, so switching a console back to Nintendo is not blocked by a cached
+	// record.
+	if cfg.DNS.TTL == 0 || cfg.DNS.TTL > 300 {
+		t.Errorf("dns.ttl = %d, want something short and non-zero", cfg.DNS.TTL)
+	}
+}

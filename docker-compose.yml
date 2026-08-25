@@ -34,6 +34,32 @@ x-service-defaults: &defaults
     - keys:/var/lib/switchnet/keys
 
 services:
+  # ---------------------------------------------------------------------------
+  # dns: how a console finds SwitchNet
+  # ---------------------------------------------------------------------------
+  # This replaces the Atmosphere hosts file. Point the console at this server --
+  # either by handing it out over DHCP from the router, in which case the console
+  # needs no configuration at all, or by setting DNS manually in the console's
+  # own network settings.
+  #
+  # host networking, not a port mapping: it has to own port 53 on the address the
+  # consoles reach, and a mapped port would hide the client address from the log.
+  dns:
+    <<: *defaults
+    command: ["/usr/local/bin/dns"]
+    environment:
+      <<: *env
+      SWITCHNET_PUBLIC_IP: ${SWITCHNET_PUBLIC_IP:?set SWITCHNET_PUBLIC_IP in .env}
+      SWITCHNET_NATCHECK_SECONDARY_IP: ${SWITCHNET_NATCHECK_SECONDARY_IP:-}
+      SWITCHNET_DNS_LISTEN: ":53"
+      SWITCHNET_DNS_UPSTREAM: ${SWITCHNET_DNS_UPSTREAM:-9.9.9.9:53,1.1.1.1:53}
+    network_mode: host
+    # Port 53 is privileged. The image already grants the binary
+    # cap_net_bind_service, so this only has to allow the capability rather than
+    # run the container as root.
+    cap_add:
+      - NET_BIND_SERVICE
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

@@ -8,7 +8,7 @@ GO      ?= go
 CONFIG  ?= config/config.yaml
 BIN_DIR ?= bin
 
-SERVICES := dauth aauth baas stubs natcheck switchnetctl
+SERVICES := dns dauth aauth baas stubs natcheck switchnetctl
 
 # Set these to run the integration tests that need a real database and Redis.
 # Without them those tests skip, so `make test` works on any machine.
@@ -115,9 +115,21 @@ gen-nginx:
 	$(GO) run ./cmd/switchnetctl -config $(CONFIG) nginx > deploy/nginx.generated.conf
 	@echo "wrote deploy/nginx.generated.conf"
 
-## gen-switch: gen-hosts and gen-nginx together
+## gen-dns: write dnsmasq and unbound configuration for an existing resolver
+.PHONY: gen-dns
+gen-dns:
+	@test -f $(CONFIG) || { echo "$(CONFIG) does not exist. Copy config/config.example.yaml to it first."; exit 1; }
+	@mkdir -p deploy
+	$(GO) run ./cmd/switchnetctl -config $(CONFIG) dnsmasq > deploy/switchnet.dnsmasq.conf
+	$(GO) run ./cmd/switchnetctl -config $(CONFIG) unbound > deploy/switchnet.unbound.conf
+	@echo "wrote deploy/switchnet.dnsmasq.conf and deploy/switchnet.unbound.conf"
+	@echo
+	@echo "Use these only if you would rather not run SwitchNet's own DNS server."
+	@echo "Either way, nothing goes on the console for redirection."
+
+## gen-switch: gen-nginx, gen-dns and gen-hosts together
 .PHONY: gen-switch
-gen-switch: gen-hosts gen-nginx
+gen-switch: gen-nginx gen-dns gen-hosts
 
 ## config-check: validate the config and warn about risky settings
 .PHONY: config-check

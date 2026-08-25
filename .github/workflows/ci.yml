@@ -94,8 +94,10 @@ jobs:
           export SWITCHNET_NATCHECK_SECONDARY_IP=192.168.1.51
           go run ./cmd/switchnetctl check
           go run ./cmd/switchnetctl hosts | tee /tmp/hosts.txt | head -5
-          go run ./cmd/switchnetctl nginx > /tmp/nginx.conf
-          go run ./cmd/switchnetctl sans  > /tmp/sans.txt
+          go run ./cmd/switchnetctl nginx   > /tmp/nginx.conf
+          go run ./cmd/switchnetctl sans    > /tmp/sans.txt
+          go run ./cmd/switchnetctl dnsmasq > /tmp/switchnet.dnsmasq.conf
+          go run ./cmd/switchnetctl unbound > /tmp/switchnet.unbound.conf
           # Spot-check that the hosts a console cannot do without came out.
           for host in dauth-lp1.ndas.srv.nintendo.net \
                       e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com \
@@ -119,6 +121,26 @@ jobs:
           done
           test -s /tmp/nginx.conf
           test -s /tmp/sans.txt
+          # The generated resolver configs must redirect, and must NOT redirect
+          # the system update or phase 3 hosts.
+          grep -q 'address=/dauth-lp1.ndas.srv.nintendo.net/192.168.1.50' /tmp/switchnet.dnsmasq.conf
+          grep -q 'address=/nncs2-lp1.n.n.srv.nintendo.net/192.168.1.51'  /tmp/switchnet.dnsmasq.conf
+          if grep -qE '^address=/(atumn|aqua|sun)\.' /tmp/switchnet.dnsmasq.conf; then
+            echo "::error::a system update host is being redirected in the dnsmasq config"; exit 1
+          fi
+          # unbound must use 'static', not 'transparent'/'redirect', or AAAA leaks.
+          grep -q 'local-zone: "dauth-lp1.ndas.srv.nintendo.net." static' /tmp/switchnet.unbound.conf
+          if grep -qE 'local-zone:.*(transparent|redirect)' /tmp/switchnet.unbound.conf; then
+            echo "::error::unbound config uses a zone type that forwards AAAA upstream"; exit 1
+          fi
+
+      # dnsmasq is the resolver most operators already have, so the generated
+      # config is checked against the real thing rather than only by grep.
+      - name: the generated dnsmasq config is accepted by dnsmasq
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq dnsmasq
+          sudo systemctl stop dnsmasq || true
+          dnsmasq --test --conf-file=/tmp/switchnet.dnsmasq.conf
 
       - name: certificates generate and verify
         run: |
@@ -157,7 +179,7 @@ jobs:
 
       - name: every binary is in the image and runs
         run: |
-          for svc in dauth aauth baas stubs natcheck switchnetctl; do
+          for svc in dns dauth aauth baas stubs natcheck switchnetctl; do
             docker run --rm switchnet:ci /usr/local/bin/$svc -h >/dev/null 2>&1 \
               || docker run --rm switchnet:ci test -x /usr/local/bin/$svc \
               || { echo "::error::$svc is missing from the image"; exit 1; }
