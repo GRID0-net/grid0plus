@@ -11,6 +11,8 @@
 // See docs at https://github.com/kinnay/NintendoClients/wiki/Server-List
 package nintendo
 
+import "strings"
+
 // Service identifies which SwitchNet backend serves a host.
 type Service string
 
@@ -368,3 +370,124 @@ func TLSHostnames() []string {
 // ProxiedServices are the services that sit behind the nginx TLS edge, in the
 // order their server blocks should be emitted.
 var ProxiedServices = []Service{ServiceDAuth, ServiceAAuth, ServiceBAAS, ServiceNPLN, ServiceStubs}
+
+// Resolution says what a DNS server should do with a query.
+type Resolution int
+
+const (
+	// ResolveForward means answer from upstream: this host is not ours.
+	ResolveForward Resolution = iota
+	// ResolveRedirect means answer with the operator's address.
+	ResolveRedirect
+	// ResolveNATCheckSecondary means answer with the operator's SECOND address.
+	// Only nncs2 gets this, and it has to be a different address from nncs1 or
+	// the console never sends its second NAT probe.
+	ResolveNATCheckSecondary
+	// ResolveBlackhole means answer with 0.0.0.0, so the console gives up
+	// immediately instead of waiting for a timeout.
+	ResolveBlackhole
+)
+
+// Resolve decides what to do with a DNS query for name.
+//
+// This is the DNS counterpart of the hosts file, driven by the same list, so a
+// console pointed at SwitchNet's DNS server and a console using an Atmosphère
+// hosts file see the same redirects. Two mechanisms that disagree about which
+// hosts are ours would be very hard to debug from the console side.
+//
+// Matching is longest-suffix-wins, which is the DNS analogue of Atmosphère's
+// last-line-wins: a specific host beats a wildcard covering it.
+func Resolve(name string) (Resolution, Host, bool) {
+	name = normaliseDNSName(name)
+
+	var best Host
+	var bestLen int
+	found := false
+
+	for _, h := range Hosts {
+		suffix, ok := h.dnsSuffix()
+		if !ok {
+			continue
+		}
+		if !matchesSuffix(name, suffix, h.Wildcard) {
+			continue
+		}
+		// A longer suffix is more specific. On a tie, later declaration wins,
+		// which matches the hosts file's last-line-wins rule.
+		if len(suffix) >= bestLen {
+			best, bestLen, found = h, len(suffix), true
+		}
+	}
+
+	if !found {
+		return ResolveForward, Host{}, false
+	}
+
+	switch best.Service {
+	case ServiceBlackhole:
+		return ResolveBlackhole, best, true
+	case ServicePassthrough:
+		return ResolveForward, best, true
+	case ServiceNATCheck:
+		if strings.HasPrefix(best.Pattern, "nncs2") {
+			return ResolveNATCheckSecondary, best, true
+		}
+		return ResolveRedirect, best, true
+	default:
+		return ResolveRedirect, best, true
+	}
+}
+
+// dnsSuffix turns a host entry into a DNS suffix to match against.
+//
+// Atmosphère's patterns are not DNS patterns: '*' matches zero or more
+// characters anywhere, and '%' expands to the environment. For DNS, what matters
+// is the fixed tail, so 'receive-%.dg.srv.nintendo.net' becomes
+// '.dg.srv.nintendo.net' and matches any host under it.
+func (h Host) dnsSuffix() (string, bool) {
+	if !h.Wildcard {
+		return h.Pattern, true
+	}
+	// Take everything after the last wildcard character.
+	idx := strings.LastIndexAny(h.Pattern, "*%")
+	if idx < 0 {
+		return h.Pattern, true
+	}
+	suffix := h.Pattern[idx+1:]
+	if suffix == "" || suffix == "." {
+		// A pattern with nothing fixed after the wildcard would match
+		// everything, which is never what is wanted here.
+		return "", false
+	}
+	return strings.TrimPrefix(suffix, "."), true
+}
+
+func matchesSuffix(name, suffix string, wildcard bool) bool {
+	if !wildcard {
+		return name == suffix
+	}
+	return name == suffix || strings.HasSuffix(name, "."+suffix)
+}
+
+// normaliseDNSName lower-cases a query name and strips the trailing dot.
+func normaliseDNSName(name string) string {
+	return strings.ToLower(strings.TrimSuffix(name, "."))
+}
+
+// RedirectedNames returns every concrete hostname the DNS server answers with
+// the operator's address. Wildcard entries are excluded because there is no
+// finite list of names under them.
+func RedirectedNames() []string {
+	var out []string
+	for _, h := range Hosts {
+		if h.Wildcard {
+			continue
+		}
+		switch h.Service {
+		case ServiceBlackhole, ServicePassthrough:
+			continue
+		}
+		out = append(out, h.Pattern)
+	}
+	return out
+}
