@@ -1,0 +1,349 @@
+# Roadmap
+
+Three phases. Each one is only worth starting when the previous one has been
+confirmed working on real hardware, because otherwise a failure has two possible
+causes and no way to tell them apart.
+
+| Phase | Scope | State |
+| --- | --- | --- |
+| [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
+| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | not started |
+| [3](#phase-3--the-eshop) | eShop, served from local NSP dumps | not started |
+
+---
+
+## Phase 1 — accounts and the stock friends list
+
+**Done in code.** The auth chain, the friends system, the stub and NAT-check
+support servers, the Switch-side config generation and the deployment docs are
+all implemented and tested: 166 tests, and the whole chain verified running
+against a live PostgreSQL and Redis over real HTTP.
+
+**The remaining gate is hardware.** The exit criterion is an operator creating an
+account on a real modded Switch, generating a friend code, adding a second Switch,
+and seeing accurate online / offline / "Playing X" status in the **stock**
+Nintendo friends applet. That cannot be verified without two consoles.
+
+**What is most likely to be wrong when it is tried:** the BAAS `2.0.0` friends
+endpoint shapes, which are undocumented and reasoned rather than known. The friend
+list response is the one to watch — if it is an envelope rather than a bare array,
+the applet comes up empty with nothing in the log.
+[`CAPTURES/README.md`](CAPTURES/README.md) lists all ten guesses in priority
+order.
+
+**Nice-to-have, not required:** a homebrew `.nro` that toggles between SwitchNet
+and Nintendo, in the style of
+[Prelude](https://github.com/NextendoNetwork/Prelude-Nro). Hand-editing the hosts
+file works; the `.nro` mainly saves the operator from forgetting to remove the
+cert-trust patch when switching back.
+
+---
+
+## Phase 2 — Splatoon 3 (NPLN) + dashboard
+
+Splatoon 3 does not use NEX/PRUDP. It uses **NPLN**: gRPC over HTTP/2 with
+protobuf payloads, one tenant per title. The Splatoon 3 tenant is `dce9377b`, at
+`t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net`.
+
+That is good news. Compared to NEX's custom binary protocol, NPLN is a standard
+transport with mature tooling, and **Kinnay has published the decompiled protobuf
+definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols).
+
+### 2.1 Protobuf pipeline
+
+`scripts/fetch-proto.sh` clones the upstream definitions; `scripts/gen-proto.sh`
+runs `protoc`/`buf` to generate Go server stubs into `proto/`.
+
+**Do not hand-transcribe the `.proto` files.** Always regenerate from upstream, so
+an update is a one-command refresh rather than a diffing exercise.
+
+This step is genuinely independent of Phase 1's hardware verification, so it is
+the safe thing to do first if Phase 1 is still waiting on consoles.
+
+### 2.2 Gateway and core services
+
+`cmd/npln` + `internal/npln/server.go`. gRPC middleware reads the
+`npln-tenant-id`, `authorization` and `uid` metadata fields and rejects malformed
+metadata the way Nintendo's server does — status 12 (`Unimplemented`) on
+production, 14 (`Unavailable`) on development.
+
+Then, in order of what a session needs:
+
+| Service | Note |
+| --- | --- |
+| `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built |
+| `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" |
+| `nn.npln.hydro.v1.Datastore`, `leaderboard`, `messaging` | start with the minimum that does not crash the client |
+
+**NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that
+does. `internal/jwt` currently only does RS256 and will need an EC path.
+
+### 2.3 Matchmaking and sessions
+
+A FIFO or skill-bucket queue for Turf War to start. On a match, create a
+`GameSession` row and return station info so each client's Pia handshake can
+proceed. Log every match to `npln_matches` for the dashboard.
+
+**NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
+so `natcheck` is not involved in this title, and a STUN/TURN server (coturn) is a
+new deployment dependency. The addresses handed to the console must be reachable
+*from the console*: this is the most common cause of "the lobby fills but the
+match never starts".
+
+### 2.4 Splatoon 3 services (`nn.npln.toyohr.v1.*`)
+
+Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
+`GameRecord`, `CoopScenario` (Salmon Run), `FestService` (Splatfests), then
+`Locker`, `CloudSave`, `Replay`, `Canola`, `UserScreening`.
+
+Treat this list as a backlog and let capture data drive the order. Log every
+unimplemented RPC with a hexdump — that log is the to-do list.
+
+### 2.5 Friends integration
+
+**One friend graph, not two.** NPLN has its own friends layer, but it must read
+the *same* friendships as BAAS. Either `internal/npln/friends.go` calls into
+`internal/db`'s friendship store directly, or both go through `presencebus` for
+the live view. Do not create a second graph.
+
+Two details from
+[the `splatoon-3` write-up](https://github.com/n-popescu/splatoon-3/blob/main/docs/FRIENDS.md)
+that are easy to miss:
+
+- **`FriendUser.Relationship` must set `presence_deliverable` and
+  `presence_receivable`.** If they are false the client will not show a friend's
+  presence and will not publish its own — a friend list that looks perfectly
+  healthy while everybody is permanently offline.
+- **Streams must stay warm.** A stream that goes quiet is treated as dead and the
+  friend list stops updating with nothing in the log.
+
+### 2.6 Dashboard
+
+`cmd/dashboard` plus a small frontend. Users list, "online now" fed by
+`presencebus` over WebSocket or SSE rather than polling, user detail with friend
+list and match history, and a recent match list.
+
+`internal/presencebus` already exists for this. **Switch `redis.url` on before the
+dashboard runs as a separate process** — the in-process bus delivers nothing
+across a process boundary, silently.
+
+---
+
+## Phase 3 — the eShop
+
+Reimplement the Nintendo eShop, initially serving `.NSP` dumps of games the
+operator owns, taken from their own console. With a wallet the operator controls,
+so balance is whatever they say it is.
+
+**Prerequisite: Phase 1 must be working on hardware**, because the eShop depends
+on the account layer for identity, and it additionally needs a Nintendo Account
+server that Phase 1 does not provide (see [3.1](#31-nintendo-account-prerequisite)).
+
+### The single most important thing to know
+
+**The Switch eShop is a website.** When the eShop applet opens it loads
+`https://bugyo.hac.lp1.eshop.nintendo.net/ashigaru/` and renders it in the
+console's WebKit view. The applet injects a `window.nx` bridge that the page calls
+to reach system functions.
+
+So the storefront is a web app we write, not a native UI to reverse-engineer. That
+changes the shape of this phase completely, and it is why "every functionality
+should work as on stock" is a reasonable goal rather than a fantasy.
+
+Reference:
+[eShop Applet](https://github.com/kinnay/NintendoClients/wiki/eShop-Applet-(Switch)).
+
+The bridge, from that page — the useful half:
+
+| Function | What it means for us |
+| --- | --- |
+| `nx.shop.requestNaAuthToken` | the page asks the console for a Nintendo Account token |
+| `nx.shop.requestDeviceRegistrationInfo` | device/account registration state |
+| `nx.shop.requestRegisterDeviceAccount` | register this console against the account |
+| `nx.shop.requestSyncRights` | **this is the install trigger** — see below |
+| `nx.shop.requestEdgeToken` | the CDN token for content downloads |
+| `nx.shop.getApplicationContentMetaStatusArray` | what is already installed |
+| `nx.shop.prepareSpaceSizes`, `getTotalSizeNand`, `getTotalSizeSd` | free-space checks |
+| `nx.shop.requestLinkDevice` / `requestUnlinkDevice` | primary-console handling |
+
+Note what is **absent**: there is no "install this title" call. The page's job
+ends at commerce and rights. `requestSyncRights` makes the console fetch its
+entitlements, and then the system's own `nim` downloads and installs from `atum`.
+That is a large amount of work we do not have to do — but it also means a purchase
+that does not result in an install is almost always a rights problem, not a
+storefront problem.
+
+### 3.1 Nintendo Account (prerequisite)
+
+The eShop signs in with a Nintendo Account, which Phase 1 does not implement.
+`accounts.nintendo.com` needs, at minimum:
+
+- `GET /connect/1.0.0/authorize` — the OAuth-style authorize page
+- `POST /connect/1.0.0/api/token` — token issuance
+- `GET /2.0.0/users/me` — the profile the eShop displays
+
+Reference:
+[Account Server (Switch)](https://github.com/kinnay/NintendoClients/wiki/Account-Server-(Switch)).
+
+Design decision to make early: **link the Nintendo Account one-to-one with the
+BAAS user** created in Phase 1, rather than introducing a second account concept.
+Phase 1 already records a Nintendo Account id in the user's `self` extras for
+exactly this.
+
+### 3.2 Commerce and the wallet
+
+The balance and the catalogue are entirely server-side, so they are ours to
+define. "Infinite money" is a ledger we write, not a bypass:
+
+- an `eshop_wallet` table per account, with a balance and a transaction log;
+- an admin endpoint (and a dashboard button) to top it up by any amount;
+- a config switch for an *unlimited* wallet, where a purchase always succeeds and
+  the balance never moves.
+
+Keep the transaction log even with an unlimited wallet. "What did I buy and when"
+is the useful half, and it is what the eShop's purchase history screen reads.
+
+The commerce APIs live on `ecs-lp1.hac.shop.nintendo.net` and
+`ias-lp1.hac.shop.nintendo.net`. These are **the least documented part of this
+phase** — the wiki has one endpoint name
+(`/ecs/services/rest/AccountGetDynamicETickets`) and nothing else. Expect to
+capture, and expect this to be where the time goes.
+
+### 3.3 Rights and tickets — the real technical constraint
+
+This is the part that decides whether Phase 3 works at all, so it is worth being
+precise.
+
+A title installs only if the console accepts its ticket. On a stock console the
+ticket must be signed by Nintendo's RSA key. Two paths, and both need
+**sigpatches** (ES/FS patches) on the console — which a console running SwitchNet
+already needs:
+
+| NSP kind | Contains | Works because |
+| --- | --- | --- |
+| **Standard crypto** — a gamecard dump, or `nxdumptool` with console-specific data removed | no personalised ticket; the title key is in the NCA header under a fixed key-area key | nothing console-specific to reject |
+| **Personalised ticket** — the base ticket from a digital purchase | the original Nintendo-signed ticket | the signature is genuine |
+
+Prefer standard-crypto dumps: they carry nothing tied to the operator's console,
+so they are also the safer thing to have sitting on a server.
+
+`dragons.hac.lp1.dragons.nintendo.net` is the eLicense server that issues and
+tracks rights. Phase 1 currently **stubs it with `{}`**, which is enough for aauth
+to proceed and not enough for Phase 3. The endpoints that matter:
+
+- `POST /<v>/rights/available_elicenses` — what this account may install
+- `POST /<v>/rights/publish_elicenses` — grant a right after purchase
+- `POST /<v>/elicenses/exercise` — the console claiming one
+- `POST /<v>/contents_authorization_token/issue` — the token `aauth` then accepts
+- `POST /<v>/edge_token/issue` — the CDN token for `c2` paths on atum
+
+Reference:
+[Dragons Servers](https://github.com/kinnay/NintendoClients/wiki/Dragons-Servers).
+
+### 3.4 Content delivery
+
+`atum.hac.lp1.d4c.nintendo.net` serves the actual bytes, addressed by content id,
+with an edge token in the `X-Nintendo-DenebEdgeToken` header:
+
+| Path | Serves |
+| --- | --- |
+| `/c1/a/d/<title id>[/<version>]` | the control NCA — icon and name |
+| `/c1/t/a/<title id>/<version>` | the NCA containing the CNMT |
+| `/c1/<title id>/c/a/<content id>` | the CNMT NCA |
+| `/c1/<title id>/c/c/<content id>` | an NCA of game content |
+| `/c1/<title id>/c/c/<content id>/d` | a JSON object of content hashes |
+
+`c1` wants a dauth edge token; `c2` wants a dragons one.
+
+**An NSP maps onto this cleanly.** An NSP is a PFS0 archive whose members are
+`<content id>.nca` plus a `.tik` and `.cert`. So an ingest step:
+
+1. read the PFS0 directory;
+2. index each NCA by the content id in its filename — that is exactly the key
+   atum addresses;
+3. parse the CNMT NCA for the title id, version, and content list;
+4. read the control NCA for the name and icon, which the storefront and IDBE need;
+5. serve the members byte-for-byte on range requests.
+
+Serving NCAs unmodified is the whole trick: no re-encryption, no key handling, no
+re-signing. `atum` becomes a content-addressed file server over the operator's
+NSP library. This is the most tractable part of Phase 3 and a sensible place to
+start.
+
+Reference: [Atum Server](https://github.com/kinnay/NintendoClients/wiki/Atum-Server),
+and switchbrew on [NCA](https://switchbrew.org/wiki/NCA) and
+[CNMT](https://switchbrew.org/wiki/CNMT).
+
+### 3.5 The supporting servers
+
+| Host | What | Effort |
+| --- | --- | --- |
+| `tagaya.hac.lp1.eshop.nintendo.net` | `GET /tagaya/hac_versionlist` — latest version per title. Drives the update badge | small; one JSON document generated from the NSP index |
+| `idbe-hac.cdn.nintendo.net` | icon data, per title | small; extracted from the control NCA at ingest |
+| `superfly`, `pushmo`, `beach`, `pearljam` | metadata and recommendations | can stay stubbed for a long time |
+| `aqua.hac.lp1.d4c.nintendo.net` | system update requirements | keep stubbed; see the warning below |
+| `hac.lp1.savanna.srv.nintendo.net` | the newer eShop applet | check which one the operator's firmware uses **before** building against `bugyo` |
+
+**`bugyo` requires the "SwitchShop" client certificate.** Like every client cert
+in this stack, SwitchNet will not verify it — but nginx must be configured
+`optional_no_ca` and not `on`, or the connection is refused before it becomes a
+request.
+
+**Do not redirect the `d4c` system-update hosts to implement this.** `sun`,
+`atumn` and `aqua` are system updates, and `nim` writes a persistent flag when
+that check fails. `atum` (no `n`) is game content and is a different host.
+`internal/nintendo/hosts.go` marks the update hosts `ServicePassthrough` with a
+test asserting it; keep that true.
+
+### 3.6 Suggested order
+
+Each step is useful on its own, which matters because 3.2 is the one with real
+unknowns.
+
+1. **NSP ingest and `atum`.** A content-addressed server over the NSP library,
+   plus `tagaya` and IDBE from the same index. Testable entirely from `curl` with
+   no console.
+2. **`dragons`** for real: a rights table, `available_elicenses`,
+   `publish_elicenses`, `exercise`, and the contents-authorization token that
+   `aauth` already accepts.
+3. **Verify an install with rights granted out of band** — no storefront yet.
+   Grant a right by hand, trigger a rights sync on the console, and watch `nim`
+   download from `atum`. **This is the milestone that proves Phase 3 is possible**,
+   and it comes before any UI work.
+4. **Nintendo Account**, enough for the eShop to sign in.
+5. **The storefront web app** plus the ECS/IAS commerce API and the wallet.
+6. **The rest of stock behaviour**: DLC and updates (just titles), pre-orders,
+   wishlist, purchase history, redownload, news.
+
+### 3.7 What will not work like stock, and should be said out loud
+
+- **Catalogue metadata is ours.** Nintendo's descriptions, screenshots, ratings
+  and trailers are not in an NSP. The storefront shows the name and icon from the
+  control NCA plus whatever the operator writes.
+- **My Nintendo points, gift cards and download codes** have no counterpart
+  unless we invent one. Easy to invent; will not match stock.
+- **Nintendo Switch Online purchase** is meaningless here — Phase 1 already
+  reports every user as entitled.
+- **Anything the operator does not own** is not in the library. That is the point.
+
+### 3.8 Scope note
+
+Phase 3 serves games the operator dumped from their own console, to consoles the
+operator owns, on the operator's own network. That is the only mode described
+here and the only mode the documentation should describe.
+
+It ships no Nintendo content, no keys, and no dumps, and it does not fetch
+anything from Nintendo. A deployment reachable by anybody other than the operator
+would be a distribution service for copyrighted games, which is a different thing
+entirely and not what this is. Keep `baas.allow_registration` off and the firewall
+tight.
+
+---
+
+## Captures
+
+Every phase is limited by what is documented, and the friends and commerce layers
+are the least documented parts. [`CAPTURES/README.md`](CAPTURES/README.md) lists
+what is still guessed, in priority order; [`PACKET_CAPTURE.md`](PACKET_CAPTURE.md)
+covers how to capture it — including a method that needs no console MITM and
+carries no ban risk.
