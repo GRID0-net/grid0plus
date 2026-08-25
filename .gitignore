@@ -2,6 +2,13 @@
 /bin/
 /dist/
 switchnet-*
+# Binaries from a bare `go build ./cmd/<name>`, which drops them in the repo root.
+/dauth
+/aauth
+/baas
+/stubs
+/natcheck
+/switchnetctl
 
 # Generated secrets and certificates — never commit these.
 /certs/
