@@ -51,7 +51,7 @@ services:
       <<: *env
       SWITCHNET_PUBLIC_IP: ${SWITCHNET_PUBLIC_IP:?set SWITCHNET_PUBLIC_IP in .env}
       SWITCHNET_NATCHECK_SECONDARY_IP: ${SWITCHNET_NATCHECK_SECONDARY_IP:-}
-      SWITCHNET_DNS_LISTEN: ":53"
+      SWITCHNET_DNS_LISTEN: "${SWITCHNET_DNS_LISTEN:-:53}"
       SWITCHNET_DNS_UPSTREAM: ${SWITCHNET_DNS_UPSTREAM:-9.9.9.9:53,1.1.1.1:53}
     network_mode: host
     # Port 53 is privileged. The image already grants the binary
@@ -156,6 +156,9 @@ services:
     environment:
       <<: *env
       SWITCHNET_PUBLIC_IP: ${SWITCHNET_PUBLIC_IP:-}
+      SWITCHNET_NATCHECK_PRIMARY_LISTEN: "${SWITCHNET_NATCHECK_PRIMARY_LISTEN:-:10025}"
+      SWITCHNET_NATCHECK_SECONDARY_LISTEN: "${SWITCHNET_NATCHECK_SECONDARY_LISTEN:-:10125}"
+      SWITCHNET_NATCHECK_ALTERNATE_LISTEN: "${SWITCHNET_NATCHECK_ALTERNATE_LISTEN:-}"
     # host networking, not a port mapping.
     #
     # The NAT-check protocol works by the console observing WHICH address and
@@ -164,6 +167,33 @@ services:
     # NAT classification would be wrong in a way that looks like a NAT problem
     # rather than a networking one.
     network_mode: host
+
+  # ---------------------------------------------------------------------------
+  # nginx: TLS edge; routes Nintendo hostnames to the right backend by SNI
+  # ---------------------------------------------------------------------------
+  # Runs with host networking so the upstream addresses in the generated config
+  # (127.0.0.1:808x) resolve directly to the mapped service ports. NET_BIND_SERVICE
+  # is needed to bind port 443 without running as root.
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ./deploy/nginx.params.conf:/etc/nginx/conf.d/00_params.conf:ro
+      - ./deploy/nginx.generated.conf:/etc/nginx/conf.d/switchnet.conf:ro
+      - ./certs/edge.crt:/etc/switchnet/certs/edge.crt:ro
+      - ./certs/edge.key:/etc/switchnet/certs/edge.key:ro
+    depends_on:
+      dauth:
+        condition: service_started
+      aauth:
+        condition: service_started
+      baas:
+        condition: service_started
+      stubs:
+        condition: service_started
 
 volumes:
   postgres:
