@@ -105,6 +105,18 @@ jobs:
           # nncs2 must not point at the same address as everything else.
           grep -q '^192.168.1.51 *nncs2' /tmp/hosts.txt || {
             echo "::error::nncs2 is not pointed at the secondary address"; exit 1; }
+          # The system-update and phase 3 hosts must be commented out, not
+          # redirected. A redirected update host sets a persistent flag on the
+          # console; a redirected eShop host breaks the eShop for no gain.
+          for host in atumn.hac.lp1.d4c.nintendo.net \
+                      aqua.hac.lp1.d4c.nintendo.net \
+                      atum.hac.lp1.d4c.nintendo.net \
+                      bugyo.hac.lp1.eshop.nintendo.net \
+                      accounts.nintendo.com; do
+            if grep -qE "^[0-9]" <(grep -F "$host" /tmp/hosts.txt); then
+              echo "::error::$host is being redirected; it must stay passthrough"; exit 1
+            fi
+          done
           test -s /tmp/nginx.conf
           test -s /tmp/sans.txt
 

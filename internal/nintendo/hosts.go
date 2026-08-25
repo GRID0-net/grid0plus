@@ -27,6 +27,9 @@ const (
 	ServiceNATCheck Service = "natcheck"
 	// ServiceNPLN is the NPLN gRPC gateway (phase 2).
 	ServiceNPLN Service = "npln"
+	// ServiceEShop is the eShop: the storefront, the commerce API, the eLicense
+	// server and the content server (phase 3).
+	ServiceEShop Service = "eshop"
 	// ServiceBlackhole means the host should be null-routed on the console
 	// rather than answered. Used for telemetry.
 	ServiceBlackhole Service = "blackhole"
@@ -245,14 +248,80 @@ var Hosts = []Host{
 		Comment: "error reports",
 	},
 
-	// ---- Deliberately NOT redirected ------------------------------------
-	// The d4c hosts serve system updates. Do not null-route them: the nim
-	// sysmodule stores a persistent flag when the update check fails, and that
-	// flag survives switching back to Nintendo's servers.
+	// ---- eShop (phase 3) ------------------------------------------------
+	// Listed as passthrough on purpose. Phase 3 flips these to ServiceEShop;
+	// until the servers behind them exist, redirecting them breaks the console's
+	// eShop for no gain. Having them here means the next person to work on phase
+	// 3 finds the list, and does not add `atumn` or `aqua` to it by mistake —
+	// see the d4c note below.
+	//
+	// The storefront is a WEBSITE: the applet loads bugyo/ashigaru and renders
+	// it, exposing system functions through a `window.nx` bridge. So phase 3 is
+	// a web app plus a commerce API, not a native UI.
+	// https://github.com/kinnay/NintendoClients/wiki/eShop-Applet-(Switch)
 	{
-		Pattern: "*.d4c.nintendo.net",
-		Service: ServicePassthrough, Wildcard: true,
-		Comment: "system updates — must reach real Nintendo, do NOT null-route",
+		Pattern: "bugyo.hac.lp1.eshop.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: the eShop storefront (a website). Needs the SwitchShop client cert",
+	},
+	{
+		Pattern: "hac.lp1.savanna.srv.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: the newer eShop applet — check which one the firmware uses",
+	},
+	{
+		Pattern: "ecs-lp1.hac.shop.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: commerce (ECS). The least documented part of the whole stack",
+	},
+	{
+		Pattern: "ias-lp1.hac.shop.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: commerce (IAS)",
+	},
+	{
+		Pattern: "atum.hac.lp1.d4c.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: GAME content, addressed by content id. NOT a system update host",
+	},
+	{
+		Pattern: "tagaya.hac.lp1.eshop.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: latest version per title, drives the update badge",
+	},
+	{
+		Pattern: "idbe-hac.cdn.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "phase 3: title icons",
+	},
+	{
+		Pattern: "accounts.nintendo.com",
+		Service: ServicePassthrough,
+		Comment: "phase 3 prerequisite: Nintendo Account, which the eShop signs in with",
+	},
+
+	// ---- Deliberately NOT redirected ------------------------------------
+	// The d4c hosts serve SYSTEM UPDATES: sun, atumn and aqua. Do not
+	// null-route or redirect them — the nim sysmodule stores a persistent flag
+	// when the update check fails, and that flag survives switching back to
+	// Nintendo's servers.
+	//
+	// Note the trap: `atum` (game content, phase 3, listed above) and `atumn`
+	// (system update content) differ by one letter and share the d4c domain.
+	{
+		Pattern: "sun.hac.lp1.d4c.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "system update metadata — must reach real Nintendo",
+	},
+	{
+		Pattern: "atumn.hac.lp1.d4c.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "system update content — must reach real Nintendo. NOT atum",
+	},
+	{
+		Pattern: "aqua.hac.lp1.d4c.nintendo.net",
+		Service: ServicePassthrough,
+		Comment: "system update requirements — must reach real Nintendo",
 	},
 }
 

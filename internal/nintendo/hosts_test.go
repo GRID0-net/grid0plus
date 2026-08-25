@@ -74,22 +74,78 @@ func TestNATCheckHasTwoHosts(t *testing.T) {
 // by changing the server: the nim sysmodule stores a persistent flag when the
 // system update check fails, and that flag survives switching back to
 // Nintendo's servers.
+//
+// The trap this guards is that `atum` (game content, phase 3) and `atumn`
+// (system update content) differ by one letter and share the d4c domain, so
+// somebody implementing phase 3 could redirect the wrong one.
 func TestSystemUpdateHostsArePassthrough(t *testing.T) {
-	var found bool
+	updateHosts := map[string]bool{
+		"sun.hac.lp1.d4c.nintendo.net":   false,
+		"atumn.hac.lp1.d4c.nintendo.net": false,
+		"aqua.hac.lp1.d4c.nintendo.net":  false,
+	}
+
 	for _, h := range Hosts {
-		if !strings.Contains(h.Pattern, "d4c") {
-			continue
-		}
-		found = true
-		if h.Service != ServicePassthrough {
-			t.Errorf("%s is %s; the d4c hosts must reach real Nintendo, because "+
-				"a failed system update check sets a persistent flag on the console",
-				h.Pattern, h.Service)
+		if _, isUpdateHost := updateHosts[h.Pattern]; isUpdateHost {
+			updateHosts[h.Pattern] = true
+			if h.Service != ServicePassthrough {
+				t.Errorf("%s is %s; it must reach real Nintendo, because a failed "+
+					"system update check sets a persistent flag on the console that "+
+					"survives switching back", h.Pattern, h.Service)
+			}
 		}
 	}
-	if !found {
-		t.Error("the d4c hosts are not listed at all, so nothing documents that they " +
-			"must not be redirected")
+
+	for pattern, listed := range updateHosts {
+		if !listed {
+			t.Errorf("%s is not listed, so nothing documents that it must not be "+
+				"redirected", pattern)
+		}
+	}
+}
+
+// TestPhase3HostsAreNotYetRedirected keeps the eShop working until there is
+// something to redirect it to.
+//
+// The hosts are listed so that whoever implements phase 3 finds the list rather
+// than assembling their own, but a host redirected to a service that does not
+// exist is worse than one left alone: it breaks the console's eShop for no gain.
+func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
+	phase3 := []string{
+		"bugyo.hac.lp1.eshop.nintendo.net",
+		"ecs-lp1.hac.shop.nintendo.net",
+		"ias-lp1.hac.shop.nintendo.net",
+		"atum.hac.lp1.d4c.nintendo.net",
+		"tagaya.hac.lp1.eshop.nintendo.net",
+		"accounts.nintendo.com",
+	}
+
+	byPattern := map[string]Host{}
+	for _, h := range Hosts {
+		byPattern[h.Pattern] = h
+	}
+
+	for _, pattern := range phase3 {
+		h, ok := byPattern[pattern]
+		if !ok {
+			t.Errorf("%s is not listed; phase 3 needs it and the list is where "+
+				"somebody will look for it", pattern)
+			continue
+		}
+		if h.Service != ServicePassthrough {
+			t.Errorf("%s is %s. If phase 3 now serves it, update this test and "+
+				"switch it to ServiceEShop; if not, it must stay passthrough, "+
+				"because redirecting it breaks the console's eShop.", pattern, h.Service)
+		}
+	}
+
+	// atum and atumn are one letter apart and both under d4c. Assert they are
+	// distinct entries, so a careless edit to one cannot silently cover the other.
+	if _, ok := byPattern["atum.hac.lp1.d4c.nintendo.net"]; !ok {
+		t.Error("atum (game content) is missing")
+	}
+	if _, ok := byPattern["atumn.hac.lp1.d4c.nintendo.net"]; !ok {
+		t.Error("atumn (system update content) is missing")
 	}
 }
 
