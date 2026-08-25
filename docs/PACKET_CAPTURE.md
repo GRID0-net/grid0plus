@@ -4,7 +4,9 @@ How to see what the console actually sends, so a guess in the implementation can
 be replaced with a fact. What to do with the result is in
 [`CAPTURES/README.md`](CAPTURES/README.md).
 
-- [The idea](#the-idea)
+- [Start here: capture from a PC, not the console](#start-here-capture-from-a-pc-not-the-console)
+- [The ban risk in the console-MITM approach](#the-ban-risk-in-the-console-mitm-approach)
+- [The idea behind console MITM](#the-idea-behind-console-mitm)
 - [HTTPS, with mitmproxy](#https-with-mitmproxy)
 - [Capturing against your own server](#capturing-against-your-own-server)
 - [UDP, for NAT check](#udp-for-nat-check)
@@ -13,7 +15,97 @@ be replaced with a fact. What to do with the result is in
 
 ---
 
-## The idea
+## Start here: capture from a PC, not the console
+
+**This is the recommended method.** It gets the real responses without the
+console being involved at all.
+
+`kinnay/NintendoClients` can speak the whole Switch auth chain from a computer,
+given your console's credentials. So you can call Nintendo's real BAAS friends
+API directly and read the JSON, with no proxy, no DNS-MITM, and — crucially —
+**without the console ever running with certificate verification disabled while
+talking to Nintendo.**
+
+`scripts/capture-baas.py` does it in one command.
+
+### What you need
+
+| | Where from |
+| --- | --- |
+| `prod.keys` | Lockpick_RCM |
+| `PRODINFO` | hekate, decrypted if your setup encrypts it |
+| BAAS device account id and password | save folder `8000000000000010`, `su/baas/<guid>.dat` |
+
+```sh
+pip install NintendoClients anyio
+# if netifaces fails to build: apt install build-essential python3-dev
+
+# read the credentials out of the save file rather than by hand
+python3 scripts/capture-baas.py --parse-save /path/to/su/baas/xxxxx.dat
+```
+
+### Capture
+
+```sh
+python3 scripts/capture-baas.py     --keys /path/to/prod.keys     --prodinfo /path/to/PRODINFO     --device-account-id 0123456789abcdef     --password "<40 characters>"     --country NL     --system-version 2250     --out docs/CAPTURES/raw
+```
+
+It writes one JSON file per endpoint and prints a one-line shape summary for
+each. That summary is the actual deliverable for several open questions — whether
+the friend list is `array[N] of object with keys [...]` or
+`object with keys ['friends']` settles the highest-priority guess in the whole
+repository.
+
+**Add a friend on the console first.** A friend list with nobody in it, and a
+relationship endpoint with no relationship, tell you very little.
+
+### What it sends, and what it does not
+
+It requests a device token, logs in, and performs the friends **reads**. That is
+the same traffic the console makes when you open the friends applet. No request
+in the script creates, accepts or deletes anything.
+
+It does mean Nintendo sees your real console identity — exactly as it does
+whenever the console is online normally. Nothing about this is unusual traffic.
+
+### Request shapes without touching Nintendo at all
+
+```sh
+python3 scripts/capture-baas.py ... --against-switchnet https://192.168.1.50
+```
+
+Same code, pointed at your own server. You get the **request** shapes — which are
+the harder half to guess — with zero Nintendo traffic.
+
+---
+
+## The ban risk in the console-MITM approach
+
+Worth stating plainly before the mitmproxy sections, because it is easy to walk
+into.
+
+To MITM the console you have to install the `disable_ca_verification` patch,
+which turns off certificate validation **system-wide**. If the console then talks
+to real Nintendo with that patch active:
+
+- anybody on your network can intercept its traffic, including your account
+  credentials;
+- the console produces error 2137-7403 in some flows, which is a fairly obvious
+  signal;
+- Prelude's own source calls leaving that patch in place while on Nintendo's
+  servers "an obvious ban vector", and removes it when switching back.
+
+The PC method above avoids all of this: the console is never patched, and never
+online with a modified SSL stack. Prefer it. Use console MITM only for what it
+alone can capture — chiefly the console's own **request** bodies for endpoints
+that `NintendoClients` does not implement, and NPLN in phase 2.
+
+If you do use it: capture one host at a time, and remove the patch immediately
+afterwards.
+
+---
+
+## The idea behind console MITM
 
 The console resolves Nintendo hostnames through Atmosphère's DNS-MITM, so you
 already control where its traffic goes. Capturing is a matter of pointing it at
@@ -149,7 +241,9 @@ best-documented part, so a capture here is mostly confirmation — but confirmin
 tells you your capture setup works before you rely on it for the parts that are
 guessed.
 
-**Round 2 — friends.** The valuable one, because none of it is documented:
+**Round 2 — friends.** The valuable one, because none of it is documented. Most
+of it is covered by `scripts/capture-baas.py` with no console MITM; only the
+console's own request bodies for steps 2, 4, 7, 9 and 10 need a proxy.
 
 1. generate a friend code
 2. send a friend request from console A

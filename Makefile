@@ -152,6 +152,18 @@ logs:
 seed:
 	scripts/seed-dev-data.sh
 
+## capture: capture the real BAAS friends API from a PC (see docs/PACKET_CAPTURE.md)
+.PHONY: capture
+capture:
+	@echo "This needs prod.keys, PRODINFO and your BAAS device account credentials."
+	@echo "Read docs/PACKET_CAPTURE.md first, then:"
+	@echo
+	@echo "  python3 scripts/capture-baas.py --parse-save <save>/su/baas/xxxxx.dat"
+	@echo "  python3 scripts/capture-baas.py --keys prod.keys --prodinfo PRODINFO \\"
+	@echo "      --device-account-id <16 hex> --password '<40 chars>' --country NL"
+	@echo
+	@python3 scripts/capture-baas.py --help
+
 ## clean: remove build output and coverage
 .PHONY: clean
 clean:

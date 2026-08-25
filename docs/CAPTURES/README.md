@@ -7,6 +7,22 @@ Every guess in the implementation is marked in the source with
 `TODO(capture-needed):` and says what a capture would settle and which single
 function to change. `grep -rn 'TODO(capture-needed)' internal/` is the full list.
 
+## Fastest way to answer most of this
+
+```sh
+python3 scripts/capture-baas.py \
+    --keys prod.keys --prodinfo PRODINFO \
+    --device-account-id <16 hex> --password "<40 chars>" --country NL
+```
+
+That talks to Nintendo's real BAAS from a PC using your console's credentials,
+and covers items 1, 3, 4 and 5 below in one run. **The console is not involved**,
+so it never runs with certificate verification disabled while talking to Nintendo
+— see [`../PACKET_CAPTURE.md`](../PACKET_CAPTURE.md) for why that matters.
+
+Add a friend on the console first, or the friend list and the relationship
+endpoint have nothing to show.
+
 ## What is still guessed
 
 Ordered by how much a capture would help.
@@ -89,6 +105,54 @@ from a console whose account is banned, or has no membership, would show it.
 Stubbed with `{"active": true, "expiresAt": …}`. With
 `aauth.online_play_policy: FREE` (the default) the console never asks, which is
 why this has not blocked anything.
+
+---
+
+## Phase 2 — Splatoon 3 (NPLN)
+
+Not started, so nothing is guessed yet. When it is, these are the captures that
+will unblock it. NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or
+`proxide`, not mitmproxy, and it does need the console.
+
+| Capture | Why |
+| --- | --- |
+| game boot through the NPLN auth handshake | confirms the id token is accepted and shows what the tenant expects in `authorization`/`uid` metadata |
+| entering the lobby | `Schedule` and `LobbyMessaging`, the first things the lobby draws |
+| a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
+| the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
+| post-match results upload | `GameRecord` |
+
+[kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
+IPS patch generator that disables TLS verification *inside Splatoon 3
+specifically* — useful because the game verifies on top of the system, and it is
+narrower than the system-wide patch.
+
+## Phase 3 — the eShop
+
+The eShop commerce API is the **least documented thing in this whole project**.
+The wiki has one endpoint name for ECS and nothing else, so captures here are not
+a refinement — they are the only way in.
+
+Ranked by how blocking they are:
+
+| Capture | What it settles |
+| --- | --- |
+| **the eShop applet's first requests after opening** | which host the operator's firmware actually uses: `bugyo.hac.lp1.eshop.nintendo.net/ashigaru/` or the newer `hac.lp1.savanna.srv.nintendo.net`. Building the storefront against the wrong one wastes all of it |
+| **a purchase, end to end** | the ECS/IAS commerce calls, in order, with bodies. This is the core of 3.2 and there is currently nothing to work from |
+| **`dragons` rights calls around an install** | `rights/available_elicenses`, `rights/publish_elicenses`, `elicenses/exercise` — the request and response bodies |
+| **`atum` requests during a download** | confirms the path scheme and the `X-Nintendo-DenebEdgeToken` header against a real download, and shows whether range requests are used |
+| **`tagaya` version list** | one response is enough; the shape is documented but a real one confirms it |
+| the wallet/balance screen | how the balance is reported, and in what currency shape |
+| redownload from the purchase history | whether it differs from a first purchase |
+
+The eShop is a **website**, so its own requests to the commerce API are ordinary
+`fetch`/XHR from the page. That means once the storefront is ours, we define most
+of that API — the captures matter for the parts the *system* drives, which is
+rights and content, not the storefront.
+
+Note that `bugyo` requires the "SwitchShop" client certificate, so a proxy in
+front of it needs to pass the client cert through or the connection is refused
+before it becomes a request.
 
 ---
 
