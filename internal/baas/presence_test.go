@@ -137,6 +137,69 @@ func TestAFreshReportBeatsLiveness(t *testing.T) {
 	}
 }
 
+// TestAnExplicitOfflineReportIsHonoured is the counterpart to the liveness rule.
+//
+// A console reporting OFFLINE is signing out. The liveness heartbeat exists for
+// the case where nothing was reported, and it must not override a console that
+// just told us it is going away — a user who logged out showing as online is
+// its own kind of wrong.
+func TestAnExplicitOfflineReportIsHonoured(t *testing.T) {
+	h := newHarness(t)
+	alice := h.newAccount()
+	bob := h.newAccount()
+	h.befriend(alice, bob)
+
+	resp := h.reportPresence(alice, db.StatePlaying, splatoon3TitleID, `{}`)
+	requireStatus(t, resp, 200)
+
+	resp = h.reportPresence(alice, db.StateOffline, "", "")
+	requireStatus(t, resp, 200)
+
+	// Alice keeps making requests, so the liveness timestamp stays fresh.
+	resp = h.do(request{
+		method: "GET", path: "/1.0.0/users/" + alice.UserID, token: alice.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+
+	if got := h.friends(bob)[0].Presence.State; got != db.StateOffline {
+		t.Errorf("state = %q after an explicit OFFLINE report, want OFFLINE: the "+
+			"liveness heartbeat must not override what the console said", got)
+	}
+}
+
+// TestAnOnlineReportClearsTheAppFields covers a console that closes a game.
+//
+// The console reports ONLINE but does not always clear the app fields itself, so
+// a friend list would keep showing "playing X" for a game that is no longer
+// running.
+func TestAnOnlineReportClearsTheAppFields(t *testing.T) {
+	h := newHarness(t)
+	alice := h.newAccount()
+	bob := h.newAccount()
+	h.befriend(alice, bob)
+
+	resp := h.reportPresence(alice, db.StatePlaying, splatoon3TitleID, `{"mode":"regular"}`)
+	requireStatus(t, resp, 200)
+
+	// Only the state changes: the app fields are left in place, the way a
+	// console that closed a game does.
+	resp = h.do(request{
+		method: "PATCH",
+		path:   "/1.0.0/users/" + alice.UserID + "/device_accounts/" + alice.DeviceAccountID,
+		token:  alice.AccessToken,
+		patch:  `[{"op":"replace","path":"/presence/state","value":"ONLINE"}]`,
+	})
+	requireStatus(t, resp, 200)
+
+	got := h.friends(bob)[0].Presence
+	if got.State != db.StateOnline {
+		t.Fatalf("state = %q, want ONLINE", got.State)
+	}
+	if v := got.Extras[db.ScopeFriends][keyAppID]; v != nil {
+		t.Errorf("appInfo:appId = %v, want it cleared once the state is not PLAYING", v)
+	}
+}
+
 func TestReportingOfflineRecordsALogoutTime(t *testing.T) {
 	h := newHarness(t)
 	alice := h.newAccount()

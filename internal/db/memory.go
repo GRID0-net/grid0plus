@@ -71,9 +71,12 @@ func (m *Memory) CreateUser(_ context.Context, u User, da DeviceAccount) error {
 	da.UserID = u.ID
 	m.users[u.ID] = u
 	m.deviceAccounts[da.ID] = da
+	// ReportedAt is left zero: the console has not reported anything yet. That
+	// is distinct from a reported OFFLINE, and the read path relies on the
+	// difference.
 	m.presence[u.ID] = Presence{
 		UserID: u.ID, State: StateOffline, Extras: EmptyExtras(),
-		ReportedAt: u.CreatedAt, LastSeenAt: u.CreatedAt,
+		LastSeenAt: u.CreatedAt,
 	}
 	return nil
 }
@@ -627,8 +630,9 @@ func (m *Memory) TouchPresence(_ context.Context, userID string, at time.Time) e
 
 	pr, ok := m.presence[userID]
 	if !ok {
+		// Touch records that the console is alive, not that it said anything, so
+		// ReportedAt stays zero.
 		pr = offlinePresence(userID)
-		pr.ReportedAt = at
 	}
 	if at.After(pr.LastSeenAt) {
 		pr.LastSeenAt = at

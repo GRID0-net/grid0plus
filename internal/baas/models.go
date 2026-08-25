@@ -267,9 +267,14 @@ func scopedExtras(extras db.ExtrasByScope, vis visibility) db.ExtrasByScope {
 // presenceResponse converts a resolved presence into the wire object.
 func presenceResponse(p db.Presence, vis visibility) PresenceResponse {
 	out := PresenceResponse{
-		State:     p.State,
-		Extras:    scopedExtras(p.Extras, vis),
-		UpdatedAt: p.ReportedAt.Unix(),
+		State:  p.State,
+		Extras: scopedExtras(p.Extras, vis),
+	}
+	// A zero ReportedAt means the console has never reported. Unix() on a zero
+	// time is a large negative number, which the console would read as a
+	// timestamp in the year 1, so send 0 instead.
+	if !p.ReportedAt.IsZero() {
+		out.UpdatedAt = p.ReportedAt.Unix()
 	}
 	if p.LogoutAt != nil {
 		out.LogoutAt = p.LogoutAt.Unix()

@@ -61,8 +61,21 @@ func (s *Server) resolvePresence(p db.Presence) db.Presence {
 	seenFresh := !p.LastSeenAt.IsZero() && now.Sub(p.LastSeenAt) <= s.cfg.ConsolePresenceTTL
 
 	switch {
-	case reportedFresh && (p.State == db.StatePlaying || p.State == db.StateOnline || p.State == db.StateInactive):
-		// The console said what it is doing recently enough to believe.
+	case reportedFresh:
+		// The console said what it is doing recently enough to believe, and it
+		// knows better than any heuristic here. That includes a fresh OFFLINE: a
+		// console reporting that is signing out, and overriding it with the
+		// liveness heartbeat would show a user who just logged out as online.
+		//
+		// The app fields still have to be cleared for a state that is not
+		// PLAYING, because a console reporting ONLINE after closing a game does
+		// not always clear them itself.
+		if p.State != db.StatePlaying {
+			p.AppID = ""
+			p.PresenceGroupID = ""
+			p.AppField = ""
+			p.Extras = clearPresenceAppFields(p.Extras)
+		}
 		return p
 
 	case seenFresh:
@@ -70,6 +83,10 @@ func (s *Server) resolvePresence(p db.Presence) db.Presence {
 		// online, and it is not in a game as far as we know — so the app fields
 		// are cleared rather than kept, otherwise a friend list would show
 		// "playing X" for a game that was closed an hour ago.
+		//
+		// This branch is the one that matters most: without it, a console idling
+		// in the Home Menu reports nothing and reads as offline to all its
+		// friends, which is exactly where players look at each other's status.
 		p.State = db.StateOnline
 		p.AppID = ""
 		p.PresenceGroupID = ""

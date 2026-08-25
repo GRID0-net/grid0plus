@@ -162,9 +162,12 @@ func (p *Postgres) CreateUser(ctx context.Context, u User, da DeviceAccount) err
 	}
 
 	// A presence row from the start, so every read path can assume it exists.
+	// reported_at is left NULL: the console has not reported anything yet.
+	// Setting it to now() here would make a brand new account look like it had
+	// just reported OFFLINE, which suppresses the liveness rule.
 	_, err = tx.Exec(ctx, `
-		INSERT INTO presence (user_id, state, extras, reported_at, last_seen_at)
-		VALUES ($1, $2, $3, $4, $4)`,
+		INSERT INTO presence (user_id, state, extras, last_seen_at)
+		VALUES ($1, $2, $3, $4)`,
 		u.ID, StateOffline, []byte(`{}`), u.CreatedAt)
 	if err != nil {
 		return mapErr(err)
@@ -675,10 +678,17 @@ const presenceColumns = `
 func scanPresence(row pgx.Row) (Presence, error) {
 	var pr Presence
 	var extras []byte
+	// reported_at is NULL until the console reports something, so it scans into
+	// a pointer. A zero ReportedAt is how the read path recognises "never
+	// reported" as distinct from "reported OFFLINE".
+	var reportedAt *time.Time
 	err := row.Scan(&pr.UserID, &pr.State, &pr.AppID, &pr.PresenceGroupID,
-		&pr.AppField, &pr.ACDIndex, &extras, &pr.ReportedAt, &pr.LastSeenAt, &pr.LogoutAt)
+		&pr.AppField, &pr.ACDIndex, &extras, &reportedAt, &pr.LastSeenAt, &pr.LogoutAt)
 	if err != nil {
 		return Presence{}, mapErr(err)
+	}
+	if reportedAt != nil {
+		pr.ReportedAt = *reportedAt
 	}
 	if err := json.Unmarshal(extras, &pr.Extras); err != nil {
 		return Presence{}, fmt.Errorf("decode presence extras for %s: %w", pr.UserID, err)
@@ -784,9 +794,11 @@ func (p *Postgres) UpdatePresence(ctx context.Context, userID string, patch Pres
 
 // TouchPresence records that a user made an authenticated request.
 func (p *Postgres) TouchPresence(ctx context.Context, userID string, at time.Time) error {
+	// Touch never writes reported_at: it records that the console is alive, not
+	// that it said anything about its state.
 	_, err := p.pool.Exec(ctx, `
-		INSERT INTO presence (user_id, state, extras, reported_at, last_seen_at)
-		VALUES ($1, $2, '{}'::jsonb, $3, $3)
+		INSERT INTO presence (user_id, state, extras, last_seen_at)
+		VALUES ($1, $2, '{}'::jsonb, $3)
 		ON CONFLICT (user_id) DO UPDATE SET last_seen_at = GREATEST(presence.last_seen_at, $3)`,
 		userID, StateOffline, at)
 	return mapErr(err)

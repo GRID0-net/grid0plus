@@ -9,6 +9,14 @@
 --                timer, so this can be minutes or hours old while the console
 --                is still perfectly awake.
 --
+--                NULL means the console has never reported anything. That is
+--                not the same as "reported OFFLINE": a fresh OFFLINE report is
+--                a console signing out and is honoured as-is, while a row that
+--                was never reported falls through to the liveness rule below.
+--                Defaulting this to now() conflates the two, and the visible
+--                effect is that a console which is plainly online reads as
+--                offline to all its friends.
+--
 --   last_seen_at when the console last made ANY authenticated request. Polling
 --                a friend list is proof of life. Without this column a console
 --                idling in the Home Menu reads as offline to all its friends,
@@ -37,7 +45,7 @@ CREATE TABLE presence (
     -- The five visibility scopes, stored as the console sent them.
     extras       JSONB       NOT NULL DEFAULT '{}'::jsonb,
 
-    reported_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reported_at  TIMESTAMPTZ,
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     logout_at    TIMESTAMPTZ,
 
