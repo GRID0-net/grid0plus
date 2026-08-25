@@ -1,0 +1,209 @@
+<h1 align="center">SwitchNet</h1>
+
+<p align="center">
+  <b>A self-hosted replacement for Nintendo's online infrastructure, for a private group of modded Switch consoles.</b>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
+  <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
+  <img src="https://img.shields.io/badge/phase%201-accounts%20%2B%20friends-brightgreen" alt="Phase 1">
+</p>
+
+---
+
+## What this is
+
+Accounts, friend codes, friend requests, friend lists and presence — including
+"Playing Splatoon 3" — working through the **stock** Nintendo friends applet, on
+consoles you own, against a server you run.
+
+Phase 1 is complete and is what this repository contains today. Phase 2 adds an
+NPLN game server for Splatoon 3 and a web dashboard.
+
+```
+┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
+│  Switch      │ ─────────────────────────────► │  nginx, TLS + SNI routing   │
+│  Home Menu   │   redirected by Atmosphere      └────────────┬────────────────┘
+│  friends     │   DNS-MITM                                   │
+└──────────────┘                          ┌───────────────────┼─────────────────┐
+                                          ▼                   ▼                 ▼
+                                  ┌───────────────┐   ┌───────────────┐  ┌──────────────┐
+                                  │ dauth         │   │ baas          │  │ stubs        │
+                                  │ device tokens │   │ accounts      │  │ ctest, frs,  │
+                                  ├───────────────┤   │ friends       │  │ op2, penne…  │
+                                  │ aauth         │   │ presence      │  └──────────────┘
+                                  │ app tokens    │   └───────┬───────┘
+                                  └───────────────┘           │
+                                                    ┌─────────┴─────────┐
+                                                    ▼                   ▼
+                                             ┌────────────┐      ┌────────────┐
+                                             │ PostgreSQL │      │ Redis      │
+                                             │ accounts,  │      │ presence   │
+                                             │ friends    │      │ events     │
+                                             └────────────┘      └────────────┘
+
+                                  ┌──────────────────────────────────────────┐
+                                  │ natcheck (UDP)                           │
+                                  │ so the consoles can find each other for  │
+                                  │ peer-to-peer play                        │
+                                  └──────────────────────────────────────────┘
+```
+
+## Scope, and what this is not
+
+This is for a private group of consenting friends running consoles they own and
+games they own.
+
+**SwitchNet ships no Nintendo code, keys or data, and reproduces none.** It signs
+its own tokens with its own keys. It cannot and does not produce anything real
+Nintendo servers would accept.
+
+It also does not verify Nintendo's credentials, and that is deliberate: device
+certificates, game tickets and gamecard challenges are accepted without being
+looked at, because verifying them would require Nintendo key material and because
+on a private network of consoles you own there is nobody to prove ownership to.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#what-is-deliberately-not-verified)
+has the full table of what is and is not checked, and why.
+
+It is not a way to play unowned games, and not a way to get anything online
+against Nintendo's own servers.
+
+## Quickstart
+
+```sh
+cp config/config.example.yaml config/config.yaml
+$EDITOR config/config.yaml               # set network.public_ip
+
+echo "SWITCHNET_DEVICE_ID_SECRET=$(openssl rand -hex 32)" > .env
+
+make config-check                        # validate, and warn about risky settings
+make up                                  # Postgres, Redis and the five services
+make gen-certs                           # local CA and edge certificate
+make gen-switch                          # switch/hosts.txt + nginx config
+make seed                                # exercise the whole chain over HTTP
+```
+
+`make seed` walks the real API — device token, application token, anonymous
+token, register, log in, friend code, friend request, accept, presence — and
+prints the resulting friend list. If it completes, everything except DNS and TLS
+is working.
+
+Then: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the nginx edge and the
+address/port checklist, and [`switch/README.md`](switch/README.md) for the console.
+
+`make help` lists every target.
+
+## Two things that cost the most debugging time
+
+**You cannot install a CA certificate on a retail Switch.** The `ssl` sysmodule's
+trust store is not user-extensible. Cert trust is handled on the console with an
+Atmosphère `disable_ca_verification` exefs patch instead — and **those patches are
+gated by firmware build id**, so a console newer than your patch silently fails
+every HTTPS call with nothing in any log. Details in
+[`switch/README.md`](switch/README.md#3-certificate-trust).
+
+**`nncs1` and `nncs2` must be two different IP addresses.** Pia probes them as
+separate servers and one NAT-check message type has to be answered from a
+different address. Point both at one IP and the console de-duplicates the probe,
+never finishes NAT detection, and matchmaking finds matches that will not start.
+Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
+
+## What phase 1 implements
+
+| Feature | Endpoint |
+| --- | --- |
+| Device tokens, all API versions v1–v8 | `POST /v{1..8}/device_auth_token`, `/challenge`, `/edge_token` |
+| Application tokens, v1–v5 | `POST /v{1..5}/application_auth_token`, `/challenge`, `GET /v1/time` |
+| Anonymous access token | `POST /1.0.0/application/token` |
+| Register, log in, federate | `POST /1.0.0/users`, `/login`, `/federation` |
+| Profile: nickname, country, birthday, privacy | `PATCH /1.0.0/users/<id>` |
+| Friend codes, with the 24-hour cooldown | `POST /1.0.0/users/<id>/generate_code` |
+| Friend requests: send, accept, deny, cancel | `POST /2.0.0/friend_requests`, `PATCH …/<id>` |
+| Inbox and outbox | `GET /2.0.0/users/<id>/friend_requests/{inbox,outbox}` |
+| Friend list, favourites, unfriend | `GET`/`PATCH`/`DELETE /2.0.0/users/<id>/friends…` |
+| Relationships | `GET /2.0.0/users/<id>/relationships/<id>` |
+| Presence, with title id | `PATCH /1.0.0/users/<id>/device_accounts/<id>` |
+| Blocking | `GET`/`POST`/`DELETE /1.0.0/users/<id>/blocks…` |
+| Profile pictures | `POST /1.0.0/image_upload` |
+| JWK sets, for game servers | `GET /1.0.0/certificates`, `/internal_certificates` |
+| NAT check | UDP 10025 / 10125, message types 1–5 and 101–103 |
+| Stubs | ctest, frs, five, op2, dragons, penne, npns, znc, service-status |
+
+## Repository layout
+
+```
+config/          configuration loading, and config.example.yaml
+cmd/             one directory per binary, plus switchnetctl
+internal/
+  nintendo/      the Nintendo host list — one source of truth for the hosts
+                 file, the nginx map and the certificate SANs
+  jwt/           token issuance, verification and JWK sets
+  db/            schema, the Store contract, PostgreSQL and in-memory stores
+  dauth/         device authentication
+  aauth/         application authentication
+  baas/          accounts, friends, presence, blocks, images
+  presencebus/   presence pub/sub, in-process or Redis
+  stubs/         the catch-all
+  natcheck/      the NAT-check UDP responder
+  service/       shared startup: logging, signals, graceful shutdown
+switch/          console-side setup and the generated hosts file
+scripts/         gen-certs.sh, seed-dev-data.sh
+docs/            architecture, deployment, packet capture, captures
+```
+
+Every package under `internal/` has a doc comment saying which Nintendo endpoint
+it reimplements and linking the wiki page it was built from.
+
+## Development
+
+```sh
+make check        # gofmt, go vet, go test -- what CI runs
+make test-race    # with the race detector
+make test-cover   # coverage per package
+```
+
+Tests run with no database and no Redis: the handler tests use an in-memory store
+and finish in seconds. To also run the integration tests:
+
+```sh
+make test TEST_DATABASE_URL="postgres://…" TEST_REDIS_URL="redis://…"
+```
+
+Both store implementations run the *same* contract test, so the in-memory one the
+handler tests use cannot drift from the PostgreSQL one that runs in production.
+
+### Where the guesses are
+
+The friends `2.0.0` endpoints are not documented anywhere and no public
+implementation exists to compare against. Every guessed request or response shape
+carries a `TODO(capture-needed):` comment saying what a capture would settle and
+which single function to change:
+
+```sh
+grep -rn 'TODO(capture-needed)' internal/
+```
+
+[`docs/CAPTURES/README.md`](docs/CAPTURES/README.md) lists them in priority order
+with instructions for capturing each, and
+[`docs/PACKET_CAPTURE.md`](docs/PACKET_CAPTURE.md) covers the mechanics.
+
+## Credits
+
+Protocol knowledge comes almost entirely from
+[Kinnay's NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki)
+and the `NintendoClients` library itself, which is where the real presence request
+shape came from. The Atmosphère host list and the certificate-trust approach come
+from [Nextendo's Prelude-Nro](https://github.com/NextendoNetwork/Prelude-Nro).
+
+Both the identity design and the presence design in this repository are shaped by
+a write-up of two real failures on real hardware — every console acting as one
+account, and friends who were never online — documented in
+[`n-popescu/splatoon-3`](https://github.com/n-popescu/splatoon-3)'s
+`docs/FRIENDS.md`. SwitchNet is the component that write-up was asking for, and
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#identity-and-the-bug-this-design-exists-to-avoid)
+explains what was done differently.
+
+## Licence
+
+[AGPL-3.0](LICENSE), matching Prelude-Nro.

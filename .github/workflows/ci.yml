@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A push that lands while an earlier run for the same ref is still going cancels
+# it: the older result is about to be irrelevant either way.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+
+    # The integration tests only run when these are reachable. They are services
+    # rather than testcontainers so the test binary needs no Docker socket, and
+    # so the same SWITCHNET_TEST_* variables work locally.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: switchnet
+          POSTGRES_PASSWORD: switchnet
+          POSTGRES_DB: switchnet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U switchnet -d switchnet_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      SWITCHNET_TEST_DATABASE_URL: postgres://switchnet:switchnet@localhost:5432/switchnet_test?sslmode=disable
+      SWITCHNET_TEST_REDIS_URL: redis://localhost:6379/0
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # -race because the servers are concurrent by nature: the presence bus fans
+      # out to several subscribers, and the keyring is read by every request.
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+      # The migrations are applied by the store tests above. This asserts the
+      # embedded files are contiguous and that a second run is a no-op, which is
+      # what a restart does.
+      - name: migrations are idempotent
+        run: go test -race -count=1 -run 'TestMigrat' ./internal/db/
+
+      - name: build every service
+        run: make build
+
+      # A generated artefact that does not generate is a broken release: the
+      # operator finds out when they try to point a console at it.
+      - name: generated artefacts still generate
+        run: |
+          export SWITCHNET_PUBLIC_IP=192.168.1.50
+          export SWITCHNET_NATCHECK_SECONDARY_IP=192.168.1.51
+          go run ./cmd/switchnetctl check
+          go run ./cmd/switchnetctl hosts | tee /tmp/hosts.txt | head -5
+          go run ./cmd/switchnetctl nginx > /tmp/nginx.conf
+          go run ./cmd/switchnetctl sans  > /tmp/sans.txt
+          # Spot-check that the hosts a console cannot do without came out.
+          for host in dauth-lp1.ndas.srv.nintendo.net \
+                      e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com \
+                      nncs2-lp1.n.n.srv.nintendo.net; do
+            grep -q "$host" /tmp/hosts.txt || { echo "::error::$host missing from hosts.txt"; exit 1; }
+          done
+          # nncs2 must not point at the same address as everything else.
+          grep -q '^192.168.1.51 *nncs2' /tmp/hosts.txt || {
+            echo "::error::nncs2 is not pointed at the secondary address"; exit 1; }
+          test -s /tmp/nginx.conf
+          test -s /tmp/sans.txt
+
+      - name: certificates generate and verify
+        run: |
+          ./scripts/gen-certs.sh -d /tmp/certs
+          openssl verify -CAfile /tmp/certs/rootCA.pem /tmp/certs/edge.crt
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          # Non-blocking for now. The linters worth enforcing are already covered
+          # by go vet and the tests; this reports the rest without gating a merge
+          # on style.
+          args: --timeout=5m --issues-exit-code=0
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image build runs go vet and go test itself, so this also proves the
+      # tests pass in a clean container with no host Go cache.
+      - name: build the image
+        run: docker build -t switchnet:ci .
+
+      - name: every binary is in the image and runs
+        run: |
+          for svc in dauth aauth baas stubs natcheck switchnetctl; do
+            docker run --rm switchnet:ci /usr/local/bin/$svc -h >/dev/null 2>&1 \
+              || docker run --rm switchnet:ci test -x /usr/local/bin/$svc \
+              || { echo "::error::$svc is missing from the image"; exit 1; }
+          done
