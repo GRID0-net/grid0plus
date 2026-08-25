@@ -1,0 +1,146 @@
+# SwitchNet, phase 1: accounts and the stock friends list.
+#
+#   make up          start everything
+#   make seed        create dev accounts, friendships and presence
+#   make logs        follow the logs
+#   make clean-data  stop and DELETE the database
+#
+# One image is built and every service runs it with a different entrypoint. They
+# are separate processes rather than one because that is how they are deployed —
+# an operator can restart the BAAS server without dropping a console's dauth
+# request — and because it keeps each one's dependencies honest: dauth has no
+# database connection, so a database outage still lets a console reach a useful
+# error.
+
+name: switchnet
+
+x-service-defaults: &defaults
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment: &env
+    # Every service needs the same key directory: aauth verifies dauth's device
+    # tokens and baas verifies both. Pointing them at different directories does
+    # not error — it rejects every request with a confusing "token expired".
+    SWITCHNET_KEYS_DIR: /var/lib/switchnet/keys
+    SWITCHNET_KEYS_GENERATE_IF_MISSING: "true"
+    # Set this in a .env file next to this one. Any long random string:
+    #   echo "SWITCHNET_DEVICE_ID_SECRET=$(openssl rand -hex 32)" > .env
+    SWITCHNET_DEVICE_ID_SECRET: ${SWITCHNET_DEVICE_ID_SECRET:-dev-only-change-me}
+    SWITCHNET_LOG_LEVEL: ${SWITCHNET_LOG_LEVEL:-info}
+    SWITCHNET_LOG_FORMAT: ${SWITCHNET_LOG_FORMAT:-text}
+  volumes:
+    - keys:/var/lib/switchnet/keys
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: switchnet
+      POSTGRES_PASSWORD: switchnet
+      POSTGRES_DB: switchnet
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      # Exposed for psql and for the tests. Remove this line in a deployment
+      # that is reachable from anywhere but the operator's own machine.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U switchnet -d switchnet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No persistence: presence events are worthless the moment they are late,
+    # and a subscriber that reconnects reads current state from Postgres.
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dauth:
+    <<: *defaults
+    command: ["/usr/local/bin/dauth"]
+    environment:
+      <<: *env
+      SWITCHNET_DAUTH_LISTEN: ":8081"
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  aauth:
+    <<: *defaults
+    command: ["/usr/local/bin/aauth"]
+    environment:
+      <<: *env
+      SWITCHNET_AAUTH_LISTEN: ":8082"
+    ports:
+      - "127.0.0.1:8082:8082"
+    depends_on:
+      # Not a hard dependency at runtime — aauth only needs dauth's signing key
+      # from the shared volume, not the process — but starting in this order
+      # means the key exists before aauth looks for it on a first run.
+      dauth:
+        condition: service_started
+
+  baas:
+    <<: *defaults
+    command: ["/usr/local/bin/baas"]
+    environment:
+      <<: *env
+      SWITCHNET_BAAS_LISTEN: ":8083"
+      SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
+      SWITCHNET_DATABASE_AUTO_MIGRATE: "true"
+      SWITCHNET_REDIS_URL: "redis://redis:6379/0"
+      SWITCHNET_BAAS_IMAGE_DIR: /var/lib/switchnet/images
+    volumes:
+      - keys:/var/lib/switchnet/keys
+      - images:/var/lib/switchnet/images
+    ports:
+      - "127.0.0.1:8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dauth:
+        condition: service_started
+
+  stubs:
+    <<: *defaults
+    command: ["/usr/local/bin/stubs"]
+    environment:
+      <<: *env
+      SWITCHNET_STUBS_LISTEN: ":8084"
+      SWITCHNET_STUBS_LOG_BODIES: ${SWITCHNET_STUBS_LOG_BODIES:-false}
+    ports:
+      - "127.0.0.1:8084:8084"
+
+  natcheck:
+    <<: *defaults
+    command: ["/usr/local/bin/natcheck"]
+    environment:
+      <<: *env
+      SWITCHNET_PUBLIC_IP: ${SWITCHNET_PUBLIC_IP:-}
+    # host networking, not a port mapping.
+    #
+    # The NAT-check protocol works by the console observing WHICH address and
+    # port answered. Docker's userland proxy rewrites the source address of a
+    # reply, so every message type would appear to come from the same place and
+    # NAT classification would be wrong in a way that looks like a NAT problem
+    # rather than a networking one.
+    network_mode: host
+
+volumes:
+  postgres:
+  redis:
+  keys:
+  images:

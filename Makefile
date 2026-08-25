@@ -1,0 +1,158 @@
+# SwitchNet
+#
+# Run `make help` for the target list.
+
+SHELL := /usr/bin/env bash
+
+GO      ?= go
+CONFIG  ?= config/config.yaml
+BIN_DIR ?= bin
+
+SERVICES := dauth aauth baas stubs natcheck switchnetctl
+
+# Set these to run the integration tests that need a real database and Redis.
+# Without them those tests skip, so `make test` works on any machine.
+TEST_DATABASE_URL ?=
+TEST_REDIS_URL    ?=
+
+.DEFAULT_GOAL := help
+
+## help: list the targets
+.PHONY: help
+help:
+	@echo "SwitchNet"
+	@echo
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed -E 's/^## ([a-z-]+): (.*)/  \1|\2/' | awk -F'|' '{printf "  %-16s %s\n", $$1, $$2}'
+	@echo
+	@echo "Configuration:"
+	@echo "  CONFIG=$(CONFIG)"
+	@echo "  TEST_DATABASE_URL=$(TEST_DATABASE_URL)   (unset: the PostgreSQL tests skip)"
+	@echo "  TEST_REDIS_URL=$(TEST_REDIS_URL)   (unset: the Redis tests skip)"
+
+## build: compile every service into bin/
+.PHONY: build
+build:
+	@mkdir -p $(BIN_DIR)
+	@for svc in $(SERVICES); do \
+		echo "building $$svc"; \
+		$(GO) build -o $(BIN_DIR)/$$svc ./cmd/$$svc || exit 1; \
+	done
+
+## test: run the unit tests
+.PHONY: test
+test:
+	SWITCHNET_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" \
+	SWITCHNET_TEST_REDIS_URL="$(TEST_REDIS_URL)" \
+	$(GO) test ./...
+
+## test-race: run the tests with the race detector
+.PHONY: test-race
+test-race:
+	SWITCHNET_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" \
+	SWITCHNET_TEST_REDIS_URL="$(TEST_REDIS_URL)" \
+	$(GO) test -race ./...
+
+## test-cover: run the tests and report coverage per package
+.PHONY: test-cover
+test-cover:
+	SWITCHNET_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" \
+	SWITCHNET_TEST_REDIS_URL="$(TEST_REDIS_URL)" \
+	$(GO) test -coverprofile=coverage.out ./...
+	@$(GO) tool cover -func=coverage.out | tail -1
+
+## vet: run go vet
+.PHONY: vet
+vet:
+	$(GO) vet ./...
+
+## fmt: format every Go file
+.PHONY: fmt
+fmt:
+	gofmt -w .
+
+## fmt-check: fail if anything is unformatted
+.PHONY: fmt-check
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "these files are not gofmt-clean:"; echo "$$unformatted"; exit 1; \
+	fi
+
+## lint: run golangci-lint if it is installed
+.PHONY: lint
+lint:
+	@if command -v golangci-lint >/dev/null; then \
+		golangci-lint run; \
+	else \
+		echo "golangci-lint is not installed; skipping."; \
+		echo "install: https://golangci-lint.run/welcome/install/"; \
+	fi
+
+## check: fmt-check, vet and test -- what CI runs
+.PHONY: check
+check: fmt-check vet test
+
+## gen-certs: create the local CA and the edge certificate
+.PHONY: gen-certs
+gen-certs:
+	scripts/gen-certs.sh $(if $(wildcard $(CONFIG)),-c $(CONFIG),)
+
+## gen-hosts: write switch/hosts.txt from the config and the host list
+.PHONY: gen-hosts
+gen-hosts:
+	@test -f $(CONFIG) || { echo "$(CONFIG) does not exist. Copy config/config.example.yaml to it first."; exit 1; }
+	$(GO) run ./cmd/switchnetctl -config $(CONFIG) hosts > switch/hosts.txt
+	@echo "wrote switch/hosts.txt"
+	@echo "Copy it to BOTH /atmosphere/hosts/sysmmc.txt and /atmosphere/hosts/emummc.txt"
+	@echo "on the console's SD card -- one without the other works from only one"
+	@echo "boot configuration."
+
+## gen-nginx: write deploy/nginx.generated.conf from the config and the host list
+.PHONY: gen-nginx
+gen-nginx:
+	@test -f $(CONFIG) || { echo "$(CONFIG) does not exist. Copy config/config.example.yaml to it first."; exit 1; }
+	@mkdir -p deploy
+	$(GO) run ./cmd/switchnetctl -config $(CONFIG) nginx > deploy/nginx.generated.conf
+	@echo "wrote deploy/nginx.generated.conf"
+
+## gen-switch: gen-hosts and gen-nginx together
+.PHONY: gen-switch
+gen-switch: gen-hosts gen-nginx
+
+## config-check: validate the config and warn about risky settings
+.PHONY: config-check
+config-check:
+	$(GO) run ./cmd/switchnetctl $(if $(wildcard $(CONFIG)),-config $(CONFIG),) check
+
+## up: start Postgres, Redis and every phase 1 service
+.PHONY: up
+up:
+	docker compose up -d --build
+	@echo
+	@docker compose ps
+
+## down: stop everything, keeping the volumes
+.PHONY: down
+down:
+	docker compose down
+
+## clean-data: stop everything and DELETE the database and uploaded images
+.PHONY: clean-data
+clean-data:
+	docker compose down -v
+	rm -rf data/images
+
+## logs: follow the logs of every service
+.PHONY: logs
+logs:
+	docker compose logs -f
+
+## seed: create dev accounts, friendships and presence through the real API
+.PHONY: seed
+seed:
+	scripts/seed-dev-data.sh
+
+## clean: remove build output and coverage
+.PHONY: clean
+clean:
+	rm -rf $(BIN_DIR) coverage.out
