@@ -33,8 +33,8 @@ Phase 1 is what this repository contains today.
 ```
 ┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
 │  Switch      │ ─────────────────────────────► │  nginx, TLS + SNI routing   │
-│  Home Menu   │   redirected by Atmosphere      └────────────┬────────────────┘
-│  friends     │   DNS-MITM                                   │
+│  Home Menu   │   redirected by SwitchNet's     └────────────┬────────────────┘
+│  friends     │   DNS -- nothing on the SD card              │
 └──────────────┘                          ┌───────────────────┼─────────────────┐
                                           ▼                   ▼                 ▼
                                   ┌───────────────┐   ┌───────────────┐  ┌──────────────┐
@@ -53,6 +53,10 @@ Phase 1 is what this repository contains today.
                                              └────────────┘      └────────────┘
 
                                   ┌──────────────────────────────────────────┐
+                                  │ dns (UDP/TCP 53)                         │
+                                  │ answers Nintendo's hostnames with your   │
+                                  │ address, forwards everything else        │
+                                  ├──────────────────────────────────────────┤
                                   │ natcheck (UDP)                           │
                                   │ so the consoles can find each other for  │
                                   │ peer-to-peer play                        │
@@ -87,9 +91,9 @@ $EDITOR config/config.yaml               # set network.public_ip
 echo "SWITCHNET_DEVICE_ID_SECRET=$(openssl rand -hex 32)" > .env
 
 make config-check                        # validate, and warn about risky settings
-make up                                  # Postgres, Redis and the five services
+make up                                  # Postgres, Redis, DNS and the services
 make gen-certs                           # local CA and edge certificate
-make gen-switch                          # switch/hosts.txt + nginx config
+make gen-nginx                           # the TLS edge configuration
 make seed                                # exercise the whole chain over HTTP
 ```
 
@@ -99,7 +103,8 @@ prints the resulting friend list. If it completes, everything except DNS and TLS
 is working.
 
 Then: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the nginx edge and the
-address/port checklist, and [`switch/README.md`](switch/README.md) for the console.
+address/port checklist, and [`switch/README.md`](switch/README.md) for pointing a
+console at it.
 
 `make help` lists every target.
 
@@ -109,14 +114,28 @@ address/port checklist, and [`switch/README.md`](switch/README.md) for the conso
 this codebase is shaped around, the things that will waste your time, and where
 the guesses are. Read it before changing anything under `internal/baas`.
 
-## Two things that cost the most debugging time
+## How a console is pointed at it
 
-**You cannot install a CA certificate on a retail Switch.** The `ssl` sysmodule's
-trust store is not user-extensible. Cert trust is handled on the console with an
-Atmosphère `disable_ca_verification` exefs patch instead — and **those patches are
-gated by firmware build id**, so a console newer than your patch silently fails
-every HTTPS call with nothing in any log. Details in
-[`switch/README.md`](switch/README.md#3-certificate-trust).
+Two separate problems, with very different answers — and most guides conflate them:
+
+**Redirection happens off the console.** A Switch resolves hostnames through
+whatever DNS its network gives it, in stock firmware. So there is no hosts file,
+no `enable_dns_mitm`, and nothing on the SD card for this half. Either point your
+router's DHCP at SwitchNet's `dns` service — in which case the console needs *no
+configuration at all* — set DNS manually in the console's own network settings, or
+add the generated `dnsmasq`/`unbound` configuration to a resolver you already run.
+
+**Certificate trust does need the console**, and there is no way around it: the
+console asks for `dauth-lp1.ndas.srv.nintendo.net`, whose certificate is signed by
+a private Nintendo CA. The usual answer is an Atmosphère `disable_ca_verification`
+exefs patch, which is gated on the firmware build id, fails *silently* when it
+does not match, and turns off certificate validation system-wide. SwitchNet
+documents a better route — extending the console's own CA store, which is a
+LayeredFS data file rather than a code patch — with an honest note about the part
+of it that is not yet confirmed. See
+[`switch/README.md`](switch/README.md#part-2-certificate-trust).
+
+## The one setting people get wrong
 
 **`nncs1` and `nncs2` must be two different IP addresses.** Pia probes them as
 separate servers and one NAT-check message type has to be answered from a
@@ -144,6 +163,7 @@ Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
 | JWK sets, for game servers | `GET /1.0.0/certificates`, `/internal_certificates` |
 | NAT check | UDP 10025 / 10125, message types 1–5 and 101–103 |
 | Stubs | ctest, frs, five, op2, dragons, penne, npns, znc, service-status |
+| DNS redirection | UDP/TCP 53, with AAAA NODATA for redirected names |
 
 ## Repository layout
 
@@ -151,8 +171,9 @@ Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
 config/          configuration loading, and config.example.yaml
 cmd/             one directory per binary, plus switchnetctl
 internal/
-  nintendo/      the Nintendo host list — one source of truth for the hosts
-                 file, the nginx map and the certificate SANs
+  nintendo/      the Nintendo host list — one source of truth for DNS, the
+                 nginx map, the certificate SANs and the hosts file
+  dns/           the DNS server: redirect Nintendo, forward everything else
   jwt/           token issuance, verification and JWK sets
   db/            schema, the Store contract, PostgreSQL and in-memory stores
   dauth/         device authentication
@@ -163,7 +184,8 @@ internal/
   natcheck/      the NAT-check UDP responder
   service/       shared startup: logging, signals, graceful shutdown
 switch/          console-side setup and the generated hosts file
-scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py
+scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py,
+                 build-certstore.py
 docs/            roadmap, architecture, deployment, packet capture, captures
 ```
 

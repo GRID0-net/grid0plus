@@ -84,13 +84,27 @@ unmatched hosts to the stub server, which logs them. That log is the to-do list.
 
 | Port | Protocol | Faces | What |
 | --- | --- | --- | --- |
+| 53 | **UDP and TCP** | **the consoles** | DNS — how a console finds everything else |
 | 443 | TCP | **the consoles** | the nginx TLS edge |
 | 10025, 10125 | **UDP** | **the consoles** | NAT check |
 | 8081–8084 | TCP | localhost only | the services, behind nginx |
 | 5432, 6379 | TCP | localhost only | Postgres, Redis |
 
 The UDP rules are the ones people forget. A firewall that only opens TCP gives
-you a friends list that works and games that never start a match.
+you a friends list that works and games that never start a match — and, if it
+blocks UDP 53, a console that resolves nothing at all.
+
+If port 53 is already taken on the machine (systemd-resolved is the usual
+culprit), either free it:
+
+```sh
+sudo systemctl disable --now systemd-resolved
+# then point /etc/resolv.conf at a real resolver
+```
+
+or run SwitchNet's DNS on a different address, or use
+[option C](../switch/README.md#option-c--a-resolver-you-already-run) and add the
+generated configuration to the resolver that already owns the port.
 
 ### The two addresses
 
@@ -171,6 +185,18 @@ debugging on hardware tractable.
       `switch/hosts.txt`, curl it through `--resolve` and confirm you do not land
       on the stub server's unmatched log. `make gen-nginx` covers them all, so
       this is a check that nginx reloaded, not that the config is right.
+
+- [ ] **4b. DNS resolves, and resolves the right way.** From a machine on the
+      console's network:
+      ```sh
+      dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <YOUR_IP>
+      dig @<YOUR_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
+      dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
+      dig @<YOUR_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> real Nintendo
+      dig @<YOUR_IP> example.com                     A     +short   # -> a real address
+      ```
+      The AAAA and `atumn` checks are the ones people skip, and both are
+      misconfigurations that bite later rather than immediately.
 
 - [ ] **5. NAT check answers on UDP.**
       ```sh

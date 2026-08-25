@@ -1,167 +1,320 @@
 # Pointing a real Switch at SwitchNet
 
-This is the console side of the setup. It assumes a Nintendo Switch you own,
-running Atmosphère, and that you have already got SwitchNet answering on your
-network — check that first with the curl command in
-[`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md), because every problem below
-looks the same as "the server is not running".
+There are two separate problems here, and they have very different answers:
+
+| | Problem | Solved |
+| --- | --- | --- |
+| **1** | **Redirection** — making Nintendo's hostnames resolve to your server | **off the console, with DNS.** Nothing on the SD card. |
+| **2** | **Certificate trust** — making the console accept your certificate for a Nintendo hostname | **on the console.** There is no way around this; the options differ in how robust they are. |
+
+Most guides conflate the two and solve both with Atmosphère — a hosts file plus a
+firmware-gated exefs patch. Only the second half actually needs the console.
 
 > Use this on hardware you own, with games you own. SwitchNet ships none of
-> Nintendo's code, keys or data, and produces nothing Nintendo's own servers
-> would accept.
+> Nintendo's code, keys or data, and produces nothing Nintendo's own servers would
+> accept.
 
-**Read this first — the two things that surprise people:**
-
-1. **You cannot install a CA certificate on a retail Switch.** The `ssl`
-   sysmodule's trust store is not user-extensible. The certificate SwitchNet
-   generates is therefore not trusted by the console and cannot be made trusted.
-   What works instead is an Atmosphère exefs patch that stops the sysmodule
-   validating the chain at all — see [step 3](#3-certificate-trust).
-
-2. **Those patches are gated by firmware build id.** If your console's firmware
-   is newer than the newest patch you have, cert trust *silently* does not apply
-   and every HTTPS call fails at the handshake. In game that looks like a plain
-   network error, and **nothing appears in SwitchNet's log at all**, because the
-   connection never gets far enough to be a request. If you see nothing in the
-   log, check this before anything else.
+- [Part 1: redirection, with DNS](#part-1-redirection-with-dns)
+- [Part 2: certificate trust](#part-2-certificate-trust)
+- [Verify, in order](#verify-in-order)
+- [Troubleshooting by symptom](#troubleshooting-by-symptom)
+- [Going back to Nintendo](#going-back-to-nintendo)
 
 ---
 
-## 1. Generate the hosts file
+## Part 1: redirection, with DNS
 
-On the server, with your `config/config.yaml` filled in:
+A Switch resolves hostnames through whatever DNS server its network gives it, and
+that is true in stock firmware with nothing modified. So redirection needs no
+hosts file, no `enable_dns_mitm`, no homebrew, and nothing that a firmware update
+or a tool rewriting your SD card can break.
+
+Pick whichever of these suits your network. They are equivalent; all three read
+the same host list, so they cannot disagree about which hosts are yours.
+
+### Option A — the router hands out SwitchNet's DNS (best)
+
+Set your router's DHCP to give out SwitchNet's address as the DNS server. **The
+console then needs no configuration at all**, and neither does any other console
+you add later.
 
 ```sh
-make gen-hosts        # writes switch/hosts.txt
+make up          # brings up the dns service, among others
 ```
 
-Do not hand-edit the result. It is generated from `network.public_ip`,
-`network.natcheck_secondary_ip` and the host list in `internal/nintendo`, so the
-next regeneration silently loses any edit. If a host is missing, add it to
-`internal/nintendo/hosts.go` — then the nginx config and the certificate SANs
-pick it up too.
+The `dns` service uses host networking and binds port 53. It answers Nintendo's
+hostnames with your address and forwards everything else to the upstream
+resolvers in `dns.upstream`.
 
-## 2. Copy it to the SD card
+One thing to get right: **`dns.upstream` must not point back at SwitchNet**,
+directly or via a router that forwards here. That is a loop, and the symptom is
+every non-Nintendo lookup timing out while Nintendo's work fine. `make
+config-check` refuses that configuration.
 
-Copy `switch/hosts.txt` to **both** of these:
+### Option B — the console's own DNS setting
 
-```
-/atmosphere/hosts/sysmmc.txt
-/atmosphere/hosts/emummc.txt
-```
+If you would rather not change the router:
 
-Both, not one. With only one, it works from one boot configuration and not the
-other, which is a confusing half hour.
+**System Settings → Internet → Internet Settings →** your network **→ Change
+Settings → DNS Settings → Manual → Primary DNS =** SwitchNet's address.
 
-Then in `/atmosphere/config/system_settings.ini`:
+Leave Secondary DNS blank or set it to SwitchNet's address too. **Do not put a
+public resolver there as a fallback** — the console would use it whenever
+SwitchNet is briefly slow, and reach real Nintendo instead.
 
-```ini
-[atmosphere]
-enable_dns_mitm = u8!0x1
-add_defaults_to_dns_hosts = u8!0x0
-```
+### Option C — a resolver you already run
 
-`add_defaults_to_dns_hosts = 0` matters. With it set to 1, Atmosphère prepends
-its own default redirect list, and those entries can win over yours depending on
-ordering.
+If you have dnsmasq, Pi-hole, OpenWrt or Unbound doing DNS for your network,
+generate configuration for it instead of running another server:
 
-**How Atmosphère reads the file:** the **last matching line wins**. `*` matches
-zero or more characters and `%` expands to the environment (`lp1`). The generated
-file is ordered with that in mind — broad entries first, specific overrides last
-— which is why the nncs2 line comes after the nncs1 one.
-
-## 3. Certificate trust
-
-Install the Atmosphère `disable_ca_verification` exefs patch for your firmware
-version. This is the standard community mechanism and is what
-[Nextendo's Prelude](https://github.com/NextendoNetwork/Prelude-Nro) installs;
-patches live in:
-
-```
-/atmosphere/exefs_patches/disable_ca_verification/<build-id>.ips
+```sh
+make gen-dns     # writes deploy/switchnet.dnsmasq.conf and .unbound.conf
 ```
 
-Check that the build id in the filename matches your console's firmware. If it
-does not, the patch does not apply, and nothing tells you — see the warning at
-the top.
+Both are generated from the same host list. `deploy/switchnet.dnsmasq.conf` also
+works in Pi-hole (`/etc/dnsmasq.d/99-switchnet.conf`) and OpenWrt.
 
-`switch/ca/rootCA.pem` is generated by `make gen-certs`. It is **not** installed
-on a retail console; it is there for an emulator, a browser, or a development
-machine that does verify certificates.
+### What the DNS layer does, and one thing to know about it
 
-### Why not just use real certificates?
+- Nintendo's account, friends, stub and NAT-check hosts → your address.
+- `nncs2` → your **second** address, which must differ from the first. Pia probes
+  the two NAT-check hosts as separate servers; with one address the console
+  de-duplicates its second probe and NAT detection never completes.
+- Telemetry → `0.0.0.0`, so the console gives up immediately.
+- The system update hosts and the phase 3 eShop hosts → **forwarded to real
+  Nintendo**, deliberately. Redirecting a system update host makes `nim` write a
+  persistent flag that survives switching back.
+- **AAAA queries for redirected names get NODATA**, not a forwarded answer. This
+  matters more than it looks: if AAAA were forwarded while A was answered
+  locally, a console on a network with IPv6 would get Nintendo's real address and
+  talk straight past SwitchNet, intermittently. All three options above handle
+  this; a hand-written hosts file in a resolver often does not.
 
-You could, if the consoles resolved a domain you own — but they do not. The
-console asks for `dauth-lp1.ndas.srv.nintendo.net`, and no certificate authority
-will issue you a certificate for a Nintendo hostname. DNS-MITM plus a patched
-`ssl` sysmodule is the only route, which is also why this only works on a console
-you have deliberately modified.
+### Does the console use DNS-over-HTTPS?
 
-## 4. Set the console's clock
+Not for its system services, as far as anyone has observed — they use the
+configured resolver. If you find a service that bypasses it, that is worth
+capturing and reporting.
 
-System Settings → System → Date and Time → synchronise via the internet, or set
-it by hand.
+If you want to be certain, block outbound port 853 (DoT) and outbound 443 to
+known DoH providers at the router. Belt and braces; not normally needed.
 
-Every token in the chain carries an `exp`. A console whose clock is badly wrong
-has its device token rejected as expired, and the log line says the token expired
-rather than anything about the clock. This is worth checking early because it is
-invisible and cheap to fix.
+---
 
-## 5. Reboot and create an account
+## Part 2: certificate trust
 
-Reboot for DNS-MITM to take effect, then on the console:
+**This is the half that has to happen on the console, and there is no way
+around it.**
 
-1. **System Settings → Users → Add User**, or use the existing user.
-2. Link the user to an online account when the console offers. SwitchNet has no
-   Nintendo Account server, so the flow that matters is the device-account
-   registration that happens underneath — it needs no interaction.
-3. **Home Menu → the friends icon → your profile** should show a friend code
-   after you ask for one.
+The console asks for `dauth-lp1.ndas.srv.nintendo.net`. That certificate is signed
+by *Nintendo CA - G3*, a private CA. No public certificate authority will issue
+you a certificate for a Nintendo hostname, and you cannot obtain Nintendo's CA
+key. So the console has to be told to accept yours.
 
-In SwitchNet's log you should see, in this order:
+### Why not Prelude's approach
 
-```
-service=dauth  msg="device authenticated"      device=… serial=… system_version=…
-service=baas   msg="baas request"              path=/1.0.0/application/token status=200
-service=baas   msg="baas: registered user"     user=… device_account=…
-service=baas   msg="baas: login"               user=… device_account=… title=
-```
+Prelude installs `exefs_patches/disable_ca_verification`, an IPS patch against the
+`ssl` sysmodule. It works, and it has two properties worth avoiding:
 
-`baas: registered user` is the milestone. DNS, TLS, routing and the whole auth
-chain are all correct at that point.
+- **It is gated on the firmware build id.** A patch built for one firmware does
+  nothing on another — and it fails *silently*. Every HTTPS call fails at the
+  handshake and **nothing appears in any log**, because the connection never
+  becomes a request. That is the single most confusing failure in this whole
+  stack.
+- **It switches certificate verification off system-wide.** While it is installed,
+  anybody on your network can intercept the console's traffic — including its
+  traffic to real Nintendo, with your real account. Prelude's own source calls
+  leaving it in place while on Nintendo's servers an obvious ban vector, and
+  removes it when switching back.
 
-## 6. Add the second console as a friend
+### The approach to try first: extend the certificate store
 
-On console A: **friends icon → your profile → Friend Code → Regenerate** if you
-have not got one yet. Note the code.
-
-On console B: **friends icon → Add Friend → Search with Friend Code**, type
-console A's code, send the request.
-
-On console A: **friends icon → Friend Requests** and accept.
-
-The log to expect:
-
-```
-service=baas msg="baas: friend code generated"  user=… code=….
-service=baas msg="baas: friend request sent"    from=… to=… request=…
-service=baas msg="baas: friend request resolved" request=… state=ACCEPTED by=…
-```
-
-## 7. Check presence
-
-With both consoles on and friends, each should show the other as online in the
-friends applet. Launch a game on one and the other should show "Playing
-&lt;game&gt;" within a poll interval.
+The Switch's list of trusted CAs is not compiled into the `ssl` sysmodule. It is a
+**data file in a SystemData archive**:
 
 ```
-service=baas msg="baas: presence reported" user=… state=PLAYING title=0100c2500fc20000
+title    0100000000000800
+romfs    /ssl_TrustedCerts.bdf
 ```
 
-`title=` with the game's title id is the thing to look for. That field —
-`appInfo:appId` on the wire — is what makes the game name appear. If the state
-says PLAYING but the title is empty, the console reported a state without the app
-info and the applet has nothing to name.
+The `ssl` sysmodule's SSL context uses that store for every connection, and the
+file format is documented
+([switchbrew](https://switchbrew.org/wiki/SSL_services#CertStore)). Atmosphère's
+LayeredFS can replace a file in a data archive's RomFS. So adding an entry to that
+file adds a trusted CA.
+
+That is better in every way that matters:
+
+- **Keyed on title id, not firmware build id.** No per-firmware patch, and no
+  silent no-op after a system update.
+- **It adds trust rather than removing verification.** Everything else still
+  validates normally, so the console is not left interceptable when it talks to
+  real Nintendo. The ban vector goes away.
+- **It is data, not code.** It cannot crash the sysmodule.
+- **Reversible by deleting one file.**
+
+There is also no server-side pinning to worry about: `RegisterInternalPki` only
+selects the *client* certificate, and the default verify options are `PeerCa` and
+`HostName` — so a certificate that chains to a CA in the store and carries the
+right hostname in its SANs is accepted. `make gen-certs` already produces exactly
+that.
+
+#### First, find out whether Atmosphère will serve the file at all
+
+**This is the part that is not confirmed, and it is worth five minutes before you
+spend an hour.**
+
+Atmosphère's `fs.mitm` does not MITM every process. Reading its source
+(`ShouldMitmProgramId`), it MITMs applications plus `ns`, `settings` and
+`sdb`/`glue` — and **not** arbitrary system modules. So it depends on whether the
+`ssl` sysmodule reads the CertStore through `sdb`/`glue`, which is MITM'd
+explicitly "to support sd-romfs redirection of common system archives", or
+directly through `fs`, which is not.
+
+Custom system fonts work by exactly this mechanism, which is encouraging but not
+proof.
+
+The test:
+
+1. Dump the original `ssl_TrustedCerts.bdf` from title `0100000000000800`.
+   `nxdumptool` can dump system titles; you want the RomFS file, not the NCA.
+
+2. Check the tool understands your firmware's copy:
+
+   ```sh
+   python3 scripts/build-certstore.py --inspect ssl_TrustedCerts.bdf
+   ```
+
+   You should see `NintendoCAG3`, `NintendoClass2CAG3` and a few dozen public
+   roots, all `EnabledTrusted`.
+
+3. Put a **deliberately broken** copy in the LayeredFS path — truncate it to 8
+   bytes:
+
+   ```
+   /atmosphere/contents/0100000000000800/romfs/ssl_TrustedCerts.bdf
+   ```
+
+4. Reboot and open the eShop or the browser.
+
+   - **TLS breaks** → Atmosphère is serving your file to the `ssl` sysmodule. The
+     mechanism works. Go to the next step.
+   - **Nothing changes** → it is not being read. Skip to
+     [the fallback](#the-fallback-an-ssl-mitm-sysmodule).
+
+5. Either way, **delete the broken file** before continuing.
+
+#### Then install it for real
+
+```sh
+make gen-certs        # if you have not already: creates certs/rootCA.pem
+
+python3 scripts/build-certstore.py \
+    --input  ssl_TrustedCerts.bdf \
+    --ca     certs/rootCA.pem \
+    --output out/ssl_TrustedCerts.bdf
+```
+
+Copy `out/ssl_TrustedCerts.bdf` to
+`/atmosphere/contents/0100000000000800/romfs/ssl_TrustedCerts.bdf` and reboot.
+
+**Never build that file from scratch.** It has to be your console's own store with
+one entry appended. A file containing only SwitchNet's CA would break every other
+TLS connection on the console: the browser, the eShop, Nintendo Account. The tool
+refuses to run without `--input` for this reason, and verifies the round trip
+before writing.
+
+Two caveats, stated plainly:
+
+- Whether the certificate blobs are DER or PEM is inferred from your file rather
+  than documented. The tool detects it and matches; `--inspect` shows you which.
+- A system update replaces the real archive. The LayeredFS file survives, but if
+  Nintendo changes the format your override could stop parsing. Re-run
+  `--inspect` after a firmware update.
+
+### The fallback: an `ssl` MITM sysmodule
+
+If step 4 showed the override is not being read, the next-best option is a small
+Atmosphère MITM sysmodule that intercepts `ssl` and `ssl:s` and calls
+`ImportServerPki` with SwitchNet's CA on every context that gets created.
+
+This keeps the two properties that matter — **not gated on a firmware build id**,
+and **adds trust rather than disabling verification** — at the cost of being code
+rather than a data file. It is not written yet; it is the right thing to build if
+the CertStore route does not pan out, and it is tracked in
+[`../docs/ROADMAP.md`](../docs/ROADMAP.md).
+
+Note that Prelude shipped something like this (`network_mitm`) and later removed
+it because it stopped loading on current firmware. That is a reason to write it
+carefully, not a reason the approach is wrong.
+
+### Last resort: the exefs patch
+
+`disable_ca_verification`, as described above. It works today. If you use it,
+know what you are accepting, and **remove it before pointing the console back at
+Nintendo**.
+
+---
+
+## Verify, in order
+
+Each step rules out everything before it, which is what makes debugging on
+hardware tractable.
+
+**1. SwitchNet answers on its own machine.**
+
+```sh
+curl -fsS localhost:8081/keys | head -c 80
+```
+
+**2. DNS redirects.** From any machine on the console's network:
+
+```sh
+dig @<SWITCHNET_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <SWITCHNET_IP>
+dig @<SWITCHNET_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
+dig @<SWITCHNET_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
+dig @<SWITCHNET_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> a real Nintendo address
+dig @<SWITCHNET_IP> example.com                     A     +short   # -> a real address
+```
+
+The third and fourth are the ones people skip. An AAAA answer here, or a
+SwitchNet address for `atumn`, is a misconfiguration that will bite later.
+
+**3. The console is using that DNS.** Set `log.level: debug` and open anything
+online on the console. You should see `dns: redirected` lines with the console's
+address. **No lines at all means the console is not using your resolver** — the
+DHCP lease has not renewed (toggle the console's Wi-Fi off and on), or the manual
+DNS setting did not take.
+
+**4. TLS answers on 443 with your certificate.**
+
+```sh
+openssl s_client -connect <SWITCHNET_IP>:443 \
+    -servername dauth-lp1.ndas.srv.nintendo.net </dev/null 2>/dev/null \
+  | openssl x509 -noout -issuer -subject
+```
+
+Issuer should be `SwitchNet Local CA`.
+
+**5. The console gets through the auth chain.** Boot it and watch the log:
+
+```
+service=dauth  msg="device authenticated"   device=… serial=… system_version=…
+service=baas   msg="baas request"           path=/1.0.0/application/token status=200
+service=baas   msg="baas: registered user"  user=… device_account=…
+```
+
+`baas: registered user` is the milestone: DNS, TLS, routing and the whole auth
+chain are all correct.
+
+**6. Two consoles, a friend code, a request, an accept.** Both should show the
+other online.
+
+**7. Launch a game on one.** The other should show "Playing &lt;game&gt;", and the
+log should show `presence reported … state=PLAYING title=…`.
+
+**8. Turn registration off.** Set `baas.allow_registration: false` once every
+console is registered.
 
 ---
 
@@ -169,31 +322,41 @@ info and the applet has nothing to name.
 
 | Symptom | Almost certainly |
 | --- | --- |
-| Nothing at all in SwitchNet's log; the console reports a network error | Traffic is not arriving. Either DNS-MITM is not on (step 2), or the cert-trust patch does not match your firmware (step 3). Both are silent. |
-| `device authenticated` but nothing after it | The console reached dauth but not BAAS. Check that the `*.baas.nintendo.com` lines are in the hosts file and that nginx has a server block for them. |
-| `invalid_device_account` in the log | The console is presenting a device account this server never issued — it was pointed at a different server before, or the database was reset while the console kept its cached credential. Delete the console user's online binding and let it register again. |
-| `token is invalid` right after a device token was issued | dauth and baas are reading different key directories. They must share `keys.dir`; see the note in `config.example.yaml`. |
-| Every token rejected as expired | The console's clock (step 4). |
-| Friends show but everybody is offline | Presence. Check `baas: presence reported` appears at all. If it does not, the friends sysmodule is not reaching `PATCH /1.0.0/users/<id>/device_accounts/<id>`. |
-| A friend shows online but never "Playing X" | `appInfo:appId` is not arriving. Turn on `log.level: debug` and look at the presence patch the console sends. |
-| Everybody sees the same friend code | Two consoles resolved to one account. SwitchNet refuses to do this by construction — a device account resolves to exactly one user or the request fails — so check whether both consoles were restored from the same SD card image and are presenting the same cached device account. |
-| The friends applet works, a game says it cannot connect | Expected in phase 1. Game servers are phase 2 — see [`../docs/ROADMAP.md`](../docs/ROADMAP.md). |
-| The eShop no longer opens | Phase 1 does not redirect any eShop host, so this should not happen. If it does, check whether something added an `eshop`, `shop` or `atum` line to the hosts file: they are phase 3 and must stay passthrough until there is a server behind them. |
-| Matchmaking finds a match that never starts | NAT check. `nncs1` and `nncs2` must resolve to two different addresses; see `network.natcheck_secondary_ip`. |
+| No `dns:` lines at all in the log | The console is not using your resolver. Renew its DHCP lease, or check the manual DNS setting. |
+| `dns: redirected` lines, but nothing from dauth or baas | DNS is working and TLS is not. Certificate trust (part 2) — and if you are using the exefs patch, check it matches your firmware. |
+| Nothing anywhere, and the console reports a network error | Same as above: cert trust failing produces total silence, because the connection never becomes a request. |
+| Everything works, then stops after a system update | An exefs patch that no longer matches the firmware build id. This is the failure the CertStore approach avoids. |
+| The eShop or browser stopped working | A `ssl_TrustedCerts.bdf` override that replaced the store instead of extending it. Delete it and rebuild with `--input`. |
+| `invalid_device_account` in the log | The console is presenting a device account this server never issued — it was pointed at a different server before, or the database was reset while the console kept its cached credential. |
+| `token is invalid` right after a device token was issued | dauth and baas are reading different key directories. They must share `keys.dir`. |
+| Every token rejected as expired | The console's clock. System Settings → System → Date and Time → synchronise via the internet. |
+| Friends show, but everybody is offline | Check whether `baas: presence reported` appears at all. |
+| A friend shows online but never "Playing X" | `appInfo:appId` is not arriving. `log.level: debug` and look at the presence patch. |
+| Matchmaking finds a match that never starts | NAT check. `nncs1` and `nncs2` must resolve to two different addresses. |
+| A game says it cannot connect | Expected in phase 1; game servers are phase 2. |
+| Non-Nintendo sites stop resolving on the console | `dns.upstream` is looping back to SwitchNet, or the upstreams are unreachable. |
 
-## Going back to Nintendo's servers
+---
 
-Delete `/atmosphere/hosts/sysmmc.txt` and `/atmosphere/hosts/emummc.txt`, set
-`enable_dns_mitm = u8!0x0`, and **remove the `disable_ca_verification` patch**.
+## Going back to Nintendo
 
-That last step is not optional. Leaving it in place means the console talks to
-real Nintendo with certificate validation switched off system-wide, so anybody on
-the network can intercept it. It is also a fairly obvious thing for Nintendo to
-notice.
+**Redirection**: undo whichever option you used — remove the DHCP DNS override,
+or set the console's DNS back to Automatic. That is it, and it takes effect on the
+next lease.
+
+**Certificate trust**: this is the part that matters.
+
+- CertStore override: delete
+  `/atmosphere/contents/0100000000000800/romfs/ssl_TrustedCerts.bdf`. You can
+  leave it in place with less risk than the alternatives — it only adds a CA whose
+  key you hold — but deleting it is one file and restores the console exactly.
+- exefs patch: **delete it.** Leaving `disable_ca_verification` installed means
+  the console talks to real Nintendo with certificate validation off
+  system-wide, so anybody on the network can intercept it.
 
 ## Files here
 
-| File | What it is |
+| File | What |
 | --- | --- |
-| `hosts.txt` | Generated by `make gen-hosts`. Gitignored: it contains your addresses. |
-| `ca/rootCA.pem` | Generated by `make gen-certs`. For emulators and tooling, not for a retail console. Gitignored. |
+| `hosts.txt` | Generated by `make gen-hosts`. Only needed if you cannot control DNS on the network. Gitignored: it contains your addresses. |
+| `ca/rootCA.pem` | Generated by `make gen-certs`. Gitignored. |

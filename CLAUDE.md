@@ -153,15 +153,24 @@ when the update check fails, and it survives switching back to Nintendo's
 servers. `internal/nintendo/hosts.go` marks them `ServicePassthrough` and there is
 a test asserting it.
 
-**A retail Switch cannot be told to trust a CA.** Cert trust is an Atmosphère
-`disable_ca_verification` exefs patch, gated by firmware build id. Mismatched, it
-fails silently — nothing in any log, because the connection never becomes a
-request. If an operator reports "nothing in the log", this is the first thing to
-check.
+**Redirection and certificate trust are separate problems.** Redirection is DNS
+and happens off the console — `internal/dns`, or the generated dnsmasq/unbound
+configuration. Certificate trust has to happen on the console, because the cert
+for `dauth-lp1.ndas.srv.nintendo.net` is signed by a private Nintendo CA. Do not
+conflate them: a report of "nothing in the log at all" is almost always trust,
+because the connection never becomes a request, while "dns: redirected but nothing
+from dauth" is trust failing after DNS worked.
+
+**Do not forward AAAA for a redirected name.** `internal/dns` answers NODATA. If
+it forwarded, a console on a network with IPv6 would resolve Nintendo's real
+address and bypass SwitchNet, intermittently — close to undiagnosable from the
+console side. Same reason the generated unbound config uses `local-zone ... static`
+rather than `transparent`.
 
 **Hostnames live in exactly one place.** `internal/nintendo/hosts.go` generates
-the console hosts file, the nginx map and the certificate SANs. Adding a host
-anywhere else produces a failure with no useful error.
+the DNS answers, the dnsmasq and unbound configuration, the nginx map, the
+certificate SANs and the hosts file. Adding a host anywhere else produces a
+failure with no useful error.
 
 ## The guesses, and how to treat them
 
@@ -254,6 +263,10 @@ git ls-files | grep -E '\.(pem|key|crt)$|^certs/|config/config\.yaml'   # must b
 ## Where to ask the operator rather than guess
 
 - anything needing a packet capture (they have a console that can reach Nintendo);
+- whether the CertStore LayeredFS override actually reaches the `ssl` sysmodule —
+  there is a five-minute test in `switch/README.md` and only the operator can run
+  it. `fs.mitm` does not MITM arbitrary system modules, so this is genuinely
+  open;
 - anything needing a game dump, a title key, or `prod.keys`;
 - whether to prioritise fidelity to Nintendo's shapes over a simpler design, when
   the two conflict;

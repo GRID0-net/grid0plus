@@ -107,6 +107,7 @@ dauth request — and because it keeps their dependencies honest.
 
 | Service | Port | Reimplements | Needs a database |
 | --- | --- | --- | --- |
+| `dns` | 53 UDP+TCP | not a Nintendo service: it is how a console finds the others | no |
 | `dauth` | 8081 | `dauth-lp1.ndas.srv.nintendo.net`, `dcert-…` | no |
 | `aauth` | 8082 | `aauth-lp1.ndas.srv.nintendo.net`, `acert-…` | no |
 | `baas` | 8083 | `*.baas.nintendo.com` | yes |
@@ -119,7 +120,39 @@ still lets a console get far enough to see a useful error rather than a timeout.
 
 Everything HTTP sits behind one nginx TLS edge that routes by SNI.
 `switchnetctl nginx` generates that configuration from the same host list that
-generates the console's hosts file, so the two cannot disagree.
+drives the DNS server, so the two cannot disagree.
+
+## Redirection and trust are separate problems
+
+Worth stating early, because most write-ups on this subject conflate them and
+then solve both on the console.
+
+**Redirection** — making Nintendo's hostnames resolve to the operator's server —
+does not need the console at all. A Switch uses whatever DNS its network gives it,
+in stock firmware, so `internal/dns` replaces the Atmosphère hosts file entirely.
+Point the router's DHCP at it and the console needs no configuration whatsoever.
+
+**Certificate trust** does need the console, and there is no way around it. The
+console asks for `dauth-lp1.ndas.srv.nintendo.net`; that certificate is signed by
+*Nintendo CA - G3*, a private CA, and no public authority will issue a certificate
+for a Nintendo hostname. So the console has to be told to accept the operator's.
+
+The options differ in robustness, not in whether they touch the console.
+Extending the console's own CA store — which is a LayeredFS data file, keyed on
+title id — is better than an exefs patch gated on a firmware build id, because the
+latter fails silently when it does not match and switches verification off
+system-wide. [`../switch/README.md`](../switch/README.md#part-2-certificate-trust)
+has the detail, including which part of the better route is not yet confirmed.
+
+### The AAAA trap
+
+`internal/dns` answers AAAA for a redirected name with NODATA rather than
+forwarding it. If it forwarded, a console on a network with IPv6 would resolve
+Nintendo's real address and bypass SwitchNet — intermittently, depending on the
+network, which is close to undiagnosable from the console side. The generated
+`dnsmasq` and `unbound` configurations are written to behave the same way; for
+unbound that means `local-zone ... static`, because `transparent` and `redirect`
+both leak AAAA upstream.
 
 ## Identity, and the bug this design exists to avoid
 

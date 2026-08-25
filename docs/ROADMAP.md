@@ -31,11 +31,30 @@ the applet comes up empty with nothing in the log.
 [`CAPTURES/README.md`](CAPTURES/README.md) lists all ten guesses in priority
 order.
 
-**Nice-to-have, not required:** a homebrew `.nro` that toggles between SwitchNet
-and Nintendo, in the style of
-[Prelude](https://github.com/NextendoNetwork/Prelude-Nro). Hand-editing the hosts
-file works; the `.nro` mainly saves the operator from forgetting to remove the
-cert-trust patch when switching back.
+**Console-side work still open.** Redirection is solved off the console with DNS
+(`internal/dns`, or the generated dnsmasq/unbound configuration), so nothing goes
+on the SD card for that half. Certificate trust does need the console, and the
+preferred route — extending the console's own CA store via a LayeredFS override of
+title `0100000000000800` — has one unverified step: whether Atmosphère's `fs.mitm`
+serves that file to the `ssl` sysmodule at all. `ShouldMitmProgramId` MITMs
+applications plus `ns`, `settings` and `sdb`/`glue`, not arbitrary system modules,
+so it depends on how `ssl` reads the archive.
+[`../switch/README.md`](../switch/README.md#first-find-out-whether-atmosphère-will-serve-the-file-at-all)
+has a five-minute test that settles it.
+
+**If that test says no**, the work item is a small Atmosphère MITM sysmodule that
+intercepts `ssl`/`ssl:s` and calls `ImportServerPki` with SwitchNet's CA on each
+context created. That keeps both properties that matter — not gated on a firmware
+build id, and adding trust rather than disabling verification — at the cost of
+being code rather than a data file. Prelude shipped something similar
+(`network_mitm`) and removed it after it stopped loading on current firmware,
+which is a reason to write it carefully rather than a reason the approach is wrong.
+
+**Explicitly not wanted:** a Prelude-style homebrew that rewrites the hosts file
+and installs firmware-gated exefs patches. It is fragile in a specific way — the
+patch silently does nothing when the build id does not match, and it turns off
+certificate verification system-wide — and the DNS route makes most of it
+unnecessary.
 
 ---
 
