@@ -28,6 +28,13 @@ switchnet-*
 /data/
 *.log
 
+# Operator-specific runtime config.
+/.env
+
+# Raw capture output from scripts/capture-baas.py. Contains friend nicknames
+# and user IDs; commit only the per-endpoint docs under docs/CAPTURES/*.md.
+/docs/CAPTURES/raw/
+
 # Python (scripts/capture-baas.py)
 __pycache__/
 *.pyc
