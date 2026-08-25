@@ -1,15 +1,17 @@
 // Command switchnetctl generates the Switch-side and edge configuration from
 // config.yaml and the host list in internal/nintendo.
 //
-// Three artefacts have to agree exactly or the console fails in ways that give
-// no useful error: the DNS-MITM hosts file, the nginx routing map, and the TLS
-// certificate's subject alternative names. Generating all three from one list is
-// what stops them drifting.
+// Several artefacts have to agree exactly or the console fails in ways that give
+// no useful error: the DNS redirects (however they are served), the nginx routing
+// map, and the TLS certificate's subject alternative names. Generating all of
+// them from one list is what stops them drifting.
 //
-//	switchnetctl hosts   > switch/hosts.txt
-//	switchnetctl nginx   > deploy/nginx.generated.conf
-//	switchnetctl sans            # one hostname per line, for gen-certs.sh
-//	switchnetctl check           # validate config without writing anything
+//	switchnetctl dnsmasq  > deploy/switchnet.dnsmasq.conf
+//	switchnetctl unbound  > deploy/switchnet.unbound.conf
+//	switchnetctl hosts    > switch/hosts.txt
+//	switchnetctl nginx    > deploy/nginx.generated.conf
+//	switchnetctl sans             # one hostname per line, for gen-certs.sh
+//	switchnetctl check            # validate config without writing anything
 package main
 
 import (
@@ -41,13 +43,16 @@ func main() {
 
 	switch flag.Arg(0) {
 	case "hosts":
-		if cfg.Network.PublicIP == "" {
-			fmt.Fprintln(os.Stderr,
-				"switchnetctl: network.public_ip is not set, so there is no address to "+
-					"point the consoles at. Set it in config.yaml or as SWITCHNET_PUBLIC_IP.")
-			os.Exit(1)
-		}
+		requirePublicIP(cfg)
 		fmt.Print(hostsFile(cfg))
+
+	case "dnsmasq":
+		requirePublicIP(cfg)
+		fmt.Print(dnsmasqConf(cfg))
+
+	case "unbound":
+		requirePublicIP(cfg)
+		fmt.Print(unboundConf(cfg))
 
 	case "nginx":
 		fmt.Print(nginxConf(cfg))
@@ -74,10 +79,17 @@ Usage:
   switchnetctl [-config path] <command>
 
 Commands:
-  hosts   Atmosphère DNS-MITM hosts file, for /atmosphere/hosts/{sysmmc,emummc}.txt
-  nginx   nginx server blocks routing each Nintendo hostname to its backend
-  sans    the hostnames the edge certificate needs, one per line
-  check   validate the configuration and report anything risky
+  hosts     Atmosphère DNS-MITM hosts file, for /atmosphere/hosts/{sysmmc,emummc}.txt
+            (the fallback: prefer network-side DNS, which touches no console)
+  dnsmasq   dnsmasq / Pi-hole / OpenWrt configuration
+  unbound   unbound configuration
+  nginx     nginx server blocks routing each Nintendo hostname to its backend
+  sans      the hostnames the edge certificate needs, one per line
+  check     validate the configuration and report anything risky
+
+Redirection is best done off the console: run cmd/dns, or add the generated
+dnsmasq or unbound configuration to a resolver you already have. The hosts file
+is only needed when you cannot control DNS on the network.
 
 `)
 	flag.PrintDefaults()
