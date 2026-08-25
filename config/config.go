@@ -1,0 +1,462 @@
+// Package config loads and validates SwitchNet's configuration.
+//
+// Configuration comes from a single YAML file, with environment variable
+// overrides for everything an operator is likely to want to change per
+// deployment (and for everything secret). Nothing is hardcoded: the operator's
+// own domain, IP addresses, ports, database URL and key paths all live here.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the whole SwitchNet configuration.
+type Config struct {
+	// Network describes where the operator's servers live, from the console's
+	// point of view.
+	Network Network `yaml:"network"`
+
+	Database Database `yaml:"database"`
+	Redis    Redis    `yaml:"redis"`
+
+	Keys Keys `yaml:"keys"`
+
+	DAuth    DAuth    `yaml:"dauth"`
+	AAuth    AAuth    `yaml:"aauth"`
+	BAAS     BAAS     `yaml:"baas"`
+	Stubs    Stubs    `yaml:"stubs"`
+	NATCheck NATCheck `yaml:"natcheck"`
+
+	Log Log `yaml:"log"`
+}
+
+// Network is the operator's own addressing.
+type Network struct {
+	// PublicIP is the address the consoles should be pointed at. It goes into
+	// the generated hosts file and into the NAT-check responses.
+	PublicIP string `yaml:"public_ip"`
+
+	// NATCheckSecondaryIP is a SECOND address, different from PublicIP, that
+	// answers the nncs2 NAT-check host.
+	//
+	// Pia sends its second NAT probe only if nncs1 and nncs2 resolve to
+	// different addresses. If they are the same it de-duplicates the probe,
+	// never completes NAT detection, and peer-to-peer matchmaking fails. If
+	// you genuinely only have one address, leave this empty and accept that
+	// the console will report a stricter NAT type than it really has.
+	NATCheckSecondaryIP string `yaml:"natcheck_secondary_ip"`
+
+	// EdgeTLSPort is the port the nginx TLS edge listens on. The console always
+	// connects to 443, so this only differs from 443 if something else in front
+	// of nginx is doing the port mapping.
+	EdgeTLSPort int `yaml:"edge_tls_port"`
+}
+
+// Database is the PostgreSQL connection.
+type Database struct {
+	// URL is a libpq connection string or postgres:// URL.
+	URL string `yaml:"url"`
+	// MaxConns caps the pool. Zero means pgx's default.
+	MaxConns int32 `yaml:"max_conns"`
+	// AutoMigrate runs pending migrations on startup.
+	AutoMigrate bool `yaml:"auto_migrate"`
+}
+
+// Redis is the optional Redis connection used for the presence bus.
+type Redis struct {
+	// URL is a redis:// URL. Leave empty to use a single-process in-memory bus,
+	// which is correct only if exactly one process publishes presence.
+	URL string `yaml:"url"`
+	// Channel is the pub/sub channel presence events are published on.
+	Channel string `yaml:"channel"`
+}
+
+// Keys points at the signing keys. Generate them with scripts/gen-certs.sh;
+// they are created on first use if missing and generate_if_missing is set.
+type Keys struct {
+	// Dir holds the PEM-encoded RSA private keys, one per token issuer.
+	Dir string `yaml:"dir"`
+	// GenerateIfMissing creates a 2048-bit RSA key when one is not on disk.
+	// Convenient for a first run; set it to false once the keys are backed up,
+	// so that a lost volume fails loudly instead of silently invalidating every
+	// token the consoles are holding.
+	GenerateIfMissing bool `yaml:"generate_if_missing"`
+
+	// DeviceIDSecret salts the derivation of device ids from a console's TLS
+	// client certificate. Any long random string; it only has to stay stable.
+	DeviceIDSecret string `yaml:"device_id_secret"`
+}
+
+// DAuth configures the device authentication server.
+type DAuth struct {
+	Listen string `yaml:"listen"`
+	// Issuer is the 'iss' claim of device tokens. Keep Nintendo's value: the
+	// console does not check it, but tools and captures compare against it.
+	Issuer string `yaml:"issuer"`
+	// JWKSURL is the 'jku' header of device tokens. It must be a URL the
+	// console can reach, which means a host in the redirect list.
+	JWKSURL string `yaml:"jwks_url"`
+	// TokenTTL is 'expires_in', in seconds.
+	TokenTTL int `yaml:"token_ttl"`
+	// ChallengeTTL is how long a challenge stays usable, in seconds.
+	ChallengeTTL int `yaml:"challenge_ttl"`
+	// ClientCertHeader is the request header nginx puts the console's TLS
+	// client certificate fingerprint in. When present, each console gets its
+	// own stable device id. When absent, every console shares one, which is
+	// harmless because accounts are keyed on the BAAS device account, not on
+	// the device id — but it does make the dashboard's device list useless.
+	ClientCertHeader string `yaml:"client_cert_header"`
+}
+
+// AAuth configures the application authentication server.
+type AAuth struct {
+	Listen   string `yaml:"listen"`
+	Issuer   string `yaml:"issuer"`
+	JWKSURL  string `yaml:"jwks_url"`
+	TokenTTL int    `yaml:"token_ttl"`
+
+	// OnlinePlayPolicy is the default policy reported for every title:
+	// "FREE" or "MEMBERSHIP_REQUIRED".
+	//
+	// "FREE" is the right default for a private network: the console never asks
+	// for a Nintendo Switch Online membership. Some titles behave differently
+	// when the policy does not match what they saw on retail servers, so
+	// per-title overrides exist below.
+	OnlinePlayPolicy string `yaml:"online_play_policy"`
+	// PolicyHandler is "SYSTEM" or "GAME_SERVER", and is only sent when the
+	// policy is MEMBERSHIP_REQUIRED.
+	PolicyHandler string `yaml:"policy_handler"`
+
+	// TitleOverrides maps a 16-hex-digit title id to a policy override.
+	TitleOverrides map[string]TitlePolicy `yaml:"title_overrides"`
+}
+
+// TitlePolicy overrides the online play policy for one title.
+type TitlePolicy struct {
+	OnlinePlayPolicy string `yaml:"online_play_policy"`
+	PolicyHandler    string `yaml:"policy_handler"`
+}
+
+// BAAS configures the account and friends server.
+type BAAS struct {
+	Listen string `yaml:"listen"`
+	// Issuer is the 'iss' claim of access and id tokens. Nintendo uses the
+	// https:// URL of the BAAS host.
+	Issuer string `yaml:"issuer"`
+	// Audience is the 'aud' claim. Nintendo uses a fixed opaque id.
+	Audience string `yaml:"audience"`
+	// AccessTokenJWKSURL is the 'jku' of access and user tokens
+	// (/1.0.0/internal_certificates).
+	AccessTokenJWKSURL string `yaml:"access_token_jwks_url"`
+	// IDTokenJWKSURL is the 'jku' of id tokens (/1.0.0/certificates).
+	IDTokenJWKSURL string `yaml:"id_token_jwks_url"`
+
+	// AccessTokenTTL is 'expiresIn' for access tokens, in seconds.
+	AccessTokenTTL int `yaml:"access_token_ttl"`
+	// IDTokenTTL is the lifetime of id tokens handed to game servers, in seconds.
+	IDTokenTTL int `yaml:"id_token_ttl"`
+
+	// FriendCodeCooldown is how long a user must wait before regenerating
+	// their friend code, in seconds. Nintendo uses 24 hours.
+	FriendCodeCooldown int `yaml:"friend_code_cooldown"`
+
+	// PresenceTTL is how long an explicitly reported presence stays valid
+	// without a refresh, in seconds. After this the user reads as OFFLINE.
+	PresenceTTL int `yaml:"presence_ttl"`
+	// ConsolePresenceTTL is how long a console counts as ONLINE after its last
+	// authenticated request, in seconds.
+	//
+	// This exists because a console sitting in the Home Menu does not report
+	// "playing" anything, and without a liveness path every friend reads as
+	// permanently offline — the exact failure documented for this stack.
+	ConsolePresenceTTL int `yaml:"console_presence_ttl"`
+
+	// ImageDir is where uploaded profile pictures are written.
+	ImageDir string `yaml:"image_dir"`
+	// ImageBaseURL is the public URL prefix uploaded images are served from.
+	// It has to be a host in the redirect list, or the console cannot fetch it.
+	ImageBaseURL string `yaml:"image_base_url"`
+	// MaxImageBytes caps a single profile picture upload.
+	MaxImageBytes int `yaml:"max_image_bytes"`
+
+	// AllowRegistration lets an unknown console create an account. Turn it off
+	// once every console in the group is registered, so a stranger who finds
+	// the server cannot add themselves.
+	AllowRegistration bool `yaml:"allow_registration"`
+}
+
+// Stubs configures the catch-all server.
+type Stubs struct {
+	Listen string `yaml:"listen"`
+	// LogBodies logs request bodies. Useful exactly once, while working out
+	// what an unimplemented endpoint is being asked for.
+	LogBodies bool `yaml:"log_bodies"`
+}
+
+// NATCheck configures the UDP NAT-check responder.
+type NATCheck struct {
+	// PrimaryListen is the main socket. Nintendo uses UDP 10025.
+	PrimaryListen string `yaml:"primary_listen"`
+	// SecondaryListen is the "different port, same address" socket, used for
+	// NAT filtering detection. Nintendo uses UDP 10125.
+	SecondaryListen string `yaml:"secondary_listen"`
+	// AlternateListen is a socket on a DIFFERENT ADDRESS, used for message
+	// type 2. Leave empty if you only have one address.
+	AlternateListen string `yaml:"alternate_listen"`
+}
+
+// Log configures logging.
+type Log struct {
+	// Level is one of debug, info, warn, error.
+	Level string `yaml:"level"`
+	// Format is "text" or "json".
+	Format string `yaml:"format"`
+}
+
+// Default returns the configuration SwitchNet uses when nothing is set. The
+// Nintendo-facing values (issuers, audiences, JWKS URLs) match what a real
+// console sees, because captures are compared against them.
+func Default() Config {
+	return Config{
+		Network: Network{
+			EdgeTLSPort: 443,
+		},
+		Database: Database{
+			URL:         "postgres://switchnet:switchnet@localhost:5432/switchnet?sslmode=disable",
+			MaxConns:    10,
+			AutoMigrate: true,
+		},
+		Redis: Redis{
+			Channel: "switchnet:presence",
+		},
+		Keys: Keys{
+			Dir:               "certs/keys",
+			GenerateIfMissing: true,
+		},
+		DAuth: DAuth{
+			Listen:           ":8081",
+			Issuer:           "dauth-lp1.ndas.srv.nintendo.net",
+			JWKSURL:          "https://dcert-lp1.ndas.srv.nintendo.net/keys",
+			TokenTTL:         86400,
+			ChallengeTTL:     60,
+			ClientCertHeader: "X-SwitchNet-Client-Cert",
+		},
+		AAuth: AAuth{
+			Listen:           ":8082",
+			Issuer:           "aauth-lp1.ndas.srv.nintendo.net",
+			JWKSURL:          "https://acert-lp1.ndas.srv.nintendo.net/keys",
+			TokenTTL:         86400,
+			OnlinePlayPolicy: "FREE",
+			PolicyHandler:    "GAME_SERVER",
+		},
+		BAAS: BAAS{
+			Listen:             ":8083",
+			Issuer:             "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
+			Audience:           "ed9e2f05d286f7b8",
+			AccessTokenJWKSURL: "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/internal_certificates",
+			IDTokenJWKSURL:     "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/certificates",
+			AccessTokenTTL:     10800,
+			IDTokenTTL:         10800,
+			FriendCodeCooldown: 86400,
+			PresenceTTL:        300,
+			ConsolePresenceTTL: 300,
+			ImageDir:           "data/images",
+			ImageBaseURL:       "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/images",
+			MaxImageBytes:      1 << 20,
+			AllowRegistration:  true,
+		},
+		Stubs: Stubs{
+			Listen: ":8084",
+		},
+		NATCheck: NATCheck{
+			PrimaryListen:   ":10025",
+			SecondaryListen: ":10125",
+		},
+		Log: Log{
+			Level:  "info",
+			Format: "text",
+		},
+	}
+}
+
+// Load reads the YAML file at path, applies environment overrides, and
+// validates the result. An empty path skips the file and uses defaults plus
+// environment overrides, which is how the containers in docker-compose run.
+func Load(path string) (Config, error) {
+	cfg := Default()
+
+	if path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return cfg, fmt.Errorf("read config %s: %w", path, err)
+		}
+		dec := yaml.NewDecoder(strings.NewReader(string(data)))
+		dec.KnownFields(true)
+		if err := dec.Decode(&cfg); err != nil {
+			return cfg, fmt.Errorf("parse config %s: %w", path, err)
+		}
+	}
+
+	applyEnv(&cfg)
+
+	if err := cfg.Validate(); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+// applyEnv overrides configuration from the environment. Every override is
+// named SWITCHNET_* so it cannot collide with anything else in a container.
+func applyEnv(c *Config) {
+	envStr("SWITCHNET_PUBLIC_IP", &c.Network.PublicIP)
+	envStr("SWITCHNET_NATCHECK_SECONDARY_IP", &c.Network.NATCheckSecondaryIP)
+	envInt("SWITCHNET_EDGE_TLS_PORT", &c.Network.EdgeTLSPort)
+
+	envStr("SWITCHNET_DATABASE_URL", &c.Database.URL)
+	envBool("SWITCHNET_DATABASE_AUTO_MIGRATE", &c.Database.AutoMigrate)
+
+	envStr("SWITCHNET_REDIS_URL", &c.Redis.URL)
+	envStr("SWITCHNET_REDIS_CHANNEL", &c.Redis.Channel)
+
+	envStr("SWITCHNET_KEYS_DIR", &c.Keys.Dir)
+	envBool("SWITCHNET_KEYS_GENERATE_IF_MISSING", &c.Keys.GenerateIfMissing)
+	envStr("SWITCHNET_DEVICE_ID_SECRET", &c.Keys.DeviceIDSecret)
+
+	envStr("SWITCHNET_DAUTH_LISTEN", &c.DAuth.Listen)
+	envStr("SWITCHNET_DAUTH_ISSUER", &c.DAuth.Issuer)
+	envStr("SWITCHNET_DAUTH_JWKS_URL", &c.DAuth.JWKSURL)
+
+	envStr("SWITCHNET_AAUTH_LISTEN", &c.AAuth.Listen)
+	envStr("SWITCHNET_AAUTH_ISSUER", &c.AAuth.Issuer)
+	envStr("SWITCHNET_AAUTH_JWKS_URL", &c.AAuth.JWKSURL)
+	envStr("SWITCHNET_AAUTH_ONLINE_PLAY_POLICY", &c.AAuth.OnlinePlayPolicy)
+	envStr("SWITCHNET_AAUTH_POLICY_HANDLER", &c.AAuth.PolicyHandler)
+
+	envStr("SWITCHNET_BAAS_LISTEN", &c.BAAS.Listen)
+	envStr("SWITCHNET_BAAS_ISSUER", &c.BAAS.Issuer)
+	envStr("SWITCHNET_BAAS_AUDIENCE", &c.BAAS.Audience)
+	envStr("SWITCHNET_BAAS_IMAGE_DIR", &c.BAAS.ImageDir)
+	envStr("SWITCHNET_BAAS_IMAGE_BASE_URL", &c.BAAS.ImageBaseURL)
+	envInt("SWITCHNET_BAAS_PRESENCE_TTL", &c.BAAS.PresenceTTL)
+	envInt("SWITCHNET_BAAS_CONSOLE_PRESENCE_TTL", &c.BAAS.ConsolePresenceTTL)
+	envInt("SWITCHNET_BAAS_FRIEND_CODE_COOLDOWN", &c.BAAS.FriendCodeCooldown)
+	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
+
+	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
+	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
+
+	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
+	envStr("SWITCHNET_NATCHECK_SECONDARY_LISTEN", &c.NATCheck.SecondaryListen)
+	envStr("SWITCHNET_NATCHECK_ALTERNATE_LISTEN", &c.NATCheck.AlternateListen)
+
+	envStr("SWITCHNET_LOG_LEVEL", &c.Log.Level)
+	envStr("SWITCHNET_LOG_FORMAT", &c.Log.Format)
+}
+
+// Validate checks the configuration is usable. It rejects the mistakes that
+// would otherwise fail much later, on a console, with an unhelpful error.
+func (c Config) Validate() error {
+	var errs []error
+
+	if c.Network.PublicIP != "" && net.ParseIP(c.Network.PublicIP) == nil {
+		errs = append(errs, fmt.Errorf("network.public_ip: %q is not an IP address", c.Network.PublicIP))
+	}
+	if ip := c.Network.NATCheckSecondaryIP; ip != "" {
+		if net.ParseIP(ip) == nil {
+			errs = append(errs, fmt.Errorf("network.natcheck_secondary_ip: %q is not an IP address", ip))
+		} else if ip == c.Network.PublicIP {
+			errs = append(errs, errors.New(
+				"network.natcheck_secondary_ip is the same as network.public_ip: "+
+					"Pia will de-duplicate the second NAT probe and NAT detection will never "+
+					"complete. Use a second address, or leave it empty."))
+		}
+	}
+	if c.Database.URL == "" {
+		errs = append(errs, errors.New("database.url is required"))
+	}
+	if c.Keys.Dir == "" {
+		errs = append(errs, errors.New("keys.dir is required"))
+	}
+	if c.BAAS.PresenceTTL <= 0 {
+		errs = append(errs, errors.New("baas.presence_ttl must be positive"))
+	}
+	if c.BAAS.ConsolePresenceTTL <= 0 {
+		errs = append(errs, errors.New("baas.console_presence_ttl must be positive"))
+	}
+	if c.BAAS.AccessTokenTTL <= 0 {
+		errs = append(errs, errors.New("baas.access_token_ttl must be positive"))
+	}
+	switch c.AAuth.OnlinePlayPolicy {
+	case "FREE", "MEMBERSHIP_REQUIRED":
+	default:
+		errs = append(errs, fmt.Errorf(
+			"aauth.online_play_policy: %q must be FREE or MEMBERSHIP_REQUIRED", c.AAuth.OnlinePlayPolicy))
+	}
+	switch c.AAuth.PolicyHandler {
+	case "SYSTEM", "GAME_SERVER":
+	default:
+		errs = append(errs, fmt.Errorf(
+			"aauth.policy_handler: %q must be SYSTEM or GAME_SERVER", c.AAuth.PolicyHandler))
+	}
+	for id, o := range c.AAuth.TitleOverrides {
+		if len(id) != 16 {
+			errs = append(errs, fmt.Errorf(
+				"aauth.title_overrides: %q is not a 16-hex-digit title id", id))
+		}
+		switch o.OnlinePlayPolicy {
+		case "", "FREE", "MEMBERSHIP_REQUIRED":
+		default:
+			errs = append(errs, fmt.Errorf(
+				"aauth.title_overrides[%s].online_play_policy: %q is invalid", id, o.OnlinePlayPolicy))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// PolicyFor returns the online play policy and handler for a title id.
+func (a AAuth) PolicyFor(titleID string) (policy, handler string) {
+	policy, handler = a.OnlinePlayPolicy, a.PolicyHandler
+	if o, ok := a.TitleOverrides[strings.ToLower(titleID)]; ok {
+		if o.OnlinePlayPolicy != "" {
+			policy = o.OnlinePlayPolicy
+		}
+		if o.PolicyHandler != "" {
+			handler = o.PolicyHandler
+		}
+	}
+	return policy, handler
+}
+
+func envStr(key string, dst *string) {
+	if v, ok := os.LookupEnv(key); ok {
+		*dst = v
+	}
+}
+
+func envInt(key string, dst *int) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		*dst = n
+	}
+}
+
+func envBool(key string, dst *bool) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+	if b, err := strconv.ParseBool(v); err == nil {
+		*dst = b
+	}
+}

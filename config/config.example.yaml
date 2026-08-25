@@ -1,0 +1,203 @@
+# SwitchNet configuration
+#
+# Copy this to config/config.yaml and edit it. Every value can also be set from
+# the environment as SWITCHNET_<SECTION>_<KEY>, which is how the containers in
+# docker-compose.yml are configured; the environment always wins over this file.
+#
+# Validate a config without starting anything:
+#
+#   switchnetctl -config config/config.yaml check
+#
+# Nothing here is a secret except keys.device_id_secret. config/config.yaml is
+# gitignored, so it is safe to put the real value in it.
+
+# ---------------------------------------------------------------------------
+# network: where your servers are, from a console's point of view
+# ---------------------------------------------------------------------------
+network:
+  # The address the consoles are pointed at. This goes into the generated
+  # hosts file and into the NAT-check replies. It must be an IP address that
+  # the consoles can reach, not a hostname and not 127.0.0.1.
+  public_ip: "192.168.1.50"
+
+  # A SECOND address, different from public_ip, that answers the nncs2
+  # NAT-check host.
+  #
+  # This is not optional if you want peer-to-peer play to work. Pia sends its
+  # second NAT probe only when nncs1 and nncs2 resolve to different addresses;
+  # if they are the same it de-duplicates the probe, never completes NAT
+  # detection, and matchmaking finds opponents that the console then cannot
+  # connect to. On the deployment this was checked against, that failure
+  # appeared as Mario Kart 8 error 2618-201 and looked nothing like a NAT
+  # problem.
+  #
+  # A second address on the same machine is enough. Leave it empty only if you
+  # genuinely have one address, and accept that consoles will report a stricter
+  # NAT type than they really have.
+  natcheck_secondary_ip: "192.168.1.51"
+
+  # The port the nginx TLS edge listens on. The console always connects to 443,
+  # so change this only if something in front of nginx maps the port.
+  edge_tls_port: 443
+
+# ---------------------------------------------------------------------------
+# database
+# ---------------------------------------------------------------------------
+database:
+  url: "postgres://switchnet:switchnet@localhost:5432/switchnet?sslmode=disable"
+  max_conns: 10
+  # Apply pending migrations on startup. The migration files are also
+  # golang-migrate compatible, so you can run them with the migrate CLI instead.
+  auto_migrate: true
+
+# ---------------------------------------------------------------------------
+# redis: the presence bus
+# ---------------------------------------------------------------------------
+redis:
+  # Leave empty while only the BAAS server publishes presence: it then uses an
+  # in-process bus. Set it before running a second process that needs presence
+  # events — the phase 2 dashboard, the NPLN server, or a second BAAS replica —
+  # because an in-process bus silently delivers nothing across a process
+  # boundary.
+  url: ""
+  channel: "switchnet:presence"
+
+# ---------------------------------------------------------------------------
+# keys: token signing
+# ---------------------------------------------------------------------------
+keys:
+  # Four RSA keys live here, one per token issuer. Every service that verifies a
+  # token needs the same directory: aauth verifies dauth's device tokens, and
+  # baas verifies both. Pointing them at different directories does not error —
+  # it rejects every request with a confusing "token expired".
+  dir: "certs/keys"
+
+  # Create a key if one is missing. Convenient for a first run. Turn it off once
+  # certs/keys is backed up, so a lost volume fails loudly instead of silently
+  # invalidating every token the consoles are holding.
+  generate_if_missing: true
+
+  # Salts the derivation of device ids and the 'edi' claim. Any long random
+  # string; it only has to stay the same. Generate one with:
+  #   openssl rand -hex 32
+  device_id_secret: "CHANGE-ME-openssl-rand-hex-32"
+
+# ---------------------------------------------------------------------------
+# dauth: device authentication
+# ---------------------------------------------------------------------------
+dauth:
+  listen: ":8081"
+  # Keep Nintendo's values. The console does not check them, but tooling and
+  # packet-capture diffs compare against them.
+  issuer: "dauth-lp1.ndas.srv.nintendo.net"
+  jwks_url: "https://dcert-lp1.ndas.srv.nintendo.net/keys"
+  token_ttl: 86400
+  challenge_ttl: 60
+  # The header nginx puts the console's TLS client certificate fingerprint in.
+  # With it, each console gets its own device id. Without it they all share one,
+  # which is harmless — accounts are keyed on the BAAS device account, never on
+  # this — but it makes the dashboard's device list useless.
+  client_cert_header: "X-SwitchNet-Client-Cert"
+
+# ---------------------------------------------------------------------------
+# aauth: application authentication
+# ---------------------------------------------------------------------------
+aauth:
+  listen: ":8082"
+  issuer: "aauth-lp1.ndas.srv.nintendo.net"
+  jwks_url: "https://acert-lp1.ndas.srv.nintendo.net/keys"
+  token_ttl: 86400
+
+  # FREE or MEMBERSHIP_REQUIRED. FREE is the right default for a private
+  # network: the console never asks for a Nintendo Switch Online membership.
+  online_play_policy: "FREE"
+  # SYSTEM or GAME_SERVER. Only sent when the policy is MEMBERSHIP_REQUIRED.
+  policy_handler: "GAME_SERVER"
+
+  # Per-title overrides, keyed by the 16-hex-digit title id. Use these if a game
+  # behaves differently when the policy does not match what it saw on retail
+  # servers. Splatoon 3 on retail is MEMBERSHIP_REQUIRED with a GAME_SERVER
+  # handler, which is what makes the id token carry the 'hm' claim.
+  title_overrides: {}
+  #  "0100c2500fc20000":          # Splatoon 3
+  #    online_play_policy: "MEMBERSHIP_REQUIRED"
+  #    policy_handler: "GAME_SERVER"
+
+# ---------------------------------------------------------------------------
+# baas: accounts and friends
+# ---------------------------------------------------------------------------
+baas:
+  listen: ":8083"
+  # Keep Nintendo's values: game servers verify id tokens against the issuer,
+  # and the JWKS URLs have to be hosts in the redirect list.
+  issuer: "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com"
+  audience: "ed9e2f05d286f7b8"
+  access_token_jwks_url: "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/internal_certificates"
+  id_token_jwks_url: "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/certificates"
+
+  access_token_ttl: 10800
+  id_token_ttl: 10800
+
+  # How long a user must wait before regenerating their friend code. Nintendo
+  # uses 24 hours. Shortening it lets somebody invalidate a code they just gave
+  # out before it can be typed in.
+  friend_code_cooldown: 86400
+
+  # How long a reported presence stays valid without a refresh. The console
+  # reports PLAYING when a game starts and does not report again, so without
+  # this a console switched off mid-game shows as playing forever.
+  presence_ttl: 300
+
+  # How long a console counts as ONLINE after its last authenticated request.
+  #
+  # This is what stops a console idling in the Home Menu from reading as offline
+  # to all its friends. It reports no state there, but it keeps polling its
+  # friend list, and that traffic is proof of life. Set it to less than the
+  # console's polling interval and friends will blink offline between polls.
+  console_presence_ttl: 300
+
+  image_dir: "data/images"
+  # Where uploaded profile pictures are served from. It has to be a host in the
+  # redirect list, or the console cannot fetch them.
+  image_base_url: "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/images"
+  max_image_bytes: 1048576
+
+  # Whether an unknown console may create an account. Turn this off once every
+  # console in the group is registered, so somebody who finds the server cannot
+  # add themselves to it.
+  allow_registration: true
+
+# ---------------------------------------------------------------------------
+# stubs: endpoints answered but not implemented
+# ---------------------------------------------------------------------------
+stubs:
+  listen: ":8084"
+  # Log request bodies. Useful exactly once, while working out what an
+  # unimplemented endpoint is being asked for. Far too chatty to leave on.
+  log_bodies: false
+
+# ---------------------------------------------------------------------------
+# natcheck: the UDP NAT-check responder
+# ---------------------------------------------------------------------------
+natcheck:
+  # Nintendo's ports. The console connects to these numbers, so do not change
+  # them unless something is forwarding.
+  primary_listen: ":10025"
+  secondary_listen: ":10125"
+
+  # A socket on the SECOND address, used for NAT-check message type 2 which must
+  # be answered from a different address. Set this to
+  # <natcheck_secondary_ip>:10025. Leaving it empty answers type 2 from the
+  # secondary port instead, which lets detection finish but reports a stricter
+  # NAT than the router really has.
+  alternate_listen: "192.168.1.51:10025"
+
+# ---------------------------------------------------------------------------
+# logging
+# ---------------------------------------------------------------------------
+log:
+  # debug, info, warn or error. 'debug' logs every NAT-check datagram, which is
+  # a lot; it is the right setting while bringing a console up.
+  level: "info"
+  # text or json
+  format: "text"
