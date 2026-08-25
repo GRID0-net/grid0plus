@@ -1,0 +1,827 @@
+package db
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Postgres is the production Store.
+type Postgres struct {
+	pool *pgxpool.Pool
+}
+
+// OpenPostgres connects to PostgreSQL and, if autoMigrate is set, brings the
+// schema up to date.
+func OpenPostgres(ctx context.Context, url string, maxConns int32, autoMigrate bool) (*Postgres, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("parse database url: %w", err)
+	}
+	if maxConns > 0 {
+		cfg.MaxConns = maxConns
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("connect to database: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ping database: %w", err)
+	}
+
+	if autoMigrate {
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("acquire connection for migration: %w", err)
+		}
+		_, err = Migrate(ctx, conn.Conn())
+		conn.Release()
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+	}
+
+	return &Postgres{pool: pool}, nil
+}
+
+// Close releases the connection pool.
+func (p *Postgres) Close() error {
+	p.pool.Close()
+	return nil
+}
+
+// Pool exposes the underlying pool, for the dashboard's read-only queries.
+func (p *Postgres) Pool() *pgxpool.Pool { return p.pool }
+
+// mapErr translates pgx errors into the sentinels handlers switch on.
+func mapErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505": // unique_violation
+			return fmt.Errorf("%w: %s", ErrConflict, pgErr.ConstraintName)
+		case "23503": // foreign_key_violation
+			return fmt.Errorf("%w: %s", ErrNotFound, pgErr.ConstraintName)
+		case "23514": // check_violation
+			return fmt.Errorf("%w: %s", ErrConflict, pgErr.ConstraintName)
+		}
+	}
+	return err
+}
+
+// ---- users ---------------------------------------------------------------
+
+const userColumns = `
+	id, nickname, country, birthday,
+	thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
+	permissions, extras, deleted,
+	blocks_updated_at, friends_updated_at, created_at, updated_at`
+
+func scanUser(row pgx.Row) (User, error) {
+	var u User
+	var perms, extras []byte
+	err := row.Scan(
+		&u.ID, &u.Nickname, &u.Country, &u.Birthday,
+		&u.ThumbnailURL, &u.Thumbnail2URL, &u.ThumbnailUploadedAt,
+		&perms, &extras, &u.Deleted,
+		&u.BlocksUpdatedAt, &u.FriendsUpdatedAt, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return User{}, mapErr(err)
+	}
+	if err := json.Unmarshal(perms, &u.Permissions); err != nil {
+		return User{}, fmt.Errorf("decode permissions for %s: %w", u.ID, err)
+	}
+	if err := json.Unmarshal(extras, &u.Extras); err != nil {
+		return User{}, fmt.Errorf("decode extras for %s: %w", u.ID, err)
+	}
+	if u.Extras == nil {
+		u.Extras = EmptyExtras()
+	}
+	return u, nil
+}
+
+// CreateUser inserts a user and its first device account in one transaction.
+func (p *Postgres) CreateUser(ctx context.Context, u User, da DeviceAccount) error {
+	perms, err := json.Marshal(u.Permissions)
+	if err != nil {
+		return err
+	}
+	extras, err := json.Marshal(u.Extras)
+	if err != nil {
+		return err
+	}
+
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO users (
+			id, nickname, country, birthday,
+			thumbnail_url, thumbnail2_url,
+			permissions, extras,
+			blocks_updated_at, friends_updated_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$9)`,
+		u.ID, u.Nickname, u.Country, u.Birthday,
+		u.ThumbnailURL, u.Thumbnail2URL,
+		perms, extras, u.CreatedAt)
+	if err != nil {
+		return mapErr(err)
+	}
+
+	var deviceID any
+	if da.DeviceID != "" {
+		deviceID = da.DeviceID
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO device_accounts (id, user_id, password_sha256, device_id, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$5)`,
+		da.ID, u.ID, da.PasswordSHA256, deviceID, da.CreatedAt)
+	if err != nil {
+		return mapErr(err)
+	}
+
+	// A presence row from the start, so every read path can assume it exists.
+	_, err = tx.Exec(ctx, `
+		INSERT INTO presence (user_id, state, extras, reported_at, last_seen_at)
+		VALUES ($1, $2, $3, $4, $4)`,
+		u.ID, StateOffline, []byte(`{}`), u.CreatedAt)
+	if err != nil {
+		return mapErr(err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// GetUser returns a user by id.
+func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
+	return scanUser(p.pool.QueryRow(ctx,
+		`SELECT `+userColumns+` FROM users WHERE id = $1`, id))
+}
+
+// UpdateUser applies a patch and returns the updated user.
+func (p *Postgres) UpdateUser(ctx context.Context, id string, patch UserPatch) (User, error) {
+	sets := []string{"updated_at = now()"}
+	args := []any{id}
+	add := func(col string, v any) {
+		args = append(args, v)
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+
+	if patch.Nickname != nil {
+		add("nickname", *patch.Nickname)
+	}
+	if patch.Country != nil {
+		add("country", *patch.Country)
+	}
+	if patch.Birthday != nil {
+		add("birthday", *patch.Birthday)
+	}
+	if patch.ThumbnailURL != nil {
+		add("thumbnail_url", *patch.ThumbnailURL)
+	}
+	if patch.Thumbnail2URL != nil {
+		add("thumbnail2_url", *patch.Thumbnail2URL)
+	}
+	if patch.ThumbnailUploadedAt != nil {
+		add("thumbnail_uploaded_at", *patch.ThumbnailUploadedAt)
+	}
+	if patch.Permissions != nil {
+		buf, err := json.Marshal(*patch.Permissions)
+		if err != nil {
+			return User{}, err
+		}
+		add("permissions", buf)
+	}
+	if patch.Extras != nil {
+		buf, err := json.Marshal(*patch.Extras)
+		if err != nil {
+			return User{}, err
+		}
+		add("extras", buf)
+	}
+
+	q := `UPDATE users SET ` + strings.Join(sets, ", ") +
+		` WHERE id = $1 RETURNING ` + userColumns
+	return scanUser(p.pool.QueryRow(ctx, q, args...))
+}
+
+// FindUsers returns the users matching a query.
+func (p *Postgres) FindUsers(ctx context.Context, q UserQuery) ([]User, error) {
+	where := []string{"NOT u.deleted"}
+	args := []any{}
+	add := func(clause string, v any) {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf(clause, len(args)))
+	}
+
+	join := ""
+	if q.FriendCode != "" {
+		join = " JOIN friend_codes fc ON fc.user_id = u.id"
+		add("fc.code = $%d", q.FriendCode)
+	}
+	if q.Nickname != "" {
+		add("lower(u.nickname) = lower($%d)", q.Nickname)
+	}
+	if q.IDs != nil {
+		// An empty array matches nothing, which is what a non-nil empty IDs
+		// slice is documented to mean.
+		add("u.id = ANY($%d)", q.IDs)
+	}
+
+	sql := `SELECT ` + prefixColumns(userColumns, "u.") + ` FROM users u` + join +
+		` WHERE ` + strings.Join(where, " AND ") + ` ORDER BY u.created_at DESC`
+	if q.Limit > 0 {
+		args = append(args, q.Limit)
+		sql += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	return p.queryUsers(ctx, sql, args...)
+}
+
+// ListUsers returns every user, newest first.
+func (p *Postgres) ListUsers(ctx context.Context, limit int) ([]User, error) {
+	sql := `SELECT ` + userColumns + ` FROM users WHERE NOT deleted ORDER BY created_at DESC`
+	args := []any{}
+	if limit > 0 {
+		args = append(args, limit)
+		sql += " LIMIT $1"
+	}
+	return p.queryUsers(ctx, sql, args...)
+}
+
+func (p *Postgres) queryUsers(ctx context.Context, sql string, args ...any) ([]User, error) {
+	rows, err := p.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// prefixColumns qualifies a bare column list with a table alias.
+func prefixColumns(cols, prefix string) string {
+	parts := strings.Split(cols, ",")
+	for i, c := range parts {
+		parts[i] = prefix + strings.TrimSpace(c)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// ---- devices and device accounts ----------------------------------------
+
+// UpsertDevice records that a console was seen.
+func (p *Postgres) UpsertDevice(ctx context.Context, d Device) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO devices (id, serial_number, product_code, device_type, ist, system_version,
+		                     first_seen_at, last_seen_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+		ON CONFLICT (id) DO UPDATE SET
+			serial_number  = EXCLUDED.serial_number,
+			product_code   = EXCLUDED.product_code,
+			device_type    = EXCLUDED.device_type,
+			ist            = EXCLUDED.ist,
+			system_version = EXCLUDED.system_version,
+			last_seen_at   = EXCLUDED.last_seen_at`,
+		d.ID, d.SerialNumber, d.ProductCode, d.DeviceType, d.IsT, d.SystemVersion, d.LastSeenAt)
+	return mapErr(err)
+}
+
+const deviceAccountColumns = `id, user_id, password_sha256, coalesce(device_id, ''), created_at, updated_at, deleted_at`
+
+func scanDeviceAccount(row pgx.Row) (DeviceAccount, error) {
+	var da DeviceAccount
+	err := row.Scan(&da.ID, &da.UserID, &da.PasswordSHA256, &da.DeviceID,
+		&da.CreatedAt, &da.UpdatedAt, &da.DeletedAt)
+	if err != nil {
+		return DeviceAccount{}, mapErr(err)
+	}
+	return da, nil
+}
+
+// GetDeviceAccount returns a device account by id.
+func (p *Postgres) GetDeviceAccount(ctx context.Context, id string) (DeviceAccount, error) {
+	return scanDeviceAccount(p.pool.QueryRow(ctx,
+		`SELECT `+deviceAccountColumns+` FROM device_accounts WHERE id = $1`, id))
+}
+
+// ListDeviceAccounts returns a user's live device accounts.
+func (p *Postgres) ListDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+deviceAccountColumns+` FROM device_accounts
+		 WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []DeviceAccount
+	for rows.Next() {
+		da, err := scanDeviceAccount(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, da)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// DeleteDeviceAccount marks a device account deleted.
+func (p *Postgres) DeleteDeviceAccount(ctx context.Context, userID, id string) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE device_accounts SET deleted_at = now(), updated_at = now()
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, id, userID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ---- friend codes --------------------------------------------------------
+
+// GetFriendCode returns a user's friend code.
+func (p *Postgres) GetFriendCode(ctx context.Context, userID string) (FriendCode, error) {
+	var fc FriendCode
+	err := p.pool.QueryRow(ctx, `
+		SELECT user_id, code, created_at, updated_at, regenerable_at
+		FROM friend_codes WHERE user_id = $1`, userID).
+		Scan(&fc.UserID, &fc.Code, &fc.CreatedAt, &fc.UpdatedAt, &fc.RegenerableAt)
+	return fc, mapErr(err)
+}
+
+// SetFriendCode writes a user's friend code.
+func (p *Postgres) SetFriendCode(ctx context.Context, fc FriendCode) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO friend_codes (user_id, code, created_at, updated_at, regenerable_at)
+		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (user_id) DO UPDATE SET
+			code = EXCLUDED.code,
+			updated_at = EXCLUDED.updated_at,
+			regenerable_at = EXCLUDED.regenerable_at`,
+		fc.UserID, fc.Code, fc.CreatedAt, fc.UpdatedAt, fc.RegenerableAt)
+	return mapErr(err)
+}
+
+// ---- friendships ---------------------------------------------------------
+
+// AddFriendship writes both directions and bumps both users' friends_updated_at.
+func (p *Postgres) AddFriendship(ctx context.Context, a, b string, at time.Time) error {
+	if a == b {
+		return fmt.Errorf("%w: a user cannot befriend themselves", ErrConflict)
+	}
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO friendships (user_id, friend_id, became_friend_at)
+		VALUES ($1,$2,$3), ($2,$1,$3)
+		ON CONFLICT (user_id, friend_id) DO NOTHING`, a, b, at)
+	if err != nil {
+		return mapErr(err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET friends_updated_at = $2, updated_at = $2 WHERE id = ANY($1)`,
+		[]string{a, b}, at); err != nil {
+		return mapErr(err)
+	}
+	return tx.Commit(ctx)
+}
+
+// RemoveFriendship removes both directions.
+func (p *Postgres) RemoveFriendship(ctx context.Context, a, b string) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM friendships
+		WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)`, a, b)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET friends_updated_at = now(), updated_at = now() WHERE id = ANY($1)`,
+		[]string{a, b}); err != nil {
+		return mapErr(err)
+	}
+	return tx.Commit(ctx)
+}
+
+// ListFriends returns one user's friendships.
+func (p *Postgres) ListFriends(ctx context.Context, userID string, limit int) ([]Friendship, error) {
+	sql := `SELECT user_id, friend_id, favorite, became_friend_at
+	        FROM friendships WHERE user_id = $1
+	        ORDER BY favorite DESC, became_friend_at`
+	args := []any{userID}
+	if limit > 0 {
+		args = append(args, limit)
+		sql += " LIMIT $2"
+	}
+	rows, err := p.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Friendship
+	for rows.Next() {
+		var f Friendship
+		if err := rows.Scan(&f.UserID, &f.FriendID, &f.Favorite, &f.BecameFriendAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, f)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// GetFriendship returns one direction of a friendship.
+func (p *Postgres) GetFriendship(ctx context.Context, userID, friendID string) (Friendship, error) {
+	var f Friendship
+	err := p.pool.QueryRow(ctx, `
+		SELECT user_id, friend_id, favorite, became_friend_at
+		FROM friendships WHERE user_id = $1 AND friend_id = $2`, userID, friendID).
+		Scan(&f.UserID, &f.FriendID, &f.Favorite, &f.BecameFriendAt)
+	return f, mapErr(err)
+}
+
+// SetFavorite sets the favourite flag on one direction only.
+func (p *Postgres) SetFavorite(ctx context.Context, userID, friendID string, favorite bool) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE friendships SET favorite = $3
+		WHERE user_id = $1 AND friend_id = $2`, userID, friendID, favorite)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ---- friend requests -----------------------------------------------------
+
+const friendRequestColumns = `id, from_user_id, to_user_id, state, created_at, updated_at`
+
+func scanFriendRequest(row pgx.Row) (FriendRequest, error) {
+	var r FriendRequest
+	err := row.Scan(&r.ID, &r.FromUserID, &r.ToUserID, &r.State, &r.CreatedAt, &r.UpdatedAt)
+	if err != nil {
+		return FriendRequest{}, mapErr(err)
+	}
+	return r, nil
+}
+
+// CreateFriendRequest inserts a request, or returns the existing pending one.
+func (p *Postgres) CreateFriendRequest(ctx context.Context, r FriendRequest) (FriendRequest, error) {
+	existing, err := p.FindPendingRequest(ctx, r.FromUserID, r.ToUserID)
+	switch {
+	case err == nil:
+		return existing, nil
+	case errors.Is(err, ErrNotFound):
+	default:
+		return FriendRequest{}, err
+	}
+
+	return scanFriendRequest(p.pool.QueryRow(ctx, `
+		INSERT INTO friend_requests (id, from_user_id, to_user_id, state, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$5)
+		RETURNING `+friendRequestColumns,
+		r.ID, r.FromUserID, r.ToUserID, r.State, r.CreatedAt))
+}
+
+// GetFriendRequest returns a request by id.
+func (p *Postgres) GetFriendRequest(ctx context.Context, id string) (FriendRequest, error) {
+	return scanFriendRequest(p.pool.QueryRow(ctx,
+		`SELECT `+friendRequestColumns+` FROM friend_requests WHERE id = $1`, id))
+}
+
+// SetFriendRequestState resolves a request.
+func (p *Postgres) SetFriendRequestState(ctx context.Context, id, state string, at time.Time) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE friend_requests SET state = $2, updated_at = $3
+		WHERE id = $1 AND state = 'PENDING'`, id, state, at)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListFriendRequests returns a user's inbox or outbox.
+func (p *Postgres) ListFriendRequests(ctx context.Context, userID string, incoming, pendingOnly bool) ([]FriendRequest, error) {
+	col := "from_user_id"
+	if incoming {
+		col = "to_user_id"
+	}
+	sql := `SELECT ` + friendRequestColumns + ` FROM friend_requests WHERE ` + col + ` = $1`
+	if pendingOnly {
+		sql += ` AND state = 'PENDING'`
+	}
+	sql += ` ORDER BY created_at DESC`
+
+	rows, err := p.pool.Query(ctx, sql, userID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []FriendRequest
+	for rows.Next() {
+		r, err := scanFriendRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// FindPendingRequest returns a pending request for an ordered pair.
+func (p *Postgres) FindPendingRequest(ctx context.Context, from, to string) (FriendRequest, error) {
+	return scanFriendRequest(p.pool.QueryRow(ctx,
+		`SELECT `+friendRequestColumns+` FROM friend_requests
+		 WHERE from_user_id = $1 AND to_user_id = $2 AND state = 'PENDING'`, from, to))
+}
+
+// ---- blocks --------------------------------------------------------------
+
+// AddBlock blocks a user.
+func (p *Postgres) AddBlock(ctx context.Context, userID, blockedID string, at time.Time) error {
+	if userID == blockedID {
+		return fmt.Errorf("%w: a user cannot block themselves", ErrConflict)
+	}
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO blocks (user_id, blocked_user_id, created_at) VALUES ($1,$2,$3)
+		ON CONFLICT (user_id, blocked_user_id) DO NOTHING`, userID, blockedID, at); err != nil {
+		return mapErr(err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET blocks_updated_at = $2, updated_at = $2 WHERE id = $1`,
+		userID, at); err != nil {
+		return mapErr(err)
+	}
+	return tx.Commit(ctx)
+}
+
+// RemoveBlock unblocks a user.
+func (p *Postgres) RemoveBlock(ctx context.Context, userID, blockedID string) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM blocks WHERE user_id = $1 AND blocked_user_id = $2`, userID, blockedID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET blocks_updated_at = now(), updated_at = now() WHERE id = $1`,
+		userID); err != nil {
+		return mapErr(err)
+	}
+	return tx.Commit(ctx)
+}
+
+// ListBlocks returns who a user has blocked.
+func (p *Postgres) ListBlocks(ctx context.Context, userID string) ([]Block, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT user_id, blocked_user_id, created_at FROM blocks
+		WHERE user_id = $1 ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Block
+	for rows.Next() {
+		var b Block
+		if err := rows.Scan(&b.UserID, &b.BlockedUserID, &b.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, b)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// IsBlockedEitherWay reports whether either user has blocked the other.
+func (p *Postgres) IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error) {
+	var exists bool
+	err := p.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM blocks
+			WHERE (user_id = $1 AND blocked_user_id = $2)
+			   OR (user_id = $2 AND blocked_user_id = $1))`, a, b).Scan(&exists)
+	return exists, mapErr(err)
+}
+
+// ---- presence ------------------------------------------------------------
+
+const presenceColumns = `
+	user_id, state, coalesce(app_id, ''), coalesce(presence_group_id, ''),
+	app_field, acd_index, extras, reported_at, last_seen_at, logout_at`
+
+func scanPresence(row pgx.Row) (Presence, error) {
+	var pr Presence
+	var extras []byte
+	err := row.Scan(&pr.UserID, &pr.State, &pr.AppID, &pr.PresenceGroupID,
+		&pr.AppField, &pr.ACDIndex, &extras, &pr.ReportedAt, &pr.LastSeenAt, &pr.LogoutAt)
+	if err != nil {
+		return Presence{}, mapErr(err)
+	}
+	if err := json.Unmarshal(extras, &pr.Extras); err != nil {
+		return Presence{}, fmt.Errorf("decode presence extras for %s: %w", pr.UserID, err)
+	}
+	if pr.Extras == nil {
+		pr.Extras = EmptyExtras()
+	}
+	return pr, nil
+}
+
+// GetPresence returns a user's presence, or an OFFLINE zero value if they have
+// never reported one.
+func (p *Postgres) GetPresence(ctx context.Context, userID string) (Presence, error) {
+	pr, err := scanPresence(p.pool.QueryRow(ctx,
+		`SELECT `+presenceColumns+` FROM presence WHERE user_id = $1`, userID))
+	if errors.Is(err, ErrNotFound) {
+		return offlinePresence(userID), nil
+	}
+	return pr, err
+}
+
+// GetPresences returns presence for several users at once.
+func (p *Postgres) GetPresences(ctx context.Context, userIDs []string) (map[string]Presence, error) {
+	out := make(map[string]Presence, len(userIDs))
+	for _, id := range userIDs {
+		out[id] = offlinePresence(id)
+	}
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+presenceColumns+` FROM presence WHERE user_id = ANY($1)`, userIDs)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		pr, err := scanPresence(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[pr.UserID] = pr
+	}
+	return out, mapErr(rows.Err())
+}
+
+func offlinePresence(userID string) Presence {
+	return Presence{UserID: userID, State: StateOffline, Extras: EmptyExtras()}
+}
+
+// UpdatePresence applies a patch, creating the row if needed.
+func (p *Postgres) UpdatePresence(ctx context.Context, userID string, patch PresencePatch) (Presence, error) {
+	// Insert a bare row first so the UPDATE below always has something to
+	// change. ON CONFLICT DO NOTHING makes this a no-op for an existing user.
+	if _, err := p.pool.Exec(ctx, `
+		INSERT INTO presence (user_id, state, extras) VALUES ($1, $2, '{}'::jsonb)
+		ON CONFLICT (user_id) DO NOTHING`, userID, StateOffline); err != nil {
+		return Presence{}, mapErr(err)
+	}
+
+	sets := []string{"last_seen_at = now()"}
+	args := []any{userID}
+	add := func(col string, v any) {
+		args = append(args, v)
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+
+	if patch.State != nil {
+		add("state", *patch.State)
+	}
+	if patch.AppID != nil {
+		add("app_id", nullIfEmpty(*patch.AppID))
+	}
+	if patch.PresenceGroupID != nil {
+		add("presence_group_id", nullIfEmpty(*patch.PresenceGroupID))
+	}
+	if patch.AppField != nil {
+		add("app_field", *patch.AppField)
+	}
+	if patch.ACDIndex != nil {
+		add("acd_index", *patch.ACDIndex)
+	}
+	if patch.Extras != nil {
+		buf, err := json.Marshal(*patch.Extras)
+		if err != nil {
+			return Presence{}, err
+		}
+		add("extras", buf)
+	}
+	if patch.ReportedAt != nil {
+		add("reported_at", *patch.ReportedAt)
+	}
+	if patch.LogoutAt != nil {
+		add("logout_at", *patch.LogoutAt)
+	}
+
+	q := `UPDATE presence SET ` + strings.Join(sets, ", ") +
+		` WHERE user_id = $1 RETURNING ` + presenceColumns
+	return scanPresence(p.pool.QueryRow(ctx, q, args...))
+}
+
+// TouchPresence records that a user made an authenticated request.
+func (p *Postgres) TouchPresence(ctx context.Context, userID string, at time.Time) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO presence (user_id, state, extras, reported_at, last_seen_at)
+		VALUES ($1, $2, '{}'::jsonb, $3, $3)
+		ON CONFLICT (user_id) DO UPDATE SET last_seen_at = GREATEST(presence.last_seen_at, $3)`,
+		userID, StateOffline, at)
+	return mapErr(err)
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// ---- images --------------------------------------------------------------
+
+// CreateImage records an uploaded image.
+func (p *Postgres) CreateImage(ctx context.Context, img Image) error {
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO images (id, owner_id, format, width, height, size_bytes, rel_path,
+		                    created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+		img.ID, img.OwnerID, img.Format, img.Width, img.Height, img.SizeBytes,
+		img.RelPath, img.CreatedAt)
+	return mapErr(err)
+}
+
+// GetImage returns an image by id.
+func (p *Postgres) GetImage(ctx context.Context, id string) (Image, error) {
+	var img Image
+	err := p.pool.QueryRow(ctx, `
+		SELECT id, owner_id, format, width, height, size_bytes, rel_path, created_at, updated_at
+		FROM images WHERE id = $1`, id).
+		Scan(&img.ID, &img.OwnerID, &img.Format, &img.Width, &img.Height,
+			&img.SizeBytes, &img.RelPath, &img.CreatedAt, &img.UpdatedAt)
+	return img, mapErr(err)
+}
+
+// Compile-time check that Postgres satisfies the interface.
+var _ Store = (*Postgres)(nil)
