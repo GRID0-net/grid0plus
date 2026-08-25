@@ -1,0 +1,27 @@
+# Build output
+/bin/
+/dist/
+switchnet-*
+
+# Generated secrets and certificates — never commit these.
+/certs/
+/switch/ca/
+/config/config.yaml
+*.pem
+*.key
+*.crt
+*.csr
+*.srl
+
+# Generated Switch-side files
+/switch/hosts.txt
+/deploy/nginx.generated.conf
+
+# Local data
+/data/
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
