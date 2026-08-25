@@ -27,27 +27,19 @@ endpoint have nothing to show.
 
 Ordered by how much a capture would help.
 
-### 1. `GET /2.0.0/users/<id>/friends` — the response shape
+### 1. `GET /2.0.0/users/<id>/friends` — ~~the response shape~~ **CAPTURED**
 
-**Why it matters:** this is the response the friends applet draws. If the shape
-is wrong, the friend list is empty and nothing in the log says why.
+See [baas-2.0.0-friends.md](baas-2.0.0-friends.md).
 
-**What is known:** the request takes a `count` query parameter, default 300. The
-applet has to draw each friend's nickname, thumbnail, friend code and presence,
-so a friend entry must be at least as rich as the user object.
+**What the capture settled:** the response is a `{count, etag, itemsPerPage,
+items}` envelope (not a bare array). Each item is a relationship object with
+`userId`, `friendId`, `friend` (a subset of the user object), `isFavorite`,
+`channels`, `extras`, `friendNote`, `etag`, `createdAt`, `updatedAt`. The
+`friend` sub-object omits `birthday`, `country` and `links` and adds
+`nicknameUpdatedAt`. `presence.pf` is always `1`.
 
-**What SwitchNet does:** returns a bare JSON array of user objects extended with
-`isFavorite` and `becameFriendAt`. A bare array because every other BAAS endpoint
-returns its resource unwrapped — `POST /1.0.0/users` returns the user object
-directly, not `{"user": …}`.
-
-**What a capture would settle:** whether it is an array or an envelope such as
-`{"friends": […]}`, and whether the per-friend fields are named as guessed.
-
-**Where to change it:** `internal/baas/friends.go`, `listFriends`. One function.
-
-**How to capture:** with two consoles already friends, open the friends applet
-and read `GET /2.0.0/users/<id>/friends`.
+**What SwitchNet does now:** returns `CollectionEnvelope[FriendResponse]` with
+`FriendResponse` as the confirmed relationship object.
 
 ### 2. `POST /2.0.0/friend_requests` — the request body
 

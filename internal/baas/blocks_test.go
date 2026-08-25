@@ -97,15 +97,15 @@ func TestBlockingCancelsAPendingRequest(t *testing.T) {
 
 	// Leaving the request in the inbox means a blocked person can still put a
 	// row on somebody's screen.
-	var inbox []FriendRequestResponse
+	var inbox CollectionEnvelope[FriendRequestResponse]
 	resp = h.do(request{
 		method: "GET", path: "/2.0.0/users/" + alice.UserID + "/friend_requests/inbox",
 		token: alice.AccessToken,
 	})
 	requireStatus(t, resp, 200)
 	decode(t, resp, &inbox)
-	if len(inbox) != 0 {
-		t.Errorf("Alice's inbox still has %d entries from a blocked user", len(inbox))
+	if len(inbox.Items) != 0 {
+		t.Errorf("Alice's inbox still has %d entries from a blocked user", len(inbox.Items))
 	}
 }
 

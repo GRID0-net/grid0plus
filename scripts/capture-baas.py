@@ -91,6 +91,20 @@ def require_nintendoclients():
             "  Debian/Ubuntu  sudo apt install build-essential python3-dev\n"
             "  macOS          xcode-select --install\n"
         )
+    # NintendoClients 5.0.0 bug: BAASClient._request uses self._host directly
+    # instead of calling get_host(module), so self._host=None crashes.
+    # Patch the class to resolve the correct per-module host on every call.
+    _orig = baas.BAASClient._request
+    async def _fixed(self, req, token, module, *, use_power_state=False):
+        saved = self._host
+        self._host = self.get_host(module)
+        try:
+            return await _orig(self, req, token, module,
+                               use_power_state=use_power_state)
+        finally:
+            self._host = saved
+    baas.BAASClient._request = _fixed
+
     return anyio, http, switch, baas, dauth
 
 
@@ -304,11 +318,13 @@ async def run(args, http, switch, baas, dauth) -> None:
     if friends_file.exists():
         try:
             body = json.loads(friends_file.read_text())["body"]
-            entries = body if isinstance(body, list) else next(
-                (v for v in body.values() if isinstance(v, list)), [])
+            # The envelope shape is {count, etag, items, itemsPerPage}; fall
+            # back to a bare list for older captures.
+            entries = body.get("items", body) if isinstance(body, dict) else body
             if entries and isinstance(entries[0], dict):
-                friend_id = entries[0].get("id")
-        except (KeyError, ValueError, StopIteration):
+                # Relationship objects use "friendId"; plain user objects use "id".
+                friend_id = entries[0].get("friendId") or entries[0].get("id")
+        except (KeyError, ValueError, AttributeError):
             pass
 
     if friend_id:

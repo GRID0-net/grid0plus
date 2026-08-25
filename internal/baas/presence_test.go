@@ -33,7 +33,7 @@ func TestAnIdleConsoleReadsAsOnlineNotOffline(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	if got := h.friends(bob)[0].Presence.State; got != db.StateOnline {
+	if got := h.friends(bob)[0].Friend.Presence.State; got != db.StateOnline {
 		t.Errorf("an idle console reads as %q; want ONLINE. Without the liveness "+
 			"path, every friend is permanently offline.", got)
 	}
@@ -53,14 +53,14 @@ func TestAReportedPlayingStateExpires(t *testing.T) {
 	resp := h.reportPresence(alice, db.StatePlaying, splatoon3TitleID, `{"mode":"regular"}`)
 	requireStatus(t, resp, 200)
 
-	if got := h.friends(bob)[0].Presence.State; got != db.StatePlaying {
+	if got := h.friends(bob)[0].Friend.Presence.State; got != db.StatePlaying {
 		t.Fatalf("presence right after the report = %q, want PLAYING", got)
 	}
 
 	// Past both TTLs: the console has said nothing and has made no request.
 	h.advance(testPresenceTTL + testConsoleAliveTTL + time.Minute)
 
-	after := h.friends(bob)[0].Presence
+	after := h.friends(bob)[0].Friend.Presence
 	if after.State != db.StateOffline {
 		t.Errorf("presence after both TTLs expired = %q, want OFFLINE", after.State)
 	}
@@ -102,7 +102,7 @@ func TestALiveConsoleWhoseReportWentStaleReadsAsOnlineNotPlaying(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	got := h.friends(bob)[0].Presence
+	got := h.friends(bob)[0].Friend.Presence
 	if got.State != db.StateOnline {
 		t.Errorf("state = %q, want ONLINE: the report is stale but the console is live",
 			got.State)
@@ -132,7 +132,7 @@ func TestAFreshReportBeatsLiveness(t *testing.T) {
 		requireStatus(t, resp, 200)
 	}
 
-	if got := h.friends(bob)[0].Presence.State; got != db.StatePlaying {
+	if got := h.friends(bob)[0].Friend.Presence.State; got != db.StatePlaying {
 		t.Errorf("state = %q, want PLAYING to survive the liveness heartbeat", got)
 	}
 }
@@ -161,7 +161,7 @@ func TestAnExplicitOfflineReportIsHonoured(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	if got := h.friends(bob)[0].Presence.State; got != db.StateOffline {
+	if got := h.friends(bob)[0].Friend.Presence.State; got != db.StateOffline {
 		t.Errorf("state = %q after an explicit OFFLINE report, want OFFLINE: the "+
 			"liveness heartbeat must not override what the console said", got)
 	}
@@ -191,7 +191,7 @@ func TestAnOnlineReportClearsTheAppFields(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	got := h.friends(bob)[0].Presence
+	got := h.friends(bob)[0].Friend.Presence
 	if got.State != db.StateOnline {
 		t.Fatalf("state = %q, want ONLINE", got.State)
 	}
@@ -244,7 +244,7 @@ func TestPresenceIsHiddenWhenTheOwnerSetsItToSelf(t *testing.T) {
 	resp = h.reportPresence(alice, db.StatePlaying, splatoon3TitleID, `{}`)
 	requireStatus(t, resp, 200)
 
-	if got := h.friends(bob)[0].Presence.State; got != db.StateOffline {
+	if got := h.friends(bob)[0].Friend.Presence.State; got != db.StateOffline {
 		t.Errorf("Bob sees %q; a SELF presence setting must read as OFFLINE", got)
 	}
 	// Alice still sees her own state.
@@ -320,7 +320,7 @@ func TestPresencePatchMergesRatherThanReplaces(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	scope := h.friends(bob)[0].Presence.Extras[db.ScopeFriends]
+	scope := h.friends(bob)[0].Friend.Presence.Extras[db.ScopeFriends]
 	if scope[keyAppID] != splatoon3TitleID {
 		t.Errorf("appInfo:appId = %v after an appField-only report; the merge lost it",
 			scope[keyAppID])
@@ -479,8 +479,8 @@ func (h *harness) self(t *testing.T, a account) UserResponse {
 func (h *harness) friendPresence(t *testing.T, viewer account, friendID string) string {
 	t.Helper()
 	for _, f := range h.friends(viewer) {
-		if f.ID == friendID {
-			return f.Presence.State
+		if f.FriendID == friendID {
+			return f.Friend.Presence.State
 		}
 	}
 	t.Fatalf("%s is not in %s's friend list", friendID, viewer.UserID)

@@ -51,30 +51,30 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	}
 
 	// ---- it is in A's outbox and B's inbox ----
-	var outbox []FriendRequestResponse
+	var outbox CollectionEnvelope[FriendRequestResponse]
 	resp = h.do(request{
 		method: "GET", path: "/2.0.0/users/" + alice.UserID + "/friend_requests/outbox",
 		token: alice.AccessToken,
 	})
 	requireStatus(t, resp, 200)
 	decode(t, resp, &outbox)
-	if len(outbox) != 1 || outbox[0].ID != sent.ID {
-		t.Fatalf("A's outbox = %+v, want the one request", outbox)
+	if len(outbox.Items) != 1 || outbox.Items[0].ID != sent.ID {
+		t.Fatalf("A's outbox = %+v, want the one request", outbox.Items)
 	}
 
-	var inbox []FriendRequestResponse
+	var inbox CollectionEnvelope[FriendRequestResponse]
 	resp = h.do(request{
 		method: "GET", path: "/2.0.0/users/" + bob.UserID + "/friend_requests/inbox",
 		token: bob.AccessToken,
 	})
 	requireStatus(t, resp, 200)
 	decode(t, resp, &inbox)
-	if len(inbox) != 1 || inbox[0].ID != sent.ID {
-		t.Fatalf("B's inbox = %+v, want the one request", inbox)
+	if len(inbox.Items) != 1 || inbox.Items[0].ID != sent.ID {
+		t.Fatalf("B's inbox = %+v, want the one request", inbox.Items)
 	}
 	// B needs to know who is asking, or the accept screen is blank.
-	if inbox[0].From == nil || inbox[0].From.ID != alice.UserID {
-		t.Errorf("B's inbox entry does not name Alice: %+v", inbox[0].From)
+	if inbox.Items[0].From == nil || inbox.Items[0].From.ID != alice.UserID {
+		t.Errorf("B's inbox entry does not name Alice: %+v", inbox.Items[0].From)
 	}
 
 	// The relationship reads correctly from both sides while pending.
@@ -98,27 +98,24 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	if len(aliceFriends) != 1 {
 		t.Fatalf("A has %d friends, want 1", len(aliceFriends))
 	}
-	if aliceFriends[0].ID != bob.UserID {
-		t.Errorf("A's friend = %q, want B", aliceFriends[0].ID)
+	if aliceFriends[0].FriendID != bob.UserID {
+		t.Errorf("A's friend = %q, want B", aliceFriends[0].FriendID)
 	}
-	if aliceFriends[0].Nickname != "Bob" {
-		t.Errorf("A's friend nickname = %q, want Bob", aliceFriends[0].Nickname)
+	if aliceFriends[0].Friend.Nickname != "Bob" {
+		t.Errorf("A's friend nickname = %q, want Bob", aliceFriends[0].Friend.Nickname)
 	}
-	// The friend's code has to come back too: the friends applet shows it.
-	if aliceFriends[0].Links.FriendCode == nil ||
-		aliceFriends[0].Links.FriendCode.ID != bobCode {
-		t.Errorf("A cannot see B's friend code: %+v", aliceFriends[0].Links.FriendCode)
-	}
-	if aliceFriends[0].BecameFriendAt == 0 {
-		t.Error("becameFriendAt is zero")
+	// The capture shows links is absent from the friend sub-object; friend
+	// code is not included in the friend list entry.
+	if aliceFriends[0].CreatedAt == 0 {
+		t.Error("createdAt (becameFriendAt) is zero")
 	}
 
 	bobFriends := h.friends(bob)
-	if len(bobFriends) != 1 || bobFriends[0].ID != alice.UserID {
+	if len(bobFriends) != 1 || bobFriends[0].FriendID != alice.UserID {
 		t.Fatalf("B's friends = %+v, want just A", bobFriends)
 	}
-	if bobFriends[0].Nickname != "Alice" {
-		t.Errorf("B's friend nickname = %q, want Alice", bobFriends[0].Nickname)
+	if bobFriends[0].Friend.Nickname != "Alice" {
+		t.Errorf("B's friend nickname = %q, want Alice", bobFriends[0].Friend.Nickname)
 	}
 
 	// Both sides now report FRIEND.
@@ -137,8 +134,8 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 		token: bob.AccessToken,
 	})
 	decode(t, resp, &inbox)
-	if len(inbox) != 0 {
-		t.Errorf("B's inbox still has %d pending requests after accepting", len(inbox))
+	if len(inbox.Items) != 0 {
+		t.Errorf("B's inbox still has %d pending requests after accepting", len(inbox.Items))
 	}
 
 	// ---- A launches Splatoon 3 ----
@@ -156,12 +153,12 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	}
 	got := bobFriends[0]
 
-	if got.Presence.State != db.StatePlaying {
-		t.Errorf("A's presence as seen by B = %q, want PLAYING", got.Presence.State)
+	if got.Friend.Presence.State != db.StatePlaying {
+		t.Errorf("A's presence as seen by B = %q, want PLAYING", got.Friend.Presence.State)
 	}
 	// The 'friends' scope is the one a friend may read, and it is where the
 	// console writes the app fields.
-	friendScope := got.Presence.Extras[db.ScopeFriends]
+	friendScope := got.Friend.Presence.Extras[db.ScopeFriends]
 	if friendScope == nil {
 		t.Fatal("B cannot see the 'friends' scope of A's presence extras")
 	}
@@ -316,14 +313,14 @@ func TestARetriedFriendRequestDoesNotDuplicate(t *testing.T) {
 		t.Errorf("a retried request created a second row: %q then %q", first.ID, second.ID)
 	}
 
-	var inbox []FriendRequestResponse
+	var inbox CollectionEnvelope[FriendRequestResponse]
 	resp := h.do(request{
 		method: "GET", path: "/2.0.0/users/" + b.UserID + "/friend_requests/inbox",
 		token: b.AccessToken,
 	})
 	decode(t, resp, &inbox)
-	if len(inbox) != 1 {
-		t.Errorf("B's inbox has %d entries, want 1", len(inbox))
+	if len(inbox.Items) != 1 {
+		t.Errorf("B's inbox has %d entries, want 1", len(inbox.Items))
 	}
 }
 
@@ -600,10 +597,10 @@ func TestFriendListRespectsTheCountParameter(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	var friends []FriendResponse
-	decode(t, resp, &friends)
-	if len(friends) != 2 {
-		t.Errorf("count=2 returned %d friends", len(friends))
+	var env CollectionEnvelope[FriendResponse]
+	decode(t, resp, &env)
+	if env.ItemsPerPage != 2 {
+		t.Errorf("count=2 returned %d friends", env.ItemsPerPage)
 	}
 
 	resp = h.do(request{
@@ -632,13 +629,13 @@ func TestFriendListDoesNotLeakPrivateFields(t *testing.T) {
 	// The five extras scopes exist precisely so a user can put something in
 	// 'self' that no friend sees. Returning all five to everybody makes the
 	// whole mechanism decorative.
-	if v, present := friend.Extras[db.ScopeSelf]["secret"]; present {
+	if v, present := friend.Friend.Extras[db.ScopeSelf]["secret"]; present {
 		t.Errorf("A can read B's 'self' extras: %v", v)
 	}
 	// Handing a friend the ids of the consoles somebody logs in from serves no
 	// purpose and is the sort of leak that turns into an identity problem later.
-	if len(friend.DeviceAccounts) != 0 {
-		t.Errorf("A can see B's device accounts: %+v", friend.DeviceAccounts)
+	if len(friend.Friend.DeviceAccounts) != 0 {
+		t.Errorf("A can see B's device accounts: %+v", friend.Friend.DeviceAccounts)
 	}
 }
 

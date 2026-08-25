@@ -19,18 +19,18 @@ const defaultFriendCount = 300
 // something pretending to be one) cannot ask for the whole table at once.
 const maxFriendCount = 1000
 
+// defaultFriendRequestCount is the default page size for inbox and outbox.
+// Confirmed by the captures at docs/CAPTURES/raw/04-friend-requests-inbox.json
+// and 05-friend-requests-outbox.json.
+const defaultFriendRequestCount = 50
+
 // ---- GET /2.0.0/users/<id>/friends --------------------------------------
 
 // listFriends returns the caller's friend list with each friend's presence.
 //
-// This is the response the stock friends applet draws, so it has to carry both
-// the profile (nickname, thumbnail, friend code) and the resolved presence.
-//
-// TODO(capture-needed): the response is a bare JSON array. Every other BAAS
-// endpoint returns its resource unwrapped, and the 'count' parameter says this
-// is a collection, so an array is the consistent reading — but it is a reading,
-// not a documented fact, and no public implementation exists to compare with. If
-// a capture shows an envelope, this function is the only place to change.
+// Each entry is a relationship object wrapping the friend's profile. The
+// response is a CollectionEnvelope, confirmed by the capture at
+// docs/CAPTURES/raw/03-friends.json.
 func (s *Server) listFriends(w http.ResponseWriter, r *http.Request, c *caller) {
 	if !s.requireSelf(w, r, c) {
 		return
@@ -101,13 +101,20 @@ func (s *Server) listFriends(w http.ResponseWriter, r *http.Request, c *caller) 
 		}
 
 		out = append(out, FriendResponse{
-			UserResponse:   userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), user.ID), pres, nil, vis),
-			IsFavorite:     f.Favorite,
-			BecameFriendAt: f.BecameFriendAt.Unix(),
+			UserID:     c.UserID,
+			FriendID:   f.FriendID,
+			Friend:     friendUserResponse(user, pres, vis),
+			IsFavorite: f.Favorite,
+			Channels:   map[string]any{},
+			Extras:     db.EmptyExtras(),
+			FriendNote: "",
+			ETag:       "",
+			CreatedAt:  f.BecameFriendAt.Unix(),
+			UpdatedAt:  f.BecameFriendAt.Unix(),
 		})
 	}
 
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, newCollection(count, out))
 }
 
 // presenceVisibleTo reports whether viewer may see owner's presence.
@@ -650,7 +657,7 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request, c *caller,
 		}
 		out = append(out, s.friendRequestResponse(r.Context(), req, c.UserID))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, newCollection(defaultFriendRequestCount, out))
 }
 
 // friendRequestResponse builds the wire object for a request, populating

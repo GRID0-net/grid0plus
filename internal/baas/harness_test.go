@@ -489,9 +489,9 @@ func (h *harness) friends(a account) []FriendResponse {
 	})
 	requireStatus(h.t, resp, 200)
 
-	var body []FriendResponse
-	decode(h.t, resp, &body)
-	return body
+	var env CollectionEnvelope[FriendResponse]
+	decode(h.t, resp, &env)
+	return env.Items
 }
 
 // befriend takes two accounts from strangers to friends through the real

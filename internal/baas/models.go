@@ -86,42 +86,94 @@ type AccountLink struct {
 // PresenceResponse is the online status block.
 type PresenceResponse struct {
 	State     string           `json:"state"`
+	Pf        int              `json:"pf"`
 	Extras    db.ExtrasByScope `json:"extras"`
 	UpdatedAt int64            `json:"updatedAt"`
 	LogoutAt  int64            `json:"logoutAt"`
 }
 
-// FriendResponse is one entry in a friend list.
+// CollectionEnvelope wraps a pageable BAAS list response.
 //
-// TODO(capture-needed): the shape of GET /2.0.0/users/<id>/friends is not
-// documented anywhere, and no public implementation exists to compare against.
-// What is known:
+// Confirmed by captures at docs/CAPTURES/raw/03-friends.json and
+// docs/CAPTURES/raw/04-friend-requests-inbox.json. count is the requested page
+// size; itemsPerPage is the number of items actually returned.
+type CollectionEnvelope[T any] struct {
+	Count        int    `json:"count"`
+	ETag         string `json:"etag"`
+	Items        []T    `json:"items"`
+	ItemsPerPage int    `json:"itemsPerPage"`
+}
+
+func newCollection[T any](requested int, items []T) CollectionEnvelope[T] {
+	if items == nil {
+		items = []T{}
+	}
+	return CollectionEnvelope[T]{
+		Count:        requested,
+		ETag:         "",
+		Items:        items,
+		ItemsPerPage: len(items),
+	}
+}
+
+// FriendUserResponse is the friend's profile embedded in a friend list entry.
 //
-//   - the request takes a 'count' query parameter, default 300, so it is a
-//     collection endpoint;
-//   - the friends sysmodule needs each friend's nickname, thumbnail, friend
-//     code and presence to draw the friend list, so a friend entry has to be at
-//     least as rich as a user object.
+// It differs from UserResponse in that birthday, country and links are absent,
+// and nicknameUpdatedAt is added. Shape confirmed by the capture at
+// docs/CAPTURES/raw/03-friends.json.
+type FriendUserResponse struct {
+	ID       string `json:"id"`
+	ETag     string `json:"etag"`
+	Nickname string `json:"nickname"`
+
+	ThumbnailURL  string `json:"thumbnailUrl"`
+	Thumbnail2URL string `json:"thumbnail2Url,omitempty"`
+
+	DeviceAccounts []DeviceAccountResponse `json:"deviceAccounts"`
+
+	Permissions db.Permissions   `json:"permissions"`
+	Extras      db.ExtrasByScope `json:"extras"`
+	Presence    PresenceResponse `json:"presence"`
+
+	Deleted bool `json:"deleted"`
+
+	BlocksUpdatedAt     int64 `json:"blocksUpdatedAt"`
+	FriendsUpdatedAt    int64 `json:"friendsUpdatedAt"`
+	NicknameUpdatedAt   int64 `json:"nicknameUpdatedAt"`
+	ThumbnailUploadedAt int64 `json:"thumbnailUploadedAt,omitempty"`
+	CreatedAt           int64 `json:"createdAt"`
+	UpdatedAt           int64 `json:"updatedAt"`
+}
+
+// FriendResponse is one entry in GET /2.0.0/users/<id>/friends.
 //
-// SwitchNet returns a JSON array of objects that extend the user object with
-// isFavorite and becameFriendAt, because every other BAAS endpoint returns its
-// resource bare rather than wrapped in an envelope. If a capture shows an
-// envelope such as {"friends":[...]}, the only place to change is
-// friends.go's listFriends — this struct stays as it is.
-//
-// Capture with: add a friend on a real console, then read
-// GET /2.0.0/users/<id>/friends off the wire. See docs/CAPTURES/README.md.
+// It represents the relationship from the caller's perspective. Shape confirmed
+// by the capture at docs/CAPTURES/raw/03-friends.json.
 type FriendResponse struct {
-	UserResponse
-	IsFavorite     bool  `json:"isFavorite"`
-	BecameFriendAt int64 `json:"becameFriendAt"`
+	UserID     string             `json:"userId"`
+	FriendID   string             `json:"friendId"`
+	Friend     FriendUserResponse `json:"friend"`
+	IsFavorite bool               `json:"isFavorite"`
+	// Channels tracks per-channel authorization. In captures this contains
+	// {"FRIEND_CODE": {"authorizedAt": <unix>}}. SwitchNet does not track
+	// channel authorization separately, so this is always an empty map.
+	// TODO(capture-needed): settle what triggers a FRIEND_CODE entry and what
+	// the authorizedAt timestamp represents. Change: listFriends in friends.go.
+	Channels   map[string]any   `json:"channels"`
+	Extras     db.ExtrasByScope `json:"extras"`
+	FriendNote string           `json:"friendNote"`
+	ETag       string           `json:"etag"`
+	CreatedAt  int64            `json:"createdAt"`
+	UpdatedAt  int64            `json:"updatedAt"`
 }
 
 // FriendRequestResponse is one entry in the inbox or outbox.
 //
-// TODO(capture-needed): as with FriendResponse, the exact shape is
-// undocumented. The fields here are the minimum the console needs to draw the
-// "friend requests" screen: who sent it, when, and enough profile to show them.
+// TODO(capture-needed): the inbox and outbox captures (04, 05) both returned
+// empty item lists, so the per-item shape is still unconfirmed. The fields
+// here are the minimum the console needs to draw the "friend requests" screen:
+// who sent it, when, and enough profile to show them. Change: friendRequestResponse
+// in friends.go once a capture with actual items arrives.
 type FriendRequestResponse struct {
 	ID   string        `json:"id"`
 	From *UserResponse `json:"from,omitempty"`
@@ -229,6 +281,35 @@ func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence,
 	return out
 }
 
+// friendUserResponse builds the friend sub-object embedded in FriendResponse.
+//
+// birthday, country and links are absent in the capture; nicknameUpdatedAt is
+// added. The db.User type has no separate NicknameUpdatedAt field, so UpdatedAt
+// is used as a conservative approximation.
+func friendUserResponse(u db.User, pres db.Presence, vis visibility) FriendUserResponse {
+	out := FriendUserResponse{
+		ID:                u.ID,
+		ETag:              etagFor(u),
+		Nickname:          u.Nickname,
+		ThumbnailURL:      u.ThumbnailURL,
+		Thumbnail2URL:     u.Thumbnail2URL,
+		DeviceAccounts:    []DeviceAccountResponse{},
+		Permissions:       u.Permissions,
+		Extras:            scopedExtras(u.Extras, vis),
+		Presence:          presenceResponse(pres, vis),
+		Deleted:           u.Deleted,
+		BlocksUpdatedAt:   u.BlocksUpdatedAt.Unix(),
+		FriendsUpdatedAt:  u.FriendsUpdatedAt.Unix(),
+		NicknameUpdatedAt: u.UpdatedAt.Unix(),
+		CreatedAt:         u.CreatedAt.Unix(),
+		UpdatedAt:         u.UpdatedAt.Unix(),
+	}
+	if u.ThumbnailUploadedAt != nil {
+		out.ThumbnailUploadedAt = u.ThumbnailUploadedAt.Unix()
+	}
+	return out
+}
+
 // scopedExtras returns only the extras scopes a viewer may read.
 //
 // The five scopes exist precisely so a user can put something in 'self' that no
@@ -268,6 +349,7 @@ func scopedExtras(extras db.ExtrasByScope, vis visibility) db.ExtrasByScope {
 func presenceResponse(p db.Presence, vis visibility) PresenceResponse {
 	out := PresenceResponse{
 		State:  p.State,
+		Pf:     1, // platform identifier; always 1 in every captured presence
 		Extras: scopedExtras(p.Extras, vis),
 	}
 	// A zero ReportedAt means the console has never reported. Unix() on a zero
