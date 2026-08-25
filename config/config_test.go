@@ -7,6 +7,30 @@ import (
 	"testing"
 )
 
+// clearEnv removes every SWITCHNET_* variable for the duration of a test.
+//
+// Without this the tests are not hermetic: anybody with SWITCHNET_DATABASE_URL
+// exported in their shell — which is exactly what running the servers locally
+// leaves behind — sees the validation tests fail for a reason that has nothing
+// to do with the code.
+func clearEnv(t *testing.T) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		key, _, found := strings.Cut(entry, "=")
+		if !found || !strings.HasPrefix(key, "SWITCHNET_") {
+			continue
+		}
+		// t.Setenv restores the previous value at the end of the test, and
+		// setting it to empty is not the same as unsetting it, so unset it
+		// explicitly and restore by hand.
+		previous := os.Getenv(key)
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
+		t.Cleanup(func() { _ = os.Setenv(key, previous) })
+	}
+}
+
 func writeConfig(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -17,6 +41,8 @@ func writeConfig(t *testing.T, body string) string {
 }
 
 func TestDefaultsAreValid(t *testing.T) {
+	clearEnv(t)
+
 	// A first run with no config file at all has to work, because that is how
 	// the containers in docker-compose.yml start.
 	cfg, err := Load("")
@@ -48,6 +74,8 @@ func TestDefaultsAreValid(t *testing.T) {
 }
 
 func TestExampleConfigIsValid(t *testing.T) {
+	clearEnv(t)
+
 	// The file an operator copies has to load. A typo in it is a first-run
 	// failure with a stack trace instead of a working server.
 	path := filepath.Join("config.example.yaml")
@@ -60,6 +88,8 @@ func TestExampleConfigIsValid(t *testing.T) {
 }
 
 func TestUnknownFieldIsRejected(t *testing.T) {
+	clearEnv(t)
+
 	// A silently ignored key is a setting the operator thinks they changed. That
 	// is worse than a startup error, especially for something like
 	// natcheck_secondary_ip whose absence only shows up as a game not
@@ -71,6 +101,8 @@ func TestUnknownFieldIsRejected(t *testing.T) {
 }
 
 func TestEnvironmentOverridesFile(t *testing.T) {
+	clearEnv(t)
+
 	path := writeConfig(t, `
 network:
   public_ip: 10.0.0.1
@@ -105,6 +137,8 @@ baas:
 // addresses. Set to the same value, matchmaking finds opponents and the match
 // then never starts — and nothing in any log says why.
 func TestNATCheckSecondaryIPMustDiffer(t *testing.T) {
+	clearEnv(t)
+
 	path := writeConfig(t, `
 network:
   public_ip: 192.168.1.50
@@ -130,6 +164,8 @@ network:
 }
 
 func TestInvalidAddressesAreRejected(t *testing.T) {
+	clearEnv(t)
+
 	for name, body := range map[string]string{
 		"public ip is a hostname": "network:\n  public_ip: switchnet.example.com\n",
 		"public ip is nonsense":   "network:\n  public_ip: not-an-ip\n",
@@ -143,6 +179,8 @@ func TestInvalidAddressesAreRejected(t *testing.T) {
 }
 
 func TestPolicyValidation(t *testing.T) {
+	clearEnv(t)
+
 	for name, body := range map[string]string{
 		"unknown policy":  "aauth:\n  online_play_policy: SOMETIMES\n",
 		"unknown handler": "aauth:\n  policy_handler: MAYBE\n",
@@ -192,6 +230,8 @@ func TestPolicyFor(t *testing.T) {
 }
 
 func TestMissingConfigFileIsAnError(t *testing.T) {
+	clearEnv(t)
+
 	// An operator who passes -config with a typo should be told, not silently
 	// given the defaults and a server pointing at nothing.
 	if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
@@ -200,6 +240,8 @@ func TestMissingConfigFileIsAnError(t *testing.T) {
 }
 
 func TestRequiredFieldsAreEnforced(t *testing.T) {
+	clearEnv(t)
+
 	for name, body := range map[string]string{
 		"no database url":       "database:\n  url: \"\"\n",
 		"no keys dir":           "keys:\n  dir: \"\"\n",
