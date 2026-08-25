@@ -131,10 +131,9 @@ func (s *Server) Handler() http.Handler {
 
 	// ---- no token required ----
 	mux.HandleFunc("POST /1.0.0/application/token", s.applicationToken)
-	mux.Handle("GET /1.0.0/certificates",
-		sjwt.JWKSHandler(sjwt.JWKSetFor("developer", s.idIssuer.Key())))
-	mux.Handle("GET /1.0.0/internal_certificates",
-		sjwt.JWKSHandler(sjwt.JWKSetFor("internal", s.accessIssuer.Key())))
+	// The two JWK set endpoints. See certificates.go for why they publish
+	// different keys.
+	s.registerCertificateRoutes(mux)
 
 	// ---- anonymous token required ----
 	mux.Handle("POST /1.0.0/users", s.anonymous(s.registerUser))
