@@ -28,6 +28,10 @@ switchnet-*
 /data/
 *.log
 
+# Python (scripts/capture-baas.py)
+__pycache__/
+*.pyc
+
 # Editor / OS
 .DS_Store
 .idea/
