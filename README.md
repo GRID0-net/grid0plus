@@ -7,7 +7,9 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
   <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
-  <img src="https://img.shields.io/badge/phase%201-accounts%20%2B%20friends-brightgreen" alt="Phase 1">
+  <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
+  <img src="https://img.shields.io/badge/phase%202-not%20started-lightgrey" alt="Phase 2">
+  <img src="https://img.shields.io/badge/phase%203-not%20started-lightgrey" alt="Phase 3">
 </p>
 
 ---
@@ -18,8 +20,15 @@ Accounts, friend codes, friend requests, friend lists and presence — including
 "Playing Splatoon 3" — working through the **stock** Nintendo friends applet, on
 consoles you own, against a server you run.
 
-Phase 1 is complete and is what this repository contains today. Phase 2 adds an
-NPLN game server for Splatoon 3 and a web dashboard.
+Three phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
+
+| Phase | Scope | State |
+| --- | --- | --- |
+| **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
+| **2** | NPLN game server for Splatoon 3, web dashboard | not started |
+| **3** | eShop, served from local `.NSP` dumps of games you own | not started |
+
+Phase 1 is what this repository contains today.
 
 ```
 ┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
@@ -94,6 +103,12 @@ address/port checklist, and [`switch/README.md`](switch/README.md) for the conso
 
 `make help` lists every target.
 
+## Contributing, or picking this up as an agent
+
+[`CLAUDE.md`](CLAUDE.md) is the orientation document: the two real hardware bugs
+this codebase is shaped around, the things that will waste your time, and where
+the guesses are. Read it before changing anything under `internal/baas`.
+
 ## Two things that cost the most debugging time
 
 **You cannot install a CA certificate on a retail Switch.** The `ssl` sysmodule's
@@ -148,8 +163,8 @@ internal/
   natcheck/      the NAT-check UDP responder
   service/       shared startup: logging, signals, graceful shutdown
 switch/          console-side setup and the generated hosts file
-scripts/         gen-certs.sh, seed-dev-data.sh
-docs/            architecture, deployment, packet capture, captures
+scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py
+docs/            roadmap, architecture, deployment, packet capture, captures
 ```
 
 Every package under `internal/` has a doc comment saying which Nintendo endpoint
@@ -184,9 +199,24 @@ which single function to change:
 grep -rn 'TODO(capture-needed)' internal/
 ```
 
-[`docs/CAPTURES/README.md`](docs/CAPTURES/README.md) lists them in priority order
-with instructions for capturing each, and
-[`docs/PACKET_CAPTURE.md`](docs/PACKET_CAPTURE.md) covers the mechanics.
+[`docs/CAPTURES/README.md`](docs/CAPTURES/README.md) lists them in priority order.
+
+### Settling them
+
+`scripts/capture-baas.py` answers most of them in one command. It talks to
+Nintendo's real BAAS from a PC using your console's credentials, so **the console
+is never involved** — and in particular never runs with certificate verification
+disabled while talking to Nintendo, which is the main risk in the usual
+mitmproxy-against-the-console approach.
+
+```sh
+python3 scripts/capture-baas.py --parse-save /path/to/su/baas/xxxxx.dat
+python3 scripts/capture-baas.py --keys prod.keys --prodinfo PRODINFO \
+    --device-account-id <16 hex> --password "<40 chars>" --country NL
+```
+
+[`docs/PACKET_CAPTURE.md`](docs/PACKET_CAPTURE.md) covers that, the console-MITM
+route and its ban risk, and NPLN's gRPC capture for phase 2.
 
 ## Credits
 

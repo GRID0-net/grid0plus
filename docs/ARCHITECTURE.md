@@ -4,8 +4,9 @@ SwitchNet replaces the Nintendo servers a Switch talks to before and during
 online play, for a private group of consoles the operator owns.
 
 Phase 1 — this document's subject — is the account and friends layer: everything
-needed for the **stock** Nintendo friends applet to work. Phase 2 adds the NPLN
-game server for Splatoon 3 and a web dashboard.
+needed for the **stock** Nintendo friends applet to work.
+[`ROADMAP.md`](ROADMAP.md) covers phase 2 (the NPLN game server for Splatoon 3,
+and a dashboard) and phase 3 (the eShop, served from local `.NSP` dumps).
 
 ## Contents
 
@@ -30,6 +31,7 @@ to each other:
 | Accounts and friends | login, friend list, presence, friend codes | REST over HTTPS | 1 |
 | Game servers | matchmaking, lobbies, rankings | NEX/PRUDP (older titles) or NPLN/gRPC (newer) | 2 |
 | Gameplay | the actual in-match packets | Pia, peer-to-peer UDP | — |
+| Store and content | catalogue, purchases, downloads | REST over HTTPS, plus a web storefront | 3 |
 
 **Gameplay is always peer-to-peer.** Once a match starts the consoles talk
 directly to each other and SwitchNet is not in the path. This is why the NAT
@@ -283,6 +285,10 @@ comment links to for its own endpoint:
 - [NAT check](https://github.com/kinnay/NintendoClients/wiki/NAT-Check-Server)
 - [Server list](https://github.com/kinnay/NintendoClients/wiki/Server-List)
 - [NPLN](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) (phase 2)
+- [eShop Applet](https://github.com/kinnay/NintendoClients/wiki/eShop-Applet-(Switch)),
+  [Atum](https://github.com/kinnay/NintendoClients/wiki/Atum-Server),
+  [Dragons](https://github.com/kinnay/NintendoClients/wiki/Dragons-Servers),
+  [Tagaya](https://github.com/kinnay/NintendoClients/wiki/Tagaya-Server-(Switch)) (phase 3)
 
 The presence request shape came from `kinnay/NintendoClients`,
 `nintendo/switch/baas.py`. The Atmosphère host list and the cert-trust mechanism

@@ -177,7 +177,8 @@ info and the applet has nothing to name.
 | Friends show but everybody is offline | Presence. Check `baas: presence reported` appears at all. If it does not, the friends sysmodule is not reaching `PATCH /1.0.0/users/<id>/device_accounts/<id>`. |
 | A friend shows online but never "Playing X" | `appInfo:appId` is not arriving. Turn on `log.level: debug` and look at the presence patch the console sends. |
 | Everybody sees the same friend code | Two consoles resolved to one account. SwitchNet refuses to do this by construction — a device account resolves to exactly one user or the request fails — so check whether both consoles were restored from the same SD card image and are presenting the same cached device account. |
-| The friends applet works, a game says it cannot connect | Expected in phase 1. Game servers are phase 2. |
+| The friends applet works, a game says it cannot connect | Expected in phase 1. Game servers are phase 2 — see [`../docs/ROADMAP.md`](../docs/ROADMAP.md). |
+| The eShop no longer opens | Phase 1 does not redirect any eShop host, so this should not happen. If it does, check whether something added an `eshop`, `shop` or `atum` line to the hosts file: they are phase 3 and must stay passthrough until there is a server behind them. |
 | Matchmaking finds a match that never starts | NAT check. `nncs1` and `nncs2` must resolve to two different addresses; see `network.natcheck_secondary_ip`. |
 
 ## Going back to Nintendo's servers
