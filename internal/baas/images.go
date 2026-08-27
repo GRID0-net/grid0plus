@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/jpeg" // registers the JPEG decoder used to validate uploads
+	"image/color"
+	"image/jpeg"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -200,4 +201,62 @@ func (s *Server) imageFileServer() http.Handler {
 // GetImagePath returns the on-disk path of a stored image. Used by tests.
 func (s *Server) GetImagePath(relPath string) string {
 	return filepath.Join(s.cfg.ImageDir, relPath)
+}
+
+// defaultAvatarURLOrEmpty is ensureDefaultAvatar with the one error-handling
+// policy every caller wants: log and fall back to an empty thumbnailUrl
+// rather than fail the request a picture was never going to block.
+func (s *Server) defaultAvatarURLOrEmpty() string {
+	url, err := s.ensureDefaultAvatar()
+	if err != nil {
+		s.log.Warn("baas: could not create default avatar", "error", err)
+		return ""
+	}
+	return url
+}
+
+// defaultAvatarRelPath is the filename ensureDefaultAvatar writes and
+// naUsersMe (nalink.go) points a person with no uploaded thumbnail at.
+const defaultAvatarRelPath = "default-avatar.jpg"
+
+// ensureDefaultAvatar returns the URL of a default avatar, generating the
+// file the first time it is needed.
+//
+// A freshly registered person (website.go) has no uploaded thumbnail, and
+// real Nextendo's "add this user to this console" confirmation screen — the
+// model the whole Nintendo Account link flow is built to match, per the
+// operator 2026-08-26 — always has something to show there, never a blank
+// space. Checked and regenerated lazily rather than at startup: ImageDir may
+// not exist yet on a fresh deployment, and this endpoint is low-traffic
+// enough that an os.Stat per request costs nothing worth avoiding.
+func (s *Server) ensureDefaultAvatar() (string, error) {
+	url := strings.TrimSuffix(s.cfg.ImageBaseURL, "/") + "/" + defaultAvatarRelPath
+	path := filepath.Join(s.cfg.ImageDir, defaultAvatarRelPath)
+	if _, err := os.Stat(path); err == nil {
+		return url, nil
+	}
+
+	if err := os.MkdirAll(s.cfg.ImageDir, 0o750); err != nil {
+		return "", err
+	}
+
+	// A plain solid square. Its only job is to not be blank; there is
+	// nothing to personalise it with yet.
+	const size = 256
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	fill := color.RGBA{R: 0x4a, G: 0x5a, B: 0x8a, A: 0xff}
+	for y := range size {
+		for x := range size {
+			img.Set(x, y, fill)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o640); err != nil {
+		return "", err
+	}
+	return url, nil
 }

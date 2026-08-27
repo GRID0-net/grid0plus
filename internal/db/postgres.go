@@ -92,19 +92,28 @@ const userColumns = `
 	id, nickname, country, birthday,
 	thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 	permissions, extras, deleted,
-	blocks_updated_at, friends_updated_at, created_at, updated_at`
+	blocks_updated_at, friends_updated_at, created_at, updated_at,
+	login_username, login_password_hash`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
 	var perms, extras []byte
+	var loginUsername, loginPasswordHash *string
 	err := row.Scan(
 		&u.ID, &u.Nickname, &u.Country, &u.Birthday,
 		&u.ThumbnailURL, &u.Thumbnail2URL, &u.ThumbnailUploadedAt,
 		&perms, &extras, &u.Deleted,
 		&u.BlocksUpdatedAt, &u.FriendsUpdatedAt, &u.CreatedAt, &u.UpdatedAt,
+		&loginUsername, &loginPasswordHash,
 	)
 	if err != nil {
 		return User{}, mapErr(err)
+	}
+	if loginUsername != nil {
+		u.LoginUsername = *loginUsername
+	}
+	if loginPasswordHash != nil {
+		u.LoginPasswordHash = *loginPasswordHash
 	}
 	if err := json.Unmarshal(perms, &u.Permissions); err != nil {
 		return User{}, fmt.Errorf("decode permissions for %s: %w", u.ID, err)
@@ -174,6 +183,49 @@ func (p *Postgres) CreateUser(ctx context.Context, u User, da DeviceAccount) err
 	}
 
 	return tx.Commit(ctx)
+}
+
+// CreateUserWithLogin inserts a user with login credentials and no device
+// account.
+func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User) error {
+	perms, err := json.Marshal(u.Permissions)
+	if err != nil {
+		return err
+	}
+	extras, err := json.Marshal(u.Extras)
+	if err != nil {
+		return err
+	}
+
+	_, err = p.pool.Exec(ctx, `
+		INSERT INTO users (
+			id, nickname, country, birthday,
+			thumbnail_url, thumbnail2_url,
+			permissions, extras,
+			blocks_updated_at, friends_updated_at, created_at, updated_at,
+			login_username, login_password_hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$9,$10,$11)`,
+		u.ID, u.Nickname, u.Country, u.Birthday,
+		u.ThumbnailURL, u.Thumbnail2URL,
+		perms, extras, u.CreatedAt,
+		u.LoginUsername, u.LoginPasswordHash)
+	if err != nil {
+		return mapErr(err)
+	}
+
+	// A presence row from the start, matching CreateUser, so every read path
+	// can assume it exists even before this user ever links a console.
+	_, err = p.pool.Exec(ctx, `
+		INSERT INTO presence (user_id, state, extras, last_seen_at)
+		VALUES ($1, $2, $3, $4)`,
+		u.ID, StateOffline, []byte(`{}`), u.CreatedAt)
+	return mapErr(err)
+}
+
+// GetUserByLoginUsername looks up a user by their login username.
+func (p *Postgres) GetUserByLoginUsername(ctx context.Context, username string) (User, error) {
+	return scanUser(p.pool.QueryRow(ctx,
+		`SELECT `+userColumns+` FROM users WHERE lower(login_username) = lower($1)`, username))
 }
 
 // GetUser returns a user by id.
@@ -362,6 +414,22 @@ func (p *Postgres) DeleteDeviceAccount(ctx context.Context, userID, id string) e
 	tag, err := p.pool.Exec(ctx, `
 		UPDATE device_accounts SET deleted_at = now(), updated_at = now()
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, id, userID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ReassignDeviceAccount moves a device account to a different user. The
+// device_accounts.user_id foreign key does the "does the target user exist"
+// check for free: a violation maps to ErrNotFound (see mapErr).
+func (p *Postgres) ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE device_accounts SET user_id = $2, updated_at = now()
+		WHERE id = $1`, deviceAccountID, newUserID)
 	if err != nil {
 		return mapErr(err)
 	}

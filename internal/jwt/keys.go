@@ -93,8 +93,11 @@ func (r *Keyring) Key(name string) (Key, error) {
 	return k, nil
 }
 
-// The four issuers SwitchNet signs for. They map one-to-one onto the JWK set
-// URLs a console fetches, so a key must never be shared between two of them.
+// The five issuers SwitchNet signs for. A key must never be shared between
+// two of them, even when two of them publish at the same JWK set URL (as
+// IssuerBAASID and IssuerNAID do): the console links a token's 'kid' to its
+// 'iss' and rejects the whole Nintendo Account import if it ever sees one
+// kid claiming two different issuers. See IssuerNAID.
 const (
 	// IssuerDevice signs device tokens. Published at the dcert /keys endpoint.
 	IssuerDevice = "device"
@@ -103,9 +106,20 @@ const (
 	// IssuerBAASAccess signs BAAS access and user tokens. Published at
 	// /1.0.0/internal_certificates.
 	IssuerBAASAccess = "baas_access"
-	// IssuerBAASID signs BAAS id tokens, the ones game servers verify.
-	// Published at /1.0.0/certificates.
+	// IssuerBAASID signs BAAS id tokens (iss = the BAAS host), the ones game
+	// servers verify. Published at /1.0.0/certificates.
 	IssuerBAASID = "baas_id"
+	// IssuerNAID signs the Nintendo Account link flow's id tokens (iss =
+	// "https://accounts.nintendo.com", internal_baas/nalink.go) -- a
+	// deliberately separate key from IssuerBAASID even though both are
+	// published in the same /1.0.0/certificates JWK set. Confirmed against a
+	// real, working private server's own operational notes (Nextendo
+	// Network's baas-jwks, 2026-08-26): reusing one kid across the accounts.
+	// and BAAS issuers makes the console reject the import silently, with no
+	// further network call, which matches SwitchNet's own error 2124-0292
+	// exactly. Before this key existed, nalink.go signed with IssuerBAASID's
+	// key by mistake.
+	IssuerNAID = "na_id"
 )
 
 func validKeyName(name string) error {

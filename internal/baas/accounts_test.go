@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
@@ -257,6 +258,334 @@ func TestFreePolicyDoesNotClaimMembership(t *testing.T) {
 	}
 	if _, present := nin["ph"]; present {
 		t.Errorf("id token carries ph = %v for a FREE policy", nin["ph"])
+	}
+}
+
+// TestFederationRecordsAndReturnsTheLinkedNintendoAccount guards against a
+// real bug found on real hardware 2026-08-26: recordNintendoAccountLink
+// stored the linked id in extras, but userResponse never read it back into
+// Links.NintendoAccount, so a console that just federated with a real id
+// token got a 200 whose links object was still completely empty. The
+// console gave up right there (error 2124-3121) without ever calling
+// /1.0.0/users/{id}/link, because nothing in the response confirmed the
+// federation it had just done actually took effect.
+func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
+	h := newHarness(t)
+	a := h.register()
+
+	now := h.clock()
+	idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject:  "some-nintendo-account-id",
+		Audience: "test",
+		IssuedAt: now.Unix(),
+		Expires:  now.Add(time.Minute).Unix(),
+		Issuer:   "https://accounts.nintendo.com",
+		TokenID:  sjwt.NewTokenID(),
+		Type:     "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp":      {"nintendoAccount"},
+			"id":       {a.DeviceAccountID},
+			"password": {a.Password},
+			"idToken":  {idToken},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	if body.User.Links.NintendoAccount == nil {
+		t.Fatal("federation succeeded but links.nintendoAccount is absent from the response")
+	}
+	if body.User.Links.NintendoAccount.ID != "some-nintendo-account-id" {
+		t.Errorf("links.nintendoAccount.id = %q, want %q",
+			body.User.Links.NintendoAccount.ID, "some-nintendo-account-id")
+	}
+
+	// A plain /1.0.0/login afterwards must also carry the link: it was
+	// recorded on the user, not just returned once by federation itself.
+	login := h.login(&a, "")
+	if login.User.Links.NintendoAccount == nil {
+		t.Error("a later /1.0.0/login lost the recorded Nintendo Account link")
+	}
+
+	// registerUser's own defaults ("0000-00-00", "") are for an anonymous
+	// device profile, not a person who just federated with a real Nintendo
+	// Account id. Sending those straight through in this same response
+	// produced a real, undocumented hardware failure (2124-0292, 2026-08-26).
+	if body.User.Birthday == "" || body.User.Birthday == "0000-00-00" {
+		t.Errorf("federation's own embedded user.birthday = %q, want a real-looking date", body.User.Birthday)
+	}
+	if body.User.Country == "" {
+		t.Error("federation's own embedded user.country is empty, want a real-looking ISO country code")
+	}
+
+	// A real working account's federation response always carries both
+	// thumbnail sizes and a non-empty extras.self.nxAccount -- see
+	// recordNintendoAccountLink's TODO(capture-needed) comment for what is
+	// and is not known about the latter.
+	if body.User.Thumbnail2URL == "" {
+		t.Error("federation's own embedded user.thumbnail2Url is empty")
+	}
+	nxAccount, _ := body.User.Extras[db.ScopeSelf]["nxAccount"].(string)
+	if nxAccount == "" {
+		t.Error("federation's own embedded user.extras.self.nxAccount is empty")
+	}
+}
+
+// TestFederationBackfillsCountryFromTheRequestNotAHardcodedDefault guards a
+// real gap found 2026-08-27: recordNintendoAccountLink always backfilled
+// "US" regardless of the naCountry the console actually sent in the request
+// -- silently wrong for anyone not in the US, and a real capture of a
+// working account showed a French naCountry ("FR") end to end.
+func TestFederationBackfillsCountryFromTheRequestNotAHardcodedDefault(t *testing.T) {
+	h := newHarness(t)
+	a := h.register()
+
+	now := h.clock()
+	idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject:  "some-other-nintendo-account-id",
+		Audience: "test",
+		IssuedAt: now.Unix(),
+		Expires:  now.Add(time.Minute).Unix(),
+		Issuer:   "https://accounts.nintendo.com",
+		TokenID:  sjwt.NewTokenID(),
+		Type:     "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp":       {"nintendoAccount"},
+			"id":        {a.DeviceAccountID},
+			"password":  {a.Password},
+			"idToken":   {idToken},
+			"naCountry": {"FR"},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	if body.User.Country != "FR" {
+		t.Errorf("federation's own embedded user.country = %q, want the naCountry it was sent, %q",
+			body.User.Country, "FR")
+	}
+}
+
+// TestFederationBackfillsBirthdayAndCountryEvenWhenTheLinkAlreadyExisted
+// guards the early-return that shipped alongside the very first version of
+// this feature: recordNintendoAccountLink skipped its whole body, birthday
+// and country included, whenever the Nintendo Account id was already
+// recorded from an earlier federation call. On real hardware every retry
+// after the first hit exactly this path.
+func TestFederationBackfillsBirthdayAndCountryEvenWhenTheLinkAlreadyExisted(t *testing.T) {
+	h := newHarness(t)
+	person := h.register()
+	firstDevice := h.register()
+
+	now := h.clock()
+	sign := func() string {
+		idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+			Subject:  person.UserID,
+			Audience: "test",
+			IssuedAt: now.Unix(),
+			Expires:  now.Add(time.Minute).Unix(),
+			Issuer:   "https://accounts.nintendo.com",
+			TokenID:  sjwt.NewTokenID(),
+			Type:     "id_token",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return idToken
+	}
+
+	// First federation: records the link, and should already backfill.
+	first := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp": {"nintendoAccount"}, "id": {firstDevice.DeviceAccountID},
+			"password": {firstDevice.Password}, "idToken": {sign()},
+		},
+	})
+	requireStatus(t, first, 200)
+
+	// Reset to the sentinels directly, as if backfilling had never run, so
+	// the second federation call is the only thing that could have fixed
+	// them -- proving the early-return path backfills too, not just the
+	// first-ever call.
+	sentinelBirthday, sentinelCountry := "0000-00-00", ""
+	if _, err := h.store.UpdateUser(t.Context(), person.UserID,
+		db.UserPatch{Birthday: &sentinelBirthday, Country: &sentinelCountry}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second console federating to the same, already-linked person.
+	secondDevice := h.register()
+	second := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp": {"nintendoAccount"}, "id": {secondDevice.DeviceAccountID},
+			"password": {secondDevice.Password}, "idToken": {sign()},
+		},
+	})
+	requireStatus(t, second, 200)
+
+	var body loginResponse
+	decode(t, second, &body)
+	if body.User.Birthday == "" || body.User.Birthday == "0000-00-00" {
+		t.Errorf("birthday = %q after a repeat federation call, want it backfilled", body.User.Birthday)
+	}
+	if body.User.Country == "" {
+		t.Error("country is empty after a repeat federation call, want it backfilled")
+	}
+}
+
+// TestFederationAttachesAFreshDeviceAccountToAnExistingPerson is the design
+// this whole reassignment mechanism exists for, described by the operator
+// 2026-08-26 after real hardware showed the gap: signing in on the Nintendo
+// Account link page is signing in as an existing person (here: someone who
+// registered on the website), not minting a new one. Before this, the
+// console's "Transfer" flow registered a brand new, empty SwitchNet user for
+// every console it ran on and merely labelled it with the real person's id —
+// no friend code, no history, nothing carried over. This asserts the device
+// account /1.0.0/users just created ends up truly owned by the person who
+// signed in, not just decorated with their id.
+func TestFederationAttachesAFreshDeviceAccountToAnExistingPerson(t *testing.T) {
+	h := newHarness(t)
+
+	// The person: registered independently, has their own friend code and
+	// history already — standing in for someone who signed up on the
+	// website before ever touching this console.
+	person := h.register()
+	h.login(&person, "")
+	friendCode := h.generateFriendCode(person)
+
+	// The console: a brand new, otherwise-unrelated device account, exactly
+	// what /1.0.0/users hands back before any id token exists.
+	fresh := h.register()
+
+	now := h.clock()
+	idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject:  person.UserID,
+		Audience: "test",
+		IssuedAt: now.Unix(),
+		Expires:  now.Add(time.Minute).Unix(),
+		Issuer:   "https://accounts.nintendo.com",
+		TokenID:  sjwt.NewTokenID(),
+		Type:     "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp":      {"nintendoAccount"},
+			"id":       {fresh.DeviceAccountID},
+			"password": {fresh.Password},
+			"idToken":  {idToken},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	if body.User.ID != person.UserID {
+		t.Errorf("federation logged in as %q, want the person it verified, %q",
+			body.User.ID, person.UserID)
+	}
+	if body.User.Links.FriendCode == nil || body.User.Links.FriendCode.ID != friendCode {
+		t.Error("the attached identity lost its friend code, so this is a fresh person, not the real one")
+	}
+
+	// The device account genuinely moved: logging into it again authenticates
+	// as the person, not the fresh empty user /1.0.0/users originally made.
+	loginResp := h.do(request{
+		method: "POST", path: "/1.0.0/login",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"id": {fresh.DeviceAccountID}, "password": {fresh.Password},
+			"naCountry": {"NL"}, "isPersistent": {"true"},
+		},
+	})
+	requireStatus(t, loginResp, 200)
+	var loginBody loginResponse
+	decode(t, loginResp, &loginBody)
+	if loginBody.User.ID != person.UserID {
+		t.Errorf("a later plain login still authenticates as %q, want %q",
+			loginBody.User.ID, person.UserID)
+	}
+}
+
+// TestFederationWithAnUnverifiableIDTokenDoesNotReassign guards the fail-safe
+// side of attaching: an id token this server cannot verify — a real Nintendo
+// Account token, or anything else that is not one nalink.go itself signed —
+// must never move a device account. Only its subject gets recorded as a
+// label, exactly as before this feature existed.
+func TestFederationWithAnUnverifiableIDTokenDoesNotReassign(t *testing.T) {
+	h := newHarness(t)
+	person := h.register()
+	fresh := h.register()
+
+	// Signed with a key this server never issued, so it looks like a
+	// plausible id token but cannot verify against idVerifier.
+	foreignRing := sjwt.NewKeyring(t.TempDir(), true)
+	otherKey, err := foreignRing.Key("foreign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignIssuer := sjwt.NewIssuer(otherKey, "https://accounts.nintendo.com/keys", false)
+	idToken, err := foreignIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject:  person.UserID,
+		Audience: "test",
+		IssuedAt: h.clock().Unix(),
+		Expires:  h.clock().Add(time.Minute).Unix(),
+		Issuer:   "https://accounts.nintendo.com",
+		TokenID:  sjwt.NewTokenID(),
+		Type:     "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp":      {"nintendoAccount"},
+			"id":       {fresh.DeviceAccountID},
+			"password": {fresh.Password},
+			"idToken":  {idToken},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	if body.User.ID != fresh.UserID {
+		t.Errorf("an unverifiable id token reassigned the device account to %q, want it to stay %q",
+			body.User.ID, fresh.UserID)
+	}
+	// The subject is still recorded as a label, same as before this feature.
+	if body.User.Links.NintendoAccount == nil || body.User.Links.NintendoAccount.ID != person.UserID {
+		t.Error("an unverifiable id token's subject should still be recorded as a label")
 	}
 }
 
@@ -567,17 +896,26 @@ func TestJWKSetsAreServedWithoutATokenAndUseDistinctKeys(t *testing.T) {
 	idSet := h.jwks(t, "/1.0.0/certificates")
 	accessSet := h.jwks(t, "/1.0.0/internal_certificates")
 
-	if len(idSet.Keys) != 1 || len(accessSet.Keys) != 1 {
-		t.Fatalf("key set sizes = %d and %d, want 1 each", len(idSet.Keys), len(accessSet.Keys))
+	// /1.0.0/certificates publishes two keys: idIssuer's (the id token in a
+	// login/federation response) and naIDIssuer's (the Nintendo Account link
+	// flow's id token, nalink.go) -- see sjwt.IssuerNAID's doc comment for why
+	// they must be different keys despite sharing this one URL.
+	if len(idSet.Keys) != 2 || len(accessSet.Keys) != 1 {
+		t.Fatalf("key set sizes = %d and %d, want 2 and 1", len(idSet.Keys), len(accessSet.Keys))
 	}
-	// The two sets must publish different keys. Sharing one would mean an id
-	// token verifies as an access token.
-	if idSet.Keys[0].KeyID == accessSet.Keys[0].KeyID {
-		t.Error("/1.0.0/certificates and /1.0.0/internal_certificates publish the same key")
+	if idSet.Keys[0].KeyID == idSet.Keys[1].KeyID {
+		t.Error("idIssuer and naIDIssuer publish the same key at /1.0.0/certificates")
 	}
-	// Nintendo marks these with a 'usage' field.
-	if idSet.Keys[0].Usage != "developer" {
-		t.Errorf("id token key usage = %q, want developer", idSet.Keys[0].Usage)
+	// The id and access sets must publish different keys. Sharing one would
+	// mean an id token verifies as an access token.
+	for _, k := range idSet.Keys {
+		if k.KeyID == accessSet.Keys[0].KeyID {
+			t.Error("/1.0.0/certificates and /1.0.0/internal_certificates publish the same key")
+		}
+		// Nintendo marks these with a 'usage' field.
+		if k.Usage != "developer" {
+			t.Errorf("id token key usage = %q, want developer", k.Usage)
+		}
 	}
 	if accessSet.Keys[0].Usage != "internal" {
 		t.Errorf("access token key usage = %q, want internal", accessSet.Keys[0].Usage)
@@ -591,9 +929,12 @@ func TestPublishedIDTokenKeyVerifiesARealIDToken(t *testing.T) {
 	a := h.register()
 	login := h.login(&a, h.appToken(splatoon3TitleID, "FREE", ""))
 
+	// /1.0.0/certificates now publishes two keys (idIssuer's and naIDIssuer's,
+	// see sjwt.IssuerNAID) -- login's id token is signed with idIssuer's, and
+	// its kid must be *one of* the published set, not necessarily the first.
 	set := h.jwks(t, "/1.0.0/certificates")
-	if len(set.Keys) != 1 {
-		t.Fatalf("key set has %d keys", len(set.Keys))
+	if len(set.Keys) != 2 {
+		t.Fatalf("key set has %d keys, want 2", len(set.Keys))
 	}
 
 	claims := parseBAASClaims(t, login.IDToken)
@@ -601,11 +942,18 @@ func TestPublishedIDTokenKeyVerifiesARealIDToken(t *testing.T) {
 		t.Errorf("id token sub = %q, want %q", claims.Subject, a.UserID)
 	}
 
-	// The 'kid' in the token has to be the one in the published set, or a game
-	// server cannot pick the right key.
+	// The 'kid' in the token has to be in the published set, or a game server
+	// cannot pick the right key.
 	header, _ := decodeTokenParts(t, login.IDToken)
-	if header["kid"] != set.Keys[0].KeyID {
-		t.Errorf("id token kid = %v, published kid = %q", header["kid"], set.Keys[0].KeyID)
+	found := false
+	for _, k := range set.Keys {
+		if k.KeyID == header["kid"] {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("id token kid = %v, not among the published kids", header["kid"])
 	}
 	if header["jku"] != testIssuer+"/1.0.0/certificates" {
 		t.Errorf("id token jku = %v, want the certificates URL", header["jku"])

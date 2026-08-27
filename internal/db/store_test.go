@@ -56,15 +56,17 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 // runStoreContract exercises one Store implementation.
 func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 	tests := map[string]func(*testing.T, Store){
-		"users":          testUsers,
-		"deviceAccounts": testDeviceAccounts,
-		"friendCodes":    testFriendCodes,
-		"friendships":    testFriendships,
-		"friendRequests": testFriendRequests,
-		"blocks":         testBlocks,
-		"presence":       testPresence,
-		"images":         testImages,
-		"findUsers":      testFindUsers,
+		"users":                 testUsers,
+		"deviceAccounts":        testDeviceAccounts,
+		"reassignDeviceAccount": testReassignDeviceAccount,
+		"friendCodes":           testFriendCodes,
+		"friendships":           testFriendships,
+		"friendRequests":        testFriendRequests,
+		"blocks":                testBlocks,
+		"presence":              testPresence,
+		"images":                testImages,
+		"findUsers":             testFindUsers,
+		"userLogin":             testUserLogin,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -186,6 +188,94 @@ func testUsers(t *testing.T, s Store) {
 	}
 }
 
+// testUserLogin covers the login-credential path: a user that exists with no
+// device account at all, found by username rather than by any console-issued
+// credential.
+func testUserLogin(t *testing.T, s Store) {
+	ctx := t.Context()
+	seq++
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	u := User{
+		ID:                hexID(seq),
+		Nickname:          "Bob",
+		Birthday:          "0000-00-00",
+		Permissions:       DefaultPermissions(now),
+		Extras:            EmptyExtras(),
+		BlocksUpdatedAt:   now,
+		FriendsUpdatedAt:  now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		LoginUsername:     "bob",
+		LoginPasswordHash: "$2a$10$notarealhash",
+	}
+	if err := s.CreateUserWithLogin(ctx, u); err != nil {
+		t.Fatalf("create user with login: %v", err)
+	}
+
+	// Found by id, same as a console-created user.
+	got, err := s.GetUser(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if got.LoginUsername != "bob" || got.LoginPasswordHash != "$2a$10$notarealhash" {
+		t.Errorf("login credentials did not round-trip: %+v", got)
+	}
+
+	// No device account at all -- exists, just deviceless, until this person
+	// links a console.
+	das, err := s.ListDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("list device accounts: %v", err)
+	}
+	if len(das) != 0 {
+		t.Errorf("got %d device accounts for a website-registered user, want 0", len(das))
+	}
+
+	// Found by username, case-insensitively -- matches how the login page
+	// and the NA-link stub both look a person up.
+	byUsername, err := s.GetUserByLoginUsername(ctx, "BOB")
+	if err != nil {
+		t.Fatalf("get user by login username: %v", err)
+	}
+	if byUsername.ID != u.ID {
+		t.Errorf("got user %s, want %s", byUsername.ID, u.ID)
+	}
+
+	if _, err := s.GetUserByLoginUsername(ctx, "nobody"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get missing login username: err = %v, want ErrNotFound", err)
+	}
+
+	// A duplicate username conflicts, case-insensitively, rather than
+	// silently creating a second person who can log in as "bob".
+	seq++
+	dup := User{
+		ID:                hexID(seq),
+		Birthday:          "0000-00-00",
+		Permissions:       DefaultPermissions(now),
+		Extras:            EmptyExtras(),
+		BlocksUpdatedAt:   now,
+		FriendsUpdatedAt:  now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		LoginUsername:     "BOB",
+		LoginPasswordHash: "$2a$10$anotherhash",
+	}
+	if err := s.CreateUserWithLogin(ctx, dup); !errors.Is(err, ErrConflict) {
+		t.Errorf("duplicate login username: err = %v, want ErrConflict", err)
+	}
+
+	// A console-created user (the existing path, via CreateUser) has no login
+	// credentials at all -- registerUser never sets them.
+	consoleUser := makeUser(t, s, "ConsoleOnly")
+	got, err = s.GetUser(ctx, consoleUser.ID)
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if got.LoginUsername != "" || got.LoginPasswordHash != "" {
+		t.Errorf("console-created user has login credentials set: %+v", got)
+	}
+}
+
 // TestMemoryStoreDoesNotAliasStoredMaps is memory-only: the PostgreSQL store
 // cannot alias, because it goes through JSON.
 //
@@ -270,6 +360,66 @@ func testDeviceAccounts(t *testing.T, s Store) {
 	other := makeUser(t, s, "Bob")
 	if err := s.DeleteDeviceAccount(ctx, other.ID, da.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("cross-user delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testReassignDeviceAccount(t *testing.T, s Store) {
+	ctx := t.Context()
+	from := makeUser(t, s, "Throwaway")
+	to := makeUser(t, s, "Doughston")
+
+	das, err := s.ListDeviceAccounts(ctx, from.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	da := das[0]
+
+	if err := s.ReassignDeviceAccount(ctx, da.ID, to.ID); err != nil {
+		t.Fatalf("reassign: %v", err)
+	}
+
+	got, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatalf("get device account: %v", err)
+	}
+	if got.UserID != to.ID {
+		t.Errorf("device account owner = %q, want %q", got.UserID, to.ID)
+	}
+	// Same id, same password — a console that already cached them does not
+	// need to re-register.
+	if got.ID != da.ID || got.PasswordSHA256 != da.PasswordSHA256 {
+		t.Error("reassignment changed the device account's id or password")
+	}
+
+	// It moved: gone from the old owner's list, present in the new owner's.
+	fromList, err := s.ListDeviceAccounts(ctx, from.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromList) != 0 {
+		t.Errorf("reassigned device account is still listed under the old owner: %+v", fromList)
+	}
+	// makeUser gives "to" its own device account already, so a correct
+	// reassignment leaves it with two: its own plus the one just moved over.
+	toList, err := s.ListDeviceAccounts(ctx, to.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, d := range toList {
+		if d.ID == da.ID {
+			found = true
+		}
+	}
+	if len(toList) != 2 || !found {
+		t.Errorf("new owner's device accounts = %+v, want its own plus %q", toList, da.ID)
+	}
+
+	if err := s.ReassignDeviceAccount(ctx, "ffffffffffffffff", to.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("reassign a missing device account: err = %v, want ErrNotFound", err)
+	}
+	if err := s.ReassignDeviceAccount(ctx, da.ID, "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("reassign to a missing user: err = %v, want ErrNotFound", err)
 	}
 }
 

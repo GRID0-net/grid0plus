@@ -32,6 +32,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
@@ -75,13 +76,25 @@ type Server struct {
 	bus   presencebus.Bus
 	log   *slog.Logger
 
-	// accessIssuer signs access and user tokens; idIssuer signs id tokens.
-	// They are separate keys because they are published at separate JWK set
-	// URLs and verified by different consumers.
+	// accessIssuer signs access and user tokens; idIssuer signs the id tokens
+	// embedded in a login/federation response (iss = the BAAS host, read by
+	// game servers); naIDIssuer signs the Nintendo Account link flow's id
+	// tokens (iss = "https://accounts.nintendo.com", nalink.go). All three
+	// are separate keys: idIssuer and naIDIssuer are published together at
+	// the same JWK set URL but must not share a key -- see
+	// sjwt.IssuerNAID's doc comment for why.
 	accessIssuer *sjwt.Issuer
 	idIssuer     *sjwt.Issuer
+	naIDIssuer   *sjwt.Issuer
 
 	accessVerifier *sjwt.Verifier
+	// idVerifier checks an id_token presented to /1.0.0/federation against
+	// naIDIssuer's key. A REAL Nintendo Account id_token can never verify
+	// here — SwitchNet does not have Nintendo's key — so this only ever
+	// succeeds for a token nalink.go minted itself. That is exactly what
+	// makes it safe to treat a successful verification as proof the subject
+	// names a real, existing SwitchNet person: see completeLogin's use of it.
+	idVerifier *sjwt.Verifier
 	// deviceVerifier checks the device token a console presents to
 	// /1.0.0/application/token. SwitchNet's own dauth server issued it.
 	deviceVerifier *sjwt.Verifier
@@ -92,6 +105,14 @@ type Server struct {
 	// now is time.Now, overridable in tests so presence TTL behaviour can be
 	// tested without sleeping.
 	now func() time.Time
+
+	// naAuthCodes holds the Nintendo Account link stub's short-lived
+	// authorization codes (nalink.go). Scoped to the Server instance rather
+	// than a package-level variable: this codebase's one hard rule about
+	// mutable state is not to reach for a global that outlives a single
+	// caller, and there is no reason for this map to be the exception.
+	naAuthCodes   map[string]authCode
+	naAuthCodesMu sync.Mutex
 }
 
 // Deps are the collaborators a Server needs.
@@ -101,7 +122,9 @@ type Deps struct {
 	Log            *slog.Logger
 	AccessIssuer   *sjwt.Issuer
 	IDIssuer       *sjwt.Issuer
+	NAIDIssuer     *sjwt.Issuer
 	AccessVerifier *sjwt.Verifier
+	IDVerifier     *sjwt.Verifier
 	DeviceVerifier *sjwt.Verifier
 	AppVerifier    *sjwt.Verifier
 }
@@ -115,10 +138,13 @@ func New(cfg Config, d Deps) *Server {
 		log:            d.Log,
 		accessIssuer:   d.AccessIssuer,
 		idIssuer:       d.IDIssuer,
+		naIDIssuer:     d.NAIDIssuer,
 		accessVerifier: d.AccessVerifier,
+		idVerifier:     d.IDVerifier,
 		deviceVerifier: d.DeviceVerifier,
 		appVerifier:    d.AppVerifier,
 		now:            func() time.Time { return time.Now().UTC() },
+		naAuthCodes:    map[string]authCode{},
 	}
 }
 
@@ -134,6 +160,19 @@ func (s *Server) Handler() http.Handler {
 	// The two JWK set endpoints. See certificates.go for why they publish
 	// different keys.
 	s.registerCertificateRoutes(mux)
+
+	// Self-service registration for a person, independent of any console.
+	// See website.go.
+	mux.HandleFunc("GET /register", s.registerPage)
+	mux.HandleFunc("POST /register", s.registerSubmit)
+
+	// The Nintendo Account link stub. See nalink.go. /2.0.0/users/me is on
+	// api.accounts.nintendo.com rather than accounts.nintendo.com, but this
+	// mux does not route on Host, so one registration covers both.
+	mux.HandleFunc("GET /connect/1.0.0/authorize", s.naAuthorizePage)
+	mux.HandleFunc("POST /connect/1.0.0/authorize", s.naAuthorizeSubmit)
+	mux.HandleFunc("POST /connect/1.0.0/api/token", s.naToken)
+	mux.HandleFunc("GET /2.0.0/users/me", s.naUsersMe)
 
 	// ---- anonymous token required ----
 	mux.Handle("POST /1.0.0/users", s.anonymous(s.registerUser))

@@ -147,7 +147,7 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 
 	resp := userResponse(s.now(), user, nil, db.Presence{
 		UserID: userID, State: db.StateOffline, Extras: db.EmptyExtras(), ReportedAt: now,
-	}, nil, visSelf)
+	}, nil, visSelf, s.defaultAvatarURLOrEmpty())
 	// The one and only time the password is sent.
 	resp.DeviceAccounts = []DeviceAccountResponse{{ID: deviceAccountID, Password: password}}
 
@@ -191,18 +191,32 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request, _ *caller) {
 		writeError(w, r, errInvalidParams)
 		return
 	}
-	s.completeLogin(w, r, form, "")
+	s.completeLogin(w, r, form, "", "")
 }
 
 // federation is /1.0.0/login plus a Nintendo Account id token.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100federation
 //
-// SwitchNet does not host accounts.nintendo.com, so the id token in this request
-// came from somewhere it cannot verify. It is therefore treated as a label, not
-// as a credential: its subject is recorded as a linked account id and it grants
-// nothing. Authentication is still the device account id and password, exactly
-// as in /1.0.0/login.
+// A REAL Nintendo Account id token cannot be verified here — SwitchNet does
+// not have Nintendo's key — so in general this is treated as a label, not a
+// credential: its subject is recorded as a linked account id (see
+// recordNintendoAccountLink) and grants nothing on its own. Authentication is
+// still the device account id and password, exactly as in /1.0.0/login.
+//
+// One case is different: a token that verifies against SwitchNet's own
+// idIssuer key can only exist because nalink.go minted it, for the person who
+// just signed in on the Nintendo Account link page. Its subject is a real,
+// existing SwitchNet user id — not an opaque label — and this is the only
+// place that reassigns the device account /1.0.0/users just created to that
+// person, rather than leaving the console permanently attached to the fresh,
+// empty, unreachable-by-username identity registerUser had to invent because
+// it runs before any id token exists. See completeLogin's use of
+// idVerifier. Found on real hardware 2026-08-26: without this, the console
+// federates successfully, but the "logged in" identity it ends up with is
+// not the one whose credentials it just typed into the login page, and it
+// gives up soon after (undocumented error 2124-0292) with nothing further
+// logged — see docs/CAPTURES for the session write-up.
 func (s *Server) federation(w http.ResponseWriter, r *http.Request, _ *caller) {
 	form, err := parseForm(r)
 	if err != nil {
@@ -214,21 +228,29 @@ func (s *Server) federation(w http.ResponseWriter, r *http.Request, _ *caller) {
 		return
 	}
 
-	// Read the subject for display only. ParseUnverified is used deliberately
-	// and its result never authorises anything.
-	var naID string
+	var naID, verifiedNAID string
 	if idToken := form.Get("idToken"); idToken != "" {
-		var claims sjwt.BAASTokenClaims
-		if err := sjwt.ParseUnverified(idToken, &claims); err == nil {
-			naID = claims.Subject
+		var vclaims sjwt.BAASTokenClaims
+		if err := s.idVerifier.Verify(idToken, &vclaims); err == nil {
+			naID = vclaims.Subject
+			verifiedNAID = vclaims.Subject
 		} else {
-			s.log.Warn("baas: unparseable Nintendo Account id token in /federation", "error", err)
+			// Not one of ours — either a real Nintendo Account token, or
+			// garbage. Fall back to reading the subject for display only,
+			// exactly as before: ParseUnverified's result never authorises
+			// anything.
+			var claims sjwt.BAASTokenClaims
+			if err := sjwt.ParseUnverified(idToken, &claims); err == nil {
+				naID = claims.Subject
+			} else {
+				s.log.Warn("baas: unparseable Nintendo Account id token in /federation", "error", err)
+			}
 		}
 	}
-	s.completeLogin(w, r, form, naID)
+	s.completeLogin(w, r, form, naID, verifiedNAID)
 }
 
-func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form, nintendoAccountID string) {
+func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form, nintendoAccountID, attachToUserID string) {
 	deviceAccountID := strings.ToLower(form.Get("id"))
 	password := form.Get("password")
 	if deviceAccountID == "" || password == "" {
@@ -262,6 +284,36 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 		s.log.Warn("baas: login with wrong password", "device_account", deviceAccountID)
 		writeError(w, r, errInvalidDeviceAccount)
 		return
+	}
+
+	// Only past this point: the caller has just proven it holds this device
+	// account's password. attachToUserID (only ever set by federation, only
+	// ever from a SwitchNet-verified id token) says which existing person
+	// this device account should belong to instead of whoever registerUser
+	// gave it moments ago. This never runs on the strength of the id token
+	// alone — the password check above is what makes reassigning a
+	// credential someone did not prove they hold impossible.
+	if attachToUserID != "" && attachToUserID != da.UserID {
+		target, err := s.store.GetUser(r.Context(), attachToUserID)
+		switch {
+		case errors.Is(err, db.ErrNotFound):
+			s.log.Warn("baas: federation named a Nintendo Account id that is not a real user",
+				"device_account", deviceAccountID, "attach_to", attachToUserID)
+		case err != nil:
+			writeInternalError(s.log, w, r, "load Nintendo Account link target", err)
+			return
+		case target.Deleted:
+			s.log.Warn("baas: federation named a deleted user",
+				"device_account", deviceAccountID, "attach_to", attachToUserID)
+		default:
+			if err := s.store.ReassignDeviceAccount(r.Context(), da.ID, attachToUserID); err != nil {
+				writeInternalError(s.log, w, r, "reassign device account", err)
+				return
+			}
+			s.log.Info("baas: attached device account to an existing person",
+				"device_account", da.ID, "from_user", da.UserID, "to_user", attachToUserID)
+			da.UserID = attachToUserID
+		}
 	}
 
 	user, err := s.store.GetUser(r.Context(), da.UserID)
@@ -298,7 +350,7 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 	}
 
 	if nintendoAccountID != "" {
-		if err := s.recordNintendoAccountLink(r.Context(), &user, nintendoAccountID); err != nil {
+		if err := s.recordNintendoAccountLink(r.Context(), &user, nintendoAccountID, form.Get("naCountry")); err != nil {
 			writeInternalError(s.log, w, r, "record Nintendo Account link", err)
 			return
 		}
@@ -380,7 +432,7 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 
 	writeJSON(w, http.StatusOK, loginResponse{
 		ExpiresIn:   int(s.cfg.AccessTokenTTL.Seconds()),
-		User:        userResponse(s.now(), user, fc, pres, das, visSelf),
+		User:        userResponse(s.now(), user, fc, pres, das, visSelf, s.defaultAvatarURLOrEmpty()),
 		IDToken:     idToken,
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
@@ -393,7 +445,29 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 // It lives in the 'self' extras rather than in a column because SwitchNet does
 // nothing with it: it exists so the console's "linked account" screen has
 // something to show, and so a capture round-trips.
-func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, naID string) error {
+//
+// Also backfills Birthday/Country if either is still BAAS's own "unset"
+// sentinel ("0000-00-00", ""). Those are the right defaults for an anonymous
+// device profile (registerUser, provision.go), which is what every user is
+// until this function runs — but the very response this call is part of
+// embeds the full user object (userResponse, in loginResponse.User), and a
+// console that just did a real Nintendo Account federation is looking at a
+// profile that claims to belong to a real, named person. Suspected once
+// (2026-08-26) of being the cause of an undocumented error (2124-0292) —
+// that suspicion did not hold up: a 2026-08-27 capture of a real, working
+// account showed birthday and country left at their own sentinels the whole
+// time. Backfilling real-looking values here is kept anyway, since it is
+// still more correct than an anonymous device profile's placeholders for a
+// person who just proved a real Nintendo Account, but it is not, on its
+// own, what makes federation succeed.
+//
+// naCountry is the console's own hint (the request's naCountry form field)
+// for which country to backfill, used in preference to a hardcoded one --
+// found 2026-08-27 that this was previously always "US" regardless of what
+// the console actually sent.
+func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, naID, naCountry string) error {
+	patch := db.UserPatch{}
+
 	extras := user.Extras
 	if extras == nil {
 		extras = db.EmptyExtras()
@@ -401,12 +475,41 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 	if extras[db.ScopeSelf] == nil {
 		extras[db.ScopeSelf] = map[string]any{}
 	}
-	if existing, ok := extras[db.ScopeSelf]["nintendoAccountId"].(string); ok && existing == naID {
+	if existing, ok := extras[db.ScopeSelf]["nintendoAccountId"].(string); !ok || existing != naID {
+		extras[db.ScopeSelf]["nintendoAccountId"] = naID
+		patch.Extras = &extras
+	}
+	// TODO(capture-needed): a working account's federation/login response
+	// (2026-08-27 capture) carries a ~200-character opaque value here,
+	// structured like a fixed-format binary blob in a non-base64 alphabet --
+	// not documented anywhere, and not something SwitchNet can derive or
+	// verify. What's confirmed is that the *field* is non-empty on every
+	// working account; what a capture would settle is whether its exact
+	// content matters to the console at all, or only its presence. Using
+	// naID rather than fabricating a Nintendo-shaped blob: CLAUDE.md's rule
+	// against inventing plausible-looking Nintendo internals.
+	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != naID {
+		extras[db.ScopeSelf]["nxAccount"] = naID
+		patch.Extras = &extras
+	}
+
+	if user.Birthday == "" || user.Birthday == "0000-00-00" {
+		birthday := "2000-01-01"
+		patch.Birthday = &birthday
+	}
+	if user.Country == "" {
+		country := naCountry
+		if country == "" {
+			country = "US"
+		}
+		patch.Country = &country
+	}
+
+	if patch.Extras == nil && patch.Birthday == nil && patch.Country == nil {
 		return nil
 	}
-	extras[db.ScopeSelf]["nintendoAccountId"] = naID
 
-	updated, err := s.store.UpdateUser(ctx, user.ID, db.UserPatch{Extras: &extras})
+	updated, err := s.store.UpdateUser(ctx, user.ID, patch)
 	if err != nil {
 		return err
 	}
@@ -449,7 +552,7 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 	}
 
 	writeJSON(w, http.StatusOK,
-		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), c.UserID), pres, das, visSelf))
+		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), c.UserID), pres, das, visSelf, s.defaultAvatarURLOrEmpty()))
 }
 
 // ---- GET /1.0.0/users ---------------------------------------------------
@@ -493,6 +596,7 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 		return
 	}
 
+	defaultThumbnail := s.defaultAvatarURLOrEmpty()
 	out := make([]UserResponse, 0, len(users))
 	for _, u := range users {
 		if u.ID == c.UserID {
@@ -515,7 +619,7 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 			writeInternalError(s.log, w, r, "load presence", err)
 			return
 		}
-		out = append(out, userResponse(s.now(), u, s.friendCodeOrNil(r.Context(), u.ID), pres, nil, visStranger))
+		out = append(out, userResponse(s.now(), u, s.friendCodeOrNil(r.Context(), u.ID), pres, nil, visStranger, defaultThumbnail))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -584,7 +688,7 @@ func (s *Server) linkAccount(w http.ResponseWriter, r *http.Request, c *caller) 
 		writeInternalError(s.log, w, r, "load user", err)
 		return
 	}
-	if err := s.recordNintendoAccountLink(r.Context(), &user, naID); err != nil {
+	if err := s.recordNintendoAccountLink(r.Context(), &user, naID, form.Get("naCountry")); err != nil {
 		writeInternalError(s.log, w, r, "record Nintendo Account link", err)
 		return
 	}
@@ -627,7 +731,7 @@ func (s *Server) writeSelf(w http.ResponseWriter, r *http.Request, user db.User)
 		return
 	}
 	writeJSON(w, http.StatusOK,
-		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), user.ID), pres, das, visSelf))
+		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), user.ID), pres, das, visSelf, s.defaultAvatarURLOrEmpty()))
 }
 
 // friendCodeOrNil returns a user's friend code, or nil if they have none.

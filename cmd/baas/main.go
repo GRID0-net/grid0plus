@@ -48,10 +48,12 @@ func main() {
 
 	keys := sjwt.NewKeyring(cfg.Keys.Dir, cfg.Keys.GenerateIfMissing)
 
-	// Four keys, one per issuer. The two BAAS keys are published at separate
-	// JWK set URLs and read by different consumers, and the dauth and aauth keys
-	// are only ever verified here — sharing any of them would mean a token
-	// minted for one purpose verifying as another.
+	// Five keys, one per issuer. The BAAS keys are published at JWK set URLs
+	// and read by different consumers, and the dauth and aauth keys are only
+	// ever verified here — sharing any of them would mean a token minted for
+	// one purpose verifying as another. IssuerNAID and IssuerBAASID publish at
+	// the *same* URL (both are id tokens) but must still be different keys —
+	// see IssuerNAID's doc comment.
 	accessKey, err := keys.Key(sjwt.IssuerBAASAccess)
 	if err != nil {
 		service.Fatal(log, "load BAAS access signing key", err)
@@ -59,6 +61,10 @@ func main() {
 	idKey, err := keys.Key(sjwt.IssuerBAASID)
 	if err != nil {
 		service.Fatal(log, "load BAAS id signing key", err)
+	}
+	naIDKey, err := keys.Key(sjwt.IssuerNAID)
+	if err != nil {
+		service.Fatal(log, "load Nintendo Account link id signing key", err)
 	}
 	deviceKey, err := keys.Key(sjwt.IssuerDevice)
 	if err != nil {
@@ -72,6 +78,10 @@ func main() {
 	// BAAS tokens carry no 'typ' header, unlike device and application tokens.
 	accessIssuer := sjwt.NewIssuer(accessKey, cfg.BAAS.AccessTokenJWKSURL, false)
 	idIssuer := sjwt.NewIssuer(idKey, cfg.BAAS.IDTokenJWKSURL, false)
+	// naIDIssuer's own JWK set URL, not the BAAS host's -- see naIDTokenJWKSURL's
+	// doc comment. Both handlers are the same one (the mux does not route on
+	// Host), so this needs no new routing, only a different 'jku' in the token.
+	naIDIssuer := sjwt.NewIssuer(naIDKey, baas.NAIDTokenJWKSURL, false)
 
 	srv := baas.New(baas.Config{
 		Issuer:             cfg.BAAS.Issuer,
@@ -93,7 +103,12 @@ func main() {
 		Log:            log,
 		AccessIssuer:   accessIssuer,
 		IDIssuer:       idIssuer,
+		NAIDIssuer:     naIDIssuer,
 		AccessVerifier: sjwt.NewVerifier(accessKey),
+		// federation verifies the console's relayed Nintendo Account id_token
+		// against naIDKey, the key nalink.go actually signed it with -- not
+		// idKey, which is a different issuer's key. See IssuerNAID.
+		IDVerifier:     sjwt.NewVerifier(naIDKey),
 		DeviceVerifier: sjwt.NewVerifier(deviceKey),
 		AppVerifier:    sjwt.NewVerifier(appKey),
 	})

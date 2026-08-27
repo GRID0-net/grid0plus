@@ -90,6 +90,7 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 	}
 	accessKey := key(sjwt.IssuerBAASAccess)
 	idKey := key(sjwt.IssuerBAASID)
+	naIDKey := key(sjwt.IssuerNAID)
 	deviceKey := key(sjwt.IssuerDevice)
 	appKey := key(sjwt.IssuerApp)
 
@@ -116,7 +117,12 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		t:     t,
 		store: db.NewMemory(),
 		bus:   &recordingBus{},
-		now:   time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC),
+		// Anchored to real time, not a fixed instant: JWT expiry is verified
+		// against the real wall clock (see the note on the expiry tests below),
+		// so a frozen date drifts out of every token's validity window after a
+		// few hours and starts failing the entire suite for a reason that has
+		// nothing to do with what broke.
+		now: time.Now().UTC(),
 		deviceIssuer: sjwt.NewIssuer(deviceKey,
 			"https://dcert-lp1.ndas.srv.nintendo.net/keys", true),
 		appIssuer: sjwt.NewIssuer(appKey,
@@ -130,7 +136,9 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		Log:            slog.New(slog.DiscardHandler),
 		AccessIssuer:   sjwt.NewIssuer(accessKey, cfg.AccessTokenJWKSURL, false),
 		IDIssuer:       sjwt.NewIssuer(idKey, cfg.IDTokenJWKSURL, false),
+		NAIDIssuer:     sjwt.NewIssuer(naIDKey, NAIDTokenJWKSURL, false),
 		AccessVerifier: sjwt.NewVerifier(accessKey),
+		IDVerifier:     sjwt.NewVerifier(naIDKey),
 		DeviceVerifier: sjwt.NewVerifier(deviceKey),
 		AppVerifier:    sjwt.NewVerifier(appKey),
 	})

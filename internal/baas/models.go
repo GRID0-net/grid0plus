@@ -237,15 +237,31 @@ const (
 // in presence.go. fc may be nil if the user has no friend code yet. now is the
 // server's clock, passed in rather than read here so that the friend code's
 // 'regenerable' flag and the presence TTLs are decided by one consistent time.
-func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence, das []db.DeviceAccount, vis visibility) UserResponse {
+// defaultThumbnailURL fills in for a user with no uploaded picture -- see
+// ensureDefaultAvatar's comment for why this must never be blank. Every call
+// site should pass s.defaultAvatarURLOrEmpty(), not a literal "".
+func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence, das []db.DeviceAccount, vis visibility, defaultThumbnailURL string) UserResponse {
+	thumbnailURL := u.ThumbnailURL
+	thumbnail2URL := u.Thumbnail2URL
+	// A real capture (2026-08-27) of a working account always carries both
+	// sizes, even for the "no picture uploaded" case (".../1/default" and
+	// ".../2/default") -- SwitchNet has one default image, not two sizes of
+	// it, so both fields point at the same URL rather than leaving the large
+	// one blank.
+	if thumbnailURL == "" {
+		thumbnailURL = defaultThumbnailURL
+	}
+	if thumbnail2URL == "" {
+		thumbnail2URL = defaultThumbnailURL
+	}
 	out := UserResponse{
 		ID:               u.ID,
 		ETag:             etagFor(u),
 		Nickname:         u.Nickname,
 		Country:          u.Country,
 		Birthday:         u.Birthday,
-		ThumbnailURL:     u.ThumbnailURL,
-		Thumbnail2URL:    u.Thumbnail2URL,
+		ThumbnailURL:     thumbnailURL,
+		Thumbnail2URL:    thumbnail2URL,
 		DeviceAccounts:   []DeviceAccountResponse{},
 		Links:            LinksResponse{},
 		Permissions:      u.Permissions,
@@ -267,6 +283,21 @@ func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence,
 			UpdatedAt:     fc.UpdatedAt.Unix(),
 			RegenerableAt: fc.RegenerableAt.Unix(),
 			Regenerable:   fc.Regenerable(now),
+		}
+	}
+	// recordNintendoAccountLink stores this in extras; it belongs in the
+	// response too, or a console that just did /1.0.0/federation gets a
+	// 200 whose links object never reflects the link it just made. Found
+	// 2026-08-26: real hardware got exactly that empty links object right
+	// after a successful federation call, then gave up (error 2124-3121)
+	// without ever calling /1.0.0/users/{id}/link.
+	if self, ok := u.Extras[db.ScopeSelf]; ok {
+		if naID, ok := self["nintendoAccountId"].(string); ok && naID != "" {
+			out.Links.NintendoAccount = &AccountLink{
+				ID:        naID,
+				CreatedAt: u.UpdatedAt.Unix(),
+				UpdatedAt: u.UpdatedAt.Unix(),
+			}
 		}
 	}
 

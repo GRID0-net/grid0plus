@@ -38,6 +38,21 @@ type User struct {
 	// Extras holds the five visibility scopes of user extras.
 	Extras ExtrasByScope
 
+	// LoginUsername and LoginPasswordHash let a person authenticate
+	// directly — through the self-registration website and the Nintendo
+	// Account link page — independently of any device account. Empty for a
+	// user that was created by a console (registerUser) rather than by a
+	// person registering on the website. A user can exist with no device
+	// account at all: CreateUser's "never created without a device
+	// account" invariant only ever applied to the console-driven path.
+	//
+	// LoginPasswordHash is bcrypt, not the plain SHA-256 device accounts
+	// use — that one is fine unhashed-strength because it is a
+	// server-generated 238-bit random string; this one is human-chosen and
+	// has to resist guessing.
+	LoginUsername     string
+	LoginPasswordHash string
+
 	Deleted bool
 
 	BlocksUpdatedAt  time.Time
@@ -274,9 +289,19 @@ type Store interface {
 	// ---- users ----
 
 	// CreateUser inserts a new user together with its first device account, in
-	// one transaction. A user with no device account cannot be logged into, so
-	// the two are never created separately.
+	// one transaction. A user created this way — the console-driven path,
+	// registerUser — cannot be logged into without a device account, so the
+	// two are never created separately here. CreateUserWithLogin is the other
+	// way a user comes into existence, with login credentials and no device
+	// account at all.
 	CreateUser(ctx context.Context, u User, da DeviceAccount) error
+	// CreateUserWithLogin creates a user with login credentials
+	// (LoginUsername/LoginPasswordHash already set on u) and no device
+	// account. ErrConflict if the username is taken.
+	CreateUserWithLogin(ctx context.Context, u User) error
+	// GetUserByLoginUsername looks up a user by their login username.
+	// ErrNotFound if none matches.
+	GetUserByLoginUsername(ctx context.Context, username string) (User, error)
 	// GetUser returns a user by id, or ErrNotFound.
 	GetUser(ctx context.Context, id string) (User, error)
 	// UpdateUser applies a patch and returns the updated user.
@@ -298,6 +323,13 @@ type Store interface {
 	ListDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
 	// DeleteDeviceAccount marks a device account deleted.
 	DeleteDeviceAccount(ctx context.Context, userID, id string) error
+	// ReassignDeviceAccount moves a device account to a different user,
+	// keeping its id and password unchanged. Used only after the caller has
+	// already proven it holds that password (see completeLogin in
+	// internal/baas/accounts.go) — this changes who a credential belongs to,
+	// not who is allowed to present it. ErrNotFound if the device account or
+	// the target user does not exist.
+	ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error
 
 	// ---- friend codes ----
 

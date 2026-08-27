@@ -1,0 +1,581 @@
+package baas
+
+import (
+	"bytes"
+	"image/jpeg"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/n-popescu/switchnet/internal/db"
+	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"golang.org/x/crypto/bcrypt"
+)
+
+// registerLoginUser creates a person via CreateUserWithLogin directly
+// (bypassing the website handler, which has its own tests).
+func registerLoginUser(t *testing.T, h *harness, username, password string) db.User {
+	t.Helper()
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := h.clock()
+	id, err := newHexID(8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := db.User{
+		ID:                id,
+		Nickname:          username,
+		Birthday:          "0000-00-00",
+		Permissions:       db.DefaultPermissions(now),
+		Extras:            db.EmptyExtras(),
+		BlocksUpdatedAt:   now,
+		FriendsUpdatedAt:  now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		LoginUsername:     username,
+		LoginPasswordHash: string(hash),
+	}
+	if err := h.store.CreateUserWithLogin(t.Context(), u); err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+// noRedirectClient returns a client that does not follow redirects —
+// naAuthorizeSubmit's redirect target is a custom URI scheme
+// (nintendo://...) that Go's http.Client cannot dial, so it has to be
+// inspected via the Location header instead of followed.
+func noRedirectClient() *http.Client {
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+}
+
+func TestNAAuthorizePageRenders(t *testing.T) {
+	h := newHarness(t)
+	resp, err := http.Get(h.server.URL + "/connect/1.0.0/authorize?client_id=abc&redirect_uri=nintendo%3A%2F%2Flhub.nx.sys&state=xyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `value="abc"`) {
+		t.Error("page does not echo client_id back as a hidden field")
+	}
+	if !strings.Contains(string(body), "nintendo://lhub.nx.sys") {
+		t.Error("page does not echo redirect_uri back as a hidden field")
+	}
+}
+
+func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "alice", "hunter2222")
+
+	client := noRedirectClient()
+	form := url.Values{
+		"client_id":    {"f4e5f2f3e022208b"},
+		"redirect_uri": {"nintendo://lhub.nx.sys"},
+		"state":        {"c14c7273054e5894"},
+		"username":     {"alice"},
+		"password":     {"hunter2222"},
+	}
+	resp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusFound)
+
+	loc := resp.Header.Get("Location")
+	if !strings.HasPrefix(loc, "nintendo://lhub.nx.sys#") {
+		t.Fatalf("Location = %q, want the nintendo:// scheme with a fragment", loc)
+	}
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://lhub.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frag.Get("state") != "c14c7273054e5894" {
+		t.Errorf("state = %q", frag.Get("state"))
+	}
+	if frag.Get("code") == "" {
+		t.Error("no code in the redirect fragment")
+	}
+	if frag.Get("id_token") == "" {
+		t.Fatal("no id_token in the redirect fragment")
+	}
+
+	// The id_token has to round-trip through the exact parsing federation
+	// uses (ParseUnverified into BAASTokenClaims, reading .Subject) — that is
+	// the one invariant the whole design depends on.
+	var claims sjwt.BAASTokenClaims
+	if err := sjwt.ParseUnverified(frag.Get("id_token"), &claims); err != nil {
+		t.Fatalf("id_token does not parse as BAASTokenClaims: %v", err)
+	}
+	if claims.Subject == "" {
+		t.Error("id_token has no subject")
+	}
+}
+
+// TestNAAuthorizeAlwaysIncludesIDTokenAndSessionState guards against
+// re-introducing a bug that shipped 2026-08-26 and cost a full day to find:
+// making id_token/session_state conditional on response_type, on the guess
+// that a plain response_type=code request wants a bare code and gets
+// confused by an unrequested id_token. A 2026-08-27 capture of a genuinely
+// successful link
+// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) proved that
+// guess wrong: response_type=code and response_type=code+id_token both got
+// back the identical four-field fragment (state, session_state, code,
+// id_token) from a real, working private server. Always include both,
+// regardless of response_type.
+func TestNAAuthorizeAlwaysIncludesIDTokenAndSessionState(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "alice", "hunter2222")
+
+	client := noRedirectClient()
+	form := url.Values{
+		"client_id":     {"6ffd70c434d303c8"},
+		"redirect_uri":  {"nintendo://account.nx.sys"},
+		"response_type": {"code"},
+		"state":         {"c14c7273054e5894"},
+		"username":      {"alice"},
+		"password":      {"hunter2222"},
+	}
+	resp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusFound)
+
+	loc := resp.Header.Get("Location")
+	if !strings.HasPrefix(loc, "nintendo://account.nx.sys#") {
+		t.Fatalf("Location = %q, want the nintendo:// scheme with a fragment", loc)
+	}
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://account.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frag.Get("code") == "" {
+		t.Error("no code in the redirect fragment")
+	}
+	if frag.Get("id_token") == "" {
+		t.Error("no id_token in the redirect fragment for response_type=code -- " +
+			"a real working server sends one even here, see the test comment")
+	}
+	if frag.Get("session_state") == "" {
+		t.Error("no session_state in the redirect fragment for response_type=code -- " +
+			"a real working server sends one even here, see the test comment")
+	}
+}
+
+func TestNAAuthorizeWrongPasswordDoesNotRedirect(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "alice", "hunter2222")
+
+	client := noRedirectClient()
+	form := url.Values{
+		"redirect_uri": {"nintendo://lhub.nx.sys"},
+		"username":     {"alice"},
+		"password":     {"wrongpassword"},
+	}
+	resp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusUnauthorized)
+	if resp.Header.Get("Location") != "" {
+		t.Error("a wrong password produced a Location header")
+	}
+}
+
+func TestNAAuthorizeUnknownUsernameDoesNotRedirect(t *testing.T) {
+	h := newHarness(t)
+
+	client := noRedirectClient()
+	form := url.Values{
+		"redirect_uri": {"nintendo://lhub.nx.sys"},
+		"username":     {"nobody"},
+		"password":     {"whatever1"},
+	}
+	resp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusUnauthorized)
+}
+
+func TestNATokenExchangesACodeForAnAccessToken(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "alice", "hunter2222")
+
+	client := noRedirectClient()
+	authorizeResp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", url.Values{
+		"redirect_uri": {"nintendo://lhub.nx.sys"},
+		"username":     {"alice"},
+		"password":     {"hunter2222"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authorizeResp.Body.Close()
+	loc := authorizeResp.Header.Get("Location")
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://lhub.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := frag.Get("code")
+	if code == "" {
+		t.Fatal("no code to exchange")
+	}
+
+	tokenResp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type": {"authorization_code"},
+		"code":       {code},
+		"client_id":  {"f4e5f2f3e022208b"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokenResp.Body.Close()
+	requireStatus(t, tokenResp, http.StatusOK)
+
+	var body struct {
+		AccessToken  string   `json:"access_token"`
+		IDToken      string   `json:"id_token"`
+		RefreshToken string   `json:"refresh_token"`
+		SessionToken string   `json:"session_token"`
+		ExpiresIn    int      `json:"expires_in"`
+		Scope        []string `json:"scope"`
+		TokenType    string   `json:"token_type"`
+	}
+	decode(t, tokenResp, &body)
+	if body.AccessToken == "" {
+		t.Error("no access_token")
+	}
+	// A real console's first-time interactive link uses response_type=code
+	// only, so no id_token ever arrives via the redirect fragment — it has to
+	// come from here, or the console has an access token but no way to learn
+	// which account it belongs to (this was error 2124-3122 on real
+	// hardware, 2026-08-26, before id_token was added to this response).
+	if body.IDToken == "" {
+		t.Error("no id_token")
+	}
+	if body.RefreshToken == "" {
+		t.Error("no refresh_token")
+	}
+	if body.SessionToken == "" {
+		t.Error("no session_token")
+	}
+	if body.TokenType != "Bearer" {
+		t.Errorf("token_type = %q, want Bearer", body.TokenType)
+	}
+
+	// The code is single-use: exchanging it again is refused.
+	secondResp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type": {"authorization_code"},
+		"code":       {code},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondResp.Body.Close()
+	if secondResp.StatusCode == http.StatusOK {
+		t.Error("a code was accepted twice")
+	}
+}
+
+// TestNAIDTokenAndBAASIDTokenUseDifferentKeys guards a real hardware failure
+// found 2026-08-26 (error 2124-0292): nalink.go's Nintendo Account link id
+// token (iss = "https://accounts.nintendo.com") and a login/federation
+// response's embedded id token (iss = the BAAS host) were signed with the
+// same key, both published at the same /1.0.0/certificates JWK set. Per a
+// real, working private server's own operational notes (Nextendo Network's
+// baas-jwks), the console links a token's kid to its iss and silently
+// rejects the whole Nintendo Account import the moment it sees one kid used
+// under two different issuers -- with no further network call, exactly the
+// symptom this bug produced. sjwt.IssuerNAID is the fix: a key of its own.
+func TestNAIDTokenAndBAASIDTokenUseDifferentKeys(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "alice", "hunter2222")
+
+	client := noRedirectClient()
+	authorizeResp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", url.Values{
+		"redirect_uri": {"nintendo://lhub.nx.sys"},
+		"username":     {"alice"},
+		"password":     {"hunter2222"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authorizeResp.Body.Close()
+	loc := authorizeResp.Header.Get("Location")
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://lhub.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	naHeader, naPayload := decodeTokenParts(t, frag.Get("id_token"))
+	if naPayload["iss"] != "https://accounts.nintendo.com" {
+		t.Fatalf("na id_token iss = %v, want accounts.nintendo.com", naPayload["iss"])
+	}
+
+	// An ordinary account's login response also embeds an id token, this one
+	// for the BAAS issuer.
+	a := h.register()
+	login := h.login(&a, "")
+	baasHeader, baasPayload := decodeTokenParts(t, login.IDToken)
+	if baasPayload["iss"] == naPayload["iss"] {
+		t.Fatal("test setup: the BAAS and NA id tokens must have different issuers")
+	}
+
+	if naHeader["kid"] == baasHeader["kid"] {
+		t.Errorf("na id_token kid (%v) == baas id_token kid (%v) despite different issuers -- "+
+			"this is exactly what makes the console reject the Nintendo Account import",
+			naHeader["kid"], baasHeader["kid"])
+	}
+}
+
+// naLogin drives a full authorize-then-exchange round trip and returns the
+// authorization_code grant's tokens, for tests that need a real, valid token
+// rather than exercising the login form itself.
+func naLogin(t *testing.T, h *harness, username, password string) (accessToken, refreshToken string) {
+	t.Helper()
+	client := noRedirectClient()
+	authorizeResp, err := client.PostForm(h.server.URL+"/connect/1.0.0/authorize", url.Values{
+		"redirect_uri": {"nintendo://account.nx.sys"},
+		"username":     {username},
+		"password":     {password},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authorizeResp.Body.Close()
+	loc := authorizeResp.Header.Get("Location")
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://account.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := frag.Get("code")
+	if code == "" {
+		t.Fatal("no code to exchange")
+	}
+
+	tokenResp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type": {"authorization_code"},
+		"code":       {code},
+		"client_id":  {"6ffd70c434d303c8"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tokenResp.Body.Close()
+	requireStatus(t, tokenResp, http.StatusOK)
+
+	var body struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	decode(t, tokenResp, &body)
+	if body.AccessToken == "" || body.RefreshToken == "" {
+		t.Fatal("naLogin: token exchange did not return both tokens")
+	}
+	return body.AccessToken, body.RefreshToken
+}
+
+func TestNATokenRefreshGrantSucceedsWithARealRefreshToken(t *testing.T) {
+	h := newHarness(t)
+	user := registerLoginUser(t, h, "bob", "hunter2222")
+	_, refreshToken := naLogin(t, h, "bob", "hunter2222")
+
+	resp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {"6ffd70c434d303c8"},
+		"scope":         {"openid offline user"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+
+	var body struct {
+		AccessToken  string   `json:"access_token"`
+		IDToken      string   `json:"id_token"`
+		RefreshToken string   `json:"refresh_token"`
+		Scope        []string `json:"scope"`
+		TokenType    string   `json:"token_type"`
+	}
+	decode(t, resp, &body)
+	if body.AccessToken == "" {
+		t.Error("no access_token")
+	}
+	// The captured real response to a refresh grant is deliberately smaller
+	// than an authorization_code response: no id_token, no new
+	// refresh_token. Asserting their absence, not just the access_token's
+	// presence, is what would catch a copy-paste from the other branch.
+	if body.IDToken != "" {
+		t.Error("refresh grant response has an id_token; the real one never does")
+	}
+	if body.RefreshToken != "" {
+		t.Error("refresh grant response has a refresh_token; the real one never does")
+	}
+	if len(body.Scope) != 3 {
+		t.Errorf("scope = %v, want the 3 scopes the request asked for echoed back", body.Scope)
+	}
+
+	// Verify the access token this grant issued actually authenticates as
+	// the same user the refresh_token belonged to, not an empty subject.
+	meResp, err := doAuthorized(h, "GET", "/2.0.0/users/me", body.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer meResp.Body.Close()
+	requireStatus(t, meResp, http.StatusOK)
+	var me struct {
+		ID string `json:"id"`
+	}
+	decode(t, meResp, &me)
+	if me.ID != user.ID {
+		t.Errorf("refreshed access_token authenticates as %q, want %q", me.ID, user.ID)
+	}
+}
+
+// doAuthorized issues a request with a Bearer Authorization header — a
+// plain http.NewRequest since http.Get/PostForm have no way to add headers.
+func doAuthorized(h *harness, method, path, bearer string) (*http.Response, error) {
+	req, err := http.NewRequest(method, h.server.URL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	return http.DefaultClient.Do(req)
+}
+
+func TestNAUsersMeReturnsTheAuthenticatedPersonsProfile(t *testing.T) {
+	h := newHarness(t)
+	user := registerLoginUser(t, h, "carol", "hunter2222")
+	accessToken, _ := naLogin(t, h, "carol", "hunter2222")
+
+	resp, err := doAuthorized(h, "GET", "/2.0.0/users/me", accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+
+	var body struct {
+		ID       string `json:"id"`
+		Nickname string `json:"nickname"`
+		Birthday string `json:"birthday"`
+		Country  string `json:"country"`
+	}
+	decode(t, resp, &body)
+	if body.ID != user.ID {
+		t.Errorf("id = %q, want %q", body.ID, user.ID)
+	}
+	if body.Nickname != "carol" {
+		t.Errorf("nickname = %q, want carol", body.Nickname)
+	}
+	// registerLoginUser stores "0000-00-00" and an empty country -- BAAS's
+	// own sentinels for "unset" on a device profile (accounts.go,
+	// provision.go). Passing those straight through here produced a real
+	// hardware failure (2124-3122, 2026-08-26): a real Nintendo Account
+	// profile is expected to carry an actual date and a real ISO country
+	// code, not BAAS's placeholder values.
+	if body.Birthday == "" || body.Birthday == "0000-00-00" {
+		t.Errorf("birthday = %q, want a real-looking date, not BAAS's unset sentinel", body.Birthday)
+	}
+	if body.Country == "" {
+		t.Error("country is empty, want a real-looking ISO country code")
+	}
+}
+
+// TestNAUsersMeGivesAFreshPersonADefaultAvatar matches the operator's
+// 2026-08-26 description of real Nextendo: the "add this user to this
+// console" confirmation screen always has a picture to show, generated the
+// first time a person with no uploaded thumbnail is fetched, never blank.
+func TestNAUsersMeGivesAFreshPersonADefaultAvatar(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "dana", "hunter2222")
+	accessToken, _ := naLogin(t, h, "dana", "hunter2222")
+
+	resp, err := doAuthorized(h, "GET", "/2.0.0/users/me", accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+
+	var body struct {
+		IconURI string `json:"iconUri"`
+	}
+	decode(t, resp, &body)
+	if body.IconURI == "" {
+		t.Fatal("no iconUri for a person with no uploaded thumbnail")
+	}
+	if !strings.HasSuffix(body.IconURI, "/default-avatar.jpg") {
+		t.Errorf("iconUri = %q, want it to end with /default-avatar.jpg", body.IconURI)
+	}
+
+	// The harness's ImageBaseURL is not actually routable, so check the file
+	// landed on disk (imageFileServer would serve it from here) rather than
+	// fetching the URL over HTTP.
+	raw, err := os.ReadFile(h.srv.GetImagePath("default-avatar.jpg"))
+	if err != nil {
+		t.Fatalf("default avatar was not written to disk: %v", err)
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(raw)); err != nil {
+		t.Errorf("default avatar is not a valid JPEG: %v", err)
+	}
+}
+
+func TestNAUsersMeRefusesAMissingOrInvalidToken(t *testing.T) {
+	h := newHarness(t)
+
+	noAuthResp, err := http.Get(h.server.URL + "/2.0.0/users/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer noAuthResp.Body.Close()
+	if noAuthResp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("no Authorization header: status = %d, want 401", noAuthResp.StatusCode)
+	}
+
+	badResp, err := doAuthorized(h, "GET", "/2.0.0/users/me", "not-a-real-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer badResp.Body.Close()
+	if badResp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("garbage token: status = %d, want 401", badResp.StatusCode)
+	}
+}
+
+func TestNATokenRefreshGrantIsRefusedNotCrashed(t *testing.T) {
+	h := newHarness(t)
+	resp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {"whatever"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "invalid_grant") {
+		t.Errorf("body = %s, want an invalid_grant OAuth error", body)
+	}
+}

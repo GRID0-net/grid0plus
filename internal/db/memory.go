@@ -81,6 +81,43 @@ func (m *Memory) CreateUser(_ context.Context, u User, da DeviceAccount) error {
 	return nil
 }
 
+// CreateUserWithLogin inserts a user with login credentials and no device
+// account.
+func (m *Memory) CreateUserWithLogin(_ context.Context, u User) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.users[u.ID]; ok {
+		return fmt.Errorf("%w: user %s exists", ErrConflict, u.ID)
+	}
+	for _, existing := range m.users {
+		if existing.LoginUsername != "" && strings.EqualFold(existing.LoginUsername, u.LoginUsername) {
+			return fmt.Errorf("%w: login username %s is taken", ErrConflict, u.LoginUsername)
+		}
+	}
+	if u.Extras == nil {
+		u.Extras = EmptyExtras()
+	}
+	m.users[u.ID] = u
+	m.presence[u.ID] = Presence{
+		UserID: u.ID, State: StateOffline, Extras: EmptyExtras(),
+		LastSeenAt: u.CreatedAt,
+	}
+	return nil
+}
+
+// GetUserByLoginUsername looks up a user by their login username.
+func (m *Memory) GetUserByLoginUsername(_ context.Context, username string) (User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, u := range m.users {
+		if u.LoginUsername != "" && strings.EqualFold(u.LoginUsername, username) {
+			return cloneUser(u), nil
+		}
+	}
+	return User{}, ErrNotFound
+}
+
 // GetUser returns a user by id.
 func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	m.mu.RLock()
@@ -252,6 +289,24 @@ func (m *Memory) DeleteDeviceAccount(_ context.Context, userID, id string) error
 	da.DeletedAt = &now
 	da.UpdatedAt = now
 	m.deviceAccounts[id] = da
+	return nil
+}
+
+// ReassignDeviceAccount moves a device account to a different user.
+func (m *Memory) ReassignDeviceAccount(_ context.Context, deviceAccountID, newUserID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	da, ok := m.deviceAccounts[deviceAccountID]
+	if !ok {
+		return ErrNotFound
+	}
+	if _, ok := m.users[newUserID]; !ok {
+		return ErrNotFound
+	}
+	da.UserID = newUserID
+	da.UpdatedAt = time.Now().UTC()
+	m.deviceAccounts[deviceAccountID] = da
 	return nil
 }
 

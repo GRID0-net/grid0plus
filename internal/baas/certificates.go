@@ -28,6 +28,15 @@ import (
 // player's token could act as that player against their own account. There is a
 // test asserting the two key ids differ.
 //
+// /1.0.0/certificates actually publishes two keys of its own: idIssuer's (for
+// the id token embedded in a login/federation response) and naIDIssuer's (for
+// the Nintendo Account link flow's id token, nalink.go). Both are "developer"
+// usage and both live at this one URL, but they must be different keys and
+// therefore different 'kid's — see sjwt.IssuerNAID's doc comment for the
+// console-side failure mode ("2124-0292") that reusing one kid across two
+// issuers actually causes, confirmed against a real private server's own
+// operational notes.
+//
 // Nintendo marks the sets with a 'usage' field: "developer" for the id token key
 // and "internal" for the access token key.
 //
@@ -43,7 +52,7 @@ import (
 // the server.
 func (s *Server) registerCertificateRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /1.0.0/certificates",
-		sjwt.JWKSHandler(sjwt.JWKSetFor("developer", s.idIssuer.Key())))
+		sjwt.JWKSHandler(sjwt.JWKSetFor("developer", s.idIssuer.Key(), s.naIDIssuer.Key())))
 	mux.Handle("GET /1.0.0/internal_certificates",
 		sjwt.JWKSHandler(sjwt.JWKSetFor("internal", s.accessIssuer.Key())))
 }
