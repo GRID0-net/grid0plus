@@ -174,6 +174,72 @@ is harder to guess. The request shape for `POST /2.0.0/friend_requests` is
 capturable this way without touching Nintendo at all, and it is the most valuable
 open question in the list.
 
+That one-line command only intercepts a single host, though — SwitchNet is
+several services on several ports (dauth, aauth, baas, stubs). To decrypt all
+of them in one capture instead of redirecting hosts one at a time,
+`scripts/mitm-sni-router.py` is a mitmdump addon that reads the SNI and routes
+each connection to the matching local port, mirroring
+`deploy/nginx.generated.conf`'s own routing table:
+
+```sh
+sudo mitmdump -s scripts/mitm-sni-router.py --mode reverse:http://127.0.0.1:8083 \
+    --listen-port 443 --set ssl_insecure=true --set keep_host_header=true \
+    --set connection_strategy=lazy -w capture.flow
+```
+
+(`connection_strategy=lazy` matters here specifically: reverse mode connects
+upstream *before* the client handshake reveals SNI by default, which is too
+early for this addon to route correctly.) `scripts/mitm-sni-probe.py` is a
+smaller companion addon — logs every ClientHello's SNI, even ones whose
+handshake fails immediately after, which the addon above (and mitmdump's own
+default logging) cannot show you.
+
+### `sudo mitmdump` may not be the mitmproxy you think it is
+
+**If the console's browser applet rejects mitmproxy's certificate no matter what
+you do to trust it, check which `~/.mitmproxy/` directory `sudo` is actually
+using before touching certificates again.**
+
+`mitmdump`/`mitmweb` need root to bind port 443, so captures on this project
+always run as `sudo mitmdump ...`. Depending on the system's sudo configuration,
+that can leave `$HOME` pointed at `/root` instead of your own user, in which case
+mitmproxy reads and writes its CA at `/root/.mitmproxy/mitmproxy-ca.pem` — a
+completely different file from `~/.mitmproxy/mitmproxy-ca.pem`, holding a
+different, independently-generated key pair. Both default to the exact same
+name, `CN=mitmproxy, O=mitmproxy`, so nothing about the Subject line gives this
+away.
+
+This is invisible right up until you try to fix a certificate-trust problem: you
+inspect, regenerate, or replace `~/.mitmproxy/mitmproxy-ca.pem` as your own
+user, everything about that file looks correct, and the console still rejects
+the connection — because the running `sudo` process was never reading that file
+in the first place. Found 2026-08-26/27 debugging exactly this: the browser
+applet's TLS handshake for `accounts.nintendo.com` died within ~50-80ms of the
+ClientHello every time, across several rounds of CA and TLS-version changes to
+`~/.mitmproxy/`, none of which had any effect, because `sudo mitmdump` was
+signing certificates from `/root/.mitmproxy/` the entire time.
+
+**Check which one is actually in use before changing anything**, by comparing
+the fingerprint of the certificate the running process actually serves against
+the file you're about to edit:
+
+```sh
+# What the running mitmdump is really signing with:
+echo | openssl s_client -connect 127.0.0.1:443 -servername <host> 2>/dev/null \
+    | openssl x509 -noout -issuer -fingerprint -sha256
+
+# Compare against your own copy:
+openssl x509 -in ~/.mitmproxy/mitmproxy-ca-cert.pem -noout -fingerprint -sha256
+
+# And root's, if you have an active sudo session:
+sudo openssl x509 -in /root/.mitmproxy/mitmproxy-ca-cert.pem -noout -fingerprint -sha256
+```
+
+If they don't match your own copy, get the CA that's actually in play
+(`sudo cat /root/.mitmproxy/mitmproxy-ca-cert.pem`, no private key needed if
+you're only adding it to a trust bundle rather than swapping the signing key)
+and use *that* one.
+
 ## Capturing against your own server
 
 For request shapes, you often do not need a proxy at all. Turn the log up:

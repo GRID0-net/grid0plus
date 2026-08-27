@@ -77,6 +77,13 @@ make test TEST_DATABASE_URL="postgres://…" TEST_REDIS_URL="redis://…"
 Read in this order: `docs/ARCHITECTURE.md`, then `internal/baas/README.md`, then
 `internal/baas/router.go`.
 
+Iterating on `baas` itself: `make dev-baas` runs it natively (`go run`) against
+the still-Dockerized Postgres/Redis, instead of a full image rebuild +
+container recreate per change. It reads the exact same signing keys as the
+Dockerized services (`./dev/keys`, bind-mounted — see `docker-compose.yml`),
+not a separate set; do not point it at a different key directory, for the
+usual reason.
+
 ## The two bugs this codebase is shaped around
 
 Both were reported on real hardware, against the production server SwitchNet
@@ -171,6 +178,16 @@ rather than `transparent`.
 the DNS answers, the dnsmasq and unbound configuration, the nginx map, the
 certificate SANs and the hosts file. Adding a host anywhere else produces a
 failure with no useful error.
+
+**`sudo mitmdump` may sign certificates from `/root/.mitmproxy/`, not
+`~/.mitmproxy/`.** Both directories can hold an independently-generated CA
+under the exact same default name, `CN=mitmproxy, O=mitmproxy`, so nothing
+about the Subject line reveals the mismatch. Editing/replacing the wrong one
+looks correct at every step and silently has no effect — the browser applet's
+TLS handshake will keep dying right after the ClientHello no matter what you
+change. Before touching a mitmproxy CA for a capture, confirm which directory
+the running process is actually using — see
+[`docs/PACKET_CAPTURE.md`](docs/PACKET_CAPTURE.md#sudo-mitmdump-may-not-be-the-mitmproxy-you-think-it-is).
 
 ## The guesses, and how to treat them
 
