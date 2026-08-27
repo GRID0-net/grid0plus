@@ -131,6 +131,11 @@ gen-dns:
 .PHONY: gen-switch
 gen-switch: gen-nginx gen-dns gen-hosts
 
+## switchnet-mode: point a console's SD card back at SwitchNet after Nextendo (or any other) mode. SD=/path/to/sd/card
+.PHONY: switchnet-mode
+switchnet-mode:
+	scripts/switchnet-mode.sh $(SD)
+
 ## config-check: validate the config and warn about risky settings
 .PHONY: config-check
 config-check:
@@ -147,6 +152,12 @@ up:
 .PHONY: down
 down:
 	docker compose down
+
+## dev-baas: run baas natively (go run) against the Dockerized Postgres/Redis, for fast iteration -- see scripts/dev-baas.sh
+.PHONY: dev-baas
+dev-baas:
+	docker compose stop baas
+	scripts/dev-baas.sh
 
 ## clean-data: stop everything and DELETE the database and uploaded images
 .PHONY: clean-data

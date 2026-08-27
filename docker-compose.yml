@@ -31,7 +31,12 @@ x-service-defaults: &defaults
     SWITCHNET_LOG_LEVEL: ${SWITCHNET_LOG_LEVEL:-info}
     SWITCHNET_LOG_FORMAT: ${SWITCHNET_LOG_FORMAT:-text}
   volumes:
-    - keys:/var/lib/switchnet/keys
+    # A bind mount, not a named volume: this lets a natively-run service (e.g.
+    # `go run ./cmd/baas` during dev iteration) share the exact same signing
+    # keys as the containers still running in Docker. Pointing dauth/aauth/baas
+    # at different key directories does not error -- every request is
+    # rejected with a confusing "token expired". See CLAUDE.md.
+    - ./dev/keys:/var/lib/switchnet/keys
 
 services:
   # ---------------------------------------------------------------------------
@@ -128,10 +133,16 @@ services:
       SWITCHNET_REDIS_URL: "redis://redis:6379/0"
       SWITCHNET_BAAS_IMAGE_DIR: /var/lib/switchnet/images
     volumes:
-      - keys:/var/lib/switchnet/keys
+      - ./dev/keys:/var/lib/switchnet/keys
       - images:/var/lib/switchnet/images
     ports:
-      - "127.0.0.1:8083:8083"
+      # Every other backend service is 127.0.0.1-only (operator debugging via
+      # curl); baas is the exception, because /register is a page for a
+      # PERSON's own browser on the LAN, not just this machine. It's plain
+      # HTTP on purpose: routing it through the nginx TLS edge instead would
+      # need a visiting device to trust SwitchNet's CA and use its DNS,
+      # neither of which a phone or laptop has by default.
+      - "0.0.0.0:8083:8083"
     depends_on:
       postgres:
         condition: service_healthy
@@ -198,5 +209,4 @@ services:
 volumes:
   postgres:
   redis:
-  keys:
   images:

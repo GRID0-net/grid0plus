@@ -1,7 +1,7 @@
 # Build output
 /bin/
 /dist/
-switchnet-*
+/switchnet-*
 # Binaries from a bare `go build ./cmd/<name>`, which drops them in the repo root.
 /dauth
 /aauth
