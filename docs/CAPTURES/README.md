@@ -98,6 +98,35 @@ Stubbed with `{"active": true, "expiresAt": …}`. With
 `aauth.online_play_policy: FREE` (the default) the console never asks, which is
 why this has not blocked anything.
 
+### 8. `accounts.nintendo.com` — the Nintendo Account link flow ~~the redirect mechanism~~ **CAPTURED**
+
+See [nintendo-account-link.md](nintendo-account-link.md).
+
+**What the captures settled:** the redirect target on a successful link is a
+custom URI scheme (`nintendo://lhub.nx.sys`), not an HTTP callback (captured
+against Nextendo Network, not real Nintendo). `POST /1.0.0/users` does fire
+automatically once the console has the token, driven by the `nnAccount` SDK,
+with no console-local confirmation step first (confirmed 2026-08-27 by a full
+decrypted capture of a genuinely successful Nextendo link). A 2026-08-27
+`tcpdump` of a real Nintendo Account import on stock hardware (no CFW, no
+MITM possible) additionally showed the real host list for this flow —
+including `gw.hac.lp1.vermillion.srv.nintendo.net` mid-flow, previously
+null-routed on an unverified assumption and now stubbed instead.
+
+**What is still open:** whether real Nintendo's response *content* for this
+flow differs from what SwitchNet (modeled on the Nextendo capture) currently
+sends — undecryptable without either a working private server that redirects
+real Nintendo Account holders, or CFW-level cert trust on a console signed in
+with a real account, neither of which was available for the 2026-08-27
+real-hardware capture.
+
+**What SwitchNet does now:** `internal/baas/nalink.go` implements
+`GET/POST /connect/1.0.0/authorize` and `POST /connect/1.0.0/api/token` as a
+custom login page (checking a person's own SwitchNet login credentials, from
+`internal/baas/website.go`'s self-registration), not a copy of anyone's real
+OAuth flow. See [nintendo-account-link.md](nintendo-account-link.md) for the
+full writeup of both captures.
+
 ---
 
 ## Phase 2 — Splatoon 3 (NPLN)
