@@ -30,7 +30,9 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if flag.NArg() != 1 {
+	// "account create" takes further arguments of its own; every other
+	// command takes none.
+	if flag.NArg() == 0 || (flag.Arg(0) != "account" && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -66,6 +68,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "switchnetctl: configuration is valid")
 		warn(cfg)
 
+	case "account":
+		if flag.NArg() < 2 || flag.Arg(1) != "create" {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account create ...\n\n")
+			fmt.Fprint(os.Stderr, accountCreateUsage)
+			os.Exit(2)
+		}
+		accountCreate(cfg, flag.Args()[2:])
+
 	default:
 		usage()
 		os.Exit(2)
@@ -86,6 +96,9 @@ Commands:
   nginx     nginx server blocks routing each Nintendo hostname to its backend
   sans      the hostnames the edge certificate needs, one per line
   check     validate the configuration and report anything risky
+  account   create a user from a device account id and password you already
+            have, rather than one the server generates. See
+            'switchnetctl account create -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file
@@ -201,13 +214,15 @@ func hostsFile(cfg config.Config) string {
 		emit("0.0.0.0", h)
 	}
 
-	section("deliberately NOT redirected")
-	for _, h := range nintendo.ServiceHosts(nintendo.ServicePassthrough) {
-		fmt.Fprintf(&b, "# %-56s # %s\n", h.Pattern, h.Comment)
+	// Passthrough hosts get their own section only when there are any: on a
+	// deployment where every unused host is null-routed instead (see the d4c
+	// entries above), there is nothing here to explain.
+	if passthrough := nintendo.ServiceHosts(nintendo.ServicePassthrough); len(passthrough) > 0 {
+		section("deliberately NOT redirected: must keep reaching real Nintendo")
+		for _, h := range passthrough {
+			fmt.Fprintf(&b, "# %-56s # %s\n", h.Pattern, h.Comment)
+		}
 	}
-	b.WriteString("# Do not null-route the d4c hosts. The nim sysmodule stores a persistent\n")
-	b.WriteString("# flag when the system update check fails, and that flag survives\n")
-	b.WriteString("# switching back to Nintendo's servers.\n")
 
 	return b.String()
 }
@@ -264,18 +279,28 @@ func nginxConf(cfg config.Config) string {
 			continue
 		}
 
-		var serverNames []string
+		// Hosts within one service can still need different nginx treatment,
+		// independent of each other: NoClientCertRequest and NoHTTP2 are two
+		// separate observed HTTP/2 and mTLS interop failures, not always on
+		// the same hosts (accounts.nintendo.com needs both off;
+		// m-lp1.baas.nintendo.com needs the client-cert request kept but
+		// HTTP/2 off). Grouped by (verifyClient, http2) rather than one flag
+		// each, so a host needing any combination gets the right block
+		// without a new variable per flag.
+		type variant struct{ verifyClient, http2 bool }
+		grouped := map[variant][]string{}
 		for _, h := range hosts {
 			if !h.TLS {
 				continue
 			}
+			v := variant{verifyClient: !h.NoClientCertRequest, http2: !h.NoClientCertRequest && !h.NoHTTP2}
 			if h.Wildcard {
-				serverNames = append(serverNames, h.TLSNames...)
+				grouped[v] = append(grouped[v], h.TLSNames...)
 				continue
 			}
-			serverNames = append(serverNames, h.Pattern)
+			grouped[v] = append(grouped[v], h.Pattern)
 		}
-		if len(serverNames) == 0 {
+		if len(grouped) == 0 {
 			continue
 		}
 
@@ -289,12 +314,46 @@ func nginxConf(cfg config.Config) string {
 			b.WriteString("# handshake and then says nothing a gRPC client understands, which\n")
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
-			b.WriteString(commentOut(grpcServerBlock(cfg, serverNames)))
+			b.WriteString(commentOut(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}])))
 			b.WriteString("\n")
 			continue
 		}
 
-		b.WriteString(httpServerBlock(cfg, serverNames, "switchnet_"+names[svc]))
+		// Deterministic order: a map range would reshuffle the generated
+		// file's blocks on every run and churn the diff. {false, true} is
+		// not listed: the construction above never produces it -- a host
+		// with no client-cert request also always has HTTP/2 off.
+		for _, v := range []variant{
+			{verifyClient: true, http2: true},
+			{verifyClient: true, http2: false},
+			{verifyClient: false, http2: false},
+		} {
+			serverNames := grouped[v]
+			if len(serverNames) == 0 {
+				continue
+			}
+			switch {
+			case !v.verifyClient:
+				b.WriteString("# No ssl_verify_client, and HTTP/2 off: unlike the rest of this service,\n")
+				b.WriteString("# these hosts are only ever reached by the console's browser applet, not\n")
+				b.WriteString("# the curl-based device-auth clients. It does not answer a TLS\n")
+				b.WriteString("# CertificateRequest the way those do, and a 2026-08-25 capture of a\n")
+				b.WriteString("# real working Nextendo server showed this exact request made over plain\n")
+				b.WriteString("# HTTP/1.1 -- never HTTP/2. With http2 on and the browser offering 'h2'\n")
+				b.WriteString("# in ALPN, nginx picked h2 and the connection completed a full TLS\n")
+				b.WriteString("# handshake and a short encrypted exchange but nginx never logged an\n")
+				b.WriteString("# HTTP request: the browser's HTTP/2 client could not actually complete\n")
+				b.WriteString("# one. See Host.NoClientCertRequest.\n")
+			case !v.http2:
+				b.WriteString("# HTTP/2 off, ssl_verify_client kept: this host's traffic is genuine\n")
+				b.WriteString("# device-auth/system sync, not the browser applet, so it still needs the\n")
+				b.WriteString("# client-cert request -- but a 2026-08-26 capture showed the exact same\n")
+				b.WriteString("# signature that led to disabling HTTP/2 for accounts.nintendo.com: a\n")
+				b.WriteString("# full, sizeable, bidirectional TLS exchange nginx never logs as a\n")
+				b.WriteString("# completed HTTP request. See Host.NoHTTP2.\n")
+			}
+			b.WriteString(httpServerBlock(cfg, serverNames, "switchnet_"+names[svc], v.verifyClient, v.http2))
+		}
 		b.WriteString("\n")
 	}
 
@@ -326,16 +385,10 @@ func nginxConf(cfg config.Config) string {
 	return b.String()
 }
 
-func httpServerBlock(cfg config.Config, serverNames []string, upstream string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, `server {
-    listen %d ssl;
-    http2 on;
-    server_name %s;
-
-    ssl_certificate     /etc/switchnet/certs/edge.crt;
-    ssl_certificate_key /etc/switchnet/certs/edge.key;
-
+func httpServerBlock(cfg config.Config, serverNames []string, upstream string, verifyClient, http2 bool) string {
+	var verifyClientDirective, clientCertHeader string
+	if verifyClient {
+		verifyClientDirective = `
     # The console presents its own device certificate to dauth and, from 21.0.0,
     # to m-lp1.baas. It is signed by Nintendo, so it cannot be verified here --
     # 'optional_no_ca' asks for it and passes it through without validating it.
@@ -343,7 +396,41 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string) s
     # authorised on it. Without this, every console shares one device id, which
     # is harmless but makes the dashboard's device list useless.
     ssl_verify_client optional_no_ca;
+`
+		clientCertHeader = `
+        # Read by internal/dauth to derive a per-console device id.
+        proxy_set_header X-SwitchNet-Client-Cert $ssl_client_fingerprint;`
+	} else {
+		// Captured 2026-08-25, after the http2-off fix: the TLS handshake to
+		// accounts.nintendo.com now completes cleanly and matches a plain curl
+		// baseline byte-for-byte, including OpenSSL's two default post-handshake
+		// NewSessionTicket messages -- but the console's browser closes the
+		// connection right there, client-initiated, without ever sending the
+		// HTTP request. ssl_session_tickets off did not stop nginx sending them
+		// (a known nginx/OpenSSL 3.x TLS 1.3 quirk), so instead force TLS 1.2 for
+		// this one host: TLS 1.2 delivers a session ticket synchronously, inside
+		// the handshake, never as the asynchronous post-Finished message TLS 1.3
+		// uses. Only affects this browser-only block, not the curl-based
+		// device-auth clients that already negotiate TLS 1.3 successfully.
+		verifyClientDirective = `
+    ssl_protocols TLSv1.2;
+`
+	}
 
+	http2Directive := "off"
+	if http2 {
+		http2Directive = "on"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `server {
+    listen %d ssl;
+    http2 %s;
+    server_name %s;
+
+    ssl_certificate     /etc/switchnet/certs/edge.crt;
+    ssl_certificate_key /etc/switchnet/certs/edge.key;
+%s
     client_max_body_size 4m;
 
     location / {
@@ -352,12 +439,10 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string) s
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        # Read by internal/dauth to derive a per-console device id.
-        proxy_set_header X-SwitchNet-Client-Cert $ssl_client_fingerprint;
+        proxy_set_header X-Forwarded-Proto $scheme;%s
     }
 }
-`, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "), upstream)
+`, cfg.Network.EdgeTLSPort, http2Directive, strings.Join(serverNames, "\n                "), verifyClientDirective, upstream, clientCertHeader)
 	return b.String()
 }
 

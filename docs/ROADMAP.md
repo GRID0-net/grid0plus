@@ -308,11 +308,18 @@ in this stack, SwitchNet will not verify it — but nginx must be configured
 `optional_no_ca` and not `on`, or the connection is refused before it becomes a
 request.
 
-**Do not redirect the `d4c` system-update hosts to implement this.** `sun`,
-`atumn` and `aqua` are system updates, and `nim` writes a persistent flag when
-that check fails. `atum` (no `n`) is game content and is a different host.
-`internal/nintendo/hosts.go` marks the update hosts `ServicePassthrough` with a
-test asserting it; keep that true.
+**Know what `sun`, `atumn` and `aqua` are before touching this.** They are
+system updates — not to be confused with `atum` (no `n`), which is game
+content and a different host. `nim` writes a persistent flag when a system
+update check fails, and that flag survives switching DNS back to real
+Nintendo — expensive to hit on a console that moves back and forth between
+SwitchNet and real Nintendo. `internal/nintendo/hosts.go` currently
+null-routes them instead of leaving them passthrough, because this operator's
+emuMMC is permanently and exclusively SwitchNet's and never switches back —
+see the comment there and `TestSystemUpdateHostsAreNullRouted` for the
+reasoning. If you are building this for a console that *does* move back and
+forth, put these back to `ServicePassthrough` first, or you will hit that
+persistent flag.
 
 ### 3.6 Suggested order
 

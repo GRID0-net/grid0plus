@@ -273,12 +273,23 @@ curl -fsS localhost:8081/keys | head -c 80
 dig @<SWITCHNET_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <SWITCHNET_IP>
 dig @<SWITCHNET_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
 dig @<SWITCHNET_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
-dig @<SWITCHNET_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> a real Nintendo address
+dig @<SWITCHNET_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> 0.0.0.0 (see note below)
 dig @<SWITCHNET_IP> example.com                     A     +short   # -> a real address
 ```
 
-The third and fourth are the ones people skip. An AAAA answer here, or a
-SwitchNet address for `atumn`, is a misconfiguration that will bite later.
+The third and fourth are the ones people skip. An AAAA answer here is a
+misconfiguration that will bite later.
+
+`atumn` (and `sun`, `aqua` — the other d4c system-update hosts) resolve to
+`0.0.0.0` on this deployment rather than a real Nintendo address, which is a
+deliberate departure from the general advice for these hosts: normally they
+stay passthrough, because a failed system update check makes `nim` store a
+persistent flag that survives switching DNS back to real Nintendo. That cost
+only matters for a console that moves back and forth. This deployment's
+emuMMC never does — it is permanently and exclusively SwitchNet's — so
+there's nothing to gain from letting it reach real Nintendo for these, and
+null-routing them keeps this emuMMC from ever contacting real Nintendo at
+all. See `internal/nintendo/hosts.go` and `TestSystemUpdateHostsAreNullRouted`.
 
 **3. The console is using that DNS.** Set `log.level: debug` and open anything
 online on the console. You should see `dns: redirected` lines with the console's

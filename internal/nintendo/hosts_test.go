@@ -70,15 +70,26 @@ func TestNATCheckHasTwoHosts(t *testing.T) {
 	}
 }
 
-// TestSystemUpdateHostsArePassthrough guards a mistake that is not recoverable
-// by changing the server: the nim sysmodule stores a persistent flag when the
-// system update check fails, and that flag survives switching back to
-// Nintendo's servers.
+// TestSystemUpdateHostsAreNullRouted guards this deployment's specific choice
+// for the d4c hosts.
 //
-// The trap this guards is that `atum` (game content, phase 3) and `atumn`
-// (system update content) differ by one letter and share the d4c domain, so
-// somebody implementing phase 3 could redirect the wrong one.
-func TestSystemUpdateHostsArePassthrough(t *testing.T) {
+// The general-purpose advice — keep these ServicePassthrough — is for a
+// console that moves back and forth between SwitchNet and real Nintendo: a
+// failed update check sets a persistent flag on the console that survives
+// switching back, which is expensive to hit by accident. This host list is
+// generated for an emuMMC that is permanently and exclusively SwitchNet's, so
+// that cost never applies: there is no "switching back" for the flag to
+// survive into, and passthrough would only mean real Nintendo traffic leaving
+// the console for no benefit. Null-routed instead, consistent with every
+// other host nothing is built for.
+//
+// If this host list is ever reused for a console that DOES move back and
+// forth, put these back to ServicePassthrough first.
+//
+// The trap this still guards is that `atum` (game content, phase 3) and
+// `atumn` (system update content) differ by one letter and share the d4c
+// domain, so somebody implementing phase 3 could redirect the wrong one.
+func TestSystemUpdateHostsAreNullRouted(t *testing.T) {
 	updateHosts := map[string]bool{
 		"sun.hac.lp1.d4c.nintendo.net":   false,
 		"atumn.hac.lp1.d4c.nintendo.net": false,
@@ -88,10 +99,10 @@ func TestSystemUpdateHostsArePassthrough(t *testing.T) {
 	for _, h := range Hosts {
 		if _, isUpdateHost := updateHosts[h.Pattern]; isUpdateHost {
 			updateHosts[h.Pattern] = true
-			if h.Service != ServicePassthrough {
-				t.Errorf("%s is %s; it must reach real Nintendo, because a failed "+
-					"system update check sets a persistent flag on the console that "+
-					"survives switching back", h.Pattern, h.Service)
+			if h.Service != ServiceBlackhole {
+				t.Errorf("%s is %s; this deployment's emuMMC never talks to real "+
+					"Nintendo, so this should be ServiceBlackhole, not %s",
+					h.Pattern, h.Service, h.Service)
 			}
 		}
 	}
@@ -104,12 +115,19 @@ func TestSystemUpdateHostsArePassthrough(t *testing.T) {
 	}
 }
 
-// TestPhase3HostsAreNotYetRedirected keeps the eShop working until there is
-// something to redirect it to.
+// TestPhase3HostsAreNotYetRedirected keeps a console pointed at SwitchNet from
+// ever reaching real Nintendo through a host nothing is built for yet.
 //
-// The hosts are listed so that whoever implements phase 3 finds the list rather
-// than assembling their own, but a host redirected to a service that does not
-// exist is worse than one left alone: it breaks the console's eShop for no gain.
+// The hosts are listed so that whoever implements phase 3 finds the list
+// rather than assembling their own. They are null-routed rather than
+// forwarded: nothing exists behind them, and Phase 1 has no use for them, so
+// there is no reason for a console pointed at SwitchNet to ever complete a
+// connection to real Nintendo through one of these. A host redirected to a
+// SwitchNet service that does not exist would be worse — it breaks the
+// console's eShop for no gain — which is why these are ServiceBlackhole,
+// not ServiceRedirect: null-routing answers 0.0.0.0 and the console gives up
+// immediately, rather than reaching either a broken local endpoint or real
+// Nintendo.
 func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 	phase3 := []string{
 		"bugyo.hac.lp1.eshop.nintendo.net",
@@ -117,7 +135,6 @@ func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 		"ias-lp1.hac.shop.nintendo.net",
 		"atum.hac.lp1.d4c.nintendo.net",
 		"tagaya.hac.lp1.eshop.nintendo.net",
-		"accounts.nintendo.com",
 	}
 
 	byPattern := map[string]Host{}
@@ -132,10 +149,11 @@ func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 				"somebody will look for it", pattern)
 			continue
 		}
-		if h.Service != ServicePassthrough {
+		if h.Service != ServiceBlackhole {
 			t.Errorf("%s is %s. If phase 3 now serves it, update this test and "+
-				"switch it to ServiceEShop; if not, it must stay passthrough, "+
-				"because redirecting it breaks the console's eShop.", pattern, h.Service)
+				"switch it to ServiceEShop; if not, it must stay ServiceBlackhole, "+
+				"so a console pointed at SwitchNet never reaches real Nintendo "+
+				"through it.", pattern, h.Service)
 		}
 	}
 
@@ -149,14 +167,40 @@ func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 	}
 }
 
-func TestTelemetryIsBlackholedNotRedirected(t *testing.T) {
+// TestBlackholedHostsAreAccountedFor guards the null-route list against
+// silently growing to cover something that should be redirected instead:
+// every blackholed host must be telemetry (never useful to us), a Phase 3
+// host nothing is built for yet (covered by TestPhase3HostsAreNotYetRedirected),
+// or a d4c system-update host null-routed under this deployment's
+// permanently-isolated-emuMMC policy (covered by
+// TestSystemUpdateHostsAreNullRouted).
+func TestBlackholedHostsAreAccountedFor(t *testing.T) {
+	accountedFor := map[string]bool{
+		"bugyo.hac.lp1.eshop.nintendo.net":  true,
+		"hac.lp1.savanna.srv.nintendo.net":  true,
+		"ecs-lp1.hac.shop.nintendo.net":     true,
+		"ias-lp1.hac.shop.nintendo.net":     true,
+		"atum.hac.lp1.d4c.nintendo.net":     true,
+		"tagaya.hac.lp1.eshop.nintendo.net": true,
+		"idbe-hac.cdn.nintendo.net":         true,
+		"sun.hac.lp1.d4c.nintendo.net":      true,
+		"atumn.hac.lp1.d4c.nintendo.net":    true,
+		"aqua.hac.lp1.d4c.nintendo.net":     true,
+		"cdn.accounts.nintendo.com":         true,
+		"bcat-list-lp1.cdn.nintendo.net":    true,
+		"bcat-data-lp1.cdn.nintendo.net":    true,
+		"bcat-topics-lp1.cdn.nintendo.net":  true,
+	}
+
 	hosts := ServiceHosts(ServiceBlackhole)
 	if len(hosts) == 0 {
-		t.Fatal("no telemetry hosts are null-routed")
+		t.Fatal("no hosts are null-routed")
 	}
 	for _, h := range hosts {
-		if !strings.Contains(h.Pattern, ".dg.") && !strings.Contains(h.Pattern, ".er.") {
-			t.Errorf("%s is null-routed but is not a telemetry host", h.Pattern)
+		isTelemetry := strings.Contains(h.Pattern, ".dg.") || strings.Contains(h.Pattern, ".er.")
+		if !isTelemetry && !accountedFor[h.Pattern] {
+			t.Errorf("%s is null-routed but is not accounted for by any test — "+
+				"is this the right service for it?", h.Pattern)
 		}
 	}
 }
@@ -232,6 +276,21 @@ func TestBAASImageCDNIsRouted(t *testing.T) {
 	t.Error("the BAAS image CDN host is not listed")
 }
 
+// TestAccountsNintendoComIsRoutedToBAAS guards the Nintendo Account link
+// stub's routing: without this, a console reaching accounts.nintendo.com
+// gets null-routed instead of the login page in internal/baas/nalink.go.
+func TestAccountsNintendoComIsRoutedToBAAS(t *testing.T) {
+	for _, h := range ServiceHosts(ServiceBAAS) {
+		if h.Pattern == "accounts.nintendo.com" {
+			if !h.TLS {
+				t.Error("accounts.nintendo.com is not marked TLS")
+			}
+			return
+		}
+	}
+	t.Error("accounts.nintendo.com is not routed to ServiceBAAS")
+}
+
 func TestNPLNTenantForSplatoon3IsListed(t *testing.T) {
 	// Phase 2 needs this, and it is listed now so the hosts file an operator
 	// installs today does not have to be regenerated then. gamesync does not end
@@ -276,5 +335,55 @@ func TestServiceHostsReturnsOnlyThatService(t *testing.T) {
 
 	if got := ServiceHosts("nonexistent"); got != nil {
 		t.Errorf("an unknown service returned %d hosts", len(got))
+	}
+}
+
+// TestUnlistedNintendoHostsAreBlackholed guards the fallback that exists
+// specifically because a live capture found two Nintendo hosts
+// (cdn.accounts.nintendo.com, fro-1.hac.lp1.penne.srv.nintendo.net) that
+// nobody had added to Hosts. Without this fallback, an unlisted Nintendo host
+// is forwarded to real Nintendo — fine for a deployment that tolerates that,
+// wrong for one that must never let its console reach real Nintendo at all.
+// This is not exhaustive: the fallback covers domains in
+// nintendoOwnedDomains, not literally every Nintendo domain that could ever
+// exist.
+func TestUnlistedNintendoHostsAreBlackholed(t *testing.T) {
+	// None of these are in Hosts. If one of them ever is added explicitly,
+	// swap it for a different unlisted example rather than deleting the case.
+	unlisted := []string{
+		"something-nobody-added-yet.hac.lp1.nintendo.net",
+		"totally-new.nintendo.com",
+		"some-service.nintendowifi.net",
+	}
+	for _, name := range unlisted {
+		resolution, _, matched := Resolve(name)
+		if !matched {
+			t.Errorf("Resolve(%s): matched = false, want true (should be caught by the Nintendo-domain fallback)", name)
+			continue
+		}
+		if resolution != ResolveBlackhole {
+			t.Errorf("Resolve(%s) = %v, want ResolveBlackhole", name, resolution)
+		}
+	}
+}
+
+// TestUnrelatedHostsAreStillForwarded is the other half of the fallback: it
+// must not become broad enough to swallow ordinary internet traffic.
+func TestUnrelatedHostsAreStillForwarded(t *testing.T) {
+	unrelated := []string{
+		"example.com",
+		"www.google.com",
+		"nintendo.example.com", // "nintendo" as a subdomain of someone else's domain
+		"notnintendo.com",
+	}
+	for _, name := range unrelated {
+		resolution, _, matched := Resolve(name)
+		if matched {
+			t.Errorf("Resolve(%s): matched = true, want false — this is not a Nintendo host", name)
+			continue
+		}
+		if resolution != ResolveForward {
+			t.Errorf("Resolve(%s) = %v, want ResolveForward", name, resolution)
+		}
 	}
 }

@@ -20,9 +20,16 @@ switchnet-*
 *.csr
 *.srl
 
+# Local dev state — bind-mounted into containers and read by natively-run
+# services (see docker-compose.yml and CLAUDE.md's dev-mode note). Same
+# signing keys as the `keys` volume used to hold; never commit these.
+/dev/
+
 # Generated Switch-side files
 /switch/hosts.txt
 /deploy/nginx.generated.conf
+/deploy/switchnet.dnsmasq.conf
+/deploy/switchnet.unbound.conf
 
 # Local data
 /data/

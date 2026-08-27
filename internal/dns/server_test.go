@@ -275,6 +275,7 @@ func TestNintendoHostsAreRedirected(t *testing.T) {
 		"e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
 		"m-lp1.baas.nintendo.com",
 		"cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
+		"accounts.nintendo.com",
 		"nncs1-lp1.n.n.srv.nintendo.net",
 		"api-lp1.frs.srv.nintendo.net",
 		"ctest.cdn.nintendo.net",
@@ -367,30 +368,45 @@ func TestNonNintendoNamesAreForwarded(t *testing.T) {
 	}
 }
 
-// TestPassthroughHostsAreForwarded covers the hosts that are deliberately NOT
-// redirected: the system update hosts, and the phase 3 eShop hosts.
+// TestNintendoIsNeverReachedFromThisDeployment covers every host that is
+// null-routed rather than redirected or left passthrough: the eShop hosts
+// nothing is built behind yet, and the d4c system-update hosts.
+// accounts.nintendo.com used to be in this list too, before
+// internal/baas/nalink.go gave it something to route to — see
+// TestNintendoHostsAreRedirected instead.
 //
-// Redirecting a system update host makes nim write a persistent flag that
-// survives switching back to Nintendo, so this has to keep working.
-func TestPassthroughHostsAreForwarded(t *testing.T) {
+// The general-purpose advice for the d4c hosts is to keep them passthrough,
+// because a failed system update check makes nim store a persistent flag that
+// survives switching DNS back to real Nintendo — expensive to hit on a
+// console that moves back and forth. This deployment's emuMMC never does
+// that: it is permanently and exclusively SwitchNet's, so there is no
+// "switching back" for the flag to survive into, and passthrough would only
+// mean real Nintendo traffic leaving the console for no benefit. Every host
+// in this list is null-routed instead, on the same reasoning: any byte of
+// contact with real Nintendo while any part of this console's trust chain has
+// been altered is a byte of unnecessary risk to the account behind it, with
+// nothing gained in return.
+func TestNintendoIsNeverReachedFromThisDeployment(t *testing.T) {
 	h := newHarness(t)
 
 	for _, name := range []string{
+		"atum.hac.lp1.d4c.nintendo.net",
+		"bugyo.hac.lp1.eshop.nintendo.net",
 		"atumn.hac.lp1.d4c.nintendo.net",
 		"aqua.hac.lp1.d4c.nintendo.net",
 		"sun.hac.lp1.d4c.nintendo.net",
-		"atum.hac.lp1.d4c.nintendo.net",
-		"bugyo.hac.lp1.eshop.nintendo.net",
-		"accounts.nintendo.com",
 	} {
 		reply := parseReply(t, h.query(name, TypeA, false))
 		if len(reply.answers) != 1 {
 			t.Errorf("%s: got %d answers", name, len(reply.answers))
 			continue
 		}
-		if !reply.answers[0].Equal(net.IPv4(203, 0, 113, 99)) {
-			t.Errorf("%s: resolved to %s, want the upstream's answer. This host "+
-				"must reach real Nintendo.", name, reply.answers[0])
+		if !reply.answers[0].Equal(net.IPv4zero) {
+			t.Errorf("%s: resolved to %s, want 0.0.0.0. This host has nothing "+
+				"built behind it; it must never reach real Nintendo.", name, reply.answers[0])
+		}
+		if h.upstream.sawQuery(name) {
+			t.Errorf("%s: was forwarded upstream", name)
 		}
 	}
 }

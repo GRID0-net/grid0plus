@@ -69,6 +69,34 @@ type Host struct {
 	// nginx for a wildcard entry. A DNS wildcard SAN such as "*.baas.nintendo.com"
 	// only matches one label, so multi-label hosts have to be listed out.
 	TLSNames []string
+
+	// NoClientCertRequest is true for a host nginx must not send a TLS
+	// CertificateRequest to. Captured 2026-08-25: with ssl_verify_client
+	// optional_no_ca (needed by dauth/aauth/baas to read the console's device
+	// certificate), the TLS handshake for accounts.nintendo.com negotiated
+	// fine up through the server's certificate flight, then the console's
+	// browser-applet client went silent and closed the connection after
+	// ~600ms without ever sending its Finished message — the "loads forever"
+	// symptom on the Nintendo Account link page. The curl-based device-auth
+	// clients (dauth, aauth, the rest of baas) handle the same
+	// CertificateRequest fine by answering with an empty certificate; the
+	// system browser's separate TLS stack does not. accounts.nintendo.com is
+	// only ever reached by that browser, never by a device-auth client, so it
+	// gets its own nginx server block with no client-cert request at all.
+	NoClientCertRequest bool
+
+	// NoHTTP2 is true for a host nginx must not offer HTTP/2 to, independent
+	// of NoClientCertRequest — m-lp1.baas.nintendo.com needs the client-cert
+	// request (it is real device-auth traffic, "system-level account state
+	// synchronization", not the browser applet) but shows the exact same
+	// signature that led to disabling HTTP/2 for accounts.nintendo.com:
+	// a real, sizeable, bidirectional TLS exchange that nginx never logs as
+	// a completed HTTP request. Observed 2026-08-26 only against real nginx
+	// (http2 on by default here), never once across three separate decrypted
+	// captures taken through a hand-rolled mitmproxy stand-in that never
+	// offered HTTP/2 at all — the strongest evidence yet that this
+	// connection is the same HTTP/2 interop failure, on a different host.
+	NoHTTP2 bool
 }
 
 // Hosts is the redirect list, in the order it should be written to the
@@ -118,13 +146,29 @@ var Hosts = []Host{
 	},
 	{
 		Pattern: "m-lp1.baas.nintendo.com",
-		Service: ServiceBAAS, TLS: true,
+		Service: ServiceBAAS, TLS: true, NoHTTP2: true,
 		Comment: "BAAS accounts (21.0.0 and later)",
 	},
 	{
 		Pattern: "cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
 		Service: ServiceBAAS, TLS: true,
 		Comment: "BAAS profile image CDN",
+	},
+	{
+		Pattern: "accounts.nintendo.com",
+		Service: ServiceBAAS, TLS: true, NoClientCertRequest: true,
+		Comment: "Nintendo Account link stub — a custom login page, not a copy of " +
+			"Nintendo's OAuth flow. See internal/baas/nalink.go",
+	},
+	{
+		Pattern: "api.accounts.nintendo.com",
+		Service: ServiceBAAS, TLS: true,
+		Comment: "GET /2.0.0/users/me -- called by nnAccount (libcurl) right after the " +
+			"NA-link token exchange, not by the browser, so it keeps the usual " +
+			"optional_no_ca client-cert request. Missing entirely until a " +
+			"2026-08-26 mitmproxy capture of a real first-time link against " +
+			"Nextendo showed the console calling it and expecting a real profile " +
+			"body back. See internal/baas/nalink.go",
 	},
 
 	// ---- NAT check ------------------------------------------------------
@@ -205,9 +249,52 @@ var Hosts = []Host{
 		Comment: "push notifications (Penne) validation",
 	},
 	{
+		Pattern: "fro-1.hac.lp1.penne.srv.nintendo.net",
+		Service: ServiceStubs, TLS: true,
+		Comment: "push notifications (Penne), purpose unconfirmed — observed in a " +
+			"2026-08-25 SNI capture during account linking. Was null-routed; changed " +
+			"to a stub after a second capture (same day) showed the Nintendo Account " +
+			"link flow reaches this host — and one other, beach.hac.lp1.eshop — " +
+			"before accounts.nintendo.com, on a real working private server. A " +
+			"connection refusal here instead of a real server's answer is one " +
+			"candidate for why the same flow never reaches accounts.nintendo.com " +
+			"against SwitchNet. Untested; see docs/CAPTURES.",
+	},
+	{
 		Pattern: "consumer.lp1.npns.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
 		Comment: "push notifications (NPNS)",
+	},
+	{
+		Pattern: "beach.hac.lp1.eshop.nintendo.net",
+		Service: ServiceStubs, TLS: true,
+		Comment: "eshop recommendations/metadata, purpose unconfirmed — not previously " +
+			"listed at all, so it fell through to the domain-suffix blackhole " +
+			"fallback. A 2026-08-25 capture showed the Nintendo Account link flow " +
+			"reaches this host before accounts.nintendo.com on a real working " +
+			"private server; that server passes it through to real Nintendo, which " +
+			"this deployment's policy rules out, so it is stubbed instead. " +
+			"Untested; see docs/CAPTURES.",
+	},
+	{
+		Pattern: "gw.hac.lp1.vermillion.srv.nintendo.net",
+		Service: ServiceStubs, TLS: true,
+		Comment: "background game registration/telemetry, purpose unconfirmed — " +
+			"previously null-routed (ServiceBlackhole) on the assumption that a " +
+			"stub response does nothing useful for it. A 2026-08-27 tcpdump of a " +
+			"real, successful Nintendo Account import (real hardware, real " +
+			"account, stock sysMMC, no Atmosphere) showed this host contacted " +
+			"mid-flow -- between the second m-lp1.baas.nintendo.com federation-" +
+			"adjacent call and the final e0d67c...baas.nintendo.com call -- " +
+			"exchanging 16.5KB, not the negligible amount a background-only " +
+			"contact would suggest. A connection refusal here instead of a " +
+			"real server's answer is a candidate for why SwitchNet's own attempts " +
+			"at this same flow stall after federation with no further network " +
+			"activity. Stubbed rather than reasoned about further: the actual " +
+			"content cannot be recovered (real Nintendo TLS, no MITM possible " +
+			"without Atmosphere on that console), so a generic non-refusing " +
+			"response is the most defensible next step. Untested; see " +
+			"docs/CAPTURES.",
 	},
 	{
 		Pattern: "service-status-lp1.cdn.nintendo.net",
@@ -250,12 +337,48 @@ var Hosts = []Host{
 		Comment: "error reports",
 	},
 
+	// ---- BCAT: null-route, not passthrough -------------------------------
+	// Observed 2026-08-26 reaching a real Nintendo IP (88.221.83.x)
+	// during a real-hardware capture: it was not in this list at all, so with
+	// add_defaults_to_dns_hosts off it fell through to ordinary upstream DNS
+	// instead of being redirected or null-routed. That is a violation of this
+	// deployment's isolation policy (see CLAUDE.md and the
+	// emuMMC-never-talks-to-real-Nintendo rule) -- not a feature gap, since it
+	// is not needed for Phase 1: background content-delivery discovery.
+	// Null-routed rather than stubbed: there is nothing useful a stub
+	// response does for it.
+	{
+		Pattern: "bcat-list-lp1.cdn.nintendo.net",
+		Service: ServiceBlackhole,
+		Comment: "BCAT background content delivery, list discovery",
+	},
+	{
+		Pattern: "bcat-data-lp1.cdn.nintendo.net",
+		Service: ServiceBlackhole,
+		Comment: "BCAT background content delivery, data",
+	},
+	{
+		Pattern: "bcat-topics-lp1.cdn.nintendo.net",
+		Service: ServiceBlackhole,
+		Comment: "BCAT background content delivery, topics",
+	},
+
 	// ---- eShop (phase 3) ------------------------------------------------
-	// Listed as passthrough on purpose. Phase 3 flips these to ServiceEShop;
-	// until the servers behind them exist, redirecting them breaks the console's
-	// eShop for no gain. Having them here means the next person to work on phase
-	// 3 finds the list, and does not add `atumn` or `aqua` to it by mistake —
-	// see the d4c note below.
+	// Null-routed on purpose. Nothing exists behind these yet, and Phase 1 has
+	// no use for them at all, so there is no reason for a console pointed at
+	// SwitchNet to ever reach real Nintendo through them. Phase 3 flips these to
+	// ServiceEShop once the servers behind them exist. Having them here means
+	// the next person to work on phase 3 finds the list, and does not add
+	// `atumn` or `aqua` to it by mistake -- see the d4c note below, which is the
+	// one group in this file that stays different: those are used by background
+	// update checks today and must keep reaching real Nintendo, or the console
+	// ends up with a persistent broken-update flag that outlives switching back.
+	//
+	// If you want this console's eShop to keep working normally against real
+	// Nintendo while only Phase 1 is in use, switch these back to
+	// ServicePassthrough -- but that means this console's traffic for these
+	// hosts, including the Nintendo Account sign-in flow, goes to real Nintendo,
+	// not SwitchNet.
 	//
 	// The storefront is a WEBSITE: the applet loads bugyo/ashigaru and renders
 	// it, exposing system functions through a `window.nx` bridge. So phase 3 is
@@ -263,67 +386,82 @@ var Hosts = []Host{
 	// https://github.com/kinnay/NintendoClients/wiki/eShop-Applet-(Switch)
 	{
 		Pattern: "bugyo.hac.lp1.eshop.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: the eShop storefront (a website). Needs the SwitchShop client cert",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: the eShop storefront (a website). Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "hac.lp1.savanna.srv.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: the newer eShop applet — check which one the firmware uses",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: the newer eShop applet. Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "ecs-lp1.hac.shop.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: commerce (ECS). The least documented part of the whole stack",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: commerce (ECS). Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "ias-lp1.hac.shop.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: commerce (IAS)",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: commerce (IAS). Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "atum.hac.lp1.d4c.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: GAME content, addressed by content id. NOT a system update host",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: GAME content, addressed by content id. NOT a system update host. Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "tagaya.hac.lp1.eshop.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: latest version per title, drives the update badge",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: latest version per title. Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "idbe-hac.cdn.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "phase 3: title icons",
+		Service: ServiceBlackhole,
+		Comment: "phase 3: title icons. Not built; null-routed rather than reaching real Nintendo",
 	},
 	{
-		Pattern: "accounts.nintendo.com",
-		Service: ServicePassthrough,
-		Comment: "phase 3 prerequisite: Nintendo Account, which the eShop signs in with",
+		Pattern: "cdn.accounts.nintendo.com",
+		Service: ServiceBlackhole,
+		Comment: "static assets for the Nintendo Account sign-in page — observed in a " +
+			"2026-08-25 SNI capture, not previously listed. Not built; null-routed rather than reaching real Nintendo",
 	},
 
-	// ---- Deliberately NOT redirected ------------------------------------
-	// The d4c hosts serve SYSTEM UPDATES: sun, atumn and aqua. Do not
-	// null-route or redirect them — the nim sysmodule stores a persistent flag
-	// when the update check fails, and that flag survives switching back to
-	// Nintendo's servers.
+	// ---- System updates: null-routed on this deployment -----------------
+	// The d4c hosts serve SYSTEM UPDATES: sun, atumn and aqua. The general
+	// advice for a console that moves back and forth between SwitchNet and
+	// real Nintendo is to leave these passthrough: the nim sysmodule stores a
+	// persistent flag when the update check fails, and that flag survives
+	// switching DNS back to Nintendo's servers, which is a genuinely
+	// expensive mistake on that kind of setup.
+	//
+	// It does not apply here. This host list is generated for an emuMMC that
+	// is permanently and exclusively SwitchNet's — it never points at real
+	// Nintendo again, so there is no "switching back" for the flag to
+	// survive into. Given that, passthrough only means one thing: real
+	// Nintendo traffic leaving this console for no benefit. Null-routed
+	// instead, consistent with every other host nothing is built for.
+	//
+	// If you ever reuse this host list for a console that DOES move back and
+	// forth between SwitchNet and real Nintendo, put these back to
+	// ServicePassthrough first — check TestSystemUpdateHostsAreNullRouted for
+	// the reasoning captured at the time this was changed.
 	//
 	// Note the trap: `atum` (game content, phase 3, listed above) and `atumn`
 	// (system update content) differ by one letter and share the d4c domain.
 	{
 		Pattern: "sun.hac.lp1.d4c.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "system update metadata — must reach real Nintendo",
+		Service: ServiceBlackhole,
+		Comment: "system update metadata. Null-routed: this emuMMC never talks to real Nintendo",
 	},
 	{
 		Pattern: "atumn.hac.lp1.d4c.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "system update content — must reach real Nintendo. NOT atum",
+		Service: ServiceBlackhole,
+		Comment: "system update content. NOT atum. Null-routed: this emuMMC never talks to real Nintendo",
 	},
 	{
 		Pattern: "aqua.hac.lp1.d4c.nintendo.net",
-		Service: ServicePassthrough,
-		Comment: "system update requirements — must reach real Nintendo",
+		Service: ServiceBlackhole,
+		Comment: "system update requirements. Null-routed: this emuMMC never talks to real Nintendo",
 	},
 }
 
@@ -420,6 +558,16 @@ func Resolve(name string) (Resolution, Host, bool) {
 	}
 
 	if !found {
+		// Not something SwitchNet explicitly handles. The default is to forward
+		// it — this is not a Nintendo host, so it is not ours to have an opinion
+		// about — with one exception: a Nintendo-owned domain nobody has added to
+		// Hosts yet. On a deployment where the console must never reach real
+		// Nintendo, forwarding it there just because it has not been individually
+		// catalogued is exactly the gap that this whole list exists to close.
+		// See isNintendoOwnedDomain and TestUnlistedNintendoHostsAreBlackholed.
+		if isNintendoOwnedDomain(name) {
+			return ResolveBlackhole, Host{}, true
+		}
 		return ResolveForward, Host{}, false
 	}
 
@@ -460,6 +608,64 @@ func (h Host) dnsSuffix() (string, bool) {
 		return "", false
 	}
 	return strings.TrimPrefix(suffix, "."), true
+}
+
+// nintendoOwnedDomains are domains Nintendo is known to operate, beyond the
+// specific hostnames explicitly listed in Hosts.
+//
+// Sourced from the community-maintained "block everything Nintendo" hosts
+// list (the kind Prelude/Nextendo-style tooling ships), not invented for this
+// project — that list has had many more consoles' worth of traffic to find
+// gaps in than this one has. A regional Nintendo domain not on this list is
+// still possible; the two hosts that prompted this fallback
+// (cdn.accounts.nintendo.com, fro-1.hac.lp1.penne.srv.nintendo.net) were
+// found by a live capture, not by reasoning about the domain in advance, and
+// more probably exist.
+var nintendoOwnedDomains = []string{
+	"nintendo.com",
+	"nintendo.net",
+	"nintendo.jp",
+	"nintendo.co.jp",
+	"nintendo.co.uk",
+	"nintendo-europe.com",
+	"nintendowifi.net",
+	"nintendo.es",
+	"nintendo.co.kr",
+	"nintendo.tw",
+	"nintendo.com.hk",
+	"nintendo.com.au",
+	"nintendo.co.nz",
+	"nintendo.at",
+	"nintendo.be",
+	"nintendods.cz",
+	"nintendo.dk",
+	"nintendo.de",
+	"nintendo.fi",
+	"nintendo.fr",
+	"nintendo.gr",
+	"nintendo.hu",
+	"nintendo.it",
+	"nintendo.nl",
+	"nintendo.no",
+	"nintendo.pt",
+	"nintendo.ru",
+	"nintendo.co.za",
+	"nintendo.se",
+	"nintendo.ch",
+	"nintendoswitch.com",
+	"nintendoswitch.com.cn",
+	"nintendoswitch.cn",
+}
+
+// isNintendoOwnedDomain reports whether name is under a domain in
+// nintendoOwnedDomains, whether or not the specific host is one Hosts lists.
+func isNintendoOwnedDomain(name string) bool {
+	for _, d := range nintendoOwnedDomains {
+		if name == d || strings.HasSuffix(name, "."+d) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesSuffix(name, suffix string, wildcard bool) bool {
