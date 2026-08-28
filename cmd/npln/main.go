@@ -1,15 +1,18 @@
 // Command npln is the NPLN game server for Splatoon 3 (phase 2).
 //
-// It runs two listeners, and they are not interchangeable:
+// It runs three listeners, and they are not interchangeable:
 //
 //   - the gRPC gateway, which nginx must reach with grpc_pass over cleartext
 //     HTTP/2;
-//   - the JSON front end, which nginx must reach with proxy_pass over HTTP/1.1.
+//   - the JSON front end, which nginx must reach with proxy_pass over HTTP/1.1;
+//   - gamesync, gRPC again, on its own port because Splatoon 3 reaches it
+//     directly rather than through the tenant host.
 //
-// One process because they share the title's configuration and nothing else
-// about them is separable; two listeners because crossing the nginx blocks
-// completes the TLS handshake and then fails with nothing in either log. See
-// internal/nintendo/hosts.go.
+// One process because gamesync verifies tokens the gateway signs -- splitting
+// them would mean inventing a protocol between the two -- and because they share
+// the title's configuration. Separate listeners because crossing the nginx
+// blocks completes the TLS handshake and then fails with nothing in either log.
+// See internal/nintendo/hosts.go.
 package main
 
 import (
@@ -20,6 +23,7 @@ import (
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/gamesync"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/npln"
 	"github.com/n-popescu/switchnet/internal/nplnrest"
@@ -86,9 +90,24 @@ func main() {
 			"dir", cfg.NPLN.RestRecordDir)
 	}
 
+	// gamesync verifies the matchmaking id tokens the gateway signs. The same
+	// key, in the same process: there is nothing to distribute, and the
+	// audience is what stops an access token being accepted here.
+	sync, err := gamesync.New(gamesync.Options{
+		Log:           log.With("listener", "gamesync"),
+		VerifyIDToken: srv.VerifyMatchmakingIDToken,
+	})
+	if err != nil {
+		service.Fatal(log, "build gamesync", err)
+	}
+
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)
 	if err != nil {
 		service.Fatal(log, "listen", err)
+	}
+	syncLis, err := net.Listen("tcp", cfg.NPLN.GamesyncListen)
+	if err != nil {
+		service.Fatal(log, "listen gamesync", err)
 	}
 
 	// The JSON front end runs alongside, on its own listener, with NO write or
@@ -105,18 +124,26 @@ func main() {
 		})
 	}()
 
+	syncErr := make(chan error, 1)
+	go func() { syncErr <- sync.Serve(syncLis) }()
+
 	go func() {
 		<-ctx.Done()
 		log.Info("npln: shutting down")
 		srv.Stop()
+		sync.Stop()
 	}()
 
 	log.Info("npln: listening", "addr", cfg.NPLN.Listen, "tenant", cfg.NPLN.Tenant,
-		"rest", cfg.NPLN.RestListen, "frontline", cfg.NPLN.FrontlineHost)
+		"rest", cfg.NPLN.RestListen, "gamesync", cfg.NPLN.GamesyncListen,
+		"frontline", cfg.NPLN.FrontlineHost)
 	if err := srv.Serve(lis); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 	if err := <-restErr; err != nil {
 		service.Fatal(log, "serve json front end", err)
+	}
+	if err := <-syncErr; err != nil {
+		service.Fatal(log, "serve gamesync", err)
 	}
 }

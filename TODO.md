@@ -68,14 +68,6 @@ unwritten:
 - **`Schedule`'s stage and rule ids come from `npln.rotation`.** The mechanics
   around them are SwitchNet's; the numbers are not, so they are operator input.
 
-### 1.2 `gamesync` — **P2**
-
-A Firestore-shaped document/watch service on its own port (7575 — the host is
-already listed and `npln.gamesync_listen` already configured). Splatoon 3
-reaches it directly rather than through the tenant host.
-
----
-
 ## 2. Splatfests and BCAT
 
 ### 2.1 Asset conversion: images → game-ready textures — **P2, large**

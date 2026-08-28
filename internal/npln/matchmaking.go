@@ -295,6 +295,76 @@ func (g *gameSessionService) AllocateIceServerSet(
 	return out, nil
 }
 
+// IssueMatchmakingIdToken issues id tokens for the caller's own user.
+//
+// **For their own user only.** The token proves who a player is to a service
+// that is not the gateway — gamesync verifies one before it will open a session
+// — so handing a console a token naming another player is handing it that
+// player's identity. The protocol names this case itself:
+// DelegationAction.INCLUDE_ID_TOKEN_FOR_SAME_CLIENT.
+//
+// A request naming somebody else is refused rather than filtered. A console that
+// asked for two tokens and received one would proceed with the peer it has and
+// fail later, somewhere that says nothing about this call.
+func (g *gameSessionService) IssueMatchmakingIdToken(
+	ctx context.Context, req *mmpb.IssueMatchmakingIdTokenRequest,
+) (*mmpb.IssueMatchmakingIdTokenResponse, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+	if len(req.GetUserDelegationTokens()) > 0 {
+		return nil, status.Error(codes.Unimplemented, "")
+	}
+
+	sess, found := g.s.queue.Session(lastSegment(req.GetGameSession()))
+	if !found {
+		return nil, ErrNotFound
+	}
+	if !participates(sess, caller.UserID) {
+		return nil, ErrNotFound
+	}
+
+	matched := make([]*mmpb.MatchedUserSession, 0, len(sess.Players))
+	for _, p := range sess.Players {
+		entry := &mmpb.MatchedUserSession{
+			UserDefinition: &mmpb.UserDefinition{User: userResourceName(p)},
+			UserSession:    g.s.userSessionName(sess.ID, p),
+		}
+		if wants(req.GetUsers(), p) || wants(req.GetIncludeIdTokenUsers(), p) {
+			if p != caller.UserID {
+				g.s.log.Warn("npln: refused an id token for another player",
+					"caller", caller.UserID, "asked_for", p)
+				return nil, ErrPermissionDenied
+			}
+			token, err := g.s.issueMatchmakingIDToken(caller, sess.ID)
+			if err != nil {
+				g.s.log.Error("npln: issue matchmaking id token",
+					"user", caller.UserID, "error", err)
+				return nil, status.Error(codes.Internal, "")
+			}
+			entry.MatchmakingIdToken = token
+		}
+		matched = append(matched, entry)
+	}
+
+	return &mmpb.IssueMatchmakingIdTokenResponse{
+		MatchedUserSessions: matched,
+		GameSession:         g.s.sessionProto(sess),
+	}, nil
+}
+
+// wants reports whether a list names a user. An empty list names nobody, not
+// everybody: "issue tokens for these users" with no users is a request for none.
+func wants(list []string, userID string) bool {
+	for _, u := range list {
+		if lastSegment(u) == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // ---- rendering ------------------------------------------------------------
 
 func (s *Server) ticketProto(t matchmaking.Ticket) *mmpb.MatchmakingTicket {

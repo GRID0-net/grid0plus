@@ -181,7 +181,8 @@ internal/
   baas/          accounts, friends, presence, blocks, images
   npln/          the NPLN gRPC gateway for Splatoon 3, and matchmaking
   nplnrest/      NPLN's JSON front end, which the game contacts first
-  toyohr/        Splatoon 3's own services: Splatfest scheduling
+  toyohr/        Splatoon 3's own services: Splatfests, schedule, messaging
+  gamesync/      the live lobby document and watch service
   bcat/          Splatfest content packs, and their encryption
   matchmaking/   the match queue and match formation
   dashboard/     the operator's web view

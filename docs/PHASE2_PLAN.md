@@ -13,6 +13,8 @@ Status: **in progress.** Written 2026-08-28.
 | Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go` |
 | BCAT pack building and serving | not started — `internal/bcat` |
 | The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, shapes still capture-gated |
+| Splatfest entries, results and the rest of toyohr | done — `internal/toyohr` |
+| `gamesync` document/watch service | done — `internal/gamesync` |
 | Dashboard | not started |
 
 Everything done so far is verifiable without a console, which is the ordering

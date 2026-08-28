@@ -1,0 +1,136 @@
+# internal/gamesync
+
+NPLN's document and watch service — the **live lobby state** Splatoon 3 shares
+between the consoles in a session. Firestore-shaped: named documents in
+collections, with field masks, field transforms, preconditions, transactions and
+a bidirectional watch stream.
+
+| | |
+| --- | --- |
+| Reimplements | `nn.npln.gamesync.v1.Gamesync` (`gamesync.npln.nintendo.net`) |
+| Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
+| Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/gamesync/v1/` |
+| Needs a database | no |
+
+## Its own port, the same process
+
+Splatoon 3 reaches gamesync directly on **7575** rather than through the tenant
+host, so it is a second gRPC listener rather than another service on the gateway.
+It still runs inside `cmd/npln`, because it verifies the matchmaking id tokens
+the gateway signs — splitting the two would mean inventing a protocol between
+them to pass a key around.
+
+## The store is in memory, deliberately
+
+A gamesync document is live lobby state: who is ready, which weapon somebody
+picked, how far a countdown has got. It is worth nothing once the lobby ends and
+worth nothing across a restart — the consoles that owned it have already given
+up. Same reasoning as `internal/matchmaking`'s queue.
+
+**Save data is a different service** (`toyohr`'s `CloudSave`) and would be a
+different decision.
+
+## How a console gets in
+
+```
+gateway: IssueMatchmakingIdToken   ES256, aud "gamesync", 5-minute TTL
+gamesync: IssueToken               verifies it, returns an opaque session handle
+```
+
+Three things about that:
+
+- **the id token is verified, not read.** A console cannot name itself; the
+  signature is what binds the name to the caller.
+- **the audience is what keeps the credentials apart.** An NPLN access token and
+  a matchmaking id token are both ES256 signed by the same key. `aud` is the only
+  thing stopping an access token — which acts on the account API — being accepted
+  here.
+- **the gateway issues id tokens for the caller's own user only.** The protocol
+  names this case itself, `INCLUDE_ID_TOKEN_FOR_SAME_CLIENT`. A request naming
+  somebody else is refused rather than filtered: a console that asked for two
+  tokens and got one would proceed with the peer it has and fail somewhere that
+  says nothing about the call.
+
+Session handles are random rather than signed, because they live in this
+process's own map and there is nothing for a signature to buy. A refresh token is
+**single-use** — the old session is replaced, so a leaked one stops working the
+moment the legitimate console refreshes.
+
+## Writes are atomic, and that is the point
+
+`apply` runs two passes: check every precondition against the current tree, then
+mutate. A batch that fails changes nothing.
+
+This matters more than it sounds. A half-applied batch leaves the client's next
+read showing a state neither side intended, **with no way to tell which half
+landed** — and the client is a game whose lobby state has to agree across eight
+consoles.
+
+Two consequences:
+
+- an unsupported field transform is rejected in the *precondition* pass, not
+  when it is reached. Discovering it halfway through would break the guarantee.
+- the whole tree is under one lock, held across a batch. Per-document locking
+  would be faster and would let a reader observe half a batch.
+
+## Preconditions are what make a transaction worth having
+
+`Precondition.update_time` is optimistic concurrency: two consoles updating the
+same lobby document both send the version they read, and the second one loses
+with `FailedPrecondition`. Without it the later write silently wins and one
+console's view of the lobby is quietly discarded — which is the class of bug that
+shows up as "the lobby disagreed with itself" and is close to impossible to
+reproduce.
+
+A committed transaction cannot be committed again. A client retrying a commit it
+believes failed must not double a field it incremented. A *rollback*, by
+contrast, is idempotent: a client that lost its connection mid-transaction
+retries it, and failing that leaves the client believing state is still pending.
+
+## Field semantics worth knowing
+
+**A masked field the client did not send is a deletion.** That is what a field
+mask means, and reading it as "leave alone" makes clearing a field impossible.
+`MergeDocument` therefore passes the field names it *did* send as its own mask,
+which is what makes a merge leave everything else alone.
+
+**Integers stay integers.** `Increment` on an integer field returns an integer.
+A client that increments an integer and reads back a double has had its type
+changed underneath it, and the value it writes next may not fit the field it came
+from.
+
+**Incrementing an absent field creates it.** There is no separate "create field"
+step in this protocol, so the alternative is losing the first increment.
+
+**Masks are top-level only.** A nested path would need structural pruning inside
+a `MapValue`, and getting that subtly wrong drops a field rather than failing. It
+errs towards sending too much, which is the harmless direction — and the limit is
+stated here rather than looking like an oversight.
+
+## The watch stream
+
+`KeepUserSession` is bidirectional and **never closed from this side** while the
+console holds it — the same rule `SubscribeMaintenanceSchedules` and
+`internal/nplnrest`'s frontline connection follow.
+
+- **all sends go from one goroutine.** gRPC allows one concurrent `Send` per
+  stream; the reader loop sends echoes while document changes arrive from the
+  store, and two senders would be a race the transport does not protect against.
+- **a target is acknowledged before any change for it arrives** (`LISTED`), so
+  the client can tell "nothing has changed" from "my target never took effect".
+- **an echo comes back verbatim.** It is the client's own liveness check, so
+  altering the payload defeats the only thing it is for.
+- **a collection target fires for direct children only**, matching
+  `ListDocuments`, or the client receives changes for documents it has never
+  seen.
+- **a send that would block is dropped.** A console that stopped reading must not
+  stall a write for every other console in the lobby.
+
+## Not implemented, and why
+
+| RPC | Why |
+| --- | --- |
+| `CreateRound` | `Round` has five fields and four are `Unk1`..`Unk4` in the decompiled definitions. **`TODO(capture-needed)`** |
+| deferment operations | a batch of writes to apply later, on a trigger nothing here models. Refused rather than dropped: a client told "done" would wait for an effect that never arrives |
+| global-value transforms | they read and write a namespace shared across documents. A no-op would have the client store a value it later reads back as absent |
+| paging on `ListDocuments` | the whole store is one lobby's live state — tens of documents. A page token would name the only page. The absence is visible here rather than hidden behind an empty `next_page_token` |
