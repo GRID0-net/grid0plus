@@ -9,27 +9,37 @@ not carry.
 | Reference | [BCAT Content Container](https://switchbrew.org/wiki/BCAT_Content_Container), [BCAT Servers](https://github.com/kinnay/NintendoClients/wiki/BCAT-Servers) |
 | Needs a database | no |
 
-## This does not serve BCAT, and cannot
+## This does not serve BCAT — but the reason is narrower than it looks
 
-Nintendo's BCAT delivery protocol wraps its payload in a container whose 0x120
-header carries an **RSA-2048 signature at offset 0x20**, with the verifying
-modulus selected by the console's production-mode setting. Producing a container
-the console accepts means signing it as Nintendo.
+SwitchNet builds the delivery cache directly rather than speaking BCAT's
+delivery protocol. Two reasons have been given for that at different times, and
+only one of them holds:
 
-That is refused on two grounds, and the second is the one that settles it:
+**The reason that does NOT hold on its own.** Nintendo's delivery container
+carries an RSA-2048 signature at offset 0x20 of its 0x120 header. It is
+tempting to conclude the console verifies it and that producing one would mean
+forging a Nintendo signature — but switchbrew documents only that the *field
+exists*. It says nothing about a verification step, nothing about what happens
+on failure, and no public source establishes either. More to the point, a
+console running SwitchNet already has sigpatches: bypassing Nintendo signature
+checks is the normal state of a CFW console, and `ROADMAP.md` §3.3 already
+depends on exactly that for phase 3. Whether those patches reach the `bcat`
+sysmodule is untested — `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and
+`bcat` is not on that list — but "untested" is not "impossible".
 
-1. we do not have the private key, so we could not anyway;
-2. **forging it is exactly what CLAUDE.md's second rule forbids** — "never
-   verify a Nintendo-issued credential and never forge one". A signature minted
-   to pass Nintendo's verification is a forged Nintendo credential.
+**The reason that does hold.** The response body of
+`/api/nx/v1/list/<name>` is undocumented. Kinnay's wiki gives the paths and
+nothing else; no public implementation exists. Serving BCAT means inventing the
+manifest the console parses, and a wrong manifest gives a console that
+connects, receives something unparseable, and fails with nothing in any log —
+which is CLAUDE.md rule 6, not rule 2.
 
-Two independent projects reached the same place from better information:
-Nextendo ships a `bcat-seed` zip for people to install by hand, and NeXo-Server
-stubs an emulator-only protocol. Neither serves real BCAT.
+So: **not "we cannot", but "nobody has documented how".** TODO.md §2.4 has the
+experiment that would change this. If it comes back positive, revisit properly
+rather than treating this paragraph as settled.
 
-So this package builds **the delivery cache directly** — the files a real BCAT
-download would have left behind — and they are installed onto the console by
-other means.
+Building the cache directly sidesteps the question entirely, which is why it is
+what this package does today.
 
 ## What it produces
 

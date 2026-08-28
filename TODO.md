@@ -185,16 +185,67 @@ Everything it needs exists: `bcat.BuildPacks`, `bcat.Revision`,
 console. Any path where a human types one of them twice will eventually produce
 `BcatInvalid`, which reaches the player as a generic communication error.
 
-### 2.4 The `.nro` installer — **P2**
+### 2.4 Serving BCAT natively — **P1 to TEST, cheap, do this early**
+
+**The blocker here is smaller than earlier notes in this repository claimed,
+and it is worth an hour of an operator's time before any more is built around
+the workaround.**
+
+What was previously written down: Nintendo's delivery container carries an
+RSA-2048 signature, therefore the console verifies it, therefore serving BCAT
+means forging a Nintendo signature. **The middle step was never established.**
+switchbrew documents the signature *field*; it says nothing about a
+verification step or what happens on failure.
+
+And a console running SwitchNet already has **sigpatches** — bypassing Nintendo
+signature checks is the normal state of a CFW console, and `ROADMAP.md` §3.3
+already depends on that for phase 3. Whether they reach the `bcat` sysmodule is
+unknown: `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and `bcat` is not
+listed. Unknown is not impossible.
+
+**The experiment**, in two stages, both needing an operator and a console:
+
+1. **Does the console reach us at all?** Flip the three `bcat-*` hosts from
+   `ServiceBlackhole` to a server that logs every request with a full hexdump
+   and answers 200 with an empty body. Point a console at it and open Splatoon
+   3. If requests arrive, the paths are right and TLS/DNS work — and the log is
+   the first record anyone has of what the console actually asks for.
+2. **Does it care about the signature?** Answer `/api/nx/v1/list/<name>` with a
+   container that has the right 0x120 header shape and a deliberately garbage
+   signature. If the console proceeds, sigpatches cover `bcat` and the
+   signature is a non-issue. If it refuses, that is the first real evidence
+   either way.
+
+**Even a positive result does not finish it**: the `list` response *body* is
+still undocumented, and stage 1's hexdumps are how that gets chipped away. But
+a positive result turns "nobody has documented how" into a tractable
+reverse-engineering job instead of a closed door.
+
+**Start at** `internal/nintendo/hosts.go` (the three `bcat-*` entries and
+`TestBlackholedHostsAreAccountedFor`), and a logging handler in
+`internal/stubs` — this needs no new package to run the experiment.
+
+**Done when** there is a written record, under `docs/CAPTURES/`, of what the
+console requested and how it reacted. Either answer is worth having; right now
+the repository has neither.
+
+### 2.4a The `.nro` installer — **P2, the path that works today**
 
 A homebrew that fetches a seed from SwitchNet and writes it into Splatoon 3's
 BCAT save data — what JKSV does by hand, automatically.
 
-This exists **because serving BCAT is not possible**: Nintendo's delivery
-container carries an RSA-2048 signature the console verifies, and producing one
-would mean forging a Nintendo signature. See `internal/bcat/README.md`. Do not
-revisit that decision without new evidence about the signature check; the
-conclusion rests on CLAUDE.md's second rule, not only on feasibility.
+This exists because §2.4 is unresolved, **not** because serving BCAT is
+forbidden. If §2.4 comes back positive this may become unnecessary; if it comes
+back negative, this is the answer.
+
+Note that the delivery cache is *downstream* of the wire protocol, so dumping a
+console's BCAT save reveals the seed layout (already known) and **not** the
+`list` response format. Do not expect a save dump to settle §2.4.
+
+**No toolchain in this repository's dev container** — `DEVKITPRO` is unset and
+there is no `aarch64-none-elf-gcc`, so an agent working here can write the
+source and a Makefile but cannot compile or test it. Say so plainly if you
+hand over untested C.
 
 **Start at** `switch/`, and serve the seed over plain HTTPS from the dashboard
 or a small endpoint on `cmd/npln`.
@@ -304,15 +355,18 @@ disagree.
 Fold the corrections in and leave the plan as the record of how they were
 found.
 
-### 5.2 The `bcat-*` hosts stay null-routed — **not a bug**
+### 5.2 The `bcat-*` hosts are null-routed — **contingent, not settled**
 
 `hosts.go` null-routes `bcat-list`, `bcat-data` and `bcat-topics`, and
 `TestBlackholedHostsAreAccountedFor` pins that.
 
-**Leave it.** SwitchNet does not serve BCAT (§2.4), so redirecting those hosts
-to a server that cannot answer them is worse than a black hole — it turns an
-immediate failure into a hang. Flip them only if the signature question is ever
-genuinely reopened.
+That is correct **while SwitchNet cannot answer them** — redirecting to a
+server that fails to respond usefully turns an immediate failure into a hang.
+
+It is not a permanent decision. §2.4's experiment requires flipping them to a
+logging stub, and a positive result would keep them flipped. Amend the test
+deliberately, in a commit that says why, rather than treating this entry as a
+rule.
 
 ### 5.3 A mode table for matchmaking — **P3**
 
