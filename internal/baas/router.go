@@ -228,7 +228,15 @@ func (s *Server) Handler() http.Handler {
 	// but it is logged, so an operator can see what is being asked for.
 	mux.Handle("PUT /1.0.0/push_channels/{a}/{b}", s.authenticated(s.acknowledge))
 	mux.Handle("POST /1.0.0/devices/me/delete", s.authenticated(s.acknowledge))
-	mux.Handle("POST /1.0.0/devices/snapshot", s.authenticated(s.acknowledge))
+	// devices/snapshot has no {uid} in its path, unlike every genuinely
+	// user-scoped endpoint above, and a real capture confirms why: the
+	// console calls it with the anonymous device-level token straight from
+	// /1.0.0/application/token (bs:grt=1), never a logged-in user's. Gating
+	// it behind s.authenticated meant every console with a linked account
+	// got a hard 403 on this periodic check instead of the no-op success
+	// the comment above intends — surfacing as a "needs to be verified
+	// online" error on the console, found 2026-08-28.
+	mux.Handle("POST /1.0.0/devices/snapshot", s.anonymous(s.acknowledge))
 	mux.Handle("GET /1.0.0/users/{uid}/device_histories", s.authenticated(s.acknowledge))
 
 	// An unrouted path must still answer in BAAS's error shape.
