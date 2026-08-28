@@ -314,6 +314,26 @@ type Fest struct {
 	UpdatedAt time.Time
 }
 
+// FestEntry is one player's team choice for one Splatfest.
+//
+// The vote is the only fest data SwitchNet measures. internal/toyohr decides
+// what a tally of these means; this type just carries one.
+type FestEntry struct {
+	// FestID is uppercase, matching Fest.ID.
+	FestID string
+	// UserID is the player, from their authenticated session.
+	UserID string
+	// Team is the team they picked, as the game names it. Not validated against
+	// a list: the team names live inside the BCAT pack, so what is valid depends
+	// on the pack rather than on anything this layer can know.
+	Team string
+	// Region they entered from, uppercase.
+	Region string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type Store interface {
 	// ---- users ----
 
@@ -360,6 +380,17 @@ type Store interface {
 	GetFest(ctx context.Context, id string) (Fest, error)
 	// ListFests returns every fest, soonest first.
 	ListFests(ctx context.Context) ([]Fest, error)
+	// UpsertFestEntry records or changes a player's team choice.
+	//
+	// An upsert rather than an insert: two rows for one player would count them
+	// twice in the vote. Whether changing team is ALLOWED is a rule about fest
+	// phases and lives in internal/toyohr, not here.
+	UpsertFestEntry(ctx context.Context, e FestEntry) error
+	// GetFestEntry returns a player's entry for a fest, or ErrNotFound.
+	GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error)
+	// ListFestEntries returns every entry for a fest, oldest first.
+	ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error)
+
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.
 	DeleteFest(ctx context.Context, id string) error

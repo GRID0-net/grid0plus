@@ -17,11 +17,38 @@ import (
 
 const testTenant = "dce9377b"
 
+// testCaller is whoever the tests are acting as. A package variable so a test
+// can act as a second player without rebuilding the service.
+var testCaller = "player-1"
+
+// as makes the tests act as a given player for the rest of the test.
+//
+// Restored on cleanup rather than by hand: a test that forgets to put it back
+// changes the player every later test runs as, and the failure lands somewhere
+// unrelated.
+func as(t *testing.T, userID string) {
+	t.Helper()
+	previous := testCaller
+	testCaller = userID
+	t.Cleanup(func() { testCaller = previous })
+}
+
+func discardLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 func newService(t *testing.T, now time.Time) (*Service, *db.Memory) {
 	t.Helper()
 	store := db.NewMemory()
-	svc := NewService(store, slog.New(slog.NewTextHandler(io.Discard, nil)),
-		testTenant, func() time.Time { return now })
+	svc := NewService(Options{
+		Store:  store,
+		Log:    discardLogger(),
+		Tenant: testTenant,
+		Now:    func() time.Time { return now },
+		CallerID: func(context.Context) (string, bool) {
+			return testCaller, testCaller != ""
+		},
+	})
 	return svc, store
 }
 

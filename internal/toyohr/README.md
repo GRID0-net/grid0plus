@@ -74,6 +74,60 @@ custom Splatfest possible rather than a rename of one of Nintendo's — both
 inputs to the pack encryption, the key and the resource name, are the server's
 to choose.
 
+## The vote is measured; the battle ratios are not
+
+`GetFestResult` fills four sections, and they are not equally real.
+
+**Yobisai — the pre-fest vote — is measured.** Every `CreateFestEntry` is a
+player who picked a side, and the ratio of entries per team is a number this
+server actually has.
+
+**The Honsai midterm and final ratios are not.** A real fest result carries
+per-category ratios derived from battles played, and nothing in SwitchNet
+records a battle yet — `GameRecord` is unimplemented. Those are returned with
+`is_valid` false, which is the protocol's own way of saying a section is
+unavailable.
+
+They are **not** filled with a plausible number, and that is the point: a
+fabricated ratio is indistinguishable from a measured one to whoever reads it
+next, including a later version of this code.
+
+**So the verdict is decided on the vote.** One point per entry, most points
+wins. That is an *editorial choice*, not a stand-in — this is one operator's
+server, a fest here is a fest SwitchNet built, and "the side more people picked
+wins" is a rule that can be stated to the players. `overallResult` is the single
+function that changes when battles start being recorded.
+
+The verdict is withheld until play is over. Publishing one mid-fest would have
+the game announce a winner while the fest is still open.
+
+## Team choice locks when play opens
+
+Before a fest starts, calling `CreateFestEntry` again changes the team — that is
+a player changing their mind in the lobby. Once play opens:
+
+- **a player who already picked gets their existing entry back**, not an error.
+  A console re-sending its choice on reconnect is normal traffic, and an error
+  there reads to the player as the fest being broken.
+- **a player who never picked is refused.** Splatoon 3 makes players choose
+  before a fest opens, and a vote arriving after a ratio was published changes a
+  number the players have already seen.
+
+A fest that is disabled, or not yet announced, does not exist to a console at
+all — `NotFound`, not a more specific refusal.
+
+## The player comes from the token, never from the request
+
+`FestEntry` carries fields the client fills in. The player is taken from the
+authenticated session instead, through the `CallerID` function
+`internal/npln` hands in — it cannot be an import, because `npln` registers this
+service and the cycle would not build.
+
+`CallerID` nil is legitimate and **fail-closed**: the dashboard builds a
+`Service` to schedule fests and never serves an RPC through it, so a
+player-scoped handler reached that way refuses rather than guessing. Guessing is
+the bug this repository is shaped around.
+
 ## Overlapping fests
 
 Two fests live at once is a state the game has no reading for. The operator can

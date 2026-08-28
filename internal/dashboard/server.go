@@ -99,10 +99,14 @@ func New(opts Options) (*Server, error) {
 	}
 
 	return &Server{
-		store:       opts.Store,
-		bus:         opts.Bus,
-		log:         opts.Log,
-		fests:       toyohr.NewService(opts.Store, opts.Log, opts.Tenant, opts.Now),
+		store: opts.Store,
+		bus:   opts.Bus,
+		log:   opts.Log,
+		// No CallerID: the dashboard schedules fests and never serves an RPC
+		// through this service, so its player-scoped handlers stay fail-closed.
+		fests: toyohr.NewService(toyohr.Options{
+			Store: opts.Store, Log: opts.Log, Tenant: opts.Tenant, Now: opts.Now,
+		}),
 		tenant:      opts.Tenant,
 		presenceTTL: opts.PresenceTTL,
 		token:       opts.Token,

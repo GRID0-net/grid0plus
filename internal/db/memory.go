@@ -33,6 +33,7 @@ type Memory struct {
 	presence       map[string]Presence
 	images         map[string]Image
 	fests          map[string]Fest
+	festEntries    map[festEntryKey]FestEntry
 }
 
 // NewMemory returns an empty in-memory store.
@@ -43,6 +44,7 @@ func NewMemory() *Memory {
 		deviceAccounts: map[string]DeviceAccount{},
 		friendCodes:    map[string]FriendCode{},
 		fests:          map[string]Fest{},
+		festEntries:    map[festEntryKey]FestEntry{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -764,6 +766,13 @@ func cloneExtras(e ExtrasByScope) ExtrasByScope {
 // Compile-time check that Memory satisfies the interface.
 var _ Store = (*Memory)(nil)
 
+// festEntryKey is one player's entry in one fest. A composite map key rather
+// than a nested map, matching the table's composite primary key.
+type festEntryKey struct {
+	festID string
+	userID string
+}
+
 // ---- splatfests ----------------------------------------------------------
 
 func (m *Memory) UpsertFest(_ context.Context, f Fest) error {
@@ -825,5 +834,61 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.fests, id)
+	// The entries go with it, matching the ON DELETE CASCADE on the table.
+	// Without this a recreated fest of the same id would inherit the old votes.
+	for key := range m.festEntries {
+		if key.festID == id {
+			delete(m.festEntries, key)
+		}
+	}
 	return nil
+}
+
+// ---- splatfest entries ---------------------------------------------------
+
+func (m *Memory) UpsertFestEntry(_ context.Context, e FestEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := festEntryKey{festID: e.FestID, userID: e.UserID}
+	if existing, ok := m.festEntries[key]; ok {
+		e.CreatedAt = existing.CreatedAt
+	} else if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
+	e.UpdatedAt = time.Now().UTC()
+	m.festEntries[key] = e
+	return nil
+}
+
+func (m *Memory) GetFestEntry(_ context.Context, festID, userID string) (FestEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	e, ok := m.festEntries[festEntryKey{festID: festID, userID: userID}]
+	if !ok {
+		return FestEntry{}, ErrNotFound
+	}
+	return e, nil
+}
+
+func (m *Memory) ListFestEntries(_ context.Context, festID string) ([]FestEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []FestEntry
+	for key, e := range m.festEntries {
+		if key.festID == festID {
+			out = append(out, e)
+		}
+	}
+	// Oldest first, user id as the tiebreak so the order is total. A map range
+	// is random, and an unstable order is what the contract test catches.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].UserID < out[j].UserID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
 }

@@ -29,7 +29,18 @@ func (s *Server) register() {
 	// Splatoon 3's own services. They authenticate through the same
 	// interceptor as everything else -- a fest is announced to a console that
 	// proved who it is, not to anyone who asks.
-	toyohr.NewService(s.store, s.log, s.tenant, s.now).Register(s.grpc)
+	toyohr.NewService(toyohr.Options{
+		Store:  s.store,
+		Log:    s.log,
+		Tenant: s.tenant,
+		Now:    s.now,
+		// The identity comes from this package's interceptor. toyohr cannot
+		// import it back without a cycle, so it is handed in.
+		CallerID: func(ctx context.Context) (string, bool) {
+			c, ok := CallerFrom(ctx)
+			return c.UserID, ok
+		},
+	}).Register(s.grpc)
 }
 
 // ---- nn.npln.auth.v1.Auth -------------------------------------------------

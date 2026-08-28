@@ -30,14 +30,61 @@ type Service struct {
 	log    *slog.Logger
 	tenant string
 	now    func() time.Time
+
+	// callerID resolves the authenticated player behind an RPC.
+	//
+	// A function rather than an import, because the identity lives in
+	// internal/npln's interceptor and internal/npln registers this service --
+	// importing it back would be a cycle. It returns only the user id, which is
+	// all any handler here needs.
+	//
+	// Nil is legitimate and fail-closed: the dashboard builds a Service to
+	// schedule fests and never serves an RPC through it, so a handler reached
+	// without a resolver refuses rather than guessing.
+	callerID func(context.Context) (string, bool)
+}
+
+// Options configures the Splatoon 3 service set.
+type Options struct {
+	Store  db.Store
+	Log    *slog.Logger
+	Tenant string
+
+	// CallerID resolves the authenticated player behind an RPC. See the field
+	// comment; leaving it nil makes every player-scoped handler refuse.
+	CallerID func(context.Context) (string, bool)
+
+	Now func() time.Time
 }
 
 // NewService builds the Splatoon 3 service set.
-func NewService(store db.Store, log *slog.Logger, tenant string, now func() time.Time) *Service {
-	if now == nil {
-		now = time.Now
+func NewService(opts Options) *Service {
+	if opts.Now == nil {
+		opts.Now = time.Now
 	}
-	return &Service{store: store, log: log, tenant: tenant, now: now}
+	return &Service{
+		store:    opts.Store,
+		log:      opts.Log,
+		tenant:   opts.Tenant,
+		now:      opts.Now,
+		callerID: opts.CallerID,
+	}
+}
+
+// caller returns the authenticated player's id, or false.
+//
+// Fail-closed: no resolver, or a resolver that cannot name a player, means the
+// handler refuses. There is no default player and no fallback -- that is the
+// bug this repository is shaped around.
+func (s *Service) caller(ctx context.Context) (string, bool) {
+	if s.callerID == nil {
+		return "", false
+	}
+	id, ok := s.callerID(ctx)
+	if !ok || id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 // Register attaches the services to a gRPC server.

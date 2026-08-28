@@ -68,6 +68,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"findUsers":             testFindUsers,
 		"userLogin":             testUserLogin,
 		"fests":                 testFests,
+		"festEntries":           testFestEntries,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1134,5 +1135,99 @@ func testFests(t *testing.T, s Store) {
 	// Idempotent: the dashboard's delete button should not error on a second click.
 	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
 		t.Errorf("deleting a missing fest errored: %v", err)
+	}
+}
+
+// testFestEntries exercises the Splatfest vote store against both
+// implementations.
+//
+// The two properties that matter are the ones a divergence would corrupt a
+// result with: one row per player per fest, and votes not outliving the fest
+// they belong to.
+func testFestEntries(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	// A real fest and real users: PostgreSQL has foreign keys to both, and the
+	// in-memory store does not -- which is exactly the kind of difference this
+	// contract exists to keep from mattering.
+	fest := Fest{
+		ID: "NXTD-00050", Resource: "nxtd-00050-fes",
+		Revision: "2222222222222222222222222222222222222222",
+		StartAt:  time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC),
+		Regions:  []string{"EU"}, Enabled: true,
+	}
+	if err := s.UpsertFest(ctx, fest); err != nil {
+		t.Fatalf("upsert fest: %v", err)
+	}
+	alice := makeUser(t, s, "alice")
+	bob := makeUser(t, s, "bob")
+
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: alice.ID, Team: "alpha", Region: "EU",
+	}); err != nil {
+		t.Fatalf("upsert entry: %v", err)
+	}
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: bob.ID, Team: "bravo", Region: "EU",
+	}); err != nil {
+		t.Fatalf("upsert entry: %v", err)
+	}
+
+	got, err := s.GetFestEntry(ctx, fest.ID, alice.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if got.Team != "alpha" || got.Region != "EU" {
+		t.Errorf("entry = %+v, want alpha/EU", got)
+	}
+	if got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
+		t.Error("timestamps were not set")
+	}
+
+	// Changing team replaces the row. Two rows for one player would count them
+	// twice in the vote, and the tally is the whole point of this table.
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: alice.ID, Team: "charlie", Region: "EU",
+	}); err != nil {
+		t.Fatalf("change team: %v", err)
+	}
+	entries, err := s.ListFestEntries(ctx, fest.ID)
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 -- changing team added a row", len(entries))
+	}
+	after, err := s.GetFestEntry(ctx, fest.ID, alice.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if after.Team != "charlie" {
+		t.Errorf("team = %q, want charlie", after.Team)
+	}
+	if !after.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at moved on update: %s -> %s", got.CreatedAt, after.CreatedAt)
+	}
+
+	if _, err := s.GetFestEntry(ctx, fest.ID, "nobody"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a player who never voted returned %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListFestEntries(ctx, "NXTD-99999"); err != nil {
+		t.Errorf("listing a fest with no entries errored: %v", err)
+	} else if len(list) != 0 {
+		t.Errorf("a fest that does not exist has %d entries", len(list))
+	}
+
+	// Deleting the fest takes its votes with it. Without that, recreating the
+	// same fest id inherits the old vote -- and PostgreSQL does it through ON
+	// DELETE CASCADE while the in-memory store has to do it by hand, which is
+	// precisely the divergence this contract catches.
+	if err := s.DeleteFest(ctx, fest.ID); err != nil {
+		t.Fatalf("delete fest: %v", err)
+	}
+	if list, err := s.ListFestEntries(ctx, fest.ID); err != nil {
+		t.Fatalf("list entries: %v", err)
+	} else if len(list) != 0 {
+		t.Errorf("%d votes outlived the fest they belonged to", len(list))
 	}
 }
