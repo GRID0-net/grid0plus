@@ -21,6 +21,13 @@ Keep the categories. Add items to the category they belong to rather than the
 bottom. When you finish something, delete the item rather than marking it done
 — `git log` is the record of what happened.
 
+**If you are working autonomously, you cannot ask anything.** Several items
+below would benefit from an operator's answer. Do not stop for one: write the
+question into [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption you
+proceeded on and the single function that changes if the answer differs, then
+carry on. An assumption implemented and written down beats a question waited
+on.
+
 Priority labels are about *unblocking other work*, not importance:
 
 - **P1** — something else is waiting on it
@@ -68,7 +75,10 @@ identical to a matchmaking bug from the server side.
 a `switchnetctl check` warning when it is empty — an unset ICE list produces
 exactly the silent failure above.
 
-**Ask the operator** before assuming a coturn deployment exists.
+**Do not block on whether coturn exists.** Record it in
+[`docs/QUESTIONS.md`](docs/QUESTIONS.md) (already seeded) and proceed with the
+config-only path: peers on one LAN work without ICE, so matchmaking is testable
+either way.
 
 ### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware**
 
@@ -168,9 +178,11 @@ assets by the announced fest id, a genuinely from-scratch fest needs every
 internal path renamed consistently *and* the RSDB/rstbl tables that reference
 them rebuilt. If it only reads the pack it was handed, the names are inert.
 
-**Find out before building 2.1 on an assumption.** Building a fest whose
-internal names match its own id and seeing whether it loads is the cheapest
-experiment.
+**This needs a console, so an autonomous agent cannot settle it.** It is
+already recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption
+being proceeded on (names are inert). Build §2.1 so that changing that
+assumption later is a contained change rather than a rewrite — keep the naming
+decision in one place.
 
 ### 2.3 `switchnetctl fest build` — **P2**
 
@@ -228,6 +240,11 @@ reverse-engineering job instead of a closed door.
 **Done when** there is a written record, under `docs/CAPTURES/`, of what the
 console requested and how it reacted. Either answer is worth having; right now
 the repository has neither.
+
+**An autonomous agent cannot run this** — it needs a console. What it CAN do is
+build the logging stub so the experiment is a five-minute job when an operator
+is available, and record the question in
+[`docs/QUESTIONS.md`](docs/QUESTIONS.md) (already seeded).
 
 ### 2.4a The `.nro` installer — **P2, the path that works today**
 
