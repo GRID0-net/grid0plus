@@ -277,40 +277,65 @@ func TestAnECKeyringRefusesTheWrongCurve(t *testing.T) {
 	}
 }
 
-// TestConcurrentKeyringsConvergeOnOneECKey mirrors the RSA test: five services
-// starting at once share one key directory, and must all end up with the same
-// key. The RSA path had this bug once; the EC path shares its implementation,
-// so this pins that it stays shared.
+// TestConcurrentKeyringsConvergeOnOneECKey mirrors the RSA test: several
+// services starting at once share one key directory, and must all end up with
+// the same key.
+//
+// EC key generation is FAST -- microseconds, against RSA-2048's milliseconds --
+// which is why this test found a bug the RSA one did not. The window between
+// publishing the filename and writing the contents is the same in both; a
+// generator that returns almost instantly just lands in it far more often. The
+// fix was to write to a temporary file and link it into place, so the name and
+// the contents appear together. See writeKeyOnce.
+//
+// Released together and with enough goroutines that a regression fails reliably
+// rather than one run in five.
 func TestConcurrentKeyringsConvergeOnOneECKey(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "keys")
 
-	const n = 5
+	const n = 32
 	ids := make([]string, n)
+	errs := make([]error, n)
+
 	var wg sync.WaitGroup
+	start := make(chan struct{})
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			<-start
 			k, err := NewKeyring(dir, true).ECKey(IssuerNPLN)
-			if err != nil {
-				t.Errorf("keyring %d: %v", i, err)
-				return
-			}
-			ids[i] = k.ID
+			ids[i], errs[i] = k.ID, err
 		}(i)
 	}
+	close(start)
 	wg.Wait()
 
+	for i, err := range errs {
+		if err != nil {
+			// "no PEM block" here means a keyring read a file another had
+			// created but not yet filled.
+			t.Fatalf("keyring %d: %v", i, err)
+		}
+	}
 	for i := 1; i < n; i++ {
 		if ids[i] != ids[0] {
 			t.Fatalf("keyring %d converged on %s, keyring 0 on %s", i, ids[i], ids[0])
 		}
 	}
 
-	if entries, err := os.ReadDir(dir); err != nil {
+	// Exactly one file: no leftovers from the temporary files the writers used,
+	// each of which would be a stray private key in the key directory.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
 		t.Fatalf("read key dir: %v", err)
-	} else if len(entries) != 1 {
-		t.Fatalf("got %d key files, want exactly 1", len(entries))
+	}
+	if len(entries) != 1 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("key dir holds %v, want exactly one key file", names)
 	}
 }
 
