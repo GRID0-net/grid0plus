@@ -70,6 +70,10 @@ func (s *Server) applicationToken(w http.ResponseWriter, r *http.Request) {
 			DeviceID:     device.Subject,
 			SerialNumber: device.Nintendo.SerialNumber,
 			IsT:          ist,
+			// Echoed from the device token unchanged, matching a 2026-08-27
+			// capture of a working Nextendo application/token response. See
+			// DeviceInfo.X5tS256.
+			X5tS256: device.Nintendo.X5tS256,
 		},
 	})
 	if err != nil {

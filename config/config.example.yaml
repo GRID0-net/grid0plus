@@ -135,6 +135,13 @@ dauth:
   # which is harmless — accounts are keyed on the BAAS device account, never on
   # this — but it makes the dashboard's device list useless.
   client_cert_header: "X-SwitchNet-Client-Cert"
+  # The header nginx puts the console's full TLS client certificate in
+  # ($ssl_client_escaped_cert), used only to compute the 'x5t#S256' claim on
+  # issued tokens — a real SHA-256 thumbprint of already-untrusted, already-
+  # passed-through cert bytes, not verification of them. Leave empty to omit
+  # the claim instead of guessing at it. See internal/jwt/issue.go's
+  # DeviceInfo.X5tS256.
+  client_cert_pem_header: "X-SwitchNet-Client-Cert-PEM"
 
 # ---------------------------------------------------------------------------
 # aauth: application authentication

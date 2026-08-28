@@ -37,12 +37,13 @@ func main() {
 	issuer := sjwt.NewIssuer(key, cfg.DAuth.JWKSURL, true)
 
 	handler := dauth.New(dauth.Config{
-		Issuer:           cfg.DAuth.Issuer,
-		JWKSURL:          cfg.DAuth.JWKSURL,
-		TokenTTL:         time.Duration(cfg.DAuth.TokenTTL) * time.Second,
-		ChallengeTTL:     time.Duration(cfg.DAuth.ChallengeTTL) * time.Second,
-		ClientCertHeader: cfg.DAuth.ClientCertHeader,
-		DeviceIDSecret:   cfg.Keys.DeviceIDSecret,
+		Issuer:              cfg.DAuth.Issuer,
+		JWKSURL:             cfg.DAuth.JWKSURL,
+		TokenTTL:            time.Duration(cfg.DAuth.TokenTTL) * time.Second,
+		ChallengeTTL:        time.Duration(cfg.DAuth.ChallengeTTL) * time.Second,
+		ClientCertHeader:    cfg.DAuth.ClientCertHeader,
+		ClientCertPEMHeader: cfg.DAuth.ClientCertPEMHeader,
+		DeviceIDSecret:      cfg.Keys.DeviceIDSecret,
 	}, issuer, log, func(id, serial, systemVersion string, ist bool) {
 		// Phase 1 only logs the console. Recording it in the devices table needs
 		// a database connection, which dauth otherwise does not want: it is the

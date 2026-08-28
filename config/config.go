@@ -143,6 +143,11 @@ type DAuth struct {
 	// harmless because accounts are keyed on the BAAS device account, not on
 	// the device id — but it does make the dashboard's device list useless.
 	ClientCertHeader string `yaml:"client_cert_header"`
+	// ClientCertPEMHeader is the request header nginx puts the console's full
+	// TLS client certificate in ($ssl_client_escaped_cert), used only to
+	// compute the 'x5t#S256' claim on issued tokens. When absent, tokens omit
+	// the claim rather than guessing at it. See jwt.DeviceInfo.X5tS256.
+	ClientCertPEMHeader string `yaml:"client_cert_pem_header"`
 }
 
 // AAuth configures the application authentication server.
@@ -280,12 +285,13 @@ func Default() Config {
 			GenerateIfMissing: true,
 		},
 		DAuth: DAuth{
-			Listen:           ":8081",
-			Issuer:           "dauth-lp1.ndas.srv.nintendo.net",
-			JWKSURL:          "https://dcert-lp1.ndas.srv.nintendo.net/keys",
-			TokenTTL:         86400,
-			ChallengeTTL:     60,
-			ClientCertHeader: "X-SwitchNet-Client-Cert",
+			Listen:              ":8081",
+			Issuer:              "dauth-lp1.ndas.srv.nintendo.net",
+			JWKSURL:             "https://dcert-lp1.ndas.srv.nintendo.net/keys",
+			TokenTTL:            86400,
+			ChallengeTTL:        60,
+			ClientCertHeader:    "X-SwitchNet-Client-Cert",
+			ClientCertPEMHeader: "X-SwitchNet-Client-Cert-PEM",
 		},
 		AAuth: AAuth{
 			Listen:           ":8082",

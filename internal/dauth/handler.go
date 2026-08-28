@@ -21,12 +21,15 @@ package dauth
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -46,6 +49,10 @@ type Config struct {
 	// ClientCertHeader is the request header nginx puts the console's client
 	// certificate in. Empty disables per-console device ids.
 	ClientCertHeader string
+	// ClientCertPEMHeader is the request header nginx puts the console's full
+	// TLS client certificate in, URI-escaped ($ssl_client_escaped_cert). Empty
+	// leaves 'x5t#S256' off issued tokens — see DeviceInfo.X5tS256.
+	ClientCertPEMHeader string
 	// DeviceIDSecret salts device id derivation.
 	DeviceIDSecret string
 }
@@ -341,7 +348,41 @@ func (h *Handler) deviceFrom(r *http.Request, systemVersion string, ist bool) sj
 		ProductCode:  "HAC",
 		DeviceType:   "NX Prod 1",
 		IsT:          ist,
+		X5tS256:      h.x5tS256(r),
 	}
+}
+
+// x5tS256 reads the console's TLS client certificate from the header nginx
+// puts it in, unverified, and returns its SHA-256 thumbprint — see
+// DeviceInfo.X5tS256. A missing header, an unparsable value, or no header
+// configured all fall through to "", which omits the claim entirely rather
+// than shipping a wrong one.
+func (h *Handler) x5tS256(r *http.Request) string {
+	if h.cfg.ClientCertPEMHeader == "" {
+		return ""
+	}
+	escaped := r.Header.Get(h.cfg.ClientCertPEMHeader)
+	if escaped == "" {
+		h.log.Debug("dauth: no client certificate on request, x5t#S256 omitted", "path", r.URL.Path)
+		return ""
+	}
+	// nginx's $ssl_client_escaped_cert is percent-encoded, not query-encoded:
+	// unescape with PathUnescape so a literal '+' in the PEM's base64 body is
+	// not misread as an encoded space the way QueryUnescape would.
+	raw, err := url.PathUnescape(escaped)
+	if err != nil {
+		h.log.Warn("dauth: could not unescape client certificate header", "error", err)
+		return ""
+	}
+	block, _ := pem.Decode([]byte(raw))
+	if block == nil {
+		h.log.Warn("dauth: client certificate header did not contain a PEM block", "path", r.URL.Path)
+		return ""
+	}
+	sum := sha256.Sum256(block.Bytes)
+	x5t := base64.RawURLEncoding.EncodeToString(sum[:])
+	h.log.Debug("dauth: computed x5t#S256 from client certificate", "path", r.URL.Path, "x5t#S256", x5t)
+	return x5t
 }
 
 func (h *Handler) report(dev sjwt.DeviceInfo, params params) {
@@ -362,6 +403,7 @@ func (h *Handler) sign(dev sjwt.DeviceInfo, clientID string) (string, error) {
 			ProductCode:  dev.ProductCode,
 			DeviceType:   dev.DeviceType,
 			IsT:          dev.IsT,
+			X5tS256:      dev.X5tS256,
 			// A device token's nintendo block carries no 'di': the device id is
 			// the 'sub'.
 		},

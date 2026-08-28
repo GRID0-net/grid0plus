@@ -1,10 +1,17 @@
 package dauth
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,12 +43,13 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{t: t, key: key, verifier: sjwt.NewVerifier(key)}
 
 	handler := New(Config{
-		Issuer:           "dauth-lp1.ndas.srv.nintendo.net",
-		JWKSURL:          "https://dcert-lp1.ndas.srv.nintendo.net/keys",
-		TokenTTL:         24 * time.Hour,
-		ChallengeTTL:     time.Minute,
-		ClientCertHeader: "X-SwitchNet-Client-Cert",
-		DeviceIDSecret:   "test-secret",
+		Issuer:              "dauth-lp1.ndas.srv.nintendo.net",
+		JWKSURL:             "https://dcert-lp1.ndas.srv.nintendo.net/keys",
+		TokenTTL:            24 * time.Hour,
+		ChallengeTTL:        time.Minute,
+		ClientCertHeader:    "X-SwitchNet-Client-Cert",
+		ClientCertPEMHeader: "X-SwitchNet-Client-Cert-PEM",
+		DeviceIDSecret:      "test-secret",
 	}, sjwt.NewIssuer(key, "https://dcert-lp1.ndas.srv.nintendo.net/keys", true),
 		slog.New(slog.DiscardHandler),
 		func(id, serial, systemVersion string, ist bool) {
@@ -279,6 +287,93 @@ func TestClientCertificateGivesEachConsoleItsOwnDeviceID(t *testing.T) {
 	if noCertA.Subject == a.Subject {
 		t.Error("the no-certificate device id collides with a real one")
 	}
+}
+
+// TestX5tS256IsTheRealThumbprintOfTheClientCertificate exercises the
+// 'x5t#S256' claim added after a 2026-08-27 capture of a working Nextendo
+// device token showed it present. It must be a genuine SHA-256 digest of the
+// certificate nginx passed through — not a fingerprint of anything else, and
+// not present at all when no certificate was presented.
+func TestX5tS256IsTheRealThumbprintOfTheClientCertificate(t *testing.T) {
+	h := newHarness(t)
+
+	der, pemBytes := selfSignedCertPEM(t)
+	sum := sha256.Sum256(der)
+	want := base64.RawURLEncoding.EncodeToString(sum[:])
+
+	// Mimic nginx's $ssl_client_escaped_cert: percent-encoded PEM text. Must be
+	// PathEscape, not QueryEscape -- QueryEscape's '+'-for-space form encoding
+	// is not what nginx's escaping does, and PathUnescape (which the handler
+	// uses, to avoid misreading a literal '+' in base64 as an encoded space)
+	// does not reverse it.
+	escaped := url.PathEscape(string(pemBytes))
+
+	resp := h.postForm("/v7/device_auth_token",
+		url.Values{"client_id": {"8f849b5d34778d8e"}, "ist": {"false"}},
+		[2]string{"X-SwitchNet-Client-Cert-PEM", escaped})
+
+	var body deviceTokenResponse
+	decode(t, resp, &body)
+	var claims sjwt.DeviceTokenClaims
+	if err := h.verifier.Verify(body.DeviceAuthToken, &claims); err != nil {
+		t.Fatalf("token does not verify: %v", err)
+	}
+	if claims.Nintendo.X5tS256 != want {
+		t.Errorf("x5t#S256 = %q, want %q (the cert's real SHA-256 thumbprint)", claims.Nintendo.X5tS256, want)
+	}
+
+	// No certificate presented: the claim must be absent, not a wrong or
+	// placeholder value.
+	resp = h.postForm("/v7/device_auth_token",
+		url.Values{"client_id": {"8f849b5d34778d8e"}, "ist": {"false"}})
+	decode(t, resp, &body)
+	var noCertClaims sjwt.DeviceTokenClaims
+	if err := h.verifier.Verify(body.DeviceAuthToken, &noCertClaims); err != nil {
+		t.Fatalf("token does not verify: %v", err)
+	}
+	if noCertClaims.Nintendo.X5tS256 != "" {
+		t.Errorf("x5t#S256 = %q with no client certificate presented, want empty", noCertClaims.Nintendo.X5tS256)
+	}
+
+	// omitempty means a wrong derivation could still round-trip through the Go
+	// struct as "" without the key having genuinely been left out of the JSON
+	// the console receives; check the raw claim too.
+	parts := strings.Split(body.DeviceAuthToken, ".")
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	var raw struct {
+		Nintendo map[string]any `json:"nintendo"`
+	}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if _, present := raw.Nintendo["x5t#S256"]; present {
+		t.Error(`the 'nintendo' claim has an "x5t#S256" key with no certificate presented, want it omitted entirely`)
+	}
+}
+
+// selfSignedCertPEM returns a throwaway self-signed certificate's raw DER and
+// its PEM encoding, standing in for the console's own TLS client certificate.
+func selfSignedCertPEM(t *testing.T) (der []byte, pemBytes []byte) {
+	t.Helper()
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test console"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	pemBytes = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	return der, pemBytes
 }
 
 func TestV8ReturnsOneTokenPerRequestedClientID(t *testing.T) {

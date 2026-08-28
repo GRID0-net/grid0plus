@@ -399,7 +399,11 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
 `
 		clientCertHeader = `
         # Read by internal/dauth to derive a per-console device id.
-        proxy_set_header X-SwitchNet-Client-Cert $ssl_client_fingerprint;`
+        proxy_set_header X-SwitchNet-Client-Cert $ssl_client_fingerprint;
+        # Read by internal/dauth to compute the 'x5t#S256' claim -- a real
+        # SHA-256 thumbprint of the cert above, not verification of it. See
+        # jwt.DeviceInfo.X5tS256.
+        proxy_set_header X-SwitchNet-Client-Cert-PEM $ssl_client_escaped_cert;`
 	} else {
 		// Captured 2026-08-25, after the http2-off fix: the TLS handshake to
 		// accounts.nintendo.com now completes cleanly and matches a plain curl
