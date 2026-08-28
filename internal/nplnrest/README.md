@@ -29,11 +29,12 @@ not know what to say" is **to say as little as possible** — a well-formed empt
 answer rather than an invented Nintendo internal — and **to make the capture
 cheap**.
 
-Hence `Options.RecordDir`. Point it at a directory, put a console through one
-boot, and every request and response lands on disk in the order it happened,
-hexdumped, with credentials redacted. That transcript is what turns every
-`TODO(capture-needed)` in this package into a one-commit reconciliation. It is
-off by default because it writes whatever the console sends.
+Hence `Options.RecordDir`, which is `internal/wirelog`. Point it at a directory,
+put a console through one boot, and every request and response lands on disk in
+the order it happened, hexdumped, with credentials redacted. That transcript is
+what turns every `TODO(capture-needed)` in this package into a one-commit
+reconciliation. It is off by default because it writes whatever the console
+sends.
 
 ```yaml
 npln:

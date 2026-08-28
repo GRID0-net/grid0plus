@@ -34,16 +34,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/nintendo"
+	"github.com/n-popescu/switchnet/internal/wirelog"
 )
 
 // Options configures the front end.
@@ -73,12 +71,7 @@ type Options struct {
 type Server struct {
 	log           *slog.Logger
 	frontlineHost string
-	recordDir     string
-	now           func() time.Time
-
-	// seq numbers recorded exchanges, so the transcript reads in the order the
-	// console produced it rather than in filesystem order.
-	seq atomic.Uint64
+	rec           *wirelog.Recorder
 
 	// frontlines counts the persistent connections currently held open, for the
 	// log line that says whether the console got that far.
@@ -115,16 +108,14 @@ func New(opts Options) (*Server, error) {
 				"Use one of the fro-N.hac.lp1.penne.srv.nintendo.net names",
 			opts.FrontlineHost)
 	}
-	if opts.RecordDir != "" {
-		if err := os.MkdirAll(opts.RecordDir, 0o700); err != nil {
-			return nil, fmt.Errorf("nplnrest: record dir: %w", err)
-		}
+	rec, err := wirelog.New(opts.Log, opts.RecordDir, opts.Now)
+	if err != nil {
+		return nil, err
 	}
 	return &Server{
 		log:           opts.Log,
 		frontlineHost: opts.FrontlineHost,
-		recordDir:     opts.RecordDir,
-		now:           opts.Now,
+		rec:           rec,
 	}, nil
 }
 
@@ -137,7 +128,7 @@ func New(opts Options) (*Server, error) {
 // decides the network is broken, which surfaces somewhere unrelated.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host := hostOnly(r.Host)
+		host := wirelog.HostOnly(r.Host)
 
 		switch {
 		case strings.HasPrefix(host, "fro-"):
@@ -245,7 +236,7 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.record(r, nil, http.StatusOK, "frontline: held open")
+	s.rec.Record(r, nil, http.StatusOK, "frontline: held open")
 
 	// Chunked, unbuffered, and not cached anywhere between here and the
 	// console. Without X-Accel-Buffering an nginx in front holds the stream
@@ -260,11 +251,11 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	// Logged at info because this line answers the first question anybody asks
 	// when Splatoon 3 will not connect: did the console get as far as the
 	// frontline?
-	s.log.Info("nplnrest: frontline connection open", "host", hostOnly(r.Host), "open", open)
+	s.log.Info("nplnrest: frontline connection open", "host", wirelog.HostOnly(r.Host), "open", open)
 	defer func() {
 		remaining := s.frontlines.Add(-1)
 		s.log.Info("nplnrest: frontline connection closed by the console",
-			"host", hostOnly(r.Host), "open", remaining)
+			"host", wirelog.HostOnly(r.Host), "open", remaining)
 	}()
 
 	ticker := time.NewTicker(frontlinePoll)
@@ -282,12 +273,7 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ---- answering and recording ----------------------------------------------
-
-// maxRecordedBody caps how much of a request body is read, so a console (or
-// anything else reaching this port) cannot make the server allocate without
-// limit.
-const maxRecordedBody = 1 << 20
+// ---- answering ------------------------------------------------------------
 
 func (s *Server) answer(w http.ResponseWriter, r *http.Request, status int, body any) {
 	encoded, err := json.Marshal(body)
@@ -297,183 +283,9 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, status int, body
 		return
 	}
 
-	s.record(r, encoded, status, "")
+	s.rec.Record(r, encoded, status, "")
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write(encoded)
-}
-
-// record logs one exchange, and writes it to RecordDir when one is configured.
-//
-// Always logs; only writes when recording. The log line is what an operator
-// reads while a console is booting; the file is what gets written up under
-// docs/CAPTURES/ afterwards.
-func (s *Server) record(r *http.Request, response []byte, status int, note string) {
-	body, truncated := readBody(r)
-
-	s.log.Info("nplnrest: request",
-		"host", hostOnly(r.Host), "method", r.Method, "path", r.URL.Path,
-		"query", r.URL.RawQuery, "bytes", len(body), "truncated", truncated,
-		"status", status, "note", note)
-
-	if s.recordDir == "" {
-		return
-	}
-
-	n := s.seq.Add(1)
-	// Both the host and the path are attacker-controlled -- the Host header is
-	// whatever reaches the port -- so both are slugged. A separator or a
-	// traversal surviving into either would write outside the directory.
-	name := fmt.Sprintf("%04d-%s-%s.txt", n, slug(hostOnly(r.Host)), slug(r.URL.Path))
-	f, err := os.OpenFile(filepath.Join(s.recordDir, name),
-		os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
-	if err != nil {
-		s.log.Error("nplnrest: record", "error", err)
-		return
-	}
-	defer f.Close()
-
-	fmt.Fprintf(f, "# %s\n", s.now().UTC().Format(time.RFC3339Nano))
-	fmt.Fprintf(f, "%s %s HTTP/%d.%d\n", r.Method, r.URL.RequestURI(), r.ProtoMajor, r.ProtoMinor)
-	fmt.Fprintf(f, "Host: %s\n", r.Host)
-	for _, key := range sortedHeaderKeys(r.Header) {
-		for _, v := range r.Header[key] {
-			// Bearer tokens and device credentials go through these hosts. The
-			// value is replaced rather than the header dropped, because WHICH
-			// credentials the console presents is part of what a capture is
-			// for; their contents are not, and a capture written up in
-			// docs/CAPTURES/ has to be redactable without re-reading it.
-			if isSensitiveHeader(key) {
-				fmt.Fprintf(f, "%s: <redacted, %d bytes>\n", key, len(v))
-				continue
-			}
-			fmt.Fprintf(f, "%s: %s\n", key, v)
-		}
-	}
-	fmt.Fprintf(f, "\n%s\n", hexdump(body))
-	if truncated {
-		fmt.Fprintf(f, "\n# body truncated at %d bytes\n", maxRecordedBody)
-	}
-	if note != "" {
-		fmt.Fprintf(f, "\n# %s\n", note)
-	}
-	if response != nil {
-		fmt.Fprintf(f, "\n--- response %d ---\n%s\n", status, response)
-	}
-}
-
-// readBody reads a request body up to the cap, and restores it so a handler
-// after this one can still read it.
-func readBody(r *http.Request) (body []byte, truncated bool) {
-	if r.Body == nil {
-		return nil, false
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRecordedBody+1))
-	if err != nil {
-		return body, false
-	}
-	if len(body) > maxRecordedBody {
-		return body[:maxRecordedBody], true
-	}
-	return body, false
-}
-
-func hostOnly(host string) string {
-	if h, _, ok := strings.Cut(host, ":"); ok {
-		return h
-	}
-	return host
-}
-
-// slug turns an untrusted string into one filename component.
-//
-// An allowlist, and a deliberately narrow one: letters, digits and a hyphen.
-// A dot is excluded even though it reads better, because allowing it means
-// reasoning about ".." — and a rule that needs reasoning about is a rule that
-// eventually gets it wrong. Bounded, too, because many filesystems cap a
-// component at 255 bytes and the input is whatever reached the port.
-func slug(s string) string {
-	s = strings.Trim(s, "/")
-	if s == "" {
-		return "root"
-	}
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-	out := b.String()
-	if len(out) > 80 {
-		out = out[:80]
-	}
-	return out
-}
-
-func isSensitiveHeader(key string) bool {
-	switch http.CanonicalHeaderKey(key) {
-	case "Authorization", "Cookie", "Set-Cookie", "X-Nintendo-Denebedgetoken":
-		return true
-	}
-	return false
-}
-
-func sortedHeaderKeys(h http.Header) []string {
-	out := make([]string, 0, len(h))
-	for k := range h {
-		out = append(out, k)
-	}
-	// Deterministic, so two recordings of the same request diff cleanly.
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
-}
-
-// hexdump renders bytes as offset, hex and printable ASCII.
-//
-// A hexdump rather than a string, because these bodies are not known to be
-// text. The frontline frames certainly are not, and a body written as a Go
-// string would silently mangle every byte above 0x7f in exactly the capture
-// somebody is relying on.
-func hexdump(b []byte) string {
-	if len(b) == 0 {
-		return "# empty body"
-	}
-	var out strings.Builder
-	for off := 0; off < len(b); off += 16 {
-		end := off + 16
-		if end > len(b) {
-			end = len(b)
-		}
-		line := b[off:end]
-
-		fmt.Fprintf(&out, "%08x  ", off)
-		for i := 0; i < 16; i++ {
-			if i < len(line) {
-				fmt.Fprintf(&out, "%02x ", line[i])
-			} else {
-				out.WriteString("   ")
-			}
-			if i == 7 {
-				out.WriteByte(' ')
-			}
-		}
-		out.WriteString(" |")
-		for _, c := range line {
-			if c >= 0x20 && c < 0x7f {
-				out.WriteByte(c)
-			} else {
-				out.WriteByte('.')
-			}
-		}
-		out.WriteString("|\n")
-	}
-	return strings.TrimRight(out.String(), "\n")
 }

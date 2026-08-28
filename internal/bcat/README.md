@@ -41,6 +41,38 @@ rather than treating this paragraph as settled.
 Building the cache directly sidesteps the question entirely, which is why it is
 what this package does today.
 
+## The probe, and why it exists before the experiment does
+
+`Probe` is the server for TODO.md §2.4 stage 1: *does the console reach us at
+all?* It logs every request the three `bcat-*` hosts receive, writes a hexdumped
+transcript when `stubs.bcat_record_dir` is set, and answers 200 with an empty
+body.
+
+It is wired into `internal/stubs` and **unreachable in a normal deployment**,
+because those three hosts are null-routed. Running the experiment is:
+
+1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
+   `ServiceBlackhole` to `ServiceStubs`;
+2. move them in `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
+   says why;
+3. regenerate the DNS and nginx configuration, set `stubs.bcat_record_dir`, and
+   open Splatoon 3.
+
+That is deliberately a five-minute job. The scarce resource in this experiment is
+console time, not server code, so the server exists first.
+
+**An empty 200 is a decision, not a placeholder.** An error tells the console the
+server is broken and it may stop asking, which loses the only thing the probe
+collects. A fabricated container is worse: the console rejects it for a reason
+nobody can name, and a negative result then means nothing.
+
+**Stage 2 is not built, and cannot honestly be.** Answering with a deliberately
+invalid signature only tests whether the signature is checked if the rest of the
+header is right — and the only public fact about that header is its size and the
+signature's offset. Stage 1's hexdumps are how the rest becomes known. Building
+stage 2 from a guess would produce an experiment whose negative result is
+uninterpretable.
+
 ## What it produces
 
 ```

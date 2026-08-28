@@ -69,9 +69,15 @@ See TODO §2.4 for the full experiment. If they do, serving BCAT natively may be
 possible and the `.nro` installer (§2.4a) becomes unnecessary. `sys-patch`
 covers `fs`, `es`, `ldr` and `nifm`; `bcat` is not on that list.
 
+**The server for stage 1 is written and waiting.** `internal/bcat.Probe` logs
+every request the `bcat-*` hosts receive and writes a hexdumped transcript when
+`stubs.bcat_record_dir` is set. Running the experiment is three lines in
+`internal/nintendo/hosts.go` plus a config value — see TODO §2.4.
+
 **Proceeding on:** it is not covered, so SwitchNet builds the delivery cache and
 does not serve BCAT. Note that this is only *half* the blocker — the `list`
-response body is undocumented regardless.
+response body is undocumented regardless, and stage 1's transcript is what would
+start to settle it.
 
 **Changes if answered:** `internal/nintendo/hosts.go` (the three `bcat-*`
 entries), `TestBlackholedHostsAreAccountedFor`, and whether §2.4a is built at

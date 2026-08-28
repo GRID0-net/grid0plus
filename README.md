@@ -185,6 +185,7 @@ internal/
   gamesync/      the live lobby document and watch service
   bcat/          Splatfest content packs, and their encryption
   matchmaking/   the match queue and match formation
+  wirelog/       request transcripts, for the protocols nobody has documented
   dashboard/     the operator's web view
   presencebus/   presence pub/sub, in-process or Redis
   stubs/         the catch-all

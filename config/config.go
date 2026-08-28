@@ -371,6 +371,14 @@ type Stubs struct {
 	// LogBodies logs request bodies. Useful exactly once, while working out
 	// what an unimplemented endpoint is being asked for.
 	LogBodies bool `yaml:"log_bodies"`
+
+	// BCATRecordDir is where the BCAT probe writes a transcript of what the
+	// console asked BCAT for.
+	//
+	// Nothing reaches the probe until the three bcat-* hosts are flipped away
+	// from ServiceBlackhole in internal/nintendo/hosts.go -- that is TODO.md
+	// §2.4's experiment, and it needs a console. See internal/bcat.Probe.
+	BCATRecordDir string `yaml:"bcat_record_dir"`
 }
 
 // NATCheck configures the UDP NAT-check responder.

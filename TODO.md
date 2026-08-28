@@ -149,17 +149,17 @@ Everything it needs exists: `bcat.BuildPacks`, `bcat.Revision`,
 console. Any path where a human types one of them twice will eventually produce
 `BcatInvalid`, which reaches the player as a generic communication error.
 
-### 2.4 Serving BCAT natively — **P1 to TEST, cheap, do this early**
+### 2.4 Serving BCAT natively — **P1 to TEST, and the server is now ready**
 
-**The blocker here is smaller than earlier notes in this repository claimed,
-and it is worth an hour of an operator's time before any more is built around
-the workaround.**
+**The blocker here is smaller than earlier notes in this repository claimed, and
+it is worth an hour of an operator's time before any more is built around the
+workaround.**
 
 What was previously written down: Nintendo's delivery container carries an
 RSA-2048 signature, therefore the console verifies it, therefore serving BCAT
 means forging a Nintendo signature. **The middle step was never established.**
-switchbrew documents the signature *field*; it says nothing about a
-verification step or what happens on failure.
+switchbrew documents the signature *field*; it says nothing about a verification
+step or what happens on failure.
 
 And a console running SwitchNet already has **sigpatches** — bypassing Nintendo
 signature checks is the normal state of a CFW console, and `ROADMAP.md` §3.3
@@ -167,36 +167,31 @@ already depends on that for phase 3. Whether they reach the `bcat` sysmodule is
 unknown: `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and `bcat` is not
 listed. Unknown is not impossible.
 
-**The experiment**, in two stages, both needing an operator and a console:
+**Stage 1 is now a five-minute job, and it needs a console.**
+`internal/bcat.Probe` is written, wired into `internal/stubs`, and tested. To
+run it:
 
-1. **Does the console reach us at all?** Flip the three `bcat-*` hosts from
-   `ServiceBlackhole` to a server that logs every request with a full hexdump
-   and answers 200 with an empty body. Point a console at it and open Splatoon
-   3. If requests arrive, the paths are right and TLS/DNS work — and the log is
-   the first record anyone has of what the console actually asks for.
-2. **Does it care about the signature?** Answer `/api/nx/v1/list/<name>` with a
-   container that has the right 0x120 header shape and a deliberately garbage
-   signature. If the console proceeds, sigpatches cover `bcat` and the
-   signature is a non-issue. If it refuses, that is the first real evidence
-   either way.
+1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
+   `ServiceBlackhole` to `ServiceStubs`;
+2. move them out of `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
+   says why (that entry is explicitly contingent — see §5.2);
+3. set `stubs.bcat_record_dir`, regenerate the DNS and nginx configuration, and
+   open Splatoon 3.
 
-**Even a positive result does not finish it**: the `list` response *body* is
-still undocumented, and stage 1's hexdumps are how that gets chipped away. But
-a positive result turns "nobody has documented how" into a tractable
-reverse-engineering job instead of a closed door.
+Every request lands in the log and in a hexdumped transcript. If they arrive, the
+paths are right and DNS and TLS work — and that transcript is the first record
+anyone has of what the console actually asks BCAT for.
 
-**Start at** `internal/nintendo/hosts.go` (the three `bcat-*` entries and
-`TestBlackholedHostsAreAccountedFor`), and a logging handler in
-`internal/stubs` — this needs no new package to run the experiment.
+**Stage 2 — the deliberately-invalid signature — is deliberately NOT built.** It
+only tests whether the signature is checked if the rest of the 0x120 header is
+right, and the only public facts about that header are its size and the
+signature's offset at 0x20. A guessed header produces a refusal nobody can
+attribute, so a negative result would mean nothing. Stage 1's hexdumps are how
+the header becomes writable; then this becomes a small commit.
 
 **Done when** there is a written record, under `docs/CAPTURES/`, of what the
 console requested and how it reacted. Either answer is worth having; right now
 the repository has neither.
-
-**An autonomous agent cannot run this** — it needs a console. What it CAN do is
-build the logging stub so the experiment is a five-minute job when an operator
-is available, and record the question in
-[`docs/QUESTIONS.md`](docs/QUESTIONS.md) (already seeded).
 
 ### 2.4a The `.nro` installer — **P2, the path that works today**
 
@@ -319,16 +314,3 @@ disagree.
 
 Fold the corrections in and leave the plan as the record of how they were
 found.
-
-### 5.2 The `bcat-*` hosts are null-routed — **contingent, not settled**
-
-`hosts.go` null-routes `bcat-list`, `bcat-data` and `bcat-topics`, and
-`TestBlackholedHostsAreAccountedFor` pins that.
-
-That is correct **while SwitchNet cannot answer them** — redirecting to a
-server that fails to respond usefully turns an immediate failure into a hang.
-
-It is not a permanent decision. §2.4's experiment requires flipping them to a
-logging stub, and a positive result would keep them flipped. Amend the test
-deliberately, in a commit that says why, rather than treating this entry as a
-rule.

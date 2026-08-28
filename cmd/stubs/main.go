@@ -22,7 +22,13 @@ func main() {
 	}
 	log = service.Logger(cfg.Log, "stubs")
 
-	handler := stubs.New(stubs.Config{LogBodies: cfg.Stubs.LogBodies}, log)
+	handler, err := stubs.New(stubs.Config{
+		LogBodies:     cfg.Stubs.LogBodies,
+		BCATRecordDir: cfg.Stubs.BCATRecordDir,
+	}, log)
+	if err != nil {
+		service.Fatal(log, "build handler", err)
+	}
 
 	ctx, cancel := service.SignalContext()
 	defer cancel()

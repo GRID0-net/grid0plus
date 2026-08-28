@@ -372,8 +372,19 @@ var Hosts = []Host{
 	// deployment's isolation policy (see CLAUDE.md and the
 	// emuMMC-never-talks-to-real-Nintendo rule) -- not a feature gap, since it
 	// is not needed for Phase 1: background content-delivery discovery.
-	// Null-routed rather than stubbed: there is nothing useful a stub
-	// response does for it.
+	//
+	// Null-routed rather than stubbed, and this is CONTINGENT rather than
+	// settled. Null-routing fails immediately, which is the right answer while
+	// SwitchNet cannot answer these usefully -- redirecting to a server that
+	// responds without delivering anything risks turning an immediate failure
+	// into a wait.
+	//
+	// TODO.md §2.4's experiment needs them flipped to ServiceStubs, where
+	// internal/bcat.Probe is already waiting: it logs every request and answers
+	// 200 with an empty body, which is how anybody first learns what the console
+	// asks BCAT for. Flipping them means amending
+	// TestBlackholedHostsAreAccountedFor too -- deliberately, in a commit that
+	// says why. It needs a console, so it is the operator's to run.
 	{
 		Pattern: "bcat-list-lp1.cdn.nintendo.net",
 		Service: ServiceBlackhole,
