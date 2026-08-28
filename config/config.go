@@ -286,6 +286,25 @@ type NPLN struct {
 	// the server side. Empty is legitimate: peers on one LAN reach each other
 	// without ICE, and `switchnetctl check` warns rather than refuses.
 	IceServers []IceServer `yaml:"ice_servers"`
+
+	// FrontlineHost is the fro-N hostname the console is told to open its
+	// persistent connection to.
+	//
+	// It MUST be a hostname internal/nintendo/hosts.go redirects. Naming one it
+	// does not sends the console's frontline connection to real Nintendo, where
+	// it succeeds — and then fails in a way that looks like SwitchNet's fault.
+	// internal/nplnrest refuses to start rather than allow it.
+	FrontlineHost string `yaml:"frontline_host"`
+
+	// RestRecordDir, when set, is a directory the JSON front end writes every
+	// request and response to.
+	//
+	// This is how the undocumented vermillion, penne and frontline shapes get
+	// settled: point it somewhere, put a console through one boot, and the
+	// transcript is on disk. Off by default because it writes whatever the
+	// console sends, headers included — credentials are redacted, bodies are
+	// not.
+	RestRecordDir string `yaml:"rest_record_dir"`
 }
 
 // IceServer is one STUN or TURN server offered to a console.
@@ -424,6 +443,10 @@ func Default() Config {
 			// Two, so two friends can start a match. See the field comment.
 			PlayersPerMatch: 2,
 			TicketTTL:       180,
+			// fro-3 because that is the member the reference server resolves
+			// the frontline to. Any of fro-1..4 is redirected and carries a
+			// certificate SAN; this one is the least likely to surprise.
+			FrontlineHost: "fro-3.hac.lp1.penne.srv.nintendo.net",
 		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",

@@ -312,6 +312,25 @@ npln:
   #    username: "switchnet"
   #    password: "change-me"
 
+  # The fro-N host the console is told to open its persistent connection to.
+  #
+  # fro-N is a family and the server picks a member. It MUST be one the host
+  # list redirects -- naming one it does not sends that connection to real
+  # Nintendo, where it succeeds, and the game then misbehaves in a way that
+  # looks like SwitchNet's fault. The server refuses to start rather than allow
+  # it, so a typo here is caught immediately.
+  frontline_host: "fro-3.hac.lp1.penne.srv.nintendo.net"
+
+  # Record every JSON front-end request and response to this directory.
+  #
+  # The vermillion, penne and frontline shapes are undocumented, and this is how
+  # they get settled: point it somewhere, put a console through one boot, and the
+  # transcript is on disk -- hexdumped, in order, with credentials redacted.
+  # Then write it up under docs/CAPTURES/ and reconcile internal/nplnrest.
+  #
+  # Off by default: it writes whatever the console sends.
+  rest_record_dir: ""
+
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------

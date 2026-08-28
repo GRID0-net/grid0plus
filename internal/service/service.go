@@ -70,7 +70,7 @@ const shutdownGrace = 10 * time.Second
 // network: a console that drops off mid-request must not hold a connection open
 // indefinitely.
 func ServeHTTP(ctx context.Context, log *slog.Logger, addr string, handler http.Handler) error {
-	srv := &http.Server{
+	return Serve(ctx, log, &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -80,7 +80,19 @@ func ServeHTTP(ctx context.Context, log *slog.Logger, addr string, handler http.
 		// requests a friend-list refresh makes, short enough that a console that
 		// went to sleep does not hold a slot for minutes.
 		IdleTimeout: 120 * time.Second,
-	}
+	})
+}
+
+// Serve runs a caller-built HTTP server until ctx is cancelled, then drains it.
+//
+// The caller owns the timeouts, which is the whole reason this is separate from
+// ServeHTTP: NPLN's JSON front end holds a connection open indefinitely, and
+// ServeHTTP's thirty-second write timeout would sever it. The console reads that
+// close as the game losing its connection (2307-2103 on Splatoon 2, 2321-* on
+// Splatoon 3), so a shared timeout that suits every other service is exactly
+// wrong for that one.
+func Serve(ctx context.Context, log *slog.Logger, srv *http.Server) error {
+	addr := srv.Addr
 
 	errCh := make(chan error, 1)
 	go func() {

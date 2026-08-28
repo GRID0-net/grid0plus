@@ -179,6 +179,12 @@ internal/
   dauth/         device authentication
   aauth/         application authentication
   baas/          accounts, friends, presence, blocks, images
+  npln/          the NPLN gRPC gateway for Splatoon 3, and matchmaking
+  nplnrest/      NPLN's JSON front end, which the game contacts first
+  toyohr/        Splatoon 3's own services: Splatfest scheduling
+  bcat/          Splatfest content packs, and their encryption
+  matchmaking/   the match queue and match formation
+  dashboard/     the operator's web view
   presencebus/   presence pub/sub, in-process or Redis
   stubs/         the catch-all
   natcheck/      the NAT-check UDP responder

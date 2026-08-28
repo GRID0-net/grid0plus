@@ -12,7 +12,7 @@ Status: **in progress.** Written 2026-08-28.
 | Match queue and formation | done — `internal/matchmaking` |
 | Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go` |
 | BCAT pack building and serving | not started — `internal/bcat` |
-| The JSON front end (vermillion, penne, frontline) | not started — `internal/nplnrest` |
+| The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, shapes still capture-gated |
 | Dashboard | not started |
 
 Everything done so far is verifiable without a console, which is the ordering
@@ -288,9 +288,9 @@ not in it.
 
 | Unknown | What a capture settles | Where it would change |
 | --- | --- | --- |
-| vermillion request/response bodies | the JSON shapes for device init and account config | `internal/nplnrest/vermillion.go` |
-| penne login-ticket shape | what the game needs before it will open the frontline | `internal/nplnrest/penne.go` |
-| the frontline binary framing | what those frames mean; the reference logs them as opaque hex | `internal/nplnrest/frontline.go` |
+| vermillion request/response bodies | the JSON shapes for device init and account config | `internal/nplnrest`, `vermillion` |
+| penne login-ticket shape, and the field the frontline FQDN comes back under | what the game needs before it will open the frontline | `internal/nplnrest`, `penne` |
+| the frontline binary framing | what those frames mean; the reference logs them as opaque hex | `internal/nplnrest`, `frontline` |
 | the BCAT pack container | the archive layout and `summary.yml`, around known crypto | `internal/bcat/pack.go` |
 | tricolour stage numbering | which stages are valid, and what an invalid one does | `internal/toyohr/fest.go` |
 | whether a Phase 1 `id_token` satisfies S3 | the auth seam, end to end | `internal/npln/auth.go` |
@@ -298,6 +298,12 @@ not in it.
 Per CLAUDE.md: implement the most defensible reading, mark it, name the single
 function a capture would change. Do not invent a plausible-looking Nintendo
 internal.
+
+**The first three of those are now one operator action rather than six.** Set
+`npln.rest_record_dir`, put a console through one boot, and `internal/nplnrest`
+writes every request and response to disk — hexdumped, in order, credentials
+redacted. Building that recorder was the useful half of implementing a front end
+whose shapes nobody knows.
 
 ---
 

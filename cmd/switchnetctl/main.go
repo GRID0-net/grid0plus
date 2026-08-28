@@ -297,13 +297,12 @@ func nginxConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
-	// Phase 2's upstreams, commented out alongside the server blocks that use
-	// them: uncommenting a block without its upstream is an nginx that will not
-	// start, which is a worse first experience than one that is not there yet.
+	// Phase 2's upstreams. Both are served by cmd/npln, which exists now: the
+	// gRPC gateway on npln.listen and the JSON front end on npln.rest_listen.
 	for _, svc := range []nintendo.Service{
 		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN,
 	} {
-		fmt.Fprintf(&b, "# upstream switchnet_%s { server %s; }\n",
+		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
 	b.WriteString("\n")
@@ -341,21 +340,16 @@ func nginxConf(cfg config.Config) string {
 
 		fmt.Fprintf(&b, "# ---- %s ----\n", names[svc])
 		if svc == nintendo.ServiceNPLN {
-			b.WriteString("# Phase 2. Until cmd/npln exists this block is commented out: an\n")
-			b.WriteString("# nginx that cannot resolve its upstream refuses to start.\n")
-			b.WriteString("#\n")
 			b.WriteString("# NPLN is gRPC over HTTP/2, so it needs grpc_pass and http2, not\n")
 			b.WriteString("# proxy_pass. Routing it to an HTTP/1.1 backend completes the TLS\n")
 			b.WriteString("# handshake and then says nothing a gRPC client understands, which\n")
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
-			b.WriteString(commentOut(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}])))
+			b.WriteString(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}]))
 			b.WriteString("\n")
 			continue
 		}
 		if svc == nintendo.ServiceNPLNRest {
-			b.WriteString("# Phase 2, commented out for the same reason as npln below.\n")
-			b.WriteString("#\n")
 			b.WriteString("# These are the hosts Splatoon 3 talks to BEFORE it opens its gRPC\n")
 			b.WriteString("# channel: vermillion (device init), penne (login tickets), and the\n")
 			b.WriteString("# fro-N frontline connection. They are ordinary JSON, so proxy_pass\n")
@@ -366,7 +360,7 @@ func nginxConf(cfg config.Config) string {
 			// per-host interop flag, so grouping by variant would only ever
 			// produce one bucket -- and picking the wrong one silently emits a
 			// server block with an empty server_name.
-			b.WriteString(commentOut(frontlineServerBlock(cfg, tlsNamesOf(hosts))))
+			b.WriteString(frontlineServerBlock(cfg, tlsNamesOf(hosts)))
 			b.WriteString("\n")
 			continue
 		}
@@ -577,14 +571,6 @@ func frontlineServerBlock(cfg config.Config, serverNames []string) string {
     }
 }
 `, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
-}
-
-func commentOut(s string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = "# " + l
-	}
-	return strings.Join(lines, "\n") + "\n"
 }
 
 // upstreamAddr turns a Go listen address into one nginx can proxy to.

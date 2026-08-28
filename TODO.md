@@ -38,26 +38,7 @@ Priority labels are about *unblocking other work*, not importance:
 
 ## 1. NPLN protocol
 
-### 1.1 The JSON front end: vermillion, penne, frontline — **P1 for hardware**
-
-Splatoon 3 does **not** open with gRPC. It talks JSON over HTTPS to
-`gw.hac.lp1.vermillion…` (device init) and `val.hac.lp1.penne…` (login tickets,
-and the frontline FQDN), and only then opens the gRPC channel.
-
-The hosts are already classified (`ServiceNPLNRest`) and the nginx generator
-already emits their block; there is no `internal/nplnrest` package behind it.
-
-**The frontline connection is a long-lived stream the console holds open.**
-Closing it is an error on the console (`2307-2103` on Splatoon 2, `2321-*` on
-Splatoon 3), not a clean end. The generated nginx block already sets
-`proxy_buffering off` and a long read timeout for this.
-
-**`TODO(capture-needed)`** on all three request/response shapes. The reference
-implementation this project studied does not ship its captures, so nothing here
-is known — implement the most defensible reading and say what a capture would
-settle. Do **not** invent a plausible Nintendo internal.
-
-### 1.2 The rest of `nn.npln.toyohr.v1.*` — **P2**
+### 1.1 The rest of `nn.npln.toyohr.v1.*` — **P2**
 
 Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 `GameRecord`, `CoopScenario` (Salmon Run), then `Locker`, `CloudSave`,
@@ -66,7 +47,7 @@ Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 Treat it as a backlog and let the console drive the order: an unimplemented RPC
 answers `codes.Unimplemented` and logs, and **that log is the to-do list**.
 
-### 1.3 `gamesync` — **P2**
+### 1.2 `gamesync` — **P2**
 
 A Firestore-shaped document/watch service on its own port (7575 — the host is
 already listed and `npln.gamesync_listen` already configured). Splatoon 3
@@ -306,14 +287,19 @@ work could proceed while §4.1 was open, but it means **no shape in this phase
 is confirmed against hardware.**
 
 The first console test is worth more than any amount of further server work.
-Expect the JSON front end (§1.3) to be wrong first, because it is the least
-documented and the earliest in the sequence.
+Expect the JSON front end (`internal/nplnrest`) to be wrong first, because it is
+the least documented and the earliest in the sequence. Set `npln.rest_record_dir`
+before that first attempt: it writes every request and response to disk,
+hexdumped and in order, so one boot produces the transcript that settles all
+three of its shapes at once.
 
 ### 4.3 Captures still wanted — **P2**
 
 `grep -rn 'TODO(capture-needed)' internal/` for the live list. As of writing:
-the NPLN resource-name prefix in `IssueToken`'s response, and whether Splatoon 3
-ever calls `RefreshToken`.
+every NPLN resource-name shape (collected in `internal/npln/names.go`, so one
+capture settles all of them), whether Splatoon 3 ever calls `RefreshToken`, and
+the three `internal/nplnrest` bodies — those last are what `npln.rest_record_dir`
+exists to produce.
 
 Write captures up under `docs/CAPTURES/` using the template, redacted,
 reconcile the implementation, and **delete the `TODO` comment in the same
