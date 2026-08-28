@@ -1,6 +1,24 @@
 # Phase 2 implementation plan — NPLN, Splatoon 3, and the dashboard
 
-Status: **proposed**, not started. Written 2026-08-28.
+Status: **in progress.** Written 2026-08-28.
+
+| Step | State |
+| --- | --- |
+| Protobuf pipeline (`make gen-proto`) | done — 77 files from a pinned upstream |
+| ES256 in `internal/jwt` | done |
+| Host reclassification + nginx generator | done |
+| gRPC gateway, and the phase-1 auth seam | done — `internal/npln`, `cmd/npln` |
+| Splatfest scheduling | done — `internal/toyohr` |
+| Match queue and formation | done — `internal/matchmaking` |
+| Matchmaker/GameSession gRPC services | not started |
+| BCAT pack building and serving | not started — `internal/bcat` |
+| The JSON front end (vermillion, penne, frontline) | not started — `internal/nplnrest` |
+| Dashboard | not started |
+
+Everything done so far is verifiable without a console, which is the ordering
+this plan committed to while the certificate-pinning question is open. The
+store work is verified against a real PostgreSQL 16, not only the in-memory
+implementation.
 
 This plan revises [`ROADMAP.md`](ROADMAP.md) §2 in four places where the roadmap
 turns out to be wrong or incomplete. Those corrections are the reason this
