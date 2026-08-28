@@ -3,6 +3,7 @@ package presencebus
 import (
 	"context"
 	"sync"
+	"time"
 )
 
 // bufferPerSubscriber is how many events a subscriber may fall behind by before
@@ -28,11 +29,20 @@ type Local struct {
 	// was too slow. Exposed for a log line at shutdown, so a wedged subscriber
 	// leaves a trace instead of quietly losing updates.
 	dropped uint64
+
+	// stats is the last published snapshot. Only useful within one process,
+	// which is the same limitation the event side has and for the same reason.
+	stats    Stats
+	hasStats bool
+
+	// now is overridable so a test can age a snapshot past StatsTTL without
+	// sleeping for it.
+	now func() time.Time
 }
 
 // NewLocal returns an in-process bus.
 func NewLocal() *Local {
-	return &Local{subs: map[chan Event]struct{}{}}
+	return &Local{subs: map[chan Event]struct{}{}, now: time.Now}
 }
 
 // Publish delivers an event to every current subscriber.
@@ -91,6 +101,30 @@ func (l *Local) Close() error {
 		close(ch)
 	}
 	return nil
+}
+
+// PublishStats replaces the current snapshot.
+func (l *Local) PublishStats(_ context.Context, s Stats) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if s.At.IsZero() {
+		s.At = l.now()
+	}
+	l.stats, l.hasStats = s, true
+	return nil
+}
+
+// Stats returns the current snapshot, or false when it has gone stale.
+func (l *Local) Stats(_ context.Context) (Stats, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.hasStats || l.now().Sub(l.stats.At) > StatsTTL {
+		// Expired reads as absent, not as zero. "Nobody is queuing" and "the
+		// game server is not running" look identical on a tile, and only one of
+		// them is worth acting on.
+		return Stats{}, false, nil
+	}
+	return l.stats, true, nil
 }
 
 // Dropped returns how many events were dropped because a subscriber was slow.

@@ -32,6 +32,9 @@ type Memory struct {
 	blocks         map[string]map[string]Block
 	presence       map[string]Presence
 	images         map[string]Image
+	fests          map[string]Fest
+	festEntries    map[festEntryKey]FestEntry
+	matches        map[string]Match
 }
 
 // NewMemory returns an empty in-memory store.
@@ -41,6 +44,9 @@ func NewMemory() *Memory {
 		devices:        map[string]Device{},
 		deviceAccounts: map[string]DeviceAccount{},
 		friendCodes:    map[string]FriendCode{},
+		fests:          map[string]Fest{},
+		festEntries:    map[festEntryKey]FestEntry{},
+		matches:        map[string]Match{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -761,3 +767,175 @@ func cloneExtras(e ExtrasByScope) ExtrasByScope {
 
 // Compile-time check that Memory satisfies the interface.
 var _ Store = (*Memory)(nil)
+
+// festEntryKey is one player's entry in one fest. A composite map key rather
+// than a nested map, matching the table's composite primary key.
+type festEntryKey struct {
+	festID string
+	userID string
+}
+
+// ---- splatfests ----------------------------------------------------------
+
+func (m *Memory) UpsertFest(_ context.Context, f Fest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, ok := m.fests[f.ID]; ok {
+		f.CreatedAt = existing.CreatedAt
+	} else if f.CreatedAt.IsZero() {
+		f.CreatedAt = time.Now().UTC()
+	}
+	f.UpdatedAt = time.Now().UTC()
+	// Copy the slice: the caller keeps a reference to the one it passed, and a
+	// store that hands out its own backing array lets a caller mutate stored
+	// state by accident. The PostgreSQL implementation cannot do that, so
+	// without this the two would disagree under the contract test.
+	f.Regions = append([]string(nil), f.Regions...)
+	f.PackKeys = append([]string(nil), f.PackKeys...)
+	m.fests[f.ID] = f
+	return nil
+}
+
+func (m *Memory) GetFest(_ context.Context, id string) (Fest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	f, ok := m.fests[id]
+	if !ok {
+		return Fest{}, ErrNotFound
+	}
+	f.Regions = append([]string(nil), f.Regions...)
+	f.PackKeys = append([]string(nil), f.PackKeys...)
+	return f, nil
+}
+
+func (m *Memory) ListFests(_ context.Context) ([]Fest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]Fest, 0, len(m.fests))
+	for _, f := range m.fests {
+		f.Regions = append([]string(nil), f.Regions...)
+		f.PackKeys = append([]string(nil), f.PackKeys...)
+		out = append(out, f)
+	}
+	// Soonest first, id as the tiebreak so the order is total: a map range is
+	// random, and an unstable order is exactly the kind of difference the
+	// contract test exists to catch between the two implementations.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartAt.Equal(out[j].StartAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].StartAt.Before(out[j].StartAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) DeleteFest(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.fests, id)
+	// The entries go with it, matching the ON DELETE CASCADE on the table.
+	// Without this a recreated fest of the same id would inherit the old votes.
+	for key := range m.festEntries {
+		if key.festID == id {
+			delete(m.festEntries, key)
+		}
+	}
+	return nil
+}
+
+// ---- matches -------------------------------------------------------------
+
+func (m *Memory) RecordMatch(_ context.Context, match Match) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.matches[match.ID]; exists {
+		// Same as the PostgreSQL implementation's ON CONFLICT DO NOTHING.
+		return nil
+	}
+	if match.CreatedAt.IsZero() {
+		match.CreatedAt = time.Now().UTC()
+	}
+	// Copied, because the caller keeps a reference to the slice it passed and
+	// PostgreSQL cannot hand out its own backing array.
+	match.Players = append([]string(nil), match.Players...)
+	m.matches[match.ID] = match
+	return nil
+}
+
+func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+	out := make([]Match, 0, len(m.matches))
+	for _, match := range m.matches {
+		match.Players = append([]string(nil), match.Players...)
+		out = append(out, match)
+	}
+	// Newest first, id as the tiebreak so the order is total.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID > out[j].ID
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ---- splatfest entries ---------------------------------------------------
+
+func (m *Memory) UpsertFestEntry(_ context.Context, e FestEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := festEntryKey{festID: e.FestID, userID: e.UserID}
+	if existing, ok := m.festEntries[key]; ok {
+		e.CreatedAt = existing.CreatedAt
+	} else if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
+	e.UpdatedAt = time.Now().UTC()
+	m.festEntries[key] = e
+	return nil
+}
+
+func (m *Memory) GetFestEntry(_ context.Context, festID, userID string) (FestEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	e, ok := m.festEntries[festEntryKey{festID: festID, userID: userID}]
+	if !ok {
+		return FestEntry{}, ErrNotFound
+	}
+	return e, nil
+}
+
+func (m *Memory) ListFestEntries(_ context.Context, festID string) ([]FestEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []FestEntry
+	for key, e := range m.festEntries {
+		if key.festID == festID {
+			out = append(out, e)
+		}
+	}
+	// Oldest first, user id as the tiebreak so the order is total. A map range
+	// is random, and an unstable order is what the contract test catches.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].UserID < out[j].UserID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}

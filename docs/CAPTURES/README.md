@@ -185,22 +185,62 @@ fields was wrong or missing, as opposed to a generic module-2124 failure.
 
 ## Phase 2 — Splatoon 3 (NPLN)
 
-Not started, so nothing is guessed yet. When it is, these are the captures that
-will unblock it. NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or
-`proxide`, not mitmproxy, and it does need the console.
+**Implemented, and nothing in it has touched a console.** Every phase-2 test runs
+against a Go client, which was deliberate — it let the work proceed while the
+certificate-pinning question was open — but it means no shape here is confirmed
+against hardware.
 
-| Capture | Why |
-| --- | --- |
-| game boot through the NPLN auth handshake | confirms the id token is accepted and shows what the tenant expects in `authorization`/`uid` metadata |
-| entering the lobby | `Schedule` and `LobbyMessaging`, the first things the lobby draws |
-| a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
-| the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
-| post-match results upload | `GameRecord` |
+NPLN is gRPC over HTTP/2, so the gRPC half needs `grpc-dump` or `proxide` rather
+than mitmproxy, and it does need the console. The JSON half needs neither: see
+the first row below.
+
+`switch/README.md`'s
+[Verify Splatoon 3, in order](../../switch/README.md#verify-splatoon-3-in-order)
+is the console-side sequence, and its first step is the cheapest capture in this
+whole document.
+
+### The JSON front end — settle it with one config line, not a proxy
+
+`internal/nplnrest` writes its own transcript. Set `npln.rest_record_dir`, put a
+console through one boot, and every request and response lands on disk hexdumped,
+in order, with credentials redacted. **No MITM, no patched proxy, no risk.**
+
+That one boot settles three of the four items below at once. It is worth doing
+before anything else on hardware.
+
+| Unknown | What the transcript settles | Where it changes |
+| --- | --- | --- |
+| `gw.hac.lp1.vermillion…` bodies | the device-initialisation exchange. A 2026-08-27 tcpdump showed 16.5 KB exchanged here mid-flow, so it expects real answers | `internal/nplnrest`, `vermillion` |
+| `val.hac.lp1.penne…` bodies | the login ticket, and **the field name the frontline FQDN comes back under** — the one value that must be right, because a name the console cannot find leaves it with no frontline at all. SwitchNet currently sends it under four plausible spellings; a capture collapses that to one | `internal/nplnrest`, `penne` |
+| `fro-N…` frame format | what the console sends and expects on the persistent connection. SwitchNet holds it open and sends **nothing**, because writing invented bytes into unknown framing is worse than silence | `internal/nplnrest`, `frontline` |
+
+### The gRPC half — needs a proxy and the console
+
+| Capture | What it settles | Where it changes |
+| --- | --- | --- |
+| `IssueToken`'s response, or any resource name | **the resource-name shape, all of it at once.** Every NPLN resource name is built in one file for exactly this reason: one capture retires the whole set | `internal/npln/names.go` |
+| a session outliving its access token | whether Splatoon 3 ever calls `RefreshToken`. SwitchNet returns no refresh token, because the game re-authenticates from its BAAS id token on reconnect — a path that is already served | `internal/npln/services.go` |
+| a matchmaking request through to a session | the mode names the game puts in `matchmaking_config`, and the station info each client needs for its ICE handshake. **The mode names are also produced by a log line** — see `npln.mode_players` | `npln.mode_players`, and `AllocateIceServerSet` |
+| entering the lobby | `Schedule`'s stage and rule identifiers, and the co-op shift fields — stage, boss, four weapons, reward. All Splatoon 3 internal numbers, which is why they are operator config rather than a table in the source | `npln.rotation`, and `SelectCoopSchedules` |
+| the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set. If they are false the client shows no presence and publishes none — a friend list that looks healthy while everybody is permanently offline | not yet implemented |
+| a `gamesync` `CreateRound` call | what a `Round` is. Four of its five fields are `Unk1`..`Unk4` in the decompiled definitions, so it is left unimplemented rather than guessed | `internal/gamesync`, `CreateRound` |
+| post-match results upload | `GameRecord` — **and with it the battle ratios a Splatfest verdict needs.** Until then `GetFestResult` reports the vote (measured) and marks the battle ratios not valid (not measured) | `internal/toyohr` |
+
+### Splatfests and BCAT
+
+| Capture | What it settles | Where it changes |
+| --- | --- | --- |
+| `GetFestDecryptionKey`'s response for a fest whose packs are known | **which key field opens which pack.** A seed folder has five packs and the message has six key fields, so at least one field has no pack; the three team fields are certain and `notice`/`start`/`result` are not | `internal/bcat`, `PackForKeyField` |
+| the console's requests to the three `bcat-*` hosts | whether serving BCAT is possible at all, and what `/api/nx/v1/list/<name>` is asked for. **The server for this is written and waiting** — flip the hosts to `ServiceStubs` and set `stubs.bcat_record_dir` | `internal/bcat`, `Probe` |
+| a from-scratch fest whose internal asset names match its own id | whether the game keys assets on the announced fest id or only on the pack it is handed. `bcat.substitute_fest_id` makes both readings reachable without a code change | `internal/bcat`, `Naming.Apply` |
+| the tricolour stage numbering | which stages are valid, and what an invalid one does | `internal/toyohr` |
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
 IPS patch generator that disables TLS verification *inside Splatoon 3
-specifically* — useful because the game verifies on top of the system, and it is
-narrower than the system-wide patch.
+specifically* — narrower than the system-wide patch, and what
+[`switch/README.md` part 3](../../switch/README.md#part-3-splatoon-3-pins-its-own-certificates)
+documents. Regenerate it after every title update: it is gated on the game
+version and stops applying silently.
 
 ## Phase 3 — the eShop
 

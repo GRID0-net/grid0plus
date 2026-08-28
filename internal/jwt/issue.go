@@ -1,7 +1,7 @@
 package jwt
 
 import (
-	"crypto/rsa"
+	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -16,12 +16,15 @@ import (
 // Nintendo uses a random UUID v4 as the 'kid'. Deriving it from the key instead
 // means the id survives a restart and cannot drift out of sync with the JWK set
 // it is published in, while still looking like what a capture shows.
-func keyIDFor(priv *rsa.PrivateKey) KeyID {
-	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+//
+// It takes the public key rather than the private one so that RSA and EC keys
+// can share it: the id depends on nothing secret.
+func keyIDFor(pub crypto.PublicKey) KeyID {
+	der, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
 		// MarshalPKIXPublicKey only fails for key types it does not know, and
-		// RSA is not one of them.
-		panic("jwt: marshal RSA public key: " + err.Error())
+		// neither RSA nor ECDSA is one of them.
+		panic("jwt: marshal public key: " + err.Error())
 	}
 	sum := sha256.Sum256(der)
 	id, err := uuid.FromBytes(sum[:16])

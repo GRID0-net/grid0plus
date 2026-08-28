@@ -187,9 +187,13 @@ func TestBlackholedHostsAreAccountedFor(t *testing.T) {
 		"atumn.hac.lp1.d4c.nintendo.net":    true,
 		"aqua.hac.lp1.d4c.nintendo.net":     true,
 		"cdn.accounts.nintendo.com":         true,
-		"bcat-list-lp1.cdn.nintendo.net":    true,
-		"bcat-data-lp1.cdn.nintendo.net":    true,
-		"bcat-topics-lp1.cdn.nintendo.net":  true,
+		// Contingent, not settled: TODO.md §2.4's experiment flips these to
+		// ServiceStubs, where internal/bcat.Probe already answers. When that
+		// happens, move them out of this map in the same commit rather than
+		// treating their presence here as a rule.
+		"bcat-list-lp1.cdn.nintendo.net":   true,
+		"bcat-data-lp1.cdn.nintendo.net":   true,
+		"bcat-topics-lp1.cdn.nintendo.net": true,
 	}
 
 	hosts := ServiceHosts(ServiceBlackhole)
@@ -292,24 +296,46 @@ func TestAccountsNintendoComIsRoutedToBAAS(t *testing.T) {
 }
 
 func TestNPLNTenantForSplatoon3IsListed(t *testing.T) {
-	// Phase 2 needs this, and it is listed now so the hosts file an operator
-	// installs today does not have to be regenerated then. gamesync does not end
-	// in srv.nintendo.net, which is why a broad wildcard would miss it.
-	var haveTenant, haveGamesync bool
+	var haveTenant bool
 	for _, h := range ServiceHosts(ServiceNPLN) {
 		if strings.HasPrefix(h.Pattern, "t-dce9377b-lp1.") {
 			haveTenant = true
-		}
-		if strings.HasPrefix(h.Pattern, "gamesync.") {
-			haveGamesync = true
 		}
 	}
 	if !haveTenant {
 		t.Error("the Splatoon 3 NPLN tenant host is missing")
 	}
-	if !haveGamesync {
-		t.Error("gamesync.npln.nintendo.net is missing; it does not end in " +
-			"srv.nintendo.net, so no wildcard covers it")
+}
+
+// TestGamesyncIsItsOwnServiceOnItsOwnPort.
+//
+// gamesync is reached by the console on PORT 7575, not the edge port, and it is
+// a different backend from the tenant gateway. Grouping it with ServiceNPLN
+// emitted one nginx block on 443 that grpc_passed both to the gateway -- which
+// answers, wrongly, with a service that implements none of gamesync's RPCs. That
+// failure looks like the game disliking our gamesync implementation rather than
+// like a routing mistake, which is why it is worth a test rather than a comment.
+//
+// It also does not end in srv.nintendo.net, so no broad wildcard covers it.
+func TestGamesyncIsItsOwnServiceOnItsOwnPort(t *testing.T) {
+	hosts := ServiceHosts(ServiceGamesync)
+	if len(hosts) != 1 {
+		t.Fatalf("ServiceGamesync has %d hosts, want 1", len(hosts))
+	}
+	if hosts[0].Pattern != "gamesync.npln.nintendo.net" {
+		t.Errorf("gamesync host = %q", hosts[0].Pattern)
+	}
+	if hosts[0].TLSPort != 7575 {
+		t.Errorf("TLSPort = %d, want 7575 — a block on the edge port never matches", hosts[0].TLSPort)
+	}
+	if !hosts[0].TLS {
+		t.Error("gamesync is TLS, so it needs a certificate SAN and a server block")
+	}
+
+	for _, h := range ServiceHosts(ServiceNPLN) {
+		if strings.HasPrefix(h.Pattern, "gamesync.") {
+			t.Error("gamesync is still grouped with the tenant gateway")
+		}
 	}
 }
 
@@ -385,5 +411,88 @@ func TestUnrelatedHostsAreStillForwarded(t *testing.T) {
 		if resolution != ResolveForward {
 			t.Errorf("Resolve(%s) = %v, want ResolveForward", name, resolution)
 		}
+	}
+}
+
+func TestNPLNRestHostsAreNotRoutedToTheGRPCGateway(t *testing.T) {
+	// Splatoon 3 talks JSON to vermillion and penne before it opens a gRPC
+	// channel, so these must be proxy_pass/HTTP-1.1 hosts, not grpc_pass ones.
+	// Putting them under ServiceNPLN would complete the TLS handshake and then
+	// answer with something no gRPC client understands, which neither side
+	// logs -- the exact failure cmd/switchnetctl's NPLN block warns about.
+	wantRest := map[string]bool{
+		"gw.hac.lp1.vermillion.srv.nintendo.net": true,
+		"val.hac.lp1.penne.srv.nintendo.net":     true,
+		"fro-*.hac.lp1.penne.srv.nintendo.net":   true,
+	}
+	for _, h := range ServiceHosts(ServiceNPLNRest) {
+		delete(wantRest, h.Pattern)
+	}
+	for missing := range wantRest {
+		t.Errorf("%s is not routed to ServiceNPLNRest", missing)
+	}
+
+	for _, h := range ServiceHosts(ServiceNPLN) {
+		if strings.Contains(h.Pattern, "vermillion") || strings.Contains(h.Pattern, "penne") {
+			t.Errorf("%s is a JSON host but is routed to the gRPC gateway", h.Pattern)
+		}
+	}
+}
+
+func TestTheFrontlineHostFamilyIsCoveredNotJustFroOne(t *testing.T) {
+	// penne tells the console which fro-N to open its persistent connection
+	// to. SwitchNet writes that response, so it can name fro-1 -- but a console
+	// holding a cached FQDN from real Nintendo may ask for another, and a
+	// console pointed at real Nintendo for its frontline is a console partly
+	// off SwitchNet. The wildcard covers the family.
+	for _, name := range []string{
+		"fro-1.hac.lp1.penne.srv.nintendo.net",
+		"fro-3.hac.lp1.penne.srv.nintendo.net",
+		"fro-9.hac.lp1.penne.srv.nintendo.net",
+	} {
+		res, h, ok := Resolve(name)
+		if !ok || res != ResolveRedirect || h.Service != ServiceNPLNRest {
+			t.Errorf("%s resolved to (%v, %s, %v), want a redirect to %s",
+				name, res, h.Service, ok, ServiceNPLNRest)
+		}
+	}
+
+	// The certificate has to name them individually: a DNS wildcard SAN matches
+	// exactly one label, and these are multi-label.
+	var covered int
+	for _, n := range TLSHostnames() {
+		if strings.HasPrefix(n, "fro-") {
+			covered++
+		}
+	}
+	if covered == 0 {
+		t.Error("no fro-N hostname is in the certificate SANs, so TLS to the " +
+			"frontline host will fail no matter what DNS says")
+	}
+}
+
+func TestAMoreSpecificPenneHostStillBeatsTheFrontlineWildcard(t *testing.T) {
+	// The wildcard's DNS suffix is everything after the '*', which is the whole
+	// penne domain rather than just fro-. Longest-suffix-wins is what keeps the
+	// individually listed penne hosts on their own services; without it the
+	// wildcard would swallow them.
+	for name, want := range map[string]Service{
+		"god.hac.lp1.penne.srv.nintendo.net": ServiceStubs,
+		"val.hac.lp1.penne.srv.nintendo.net": ServiceNPLNRest,
+	} {
+		_, h, ok := Resolve(name)
+		if !ok || h.Service != want {
+			t.Errorf("%s resolved to %s, want %s", name, h.Service, want)
+		}
+	}
+
+	// The consequence worth stating: an unlisted penne host is now redirected
+	// rather than null-routed. That is the intended trade -- it reaches a server
+	// that answers 404 instead of a black hole -- but it is a behaviour change,
+	// so it is pinned here rather than left to be rediscovered.
+	res, h, ok := Resolve("unlisted.hac.lp1.penne.srv.nintendo.net")
+	if !ok || res != ResolveRedirect || h.Service != ServiceNPLNRest {
+		t.Errorf("an unlisted penne host resolved to (%v, %s), want a redirect to %s",
+			res, h.Service, ServiceNPLNRest)
 	}
 }

@@ -1,0 +1,82 @@
+# Code generation for the NPLN protobuf definitions fetched by
+# scripts/fetch-proto.sh. Driven by scripts/gen-proto.sh, not run directly.
+#
+# buf rather than protoc: it is a single Go binary, so `go install` is the whole
+# toolchain story and CI needs no C++ build. The generated output is identical.
+version: v2
+
+# Most of the `latest` tree declares no `go_package` — the manual decompilations
+# (all of toyohr/v1, hydro, maintenance, ugcstore, leaderboard, …) have none,
+# and the few that do point at the module path the definitions were originally
+# compiled under, which is not ours. Managed mode assigns every file a Go
+# package under this module instead, so the generated code imports itself
+# correctly and nothing has to be patched by hand after generation.
+managed:
+  enabled: true
+  override:
+    # The prefix is the MODULE ROOT, not the module root plus "proto": each
+    # file's own path already begins with `proto/`, so a prefix ending in
+    # /proto produces github.com/n-popescu/switchnet/proto/proto/common.
+    - file_option: go_package_prefix
+      value: github.com/n-popescu/switchnet
+
+    # The annotation protos are a different case: they are not Nintendo's, they
+    # already have canonical Go packages in the module graph, and generating a
+    # second copy of google/rpc's Status under our own module would give us a
+    # type that looks like grpc's status but is not assignable to it. Point them
+    # at the real packages instead.
+    - file_option: go_package
+      path: google/api/annotations.proto
+      value: google.golang.org/genproto/googleapis/api/annotations
+    - file_option: go_package
+      path: google/api/client.proto
+      value: google.golang.org/genproto/googleapis/api/annotations
+    - file_option: go_package
+      path: google/api/field_behavior.proto
+      value: google.golang.org/genproto/googleapis/api/annotations
+    - file_option: go_package
+      path: google/api/resource.proto
+      value: google.golang.org/genproto/googleapis/api/annotations
+    - file_option: go_package
+      path: google/rpc/status.proto
+      value: google.golang.org/genproto/googleapis/rpc/status
+
+    # validate/ sits outside the `proto/` tree upstream, so the prefix alone
+    # would generate it to the repository root. Name it explicitly; with the
+    # `module=` output mode below, the file follows its Go package.
+    - file_option: go_package
+      path: validate/validate.proto
+      value: github.com/n-popescu/switchnet/proto/validate
+
+plugins:
+  - local: protoc-gen-go
+    out: .
+    # module=, not paths=source_relative: the output path is then derived from
+    # each file's Go package rather than from where it happens to sit upstream.
+    # That is what lets validate/ — which lives outside the proto/ tree there —
+    # be generated into proto/validate here, alongside everything else.
+    opt: module=github.com/n-popescu/switchnet
+  - local: protoc-gen-go-grpc
+    out: .
+    opt:
+      - module=github.com/n-popescu/switchnet
+      # Generate the unimplemented-server embeds. SwitchNet implements these
+      # services a few RPCs at a time, and an unimplemented RPC must answer
+      # codes.Unimplemented rather than fail to compile — that log line is the
+      # to-do list (ROADMAP §2.4).
+      - require_unimplemented_servers=false
+
+inputs:
+  - directory: .proto-upstream/latest
+    # Compile Nintendo's own definitions, plus validate/, which is annotation-
+    # only and cheaper to generate than to take protoc-gen-validate as a
+    # dependency for. google/{api,rpc} are mapped to their canonical packages
+    # above and so are not generated; google/protobuf is deliberately absent
+    # from the fetched tree (see fetch-proto.sh) so buf supplies its own
+    # well-known types, which carry the correct Go import paths.
+    #
+    # Paths resolve against the working directory (the repo root, where
+    # gen-proto.sh runs buf), not against the input directory.
+    paths:
+      - .proto-upstream/latest/proto
+      - .proto-upstream/latest/validate

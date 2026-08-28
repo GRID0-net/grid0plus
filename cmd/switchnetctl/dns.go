@@ -69,6 +69,7 @@ var redirectedServices = []nintendo.Service{
 	nintendo.ServiceAAuth,
 	nintendo.ServiceBAAS,
 	nintendo.ServiceStubs,
+	nintendo.ServiceNPLNRest,
 	nintendo.ServiceNPLN,
 }
 
@@ -114,6 +115,9 @@ func dnsmasqConf(cfg config.Config) string {
 	}
 
 	section("NPLN game servers (phase 2)")
+	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLNRest) {
+		fmt.Fprintf(&b, "address=/%s/%s\n", h.Pattern, cfg.Network.PublicIP)
+	}
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLN) {
 		fmt.Fprintf(&b, "address=/%s/%s\n", h.Pattern, cfg.Network.PublicIP)
 	}

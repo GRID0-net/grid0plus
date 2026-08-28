@@ -905,3 +905,177 @@ func (p *Postgres) GetImage(ctx context.Context, id string) (Image, error) {
 
 // Compile-time check that Postgres satisfies the interface.
 var _ Store = (*Postgres)(nil)
+
+// ---- splatfests ----------------------------------------------------------
+
+const festColumns = `id, resource, revision, start_at, regions, pack_keys, enabled, created_at, updated_at`
+
+func (p *Postgres) UpsertFest(ctx context.Context, f Fest) error {
+	// A nil slice becomes SQL NULL, which the NOT NULL columns reject -- while
+	// the in-memory store stores nil happily. That divergence is exactly what
+	// the shared contract test exists to catch, and it caught this one: a fest
+	// with no pack keys yet (every fest, before its pack is built) failed on
+	// PostgreSQL and succeeded in memory. Normalised here so "no keys" means
+	// the same thing in both.
+	if f.Regions == nil {
+		f.Regions = []string{}
+	}
+	if f.PackKeys == nil {
+		f.PackKeys = []string{}
+	}
+
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_fests (id, resource, revision, start_at, regions, pack_keys, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO UPDATE SET
+		     resource   = EXCLUDED.resource,
+		     revision   = EXCLUDED.revision,
+		     start_at   = EXCLUDED.start_at,
+		     regions    = EXCLUDED.regions,
+		     pack_keys  = EXCLUDED.pack_keys,
+		     enabled    = EXCLUDED.enabled,
+		     updated_at = now()`,
+		f.ID, f.Resource, f.Revision, f.StartAt, f.Regions, f.PackKeys, f.Enabled)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetFest(ctx context.Context, id string) (Fest, error) {
+	return scanFest(p.pool.QueryRow(ctx,
+		`SELECT `+festColumns+` FROM npln_fests WHERE id = $1`, id))
+}
+
+func (p *Postgres) ListFests(ctx context.Context) ([]Fest, error) {
+	// Soonest first, id as the tiebreak: the in-memory store orders the same
+	// way, and the contract test compares them.
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+festColumns+` FROM npln_fests ORDER BY start_at, id`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Fest
+	for rows.Next() {
+		f, err := scanFest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) DeleteFest(ctx context.Context, id string) error {
+	// No rows affected is not an error: the dashboard's delete button should be
+	// idempotent, and the in-memory store's delete is too.
+	_, err := p.pool.Exec(ctx, `DELETE FROM npln_fests WHERE id = $1`, id)
+	return mapErr(err)
+}
+
+// ---- matches -------------------------------------------------------------
+
+func (p *Postgres) RecordMatch(ctx context.Context, m Match) error {
+	if m.Players == nil {
+		// A nil slice becomes SQL NULL, which the NOT NULL column rejects while
+		// the in-memory store accepts it happily. The contract test is what
+		// catches that class of difference; this is the fix.
+		m.Players = []string{}
+	}
+	// ON CONFLICT DO NOTHING rather than an error: a match log is not worth
+	// failing a match over.
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_matches (id, mode, players, host)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (id) DO NOTHING`,
+		m.ID, m.Mode, m.Players, m.Host)
+	return mapErr(err)
+}
+
+func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	// id as the tiebreak on created_at, so the order is total and matches the
+	// in-memory store's -- two matches formed in the same instant is normal
+	// when several consoles queue at once.
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, mode, players, host, created_at FROM npln_matches
+		 ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Match
+	for rows.Next() {
+		var m Match
+		if err := rows.Scan(&m.ID, &m.Mode, &m.Players, &m.Host, &m.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, m)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// ---- splatfest entries ---------------------------------------------------
+
+const festEntryColumns = `fest_id, user_id, team, region, created_at, updated_at`
+
+func (p *Postgres) UpsertFestEntry(ctx context.Context, e FestEntry) error {
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_fest_entries (fest_id, user_id, team, region)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (fest_id, user_id) DO UPDATE SET
+		     team       = EXCLUDED.team,
+		     region     = EXCLUDED.region,
+		     updated_at = now()`,
+		e.FestID, e.UserID, e.Team, e.Region)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error) {
+	return scanFestEntry(p.pool.QueryRow(ctx,
+		`SELECT `+festEntryColumns+` FROM npln_fest_entries
+		 WHERE fest_id = $1 AND user_id = $2`, festID, userID))
+}
+
+func (p *Postgres) ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error) {
+	// Oldest first, user id as the tiebreak: the in-memory store orders the same
+	// way and the contract test compares them.
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+festEntryColumns+` FROM npln_fest_entries
+		 WHERE fest_id = $1 ORDER BY created_at, user_id`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []FestEntry
+	for rows.Next() {
+		e, err := scanFestEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func scanFestEntry(row interface{ Scan(...any) error }) (FestEntry, error) {
+	var e FestEntry
+	err := row.Scan(&e.FestID, &e.UserID, &e.Team, &e.Region, &e.CreatedAt, &e.UpdatedAt)
+	if err != nil {
+		return FestEntry{}, mapErr(err)
+	}
+	return e, nil
+}
+
+func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
+	var f Fest
+	err := row.Scan(&f.ID, &f.Resource, &f.Revision, &f.StartAt,
+		&f.Regions, &f.PackKeys, &f.Enabled, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return Fest{}, mapErr(err)
+	}
+	return f, nil
+}

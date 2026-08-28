@@ -6,13 +6,24 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()
-	return New(Config{}, slog.New(slog.DiscardHandler)).Handler()
+	return newHandler(t, Config{})
+}
+
+func newHandler(t *testing.T, cfg Config) http.Handler {
+	t.Helper()
+	h, err := New(cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	return h.Handler()
 }
 
 // get sends a request with a Host header, which is how the stub server decides
@@ -179,7 +190,7 @@ func TestPostBodiesAreAcceptedAndNotRequired(t *testing.T) {
 func TestLogBodiesDoesNotBreakTheResponse(t *testing.T) {
 	// LogBodies consumes the request body. A handler that then tried to read it
 	// would see nothing; the stub handlers do not, but that has to stay true.
-	h := New(Config{LogBodies: true}, slog.New(slog.DiscardHandler)).Handler()
+	h := newHandler(t, Config{LogBodies: true})
 
 	req := httptest.NewRequest("POST", "http://receive-lp1.er.srv.nintendo.net/report",
 		strings.NewReader("a crash report"))
@@ -197,5 +208,68 @@ func TestLogBodiesDoesNotBreakTheResponse(t *testing.T) {
 	}
 	if string(body) != "{}" {
 		t.Errorf("body = %q, want {}", body)
+	}
+}
+
+// TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants guards the handler
+// TODO.md §2.4's experiment depends on.
+//
+// The hosts are null-routed, so nothing reaches this in a normal deployment.
+// The point is that it works the moment they are flipped, because that
+// experiment needs a console and the console-time is the scarce thing — not the
+// server.
+func TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants(t *testing.T) {
+	h := newTestHandler(t)
+
+	for _, host := range []string{
+		"bcat-list-lp1.cdn.nintendo.net",
+		"bcat-data-lp1.cdn.nintendo.net",
+		"bcat-topics-lp1.cdn.nintendo.net",
+	} {
+		rec := get(t, h, host, "/api/nx/v1/list/splatoon3")
+
+		// 200, because an error tells the console the server is broken and it
+		// may stop asking — which loses the only thing the probe collects.
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s answered %d, want 200", host, rec.Code)
+		}
+		// Empty, because a fabricated container would be rejected for a reason
+		// nobody can name and the experiment's result would mean nothing.
+		if rec.Body.Len() != 0 {
+			t.Errorf("%s answered %d bytes; the probe must not invent a container",
+				host, rec.Body.Len())
+		}
+		// No content type: claiming one would be claiming to know what the
+		// console expects, which is the open question.
+		if got := rec.Header().Get("Content-Type"); got != "" {
+			t.Errorf("%s claimed content type %q", host, got)
+		}
+	}
+}
+
+func TestTheBCATProbeWritesATranscriptWhenAskedTo(t *testing.T) {
+	dir := t.TempDir()
+	h := newHandler(t, Config{BCATRecordDir: dir})
+
+	req := httptest.NewRequest("GET",
+		"http://bcat-list-lp1.cdn.nintendo.net/api/nx/v1/list/splatoon3?lang=EUen", nil)
+	req.Host = "bcat-list-lp1.cdn.nintendo.net"
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read transcript dir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("wrote %d transcripts, want 1", len(entries))
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("read transcript: %v", err)
+	}
+	// The path and query are the whole point: they are the first record anyone
+	// has of what the console asks BCAT for.
+	if !strings.Contains(string(raw), "/api/nx/v1/list/splatoon3?lang=EUen") {
+		t.Errorf("the transcript does not carry the request line:\n%s", raw)
 	}
 }

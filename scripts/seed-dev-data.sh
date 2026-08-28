@@ -181,7 +181,19 @@ echo
 echo "seed: done. $COUNT accounts, all friends with ${USER_IDS[0]}."
 echo
 echo "Account 1's friend list, as the console would fetch it:"
+#
+# The response is a {count, etag, itemsPerPage, items} ENVELOPE, not a bare
+# array, and each item is a relationship object whose `friend` sub-object holds
+# the person. Both were settled by the 2026-08-25 capture -- see
+# docs/CAPTURES/baas-2.0.0-friends.md. This read used to assume a bare array of
+# users and printed a jq error instead of a friend list, which is a small thing
+# except that this script is the smoke test somebody runs to find out whether
+# the chain works.
+# itemsPerPage, not count: `count` echoes the REQUESTED page size, which the
+# capture confirms and which reads confusingly next to a one-entry list.
 api GET "$BAAS/2.0.0/users/${USER_IDS[0]}/friends?count=300" "${ACCESS_TOKENS[0]}" \
-    | jq '[.[] | {nickname, friendCode: .links.friendCode.id,
-                  state: .presence.state,
-                  playing: .presence.extras.friends["appInfo:appId"]}]'
+    | jq '{friends: .itemsPerPage, items: [.items[] | {
+             nickname:  .friend.nickname,
+             favourite: .isFavorite,
+             state:     .friend.presence.state,
+             playing:   .friend.presence.extras.friends["appInfo:appId"]}]}'

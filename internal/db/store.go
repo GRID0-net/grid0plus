@@ -285,6 +285,72 @@ type UserQuery struct {
 // Store is everything SwitchNet persists.
 //
 // Implementations must be safe for concurrent use.
+// Fest is a Splatfest, as the operator scheduled it.
+//
+// Only the mechanics: when it runs, where it is published, and which BCAT pack
+// carries its content. The team names, banners and idol dialogue live inside
+// that pack, not here. internal/toyohr decides what these values mean --
+// notably that StartAt has to land on a two-hour boundary -- and this type just
+// carries them.
+type Fest struct {
+	// ID is uppercase, "NXTD-00042"-shaped.
+	ID string
+	// Resource is the BCAT pack identifier, lowercase.
+	Resource string
+	// Revision is the pack's 40-hex-character revision.
+	Revision string
+	// StartAt is when play opens; every other phase derives from it.
+	StartAt time.Time
+	// Regions the fest is published in.
+	Regions []string
+	// PackKeys are the hex-encoded AES-128 keys that decrypt this fest's BCAT
+	// packs, in the order GetFestDecryptionKey returns them.
+	PackKeys []string
+	// Enabled is whether the operator has turned this fest on. A scheduled but
+	// disabled fest is how a fest is held ready without being announced.
+	Enabled bool
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// FestEntry is one player's team choice for one Splatfest.
+//
+// The vote is the only fest data SwitchNet measures. internal/toyohr decides
+// what a tally of these means; this type just carries one.
+type FestEntry struct {
+	// FestID is uppercase, matching Fest.ID.
+	FestID string
+	// UserID is the player, from their authenticated session.
+	UserID string
+	// Team is the team they picked, as the game names it. Not validated against
+	// a list: the team names live inside the BCAT pack, so what is valid depends
+	// on the pack rather than on anything this layer can know.
+	Team string
+	// Region they entered from, uppercase.
+	Region string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Match is a formed Splatoon 3 match.
+//
+// The queue is deliberately not persisted -- see
+// migrations/0012_npln_matches.up.sql -- so this is only what actually happened.
+type Match struct {
+	// ID is the session id the players were told.
+	ID string
+	// Mode is what they queued for.
+	Mode string
+	// Players are in the order they were matched, which is queue order.
+	Players []string
+	// Host is whose console the others connect to.
+	Host string
+
+	CreatedAt time.Time
+}
+
 type Store interface {
 	// ---- users ----
 
@@ -323,6 +389,40 @@ type Store interface {
 	ListDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
 	// DeleteDeviceAccount marks a device account deleted.
 	DeleteDeviceAccount(ctx context.Context, userID, id string) error
+	// ---- splatfests (phase 2) ----
+
+	// UpsertFest creates or replaces a fest by id.
+	UpsertFest(ctx context.Context, f Fest) error
+	// GetFest returns a fest by id, or ErrNotFound.
+	GetFest(ctx context.Context, id string) (Fest, error)
+	// ListFests returns every fest, soonest first.
+	ListFests(ctx context.Context) ([]Fest, error)
+	// RecordMatch stores a formed match.
+	//
+	// Recording the same id twice is not an error: the alternative is a game
+	// server that fails a request because it already logged something, and a
+	// match log is not worth failing a match over.
+	RecordMatch(ctx context.Context, m Match) error
+	// ListMatches returns the most recent matches, newest first.
+	ListMatches(ctx context.Context, limit int) ([]Match, error)
+
+	// UpsertFestEntry records or changes a player's team choice.
+	//
+	// An upsert rather than an insert: two rows for one player would count them
+	// twice in the vote. Whether changing team is ALLOWED is a rule about fest
+	// phases and lives in internal/toyohr, not here.
+	UpsertFestEntry(ctx context.Context, e FestEntry) error
+	// GetFestEntry returns a player's entry for a fest, or ErrNotFound.
+	GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error)
+	// ListFestEntries returns every entry for a fest, oldest first.
+	ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error)
+
+	// DeleteFest removes a fest. Not an error if it does not exist: the
+	// dashboard's delete button should be idempotent.
+	DeleteFest(ctx context.Context, id string) error
+
+	// ---- devices and device accounts (continued) ----
+
 	// ReassignDeviceAccount moves a device account to a different user,
 	// keeping its id and password unchanged. Used only after the caller has
 	// already proven it holds that password (see completeLogin in

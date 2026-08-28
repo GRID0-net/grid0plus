@@ -47,7 +47,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests, npln_matches RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -67,6 +67,9 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"images":                testImages,
 		"findUsers":             testFindUsers,
 		"userLogin":             testUserLogin,
+		"fests":                 testFests,
+		"festEntries":           testFestEntries,
+		"matches":               testMatches,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1006,5 +1009,302 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	if applied != 0 {
 		t.Errorf("the second migration run applied %d migrations, want 0", applied)
+	}
+}
+
+// testFests exercises the Splatfest store against both implementations.
+//
+// The ordering assertions matter more than they look. ListFests backs the
+// dashboard's fest list and the "which fest is live" lookup, and a map range in
+// the in-memory store is random — so without a total order the two
+// implementations disagree intermittently, which is exactly the class of bug
+// this contract test already caught once for an empty id filter.
+func testFests(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	sept := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
+
+	first := Fest{
+		ID: "NXTD-00042", Resource: "nxtd-00042_data",
+		Revision: "0123456789abcdef0123456789abcdef01234567",
+		StartAt:  sept, Regions: []string{"JP", "EU"}, Enabled: true,
+		PackKeys: []string{"000102030405060708090a0b0c0d0e0f", "0f0e0d0c0b0a09080706050403020100"},
+	}
+	second := Fest{
+		ID: "NXTD-00043", Resource: "nxtd-00043_data",
+		Revision: "89abcdef0123456789abcdef0123456789abcdef",
+		StartAt:  oct, Regions: []string{"US"},
+	}
+
+	if err := s.UpsertFest(ctx, first); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := s.UpsertFest(ctx, second); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	got, err := s.GetFest(ctx, "NXTD-00042")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Resource != "nxtd-00042_data" || got.Revision != first.Revision {
+		t.Errorf("round-tripped %+v, want resource/revision to match", got)
+	}
+	if !got.StartAt.UTC().Equal(sept) {
+		t.Errorf("start_at = %s, want %s", got.StartAt.UTC(), sept)
+	}
+	if len(got.Regions) != 2 || got.Regions[0] != "JP" || got.Regions[1] != "EU" {
+		t.Errorf("regions = %v, want [JP EU] in order", got.Regions)
+	}
+	if !got.Enabled {
+		t.Error("enabled did not round-trip")
+	}
+	// The keys must round-trip in order: GetFestDecryptionKey returns them
+	// positionally (notice, start, result, ...), so a reordering hands the
+	// console the wrong key for a phase and the pack silently fails to open.
+	if len(got.PackKeys) != 2 || got.PackKeys[0] != "000102030405060708090a0b0c0d0e0f" {
+		t.Errorf("pack keys = %v, want them back in order", got.PackKeys)
+	}
+
+	// Soonest first.
+	list, err := s.ListFests(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("listed %d fests, want 2", len(list))
+	}
+	if list[0].ID != "NXTD-00042" || list[1].ID != "NXTD-00043" {
+		t.Errorf("list order = [%s %s], want the sooner fest first", list[0].ID, list[1].ID)
+	}
+
+	// Upsert replaces rather than duplicating, and preserves created_at.
+	updated := first
+	updated.Enabled = false
+	updated.Revision = "ffffffffffffffffffffffffffffffffffffffff"
+	if err := s.UpsertFest(ctx, updated); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	list, err = s.ListFests(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("re-upserting created a duplicate: %d fests", len(list))
+	}
+	again, err := s.GetFest(ctx, "NXTD-00042")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if again.Enabled {
+		t.Error("enabled was not updated")
+	}
+	if !again.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at changed on update: %s -> %s", got.CreatedAt, again.CreatedAt)
+	}
+
+	// A stored fest's regions must not alias the caller's slice.
+	mutable := []string{"JP"}
+	third := Fest{
+		ID: "NXTD-00044", Resource: "nxtd-00044_data",
+		Revision: "1111111111111111111111111111111111111111",
+		StartAt:  oct.Add(24 * time.Hour), Regions: mutable,
+	}
+	if err := s.UpsertFest(ctx, third); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	mutable[0] = "MUTATED"
+	stored, err := s.GetFest(ctx, "NXTD-00044")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Regions[0] != "JP" {
+		t.Error("mutating the caller's slice changed stored state")
+	}
+
+	if _, err := s.GetFest(ctx, "NXTD-99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing fest returned %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetFest(ctx, "NXTD-00044"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted fest returned %v, want ErrNotFound", err)
+	}
+	// Idempotent: the dashboard's delete button should not error on a second click.
+	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
+		t.Errorf("deleting a missing fest errored: %v", err)
+	}
+}
+
+// testFestEntries exercises the Splatfest vote store against both
+// implementations.
+//
+// The two properties that matter are the ones a divergence would corrupt a
+// result with: one row per player per fest, and votes not outliving the fest
+// they belong to.
+func testFestEntries(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	// A real fest and real users: PostgreSQL has foreign keys to both, and the
+	// in-memory store does not -- which is exactly the kind of difference this
+	// contract exists to keep from mattering.
+	fest := Fest{
+		ID: "NXTD-00050", Resource: "nxtd-00050-fes",
+		Revision: "2222222222222222222222222222222222222222",
+		StartAt:  time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC),
+		Regions:  []string{"EU"}, Enabled: true,
+	}
+	if err := s.UpsertFest(ctx, fest); err != nil {
+		t.Fatalf("upsert fest: %v", err)
+	}
+	alice := makeUser(t, s, "alice")
+	bob := makeUser(t, s, "bob")
+
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: alice.ID, Team: "alpha", Region: "EU",
+	}); err != nil {
+		t.Fatalf("upsert entry: %v", err)
+	}
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: bob.ID, Team: "bravo", Region: "EU",
+	}); err != nil {
+		t.Fatalf("upsert entry: %v", err)
+	}
+
+	got, err := s.GetFestEntry(ctx, fest.ID, alice.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if got.Team != "alpha" || got.Region != "EU" {
+		t.Errorf("entry = %+v, want alpha/EU", got)
+	}
+	if got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
+		t.Error("timestamps were not set")
+	}
+
+	// Changing team replaces the row. Two rows for one player would count them
+	// twice in the vote, and the tally is the whole point of this table.
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: alice.ID, Team: "charlie", Region: "EU",
+	}); err != nil {
+		t.Fatalf("change team: %v", err)
+	}
+	entries, err := s.ListFestEntries(ctx, fest.ID)
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 -- changing team added a row", len(entries))
+	}
+	after, err := s.GetFestEntry(ctx, fest.ID, alice.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if after.Team != "charlie" {
+		t.Errorf("team = %q, want charlie", after.Team)
+	}
+	if !after.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at moved on update: %s -> %s", got.CreatedAt, after.CreatedAt)
+	}
+
+	if _, err := s.GetFestEntry(ctx, fest.ID, "nobody"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a player who never voted returned %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListFestEntries(ctx, "NXTD-99999"); err != nil {
+		t.Errorf("listing a fest with no entries errored: %v", err)
+	} else if len(list) != 0 {
+		t.Errorf("a fest that does not exist has %d entries", len(list))
+	}
+
+	// Deleting the fest takes its votes with it. Without that, recreating the
+	// same fest id inherits the old vote -- and PostgreSQL does it through ON
+	// DELETE CASCADE while the in-memory store has to do it by hand, which is
+	// precisely the divergence this contract catches.
+	if err := s.DeleteFest(ctx, fest.ID); err != nil {
+		t.Fatalf("delete fest: %v", err)
+	}
+	if list, err := s.ListFestEntries(ctx, fest.ID); err != nil {
+		t.Fatalf("list entries: %v", err)
+	} else if len(list) != 0 {
+		t.Errorf("%d votes outlived the fest they belonged to", len(list))
+	}
+}
+
+// testMatches exercises the match log against both implementations.
+//
+// Two properties matter. Recording the same id twice must not error, because a
+// match log is not worth failing a match over. And the log must NOT be tied to
+// the users in it: history that disappears when somebody leaves is not history,
+// which is why players is an array rather than a join table.
+func testMatches(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	base := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	for i, m := range []Match{
+		{ID: "m1", Mode: "turf_war", Players: []string{"alice", "bob"}, Host: "alice", CreatedAt: base},
+		{ID: "m2", Mode: "turf_war", Players: []string{"bob", "carol"}, Host: "bob", CreatedAt: base.Add(time.Minute)},
+		{ID: "m3", Mode: "salmon_run", Players: []string{"alice"}, Host: "alice", CreatedAt: base.Add(2 * time.Minute)},
+	} {
+		if err := s.RecordMatch(ctx, m); err != nil {
+			t.Fatalf("record match %d: %v", i, err)
+		}
+	}
+
+	// Recording the same id again is a no-op, not an error.
+	if err := s.RecordMatch(ctx, Match{
+		ID: "m1", Mode: "changed", Players: []string{"nobody"}, Host: "nobody",
+	}); err != nil {
+		t.Fatalf("re-recording a match errored: %v", err)
+	}
+
+	list, err := s.ListMatches(ctx, 10)
+	if err != nil {
+		t.Fatalf("list matches: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("got %d matches, want 3", len(list))
+	}
+	// Newest first: the only read this table has is "what happened recently".
+	if list[0].ID != "m3" || list[2].ID != "m1" {
+		t.Errorf("order = %s %s %s, want m3 m2 m1", list[0].ID, list[1].ID, list[2].ID)
+	}
+	if list[2].Mode != "turf_war" {
+		t.Errorf("re-recording overwrote the original: mode = %q", list[2].Mode)
+	}
+	if len(list[0].Players) != 1 || list[0].Players[0] != "alice" {
+		t.Errorf("players = %v", list[0].Players)
+	}
+
+	if limited, err := s.ListMatches(ctx, 2); err != nil {
+		t.Fatalf("list matches: %v", err)
+	} else if len(limited) != 2 {
+		t.Errorf("the limit was ignored: got %d", len(limited))
+	}
+
+	// A match with no players at all: nil and empty must mean the same thing in
+	// both implementations, which is the divergence this contract keeps finding.
+	if err := s.RecordMatch(ctx, Match{ID: "empty", Mode: "turf_war", Host: "alice"}); err != nil {
+		t.Fatalf("a match with a nil player list was refused: %v", err)
+	}
+
+	// The stored slice must not alias the caller's.
+	mutable := []string{"alice"}
+	if err := s.RecordMatch(ctx, Match{
+		ID: "alias", Mode: "turf_war", Players: mutable, Host: "alice",
+	}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	mutable[0] = "MUTATED"
+	list, err = s.ListMatches(ctx, 50)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, m := range list {
+		if m.ID == "alias" && m.Players[0] != "alice" {
+			t.Error("mutating the caller's slice changed stored state")
+		}
 	}
 }

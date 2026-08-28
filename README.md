@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
   <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
   <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
-  <img src="https://img.shields.io/badge/phase%202-not%20started-lightgrey" alt="Phase 2">
+  <img src="https://img.shields.io/badge/phase%202-code%20complete-brightgreen" alt="Phase 2 code complete">
   <img src="https://img.shields.io/badge/phase%203-not%20started-lightgrey" alt="Phase 3">
 </p>
 
@@ -25,10 +25,11 @@ Three phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
-| **2** | NPLN game server for Splatoon 3, web dashboard | not started |
+| **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | code complete, awaiting hardware verification |
 | **3** | eShop, served from local `.NSP` dumps of games you own | not started |
 
-Phase 1 is what this repository contains today.
+Phases 1 and 2 are what this repository contains today. Both are waiting on the
+same thing: a console.
 
 ```
 ┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
@@ -102,11 +103,31 @@ token, register, log in, friend code, friend request, accept, presence — and
 prints the resulting friend list. If it completes, everything except DNS and TLS
 is working.
 
+`make seed-phase2` does the same for the game server: it registers two accounts
+through BAAS, exchanges the id tokens BAAS hands out for NPLN sessions, queues
+both players, and checks that they are told about **the same** session — then
+drives `gamesync` and reads back the announced Splatfest. Two players told about
+different sessions is a lobby that never fills, and it looks fine from either
+side alone, which is why that is the assertion.
+
 Then: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the nginx edge and the
 address/port checklist, and [`switch/README.md`](switch/README.md) for pointing a
 console at it.
 
 `make help` lists every target.
+
+Phase 2 adds one command worth knowing about:
+
+```sh
+switchnetctl fest build -assets ./fest-assets -out ./seed -enable
+```
+
+That builds a Splatfest's BCAT packs, derives the revision from their bytes,
+writes the seed folder for the consoles, generates the pack keys, and registers
+the fest the schedule announces — in one step, because those four values appear
+in two places each and any path where a human types one of them twice eventually
+produces `BcatInvalid`, which the player sees as a generic communication error
+naming nothing.
 
 ## Contributing, or picking this up as an agent
 
@@ -179,13 +200,21 @@ internal/
   dauth/         device authentication
   aauth/         application authentication
   baas/          accounts, friends, presence, blocks, images
+  npln/          the NPLN gRPC gateway for Splatoon 3, and matchmaking
+  nplnrest/      NPLN's JSON front end, which the game contacts first
+  toyohr/        Splatoon 3's own services: Splatfests, schedule, messaging
+  gamesync/      the live lobby document and watch service
+  bcat/          Splatfest content packs, and their encryption
+  matchmaking/   the match queue and match formation
+  wirelog/       request transcripts, for the protocols nobody has documented
+  dashboard/     the operator's web view
   presencebus/   presence pub/sub, in-process or Redis
   stubs/         the catch-all
   natcheck/      the NAT-check UDP responder
   service/       shared startup: logging, signals, graceful shutdown
 switch/          console-side setup and the generated hosts file
-scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py,
-                 build-certstore.py
+scripts/         gen-certs.sh, seed-dev-data.sh, seed-phase2.sh, smoke-npln/,
+                 capture-baas.py, build-certstore.py
 docs/            roadmap, architecture, deployment, packet capture, captures
 ```
 

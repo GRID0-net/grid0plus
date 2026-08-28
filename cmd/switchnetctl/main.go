@@ -30,9 +30,10 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
-	// "account create" takes further arguments of its own; every other
-	// command takes none.
-	if flag.NArg() == 0 || (flag.Arg(0) != "account" && flag.NArg() != 1) {
+	// "account create" and "fest build" take further arguments of their own;
+	// every other command takes none.
+	subcommands := map[string]bool{"account": true, "fest": true}
+	if flag.NArg() == 0 || (!subcommands[flag.Arg(0)] && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -76,6 +77,14 @@ func main() {
 		}
 		accountCreate(cfg, flag.Args()[2:])
 
+	case "fest":
+		if flag.NArg() < 2 || flag.Arg(1) != "build" {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n\n")
+			fmt.Fprint(os.Stderr, festBuildUsage)
+			os.Exit(2)
+		}
+		festBuild(cfg, flag.Args()[2:])
+
 	default:
 		usage()
 		os.Exit(2)
@@ -99,6 +108,9 @@ Commands:
   account   create a user from a device account id and password you already
             have, rather than one the server generates. See
             'switchnetctl account create -h'.
+  fest      build a Splatfest's BCAT packs, write the seed folder and register
+            the fest, in one step so the four values that must agree cannot
+            drift apart. See 'switchnetctl fest build -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file
@@ -131,6 +143,22 @@ func warn(cfg config.Config) {
 			"note: keys.generate_if_missing is on. Once "+cfg.Keys.Dir+" is backed up, "+
 				"turn it off so a lost volume fails loudly instead of silently "+
 				"invalidating every token the consoles hold.")
+	}
+	if len(cfg.NPLN.IceServers) == 0 {
+		fmt.Fprintln(os.Stderr,
+			"warning: npln.ice_servers is empty, so AllocateIceServerSet hands the "+
+				"console nothing. Splatoon 3 uses ICE rather than the NAT-check pair, "+
+				"so consoles that cannot reach each other directly will fill a lobby "+
+				"that never starts a match -- which looks exactly like a matchmaking "+
+				"bug from this side. Consoles on one LAN are fine without it.")
+	}
+	if cfg.Redis.URL == "" {
+		// The dashboard is a separate process from baas, so the in-process bus
+		// delivers nothing to it. Silently: the page simply never updates.
+		fmt.Fprintln(os.Stderr,
+			"warning: redis.url is empty. The presence bus is then in-process, which "+
+				"does not cross a process boundary -- the dashboard's live view will "+
+				"never update and nothing will say why.")
 	}
 }
 
@@ -187,9 +215,16 @@ func hostsFile(cfg config.Config) string {
 		emit(ip, h)
 	}
 
+	// Every service with hosts must appear in some section here, or its hosts
+	// vanish from the file with no error -- see
+	// TestEveryHostReachesTheGeneratedHostsFile.
 	section("NPLN game servers (phase 2)")
-	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLN) {
-		emit(ip, h)
+	for _, svc := range []nintendo.Service{
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
+	} {
+		for _, h := range nintendo.ServiceHosts(svc) {
+			emit(ip, h)
+		}
 	}
 
 	section("NAT check")
@@ -241,13 +276,22 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceAAuth: cfg.AAuth.Listen,
 		nintendo.ServiceBAAS:  cfg.BAAS.Listen,
 		nintendo.ServiceStubs: cfg.Stubs.Listen,
+
+		// Two NPLN backends, deliberately. See config.NPLN: the JSON front and
+		// the gRPC gateway need different nginx, and crossing them fails
+		// silently.
+		nintendo.ServiceNPLN:     cfg.NPLN.Listen,
+		nintendo.ServiceNPLNRest: cfg.NPLN.RestListen,
+		nintendo.ServiceGamesync: cfg.NPLN.GamesyncListen,
 	}
 	names := map[nintendo.Service]string{
-		nintendo.ServiceDAuth: "dauth",
-		nintendo.ServiceAAuth: "aauth",
-		nintendo.ServiceBAAS:  "baas",
-		nintendo.ServiceStubs: "stubs",
-		nintendo.ServiceNPLN:  "npln",
+		nintendo.ServiceDAuth:    "dauth",
+		nintendo.ServiceAAuth:    "aauth",
+		nintendo.ServiceBAAS:     "baas",
+		nintendo.ServiceStubs:    "stubs",
+		nintendo.ServiceNPLN:     "npln",
+		nintendo.ServiceNPLNRest: "npln_rest",
+		nintendo.ServiceGamesync: "gamesync",
 	}
 
 	var b strings.Builder
@@ -267,6 +311,14 @@ func nginxConf(cfg config.Config) string {
 	for _, svc := range []nintendo.Service{
 		nintendo.ServiceDAuth, nintendo.ServiceAAuth,
 		nintendo.ServiceBAAS, nintendo.ServiceStubs,
+	} {
+		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
+			names[svc], upstreamAddr(backends[svc]))
+	}
+	// Phase 2's upstreams. Both are served by cmd/npln, which exists now: the
+	// gRPC gateway on npln.listen and the JSON front end on npln.rest_listen.
+	for _, svc := range []nintendo.Service{
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
 	} {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
@@ -305,16 +357,35 @@ func nginxConf(cfg config.Config) string {
 		}
 
 		fmt.Fprintf(&b, "# ---- %s ----\n", names[svc])
-		if svc == nintendo.ServiceNPLN {
-			b.WriteString("# Phase 2. Until cmd/npln exists this block is commented out: an\n")
-			b.WriteString("# nginx that cannot resolve its upstream refuses to start.\n")
-			b.WriteString("#\n")
+		if svc == nintendo.ServiceNPLN || svc == nintendo.ServiceGamesync {
 			b.WriteString("# NPLN is gRPC over HTTP/2, so it needs grpc_pass and http2, not\n")
 			b.WriteString("# proxy_pass. Routing it to an HTTP/1.1 backend completes the TLS\n")
 			b.WriteString("# handshake and then says nothing a gRPC client understands, which\n")
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
-			b.WriteString(commentOut(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}])))
+			if svc == nintendo.ServiceGamesync {
+				b.WriteString("#\n")
+				b.WriteString("# On its OWN PORT: the console reaches gamesync directly on 7575\n")
+				b.WriteString("# rather than through the tenant host, so a block on the edge port\n")
+				b.WriteString("# would never match it.\n")
+			}
+			b.WriteString(grpcServerBlock(cfg, names[svc],
+				listenPort(cfg, hosts), grouped[variant{verifyClient: true, http2: true}]))
+			b.WriteString("\n")
+			continue
+		}
+		if svc == nintendo.ServiceNPLNRest {
+			b.WriteString("# These are the hosts Splatoon 3 talks to BEFORE it opens its gRPC\n")
+			b.WriteString("# channel: vermillion (device init), penne (login tickets), and the\n")
+			b.WriteString("# fro-N frontline connection. They are ordinary JSON, so proxy_pass\n")
+			b.WriteString("# -- NOT grpc_pass. The frontline connection is held open by the\n")
+			b.WriteString("# console and must not be closed or buffered, hence the long read\n")
+			b.WriteString("# timeout and proxy_buffering off in the block below.\n")
+			// One block for the whole service: unlike baas, no host here has a
+			// per-host interop flag, so grouping by variant would only ever
+			// produce one bucket -- and picking the wrong one silently emits a
+			// server block with an empty server_name.
+			b.WriteString(frontlineServerBlock(cfg, tlsNamesOf(hosts)))
 			b.WriteString("\n")
 			continue
 		}
@@ -450,7 +521,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
 	return b.String()
 }
 
-func grpcServerBlock(cfg config.Config, serverNames []string) string {
+func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames []string) string {
 	return fmt.Sprintf(`server {
     listen %d ssl;
     http2 on;
@@ -460,18 +531,86 @@ func grpcServerBlock(cfg config.Config, serverNames []string) string {
     ssl_certificate_key /etc/switchnet/certs/edge.key;
 
     location / {
-        grpc_pass grpc://switchnet_npln;
+        grpc_pass grpc://switchnet_%s;
+    }
+}
+`, port, strings.Join(serverNames, "\n                "), upstream)
+}
+
+// listenPort returns the port a service's hosts are reached on.
+//
+// The edge port unless a host says otherwise. Only gamesync says otherwise, and
+// a mismatch here means a server block that never matches -- which on the
+// console looks like the game rejecting our implementation rather than like a
+// routing mistake.
+func listenPort(cfg config.Config, hosts []nintendo.Host) int {
+	for _, h := range hosts {
+		if h.TLSPort != 0 {
+			return h.TLSPort
+		}
+	}
+	return cfg.Network.EdgeTLSPort
+}
+
+// tlsNamesOf returns every concrete hostname in hosts that needs a server_name,
+// expanding wildcard entries through their TLSNames.
+func tlsNamesOf(hosts []nintendo.Host) []string {
+	var out []string
+	for _, h := range hosts {
+		if !h.TLS {
+			continue
+		}
+		if h.Wildcard {
+			out = append(out, h.TLSNames...)
+			continue
+		}
+		out = append(out, h.Pattern)
+	}
+	return out
+}
+
+// frontlineServerBlock renders the NPLN JSON front end.
+//
+// Ordinary proxy_pass over HTTP/1.1, with two settings the frontline
+// connection depends on:
+//
+//   - proxy_buffering off, so a frame the server writes reaches the console
+//     when it is written rather than when a buffer happens to fill. The
+//     connection is a stream, and a buffered stream is a dead one.
+//   - a read timeout far longer than nginx's 60s default. The console holds
+//     this connection open and treats a close as a failure -- 2307-2103 on
+//     Splatoon 2, 2321-* on Splatoon 3 -- so an idle-timeout disconnect looks
+//     to the player like the game losing its connection for no reason.
+//
+// No "http2 on", so nginx serves these over HTTP/1.1. That is what the console
+// is known to be served today rather than a measured requirement: unlike
+// accounts.nintendo.com and m-lp1.baas.nintendo.com, no capture shows this
+// client failing on HTTP/2, so no NoHTTP2 flag is claimed on the hosts
+// themselves. If a capture ever shows HTTP/2 working here, turning it on is a
+// one-line change; the reverse -- inventing a flag with no capture behind it --
+// is the thing this repository has been bitten by before.
+func frontlineServerBlock(cfg config.Config, serverNames []string) string {
+	return fmt.Sprintf(`server {
+    listen %d ssl;
+    server_name %s;
+
+    ssl_certificate     /etc/switchnet/certs/edge.crt;
+    ssl_certificate_key /etc/switchnet/certs/edge.key;
+    ssl_verify_client   optional_no_ca;
+
+    location / {
+        proxy_pass http://switchnet_npln_rest;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # The frontline connection is a long-lived stream, not a request.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 `, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
-}
-
-func commentOut(s string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = "# " + l
-	}
-	return strings.Join(lines, "\n") + "\n"
 }
 
 // upstreamAddr turns a Go listen address into one nginx can proxy to.
