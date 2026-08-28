@@ -72,6 +72,14 @@ func TestNAAuthorizePageRenders(t *testing.T) {
 	if !strings.Contains(string(body), "nintendo://lhub.nx.sys") {
 		t.Error("page does not echo redirect_uri back as a hidden field")
 	}
+	// A real capture of this exact page showed both present; missing prior to
+	// 2026-08-28.
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q", got, "no-store")
+	}
+	if got := resp.Header.Get("Pragma"); got != "no-cache" {
+		t.Errorf("Pragma = %q, want %q", got, "no-cache")
+	}
 }
 
 func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
@@ -83,6 +91,7 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 		"client_id":    {"f4e5f2f3e022208b"},
 		"redirect_uri": {"nintendo://lhub.nx.sys"},
 		"state":        {"c14c7273054e5894"},
+		"nonce":        {"a-console-chosen-nonce"},
 		"username":     {"alice"},
 		"password":     {"hunter2222"},
 	}
@@ -92,6 +101,20 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	requireStatus(t, resp, http.StatusFound)
+
+	// This redirect carries the code and id_token, so a real capture showed
+	// it with the same no-cache headers every JSON response gets -- missing
+	// prior to 2026-08-28, because this is the one response in nalink.go
+	// that bypasses writeJSON (no body, just a Location header).
+	if got := resp.Header.Get("Cache-Control"); got != "no-store, no-cache" {
+		t.Errorf("Cache-Control = %q, want %q", got, "no-store, no-cache")
+	}
+	if got := resp.Header.Get("Pragma"); got != "no-cache" {
+		t.Errorf("Pragma = %q, want %q", got, "no-cache")
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", got, "application/json")
+	}
 
 	loc := resp.Header.Get("Location")
 	if !strings.HasPrefix(loc, "nintendo://lhub.nx.sys#") {
@@ -104,7 +127,8 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 	if frag.Get("state") != "c14c7273054e5894" {
 		t.Errorf("state = %q", frag.Get("state"))
 	}
-	if frag.Get("code") == "" {
+	code := frag.Get("code")
+	if code == "" {
 		t.Error("no code in the redirect fragment")
 	}
 	if frag.Get("id_token") == "" {
@@ -120,6 +144,21 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 	}
 	if claims.Subject == "" {
 		t.Error("id_token has no subject")
+	}
+
+	// c_hash binds this id_token to the code alongside it, per the OIDC spec.
+	// nonce echoes what the console sent on the original authorize request.
+	// Both verified byte-for-byte against a real capture (oidcHash's doc
+	// comment); neither existed before 2026-08-27.
+	_, payload := decodeTokenParts(t, frag.Get("id_token"))
+	if got, want := payload["c_hash"], oidcHash(code); got != want {
+		t.Errorf("id_token c_hash = %v, want %v", got, want)
+	}
+	if got, want := payload["nonce"], "a-console-chosen-nonce"; got != want {
+		t.Errorf("id_token nonce = %v, want %q", got, want)
+	}
+	if _, present := payload["typ"]; present {
+		t.Errorf("id_token payload carries typ = %v, want it entirely absent", payload["typ"])
 	}
 }
 
@@ -272,11 +311,57 @@ func TestNATokenExchangesACodeForAnAccessToken(t *testing.T) {
 	if body.RefreshToken == "" {
 		t.Error("no refresh_token")
 	}
+	// refresh_token must be opaque, not a JWT: a real working capture showed
+	// one 64 characters long with no dots, unlike every other token minted
+	// alongside it. Signing it as a JWT here shipped 2026-08-26 and was found
+	// and fixed 2026-08-27.
+	if strings.Count(body.RefreshToken, ".") == 2 {
+		t.Errorf("refresh_token looks like a JWT (%q), want an opaque string", body.RefreshToken)
+	}
+	if len(body.RefreshToken) != 64 {
+		t.Errorf("refresh_token is %d characters, want 64 (newHexID(32))", len(body.RefreshToken))
+	}
 	if body.SessionToken == "" {
 		t.Error("no session_token")
 	}
 	if body.TokenType != "Bearer" {
 		t.Errorf("token_type = %q, want Bearer", body.TokenType)
+	}
+
+	// access_token and id_token must share a key: a real working capture
+	// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) showed both
+	// tokens from this exact endpoint published at the same kid, both under
+	// accounts.nintendo.com's own JWKS -- not the BAAS host's. Signing
+	// access_token with the wrong issuer's key here shipped 2026-08-26 and
+	// was found and fixed 2026-08-27.
+	accessHeader, accessPayload := decodeTokenParts(t, body.AccessToken)
+	idHeader, idPayload := decodeTokenParts(t, body.IDToken)
+	if accessHeader["kid"] != idHeader["kid"] {
+		t.Errorf("access_token kid (%v) != id_token kid (%v), want them to match",
+			accessHeader["kid"], idHeader["kid"])
+	}
+	if accessHeader["jku"] != naIssuer+"/1.0.0/certificates" {
+		t.Errorf("access_token jku = %v, want %s/1.0.0/certificates", accessHeader["jku"], naIssuer)
+	}
+
+	// at_hash binds id_token to access_token per the OIDC spec: SHA-256 of the
+	// access_token, left half, base64url. Verified byte-for-byte against a
+	// real capture (oidcHash's doc comment).
+	if got, want := idPayload["at_hash"], oidcHash(body.AccessToken); got != want {
+		t.Errorf("id_token at_hash = %v, want %v", got, want)
+	}
+	// A real working capture's id_token from this exact endpoint has no 'typ'
+	// claim in its payload at all -- unlike a BAAS id_token, which always
+	// does. Reusing sjwt.BAASTokenClaims for both must not leak BAAS's shape
+	// onto this OIDC-flavoured token.
+	if _, present := idPayload["typ"]; present {
+		t.Errorf("id_token payload carries typ = %v, want it entirely absent", idPayload["typ"])
+	}
+	// ac:grt is accounts.nintendo.com's own grant-type flavour, separate from
+	// BAAS's bs:grt. 4 is the only value ever observed, for exactly this
+	// grant (see ACGrantType's doc comment).
+	if got, want := accessPayload["ac:grt"], float64(4); got != want {
+		t.Errorf("access_token ac:grt = %v, want %v", got, want)
 	}
 
 	// The code is single-use: exchanging it again is refused.

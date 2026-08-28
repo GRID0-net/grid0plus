@@ -115,6 +115,11 @@ func validateRegistration(username, password string) string {
 // depend on cdn.accounts.nintendo.com or any other host being reachable.
 func writeHTML(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// A real capture of the Nintendo Account link page showed these two
+	// present (Cache-Control: no-store, without the ", no-cache" writeJSON's
+	// responses carry -- this page's own value, not copied from there).
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(body))
 }

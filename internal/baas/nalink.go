@@ -1,7 +1,9 @@
 package baas
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"net/http"
@@ -12,6 +14,16 @@ import (
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// oidcHash implements the OIDC 'at_hash'/'c_hash' claim: SHA-256 of the ASCII
+// value, left half, base64url without padding. Both id_tokens in this file
+// are always signed RS256, so SHA-256 (rather than the SHA-384/512 the spec
+// uses for other algs) is always the right hash here. Verified byte-for-byte
+// against a 2026-08-27 capture of a real working exchange.
+func oidcHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return base64.RawURLEncoding.EncodeToString(sum[:len(sum)/2])
+}
 
 // The Nintendo Account link stub: what accounts.nintendo.com becomes once it
 // is redirected here instead of null-routed.
@@ -95,18 +107,53 @@ func (s *Server) consumeAuthCode(code string, now time.Time) (string, bool) {
 	return ac.userID, true
 }
 
+// naRefreshTokenTTL is not settled by any capture -- refresh_token is opaque,
+// so nothing about its lifetime is visible on the wire. Long enough to
+// outlive the access tokens it refreshes by a wide margin, which is the one
+// property a refresh token needs to be useful at all; 30 days is a
+// defensible default rather than a confirmed one.
+const naRefreshTokenTTL = 30 * 24 * time.Hour
+
+// storeNARefreshToken and consumeNARefreshToken hold naToken's refresh
+// tokens the same way storeAuthCode/consumeAuthCode hold its authorization
+// codes -- except a refresh token is multi-use (consuming one issues a new
+// access token but does not invalidate the refresh token itself, matching
+// ordinary OAuth refresh semantics), so consuming does not delete it.
+func (s *Server) storeNARefreshToken(token, userID string, now time.Time) {
+	s.naRefreshTokensMu.Lock()
+	defer s.naRefreshTokensMu.Unlock()
+	for t, rt := range s.naRefreshTokens {
+		if now.After(rt.expiresAt) {
+			delete(s.naRefreshTokens, t)
+		}
+	}
+	s.naRefreshTokens[token] = authCode{userID: userID, expiresAt: now.Add(naRefreshTokenTTL)}
+}
+
+func (s *Server) consumeNARefreshToken(token string, now time.Time) (string, bool) {
+	s.naRefreshTokensMu.Lock()
+	defer s.naRefreshTokensMu.Unlock()
+	rt, ok := s.naRefreshTokens[token]
+	if !ok || now.After(rt.expiresAt) {
+		return "", false
+	}
+	return rt.userID, true
+}
+
 // naAuthorizePage renders the login form. GET /connect/1.0.0/authorize.
 //
-// client_id, redirect_uri, state and response_type are echoed back verbatim
-// as hidden fields; scope, prompt, nonce and theme are accepted and
-// discarded — none of them change what this page does. redirect_uri is
+// client_id, redirect_uri, state, response_type and nonce are echoed back
+// verbatim as hidden fields — nonce so it can round-trip into the id_token's
+// own 'nonce' claim, matching the OIDC spec and a real capture (present, but
+// empty, when the console sent none). scope, prompt and theme are accepted
+// and discarded — nothing else changes what this page does. redirect_uri is
 // trusted as given rather than checked against an allowlist: this is a
 // private, operator-run server reachable only by consoles the operator
 // already controls DNS for, not a public OAuth provider guarding against
 // open-redirect abuse from arbitrary third parties.
 func (s *Server) naAuthorizePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	writeHTML(w, http.StatusOK, naAuthorizeHTML(q.Get("client_id"), q.Get("redirect_uri"), q.Get("state"), q.Get("response_type"), ""))
+	writeHTML(w, http.StatusOK, naAuthorizeHTML(q.Get("client_id"), q.Get("redirect_uri"), q.Get("state"), q.Get("response_type"), q.Get("nonce"), ""))
 }
 
 // naAuthorizeSubmit checks the submitted credentials and redirects through
@@ -127,7 +174,7 @@ func (s *Server) naAuthorizePage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	form, err := parseForm(r)
 	if err != nil {
-		writeHTML(w, http.StatusBadRequest, naAuthorizeHTML("", "", "", "", "Could not read that form submission."))
+		writeHTML(w, http.StatusBadRequest, naAuthorizeHTML("", "", "", "", "", "Could not read that form submission."))
 		return
 	}
 
@@ -135,24 +182,25 @@ func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	redirectURI := form.Get("redirect_uri")
 	state := form.Get("state")
 	responseType := form.Get("response_type")
+	nonce := form.Get("nonce")
 	username := form.Get("username")
 	password := form.Get("password")
 
 	if redirectURI == "" {
-		writeHTML(w, http.StatusBadRequest, naAuthorizeHTML(clientID, redirectURI, state, responseType, "Missing redirect_uri."))
+		writeHTML(w, http.StatusBadRequest, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Missing redirect_uri."))
 		return
 	}
 
 	user, err := s.store.GetUserByLoginUsername(r.Context(), username)
 	if err != nil {
 		s.log.Warn("nalink: login for unknown username", "username", username)
-		writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, "Wrong username or password."))
+		writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Wrong username or password."))
 		return
 	}
 	if subtle.ConstantTimeCompare(
 		[]byte(bcryptOK(user.LoginPasswordHash, password)), []byte("1")) != 1 {
 		s.log.Warn("nalink: login with wrong password", "username", username)
-		writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, "Wrong username or password."))
+		writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Wrong username or password."))
 		return
 	}
 
@@ -171,7 +219,8 @@ func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		Expires:  now.Add(5 * time.Minute).Unix(),
 		Issuer:   naIssuer,
 		TokenID:  sjwt.NewTokenID(),
-		Type:     "id_token",
+		CHash:    oidcHash(code),
+		Nonce:    &nonce,
 	})
 	if err != nil {
 		writeInternalError(s.log, w, r, "sign na id token", err)
@@ -193,6 +242,14 @@ func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 
 	location := redirectURI + "#" + frag.Encode()
 	s.log.Info("nalink: login succeeded, redirecting", "user", user.ID, "redirect_uri", redirectURI, "response_type", responseType)
+	// This redirect carries the code and id_token, so it gets the same
+	// no-cache headers writeJSON gives every other response in this package
+	// -- a real capture showed them present here too, and this is the one
+	// response in nalink.go that bypasses writeJSON entirely (no body, just
+	// a Location header), so it never got them automatically.
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache")
+	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Location", location)
 	w.WriteHeader(http.StatusFound)
 }
@@ -209,6 +266,18 @@ func bcryptOK(hash, password string) string {
 }
 
 // naToken issues tokens for POST /connect/1.0.0/api/token.
+//
+// access_token, id_token and refresh_token here are all signed with
+// naIDIssuer's key, the same one naAuthorizeSubmit signs its id_token with —
+// not accessIssuer, the BAAS host's key. Found 2026-08-27 by decoding a real
+// working capture's response
+// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow): its
+// access_token and id_token from this exact endpoint share one kid, both
+// published at accounts.nintendo.com's own JWKS. Signing access_token with
+// accessIssuer gave it iss=accounts.nintendo.com but a jku pointing at the
+// BAAS host — the same iss/jku mismatch already found and fixed once for the
+// id_token (see NAIDTokenJWKSURL's doc comment), just missed on this sibling
+// field the first time.
 //
 // Two grant types, two different response shapes — both confirmed byte-for-
 // byte against a 2026-08-26 mitmproxy capture of a real first-time
@@ -228,9 +297,45 @@ func bcryptOK(hash, password string) string {
 //     hardware before this was fixed.
 //   - refresh_token: the captured response is deliberately smaller —
 //     access_token, expires_in, scope, token_type only, no new refresh_token
-//     or id_token. Verifies the presented refresh_token was signed by
-//     SwitchNet (sjwt gives no other way for one to exist) rather than
-//     tracking sessions server-side.
+//     or id_token. Looks the presented refresh_token up in naRefreshTokens
+//     rather than verifying a signature: refresh_token is a plain opaque
+//     string here (see naRefreshTokens' doc comment), not a JWT, so there is
+//     no signature to check.
+//
+// naScopeIDs maps an OAuth scope string to the numeric id accounts.nintendo.com
+// uses for it in an access_token's 'ac:scp' claim. See BAASTokenClaims.ACScopes
+// for where these came from and what is still unknown.
+var naScopeIDs = map[string]int{
+	"openid":             0,
+	"offline":            1,
+	"napps":              4,
+	"urn:oauth:init-sso": 5,
+	"user":               8,
+	"user.birthday":      9,
+	"user.email":         10,
+	"user.links":         11,
+	"user.links[].id":    12,
+	"user.terms":         13,
+	"user.screenName":    23,
+	"user.loginId":       28,
+}
+
+// naScopeIDsFor maps the requested scope strings to their numeric ids, dropping
+// any this server has no id for rather than inventing one -- an unknown scope
+// is a gap in the capture, not a value to guess at.
+func naScopeIDsFor(scope []string) []int {
+	ids := make([]int, 0, len(scope))
+	for _, s := range scope {
+		if id, ok := naScopeIDs[s]; ok {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
 func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 	form, err := parseForm(r)
 	if err != nil {
@@ -251,7 +356,7 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		accessToken, err := s.accessIssuer.Sign(sjwt.BAASTokenClaims{
+		accessToken, err := s.naIDIssuer.Sign(sjwt.BAASTokenClaims{
 			Subject:  userID,
 			Audience: clientID,
 			IssuedAt: now.Unix(),
@@ -259,12 +364,19 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			Issuer:   naIssuer,
 			TokenID:  sjwt.NewTokenID(),
 			Type:     "token",
+			// 4 is the only value ever observed, for exactly this grant.
+			// TODO(capture-needed): what other grants map to.
+			ACGrantType: 4,
+			ACScopes:    naScopeIDsFor(scope),
 		})
 		if err != nil {
 			writeInternalError(s.log, w, r, "sign na access token", err)
 			return
 		}
 
+		// at_hash binds this id_token to the accessToken just signed above, so
+		// it has to be computed from that exact compact JWT string -- see
+		// oidcHash's doc comment for the algorithm.
 		idToken, err := s.naIDIssuer.Sign(sjwt.BAASTokenClaims{
 			Subject:  userID,
 			Audience: clientID,
@@ -272,26 +384,19 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			Expires:  now.Add(5 * time.Minute).Unix(),
 			Issuer:   naIssuer,
 			TokenID:  sjwt.NewTokenID(),
-			Type:     "id_token",
+			ATHash:   oidcHash(accessToken),
 		})
 		if err != nil {
 			writeInternalError(s.log, w, r, "sign na id token", err)
 			return
 		}
 
-		refreshToken, err := s.accessIssuer.Sign(sjwt.BAASTokenClaims{
-			Subject:  userID,
-			Audience: clientID,
-			IssuedAt: now.Unix(),
-			Expires:  now.Add(15 * time.Minute).Unix(),
-			Issuer:   naIssuer,
-			TokenID:  sjwt.NewTokenID(),
-			Type:     "refresh_token",
-		})
+		refreshToken, err := newHexID(32)
 		if err != nil {
-			writeInternalError(s.log, w, r, "sign na refresh token", err)
+			writeInternalError(s.log, w, r, "generate na refresh token", err)
 			return
 		}
+		s.storeNARefreshToken(refreshToken, userID, now)
 
 		sessionToken, err := newHexID(32)
 		if err != nil {
@@ -310,21 +415,25 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case "refresh_token":
-		var claims sjwt.BAASTokenClaims
-		if err := s.accessVerifier.Verify(form.Get("refresh_token"), &claims); err != nil || claims.Type != "refresh_token" {
-			s.log.Warn("nalink: token refresh with an invalid refresh_token", "error", err)
+		userID, ok := s.consumeNARefreshToken(form.Get("refresh_token"), now)
+		if !ok {
+			s.log.Warn("nalink: token refresh with an unknown or expired refresh_token")
 			writeNAOAuthError(w, http.StatusBadRequest, "invalid_grant")
 			return
 		}
 
-		accessToken, err := s.accessIssuer.Sign(sjwt.BAASTokenClaims{
-			Subject:  claims.Subject,
+		accessToken, err := s.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+			Subject:  userID,
 			Audience: clientID,
 			IssuedAt: now.Unix(),
 			Expires:  now.Add(15 * time.Minute).Unix(),
 			Issuer:   naIssuer,
 			TokenID:  sjwt.NewTokenID(),
 			Type:     "token",
+			// Same shape as the authorization_code branch's access_token:
+			// the grant that minted it differs, what it authorises does not.
+			ACGrantType: 4,
+			ACScopes:    naScopeIDsFor(scope),
 		})
 		if err != nil {
 			writeInternalError(s.log, w, r, "sign na access token", err)
@@ -376,8 +485,12 @@ func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// This Bearer token is the access_token naToken minted, signed with
+	// naIDIssuer's key (accounts.nintendo.com), not accessIssuer's (the BAAS
+	// host) -- see naToken's doc comment for why. Verify against the same
+	// key it was actually signed with.
 	var claims sjwt.BAASTokenClaims
-	if err := s.accessVerifier.Verify(token, &claims); err != nil || claims.Type != "token" {
+	if err := s.idVerifier.Verify(token, &claims); err != nil || claims.Type != "token" {
 		writeNAOAuthError(w, http.StatusUnauthorized, "invalid_token")
 		return
 	}
@@ -478,7 +591,7 @@ func writeNAOAuthError(w http.ResponseWriter, status int, code string) {
 	fmt.Fprintf(w, `{"error":%q}`, code)
 }
 
-func naAuthorizeHTML(clientID, redirectURI, state, responseType, problem string) string {
+func naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, problem string) string {
 	var problemHTML string
 	if problem != "" {
 		problemHTML = fmt.Sprintf(`<p class="problem">%s</p>`, html.EscapeString(problem))
@@ -491,11 +604,13 @@ func naAuthorizeHTML(clientID, redirectURI, state, responseType, problem string)
 		`<input type="hidden" name="redirect_uri" value="%s">`+
 		`<input type="hidden" name="state" value="%s">`+
 		`<input type="hidden" name="response_type" value="%s">`+
+		`<input type="hidden" name="nonce" value="%s">`+
 		`<input name="username" placeholder="SwitchNet username" autocomplete="username" required>`+
 		`<input name="password" type="password" placeholder="Password" `+
 		`autocomplete="current-password" required>`+
 		`<button type="submit">Sign in</button>`+
 		`</form></body></html>`,
 		htmlPageStyle, problemHTML,
-		html.EscapeString(clientID), html.EscapeString(redirectURI), html.EscapeString(state), html.EscapeString(responseType))
+		html.EscapeString(clientID), html.EscapeString(redirectURI), html.EscapeString(state), html.EscapeString(responseType),
+		html.EscapeString(nonce))
 }
