@@ -38,49 +38,7 @@ Priority labels are about *unblocking other work*, not importance:
 
 ## 1. NPLN protocol
 
-### 1.1 Wire the matchmaking queue to its gRPC services — **P1**
-
-`internal/matchmaking` has the queue, the ticket state machine and match
-formation, all tested and race-clean. Nothing calls it: `Matchmaker` and
-`GameSessionService` are not registered on the gateway.
-
-**Start at** `internal/npln/services.go` (`register`), and
-`proto/matchmaking/v1/`. The core RPCs are `CreateMatchmakingTicket`,
-`TrackMatchmakingTicket` (a **stream** — the console lives on it),
-`CancelMatchmakingTicket`, then `GameSessionService.GetGameSession` and
-`JoinGameSession`.
-
-`Queue.Watch` already returns a channel shaped for `TrackMatchmakingTicket`,
-including an immediate first send so a stream that attaches after its ticket
-matched does not wait for an event that already happened.
-
-**Blocked on nothing.** It can be driven from a Go client over bufconn exactly
-the way `internal/npln/auth_test.go` does.
-
-**Done when** two test clients queue, both receive a session on their streams
-naming the same session id and the same host, and a cancelled ticket is never
-matched.
-
-### 1.2 `AllocateIceServerSet` and a STUN/TURN deployment — **P1 for hardware**
-
-Splatoon 3 uses ICE, not the Pia NAT-check pair, so `internal/natcheck` is not
-involved in this title and coturn becomes a deployment dependency.
-
-**The addresses must be reachable *from the console*.** This is the single most
-common cause of "the lobby fills but the match never starts", and it looks
-identical to a matchmaking bug from the server side.
-
-**Start at** `proto/matchmaking/v1/game_session_service.proto`
-(`AllocateIceServerSet`), and add `npln.ice_servers` to `config/config.go` with
-a `switchnetctl check` warning when it is empty — an unset ICE list produces
-exactly the silent failure above.
-
-**Do not block on whether coturn exists.** Record it in
-[`docs/QUESTIONS.md`](docs/QUESTIONS.md) (already seeded) and proceed with the
-config-only path: peers on one LAN work without ICE, so matchmaking is testable
-either way.
-
-### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware**
+### 1.1 The JSON front end: vermillion, penne, frontline — **P1 for hardware**
 
 Splatoon 3 does **not** open with gRPC. It talks JSON over HTTPS to
 `gw.hac.lp1.vermillion…` (device init) and `val.hac.lp1.penne…` (login tickets,
@@ -99,7 +57,7 @@ implementation this project studied does not ship its captures, so nothing here
 is known — implement the most defensible reading and say what a capture would
 settle. Do **not** invent a plausible Nintendo internal.
 
-### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2**
+### 1.2 The rest of `nn.npln.toyohr.v1.*` — **P2**
 
 Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 `GameRecord`, `CoopScenario` (Salmon Run), then `Locker`, `CloudSave`,
@@ -108,7 +66,7 @@ Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 Treat it as a backlog and let the console drive the order: an unimplemented RPC
 answers `codes.Unimplemented` and logs, and **that log is the to-do list**.
 
-### 1.5 `gamesync` — **P2**
+### 1.3 `gamesync` — **P2**
 
 A Firestore-shaped document/watch service on its own port (7575 — the host is
 already listed and `npln.gamesync_listen` already configured). Splatoon 3
@@ -284,8 +242,11 @@ concludes.
 ### 3.1 Match history and live matchmaking — **P2**
 
 The overview has an "in matchmaking" tile that honestly reports *not wired yet*
-rather than showing a zero that reads as "nobody is queuing". Fill it in once
-§1.1 lands, and add a match list.
+rather than showing a zero that reads as "nobody is queuing". The queue is now
+wired to the gateway and `Queue.Waiting()` returns exactly what the tile needs —
+but the queue lives inside `cmd/npln` and the dashboard is a different process,
+so reading it means a seam that does not exist yet. Add a match list at the same
+time.
 
 Needs an `npln_matches` table and store methods on **both** implementations,
 with an entry in `internal/db/store_test.go`'s contract — that contract has
@@ -384,13 +345,3 @@ It is not a permanent decision. §2.4's experiment requires flipping them to a
 logging stub, and a positive result would keep them flipped. Amend the test
 deliberately, in a commit that says why, rather than treating this entry as a
 rule.
-
-### 5.3 A mode table for matchmaking — **P3**
-
-`matchmaking.DefaultConfig.PlayersPerMatch` is **2**, not 8. On a private
-network of a handful of consoles, waiting for eight players means never
-playing.
-
-The faithful sizes belong in a table keyed by mode, driven by what a capture
-shows the game expects. Until there is one, a number that lets two friends
-start a match beats one that is correct and idle.

@@ -315,3 +315,118 @@ func TestAnEmptyUserOrModeIsRefused(t *testing.T) {
 func userName(i int) string {
 	return string(rune('a'+i%26)) + string(rune('0'+i/26))
 }
+
+func TestAModeSizeOverridesTheDefaultForThatModeOnly(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	q := New(Config{
+		PlayersPerMatch: 2,
+		ModeSizes:       map[string]int{"salmon_run": 4},
+		TicketTTL:       3 * time.Minute,
+	}, func() time.Time { return now })
+
+	if got := q.PlayersFor("salmon_run"); got != 4 {
+		t.Errorf("salmon_run takes %d players, want the override's 4", got)
+	}
+	if got := q.PlayersFor("turf_war"); got != 2 {
+		t.Errorf("turf_war takes %d players, want the default 2", got)
+	}
+
+	// Three in the overridden mode is one short, so nothing forms.
+	for _, who := range []string{"alice", "bob", "carol"} {
+		if _, sessions, err := q.Enqueue(who, "salmon_run"); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		} else if len(sessions) != 0 {
+			t.Fatalf("a four-player match formed with %s, the third to arrive", who)
+		}
+	}
+	_, sessions, err := q.Enqueue("dave", "salmon_run")
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if len(sessions) != 1 || len(sessions[0].Players) != 4 {
+		t.Fatalf("formed %d sessions, want one of four players", len(sessions))
+	}
+	if sessions[0].MaxPlayers != 4 {
+		t.Errorf("session reports room for %d, want the 4 it was formed at", sessions[0].MaxPlayers)
+	}
+}
+
+func TestAFormedSessionCanBeLookedUpAgain(t *testing.T) {
+	q, _ := testQueue(t, 2)
+
+	_, _, _ = q.Enqueue("alice", "turf_war")
+	_, sessions, _ := q.Enqueue("bob", "turf_war")
+	if len(sessions) != 1 {
+		t.Fatalf("formed %d sessions, want 1", len(sessions))
+	}
+
+	// The console asks for the session again after its stream named one. A
+	// server that formed a match and cannot then describe it leaves the lobby
+	// on the loading screen with nothing to say why.
+	got, ok := q.Session(sessions[0].ID)
+	if !ok {
+		t.Fatal("the session cannot be looked up by the name the ticket gave")
+	}
+	if got.Host != sessions[0].Host || len(got.Players) != 2 {
+		t.Errorf("session read back as %+v, want %+v", got, sessions[0])
+	}
+
+	if _, ok := q.Session("not-a-session"); ok {
+		t.Error("a session id nobody issued resolved to a session")
+	}
+}
+
+func TestRejoiningAMatchYouAreAlreadyInSucceeds(t *testing.T) {
+	q, _ := testQueue(t, 2)
+
+	_, _, _ = q.Enqueue("alice", "turf_war")
+	_, sessions, _ := q.Enqueue("bob", "turf_war")
+	id := sessions[0].ID
+
+	// Idempotent on purpose: the console joins the match it was just told it
+	// is in, and refusing that strands it.
+	got, err := q.Join(id, "alice")
+	if err != nil {
+		t.Fatalf("alice cannot rejoin her own match: %v", err)
+	}
+	if len(got.Players) != 2 {
+		t.Errorf("rejoining added a duplicate player: %v", got.Players)
+	}
+
+	if _, err := q.Join(id, "carol"); err != ErrSessionFull {
+		t.Errorf("joining a full match gave %v, want ErrSessionFull", err)
+	}
+	if _, err := q.Join("not-a-session", "carol"); err != ErrNoSession {
+		t.Errorf("joining a session nobody issued gave %v, want ErrNoSession", err)
+	}
+}
+
+func TestAPlayerCanFindTheSessionTheyAreIn(t *testing.T) {
+	q, _ := testQueue(t, 2)
+
+	_, _, _ = q.Enqueue("alice", "turf_war")
+	_, sessions, _ := q.Enqueue("bob", "turf_war")
+
+	mine := q.SessionsFor("alice")
+	if len(mine) != 1 || mine[0].ID != sessions[0].ID {
+		t.Fatalf("alice is in %d sessions, want the one she was matched into", len(mine))
+	}
+	if got := q.SessionsFor("carol"); len(got) != 0 {
+		t.Errorf("carol, who never queued, is in %d sessions", len(got))
+	}
+}
+
+func TestMutatingAReturnedSessionDoesNotChangeTheQueuesOwn(t *testing.T) {
+	q, _ := testQueue(t, 2)
+
+	_, _, _ = q.Enqueue("alice", "turf_war")
+	_, sessions, _ := q.Enqueue("bob", "turf_war")
+
+	got, _ := q.Session(sessions[0].ID)
+	got.Players[0] = "attacker"
+
+	again, _ := q.Session(sessions[0].ID)
+	if again.Players[0] == "attacker" {
+		t.Error("a caller rewrote the queue's own player list through the value it was handed")
+	}
+}

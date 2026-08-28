@@ -132,6 +132,22 @@ func warn(cfg config.Config) {
 				"turn it off so a lost volume fails loudly instead of silently "+
 				"invalidating every token the consoles hold.")
 	}
+	if len(cfg.NPLN.IceServers) == 0 {
+		fmt.Fprintln(os.Stderr,
+			"warning: npln.ice_servers is empty, so AllocateIceServerSet hands the "+
+				"console nothing. Splatoon 3 uses ICE rather than the NAT-check pair, "+
+				"so consoles that cannot reach each other directly will fill a lobby "+
+				"that never starts a match -- which looks exactly like a matchmaking "+
+				"bug from this side. Consoles on one LAN are fine without it.")
+	}
+	if cfg.Redis.URL == "" {
+		// The dashboard is a separate process from baas, so the in-process bus
+		// delivers nothing to it. Silently: the page simply never updates.
+		fmt.Fprintln(os.Stderr,
+			"warning: redis.url is empty. The presence bus is then in-process, which "+
+				"does not cross a process boundary -- the dashboard's live view will "+
+				"never update and nothing will say why.")
+	}
 }
 
 // ---- hosts file ----------------------------------------------------------

@@ -10,12 +10,23 @@
 package matchmaking
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+// Errors a caller has to tell apart, because the gRPC status they map to
+// differs: a missing session is NotFound and a full one is FailedPrecondition,
+// and a console reacts differently to each.
+var (
+	// ErrNoSession means the named session does not exist, or no longer does.
+	ErrNoSession = errors.New("matchmaking: no such session")
+	// ErrSessionFull means the session has no room for another player.
+	ErrSessionFull = errors.New("matchmaking: session is full")
 )
 
 // State is where a ticket is in its life. It mirrors the protocol's own states
@@ -75,6 +86,12 @@ type Session struct {
 	Mode    string
 	Players []string
 
+	// MaxPlayers is the size the match was formed at. Carried on the session
+	// rather than looked up again later, because an operator who changes a
+	// mode's size mid-session must not change what a match already in progress
+	// reports about itself.
+	MaxPlayers int
+
 	// Host is the player whose console the others connect to.
 	//
 	// Splatoon 3's gameplay is peer-to-peer: once a match starts, the consoles
@@ -87,9 +104,24 @@ type Session struct {
 
 // Config tunes the queue.
 type Config struct {
-	// PlayersPerMatch is how many tickets make a match. Turf War is 4v4, so
-	// eight; a mode's real size comes from the mode table.
+	// PlayersPerMatch is how many tickets make a match, for any mode ModeSizes
+	// does not name.
 	PlayersPerMatch int
+
+	// ModeSizes overrides PlayersPerMatch for one mode.
+	//
+	// The faithful sizes are not hardcoded here, and that is deliberate: the
+	// mode names are whatever the game puts in MatchmakingTicket's
+	// matchmaking_config, and nothing public documents those strings. A table
+	// of plausible-looking names would be an invented Nintendo internal, which
+	// is the one thing CLAUDE.md rule 6 rules out — so it is the operator's to
+	// fill in from a log of what the console actually asked for, and the log
+	// line every unknown mode produces is how they find out.
+	//
+	// For reference when it comes to that: Turf War and Anarchy are 4v4 (eight
+	// players), Salmon Run is four, and Tricolour is 4v2v2 (also eight).
+	ModeSizes map[string]int
+
 	// TicketTTL is how long a ticket waits before giving up.
 	//
 	// A ticket that waits forever is worse than one that times out: the console
@@ -102,9 +134,9 @@ type Config struct {
 //
 // PlayersPerMatch of 2 rather than 8 on purpose: this is a server for a handful
 // of consoles the operator owns, where waiting for eight players means never
-// playing. The real mode sizes belong in a mode table, driven by what a capture
-// shows the game expects; until then, a number that lets two friends actually
-// start a match is more useful than one that is faithful and idle.
+// playing. A number that lets two friends actually start a match is more useful
+// than one that is faithful and idle; ModeSizes is how an operator who has
+// enough consoles asks for the faithful sizes instead.
 var DefaultConfig = Config{
 	PlayersPerMatch: 2,
 	TicketTTL:       3 * time.Minute,
@@ -126,6 +158,13 @@ type Queue struct {
 	// than a heap: it is FIFO, it is short, and the order has to be readable
 	// when something goes wrong.
 	waiting map[string][]string
+	// sessions are the matches formed so far.
+	//
+	// Kept because the console asks for its session again after the stream told
+	// it about one — GetGameSession and JoinGameSession both address it by
+	// name, and a server that formed a match and then could not describe it
+	// leaves the lobby stuck on the loading screen with no error.
+	sessions map[string]*Session
 
 	// watchers are the streams waiting on a ticket's state to change.
 	watchers map[string][]chan Ticket
@@ -147,8 +186,17 @@ func New(cfg Config, now func() time.Time) *Queue {
 		now:      now,
 		tickets:  map[string]*Ticket{},
 		waiting:  map[string][]string{},
+		sessions: map[string]*Session{},
 		watchers: map[string][]chan Ticket{},
 	}
+}
+
+// PlayersFor returns how many players a mode's match takes.
+func (q *Queue) PlayersFor(mode string) int {
+	if n, ok := q.cfg.ModeSizes[mode]; ok && n >= 2 {
+		return n
+	}
+	return q.cfg.PlayersPerMatch
 }
 
 // Enqueue creates a ticket for a player and tries to form a match.
@@ -212,6 +260,81 @@ func (q *Queue) Get(ticketID string) (Ticket, bool) {
 		return Ticket{}, false
 	}
 	return *t, true
+}
+
+// Session returns a formed match by id.
+func (q *Queue) Session(sessionID string) (Session, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return Session{}, false
+	}
+	return s.clone(), true
+}
+
+// Join adds a player to an existing session, and is idempotent for a player who
+// is already in it.
+//
+// Idempotent rather than an error, because the console calls JoinGameSession
+// after its own ticket succeeded — it is joining the match it was just told it
+// is in, and answering "you are already here" as a failure strands it on the
+// loading screen.
+//
+// A session with no room left refuses. Silently over-filling would hand a
+// ninth player to an eight-player match, and the game rejects that on the
+// console with a generic error rather than saying the session was full.
+func (q *Queue) Join(sessionID, userID string) (Session, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return Session{}, ErrNoSession
+	}
+	for _, p := range s.Players {
+		if p == userID {
+			return s.clone(), nil
+		}
+	}
+	if len(s.Players) >= s.MaxPlayers {
+		return Session{}, ErrSessionFull
+	}
+	s.Players = append(s.Players, userID)
+	return s.clone(), nil
+}
+
+// SessionsFor returns the sessions a player is in. For GameSessionService's
+// per-user lookups.
+func (q *Queue) SessionsFor(userID string) []Session {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var out []Session
+	for _, s := range q.sessions {
+		for _, p := range s.Players {
+			if p == userID {
+				out = append(out, s.clone())
+				break
+			}
+		}
+	}
+	// Newest first, and by id when two were formed in the same instant — a
+	// map range would reorder the answer between two identical calls.
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// clone copies a session so a caller cannot mutate the queue's own slice.
+func (s *Session) clone() Session {
+	out := *s
+	out.Players = append([]string(nil), s.Players...)
+	return out
 }
 
 // Watch returns a channel that receives the ticket every time its state
@@ -312,17 +435,19 @@ func (q *Queue) formMatchesLocked() []Session {
 	var formed []Session
 
 	for _, mode := range sortedKeys(q.waiting) {
+		size := q.PlayersFor(mode)
 		for {
 			ids := q.liveWaitingLocked(mode)
-			if len(ids) < q.cfg.PlayersPerMatch {
+			if len(ids) < size {
 				break
 			}
-			chosen := ids[:q.cfg.PlayersPerMatch]
+			chosen := ids[:size]
 
-			s := Session{
-				ID:        uuid.NewString(),
-				Mode:      mode,
-				CreatedAt: q.now(),
+			s := &Session{
+				ID:         uuid.NewString(),
+				Mode:       mode,
+				MaxPlayers: size,
+				CreatedAt:  q.now(),
 			}
 			for _, id := range chosen {
 				t := q.tickets[id]
@@ -333,6 +458,7 @@ func (q *Queue) formMatchesLocked() []Session {
 			// spreads hosting over time rather than always picking whoever
 			// happens to be first in a map.
 			s.Host = s.Players[0]
+			q.sessions[s.ID] = s
 
 			for _, id := range chosen {
 				t := q.tickets[id]
@@ -340,7 +466,7 @@ func (q *Queue) formMatchesLocked() []Session {
 				q.setStateLocked(t, StateSucceeded)
 				q.removeFromWaitingLocked(t)
 			}
-			formed = append(formed, s)
+			formed = append(formed, *s)
 		}
 	}
 	return formed

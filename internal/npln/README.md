@@ -31,6 +31,8 @@ keeps them apart and `cmd/switchnetctl`'s generator tests assert it.
 | `metadata.go` | the `npln-tenant-id` / `authorization` / `uid` metadata |
 | `auth.go` | the BAAS id-token seam, token issue, and identity resolution |
 | `services.go` | the implemented services |
+| `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking` |
+| `names.go` | every NPLN resource name, in one place |
 | `errors.go` | how a refusal is shaped |
 
 ## Identity is fail-closed, and `uid` is not a credential
@@ -87,6 +89,32 @@ metadata it cannot parse with `Unimplemented` (12) on production and
 game reacts to the code, so SwitchNet matches it; the log line on this side says
 what was actually wrong.
 
+## Matchmaking: the console lives on the stream
+
+`TrackMatchmakingTicket` is how a console learns a match was formed. There is no
+polling path, so three things follow:
+
+- **the current state is sent immediately** on attaching, or a stream that
+  arrives after its ticket already matched waits for an event that has happened;
+- **the stream ends when the ticket is terminal**, because it cannot change
+  again and holding it open leaves the console waiting on nothing;
+- **both players are named on the ticket** rather than left for a follow-up
+  call, since the ticket stream is the only thing the console is certainly
+  reading at that moment.
+
+Two refusals worth knowing about. A ticket carrying **user delegation tokens**
+is refused rather than served for one player: honouring an unverified delegation
+would let a console queue as anybody, and quietly queueing one of two players
+leaves the console waiting for somebody who was never in the queue. And a
+**session is invisible to anybody not in it** — `GetGameSession` answers
+`NotFound`, not `PermissionDenied`, because who is playing with whom is not
+public on a server whose point is a private group.
+
+`CreateAcceptance` is left unimplemented deliberately: acceptance is the flow
+where a formed match waits for each player to agree, SwitchNet never puts a
+ticket into that state, and answering would mean inventing a response for a flow
+that cannot occur.
+
 **A stream that goes quiet is a dead stream.** `SubscribeMaintenanceSchedules`
 carries a `KeepAlive` message in its own oneof, which is the protocol saying
 outright that silence is not a valid state. SwitchNet has no maintenance
@@ -100,5 +128,6 @@ Registered services answer `Unimplemented` for RPCs that have no handler, and
 log. That log is the to-do list (ROADMAP §2.4).
 
 `grep -rn 'TODO(capture-needed)' .` for the shapes that are reasoned rather than
-known. The two here today are the resource-name prefix in `IssueToken`'s
-response and whether the game ever calls `RefreshToken`.
+known. The two here today are the resource-name shapes — all of them, collected
+in `names.go` so that one capture settles the lot — and whether the game ever
+calls `RefreshToken`.

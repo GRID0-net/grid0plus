@@ -267,6 +267,51 @@ npln:
   jwks_url: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates"
   access_token_ttl: 10800
 
+  # How many players a match takes.
+  #
+  # TWO, not eight. This is a server for a handful of consoles, and waiting for
+  # a faithful 4v4 means never playing. Raise it once there are enough consoles
+  # to fill one.
+  players_per_match: 2
+
+  # Per-mode overrides of the above.
+  #
+  # Keyed on the mode name the game sends in a ticket's matchmaking_config.
+  # Nothing public documents those strings, so this starts empty and every mode
+  # that arrives without an entry is logged once -- that log line is how you
+  # learn the names to put here. For reference when you do: Turf War and
+  # Anarchy are 4v4 (eight players), Salmon Run is four, Tricolour is 4v2v2.
+  mode_players: {}
+  #  regular: 8
+
+  # How long a matchmaking ticket waits before giving up, in seconds. A ticket
+  # that never resolves leaves the player on a spinner with no way back, so
+  # timing out is what lets the game offer to try again.
+  ticket_ttl: 180
+
+  # STUN and TURN servers for NAT traversal.
+  #
+  # Splatoon 3 uses ICE, not the Pia NAT-check pair, so the natcheck section
+  # below is not involved in this title at all.
+  #
+  # THE ADDRESSES MUST BE REACHABLE FROM THE CONSOLE, not merely from this
+  # server. Wrong ones produce "the lobby fills but the match never starts",
+  # which from the server side is indistinguishable from a matchmaking bug.
+  #
+  # Empty is fine for consoles on one LAN: they reach each other directly.
+  # `switchnetctl check` warns so that the choice is a deliberate one.
+  ice_servers: []
+  #  - kind: stun          # stun or turn
+  #    host: "192.168.1.50"
+  #    port: 3478
+  #    protocol: udp       # udp, tcp or tls
+  #  - kind: turn
+  #    host: "192.168.1.50"
+  #    port: 3478
+  #    protocol: udp
+  #    username: "switchnet"
+  #    password: "change-me"
+
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/toyohr"
 	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
 	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
+	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 )
 
 // register attaches the implemented services to the gRPC server.
@@ -22,6 +23,8 @@ import (
 func (s *Server) register() {
 	authpb.RegisterAuthServer(s.grpc, &authService{s: s})
 	maintpb.RegisterMaintenanceScheduleServiceServer(s.grpc, &maintenanceService{s: s})
+	mmpb.RegisterMatchmakerServer(s.grpc, &matchmakerService{s: s})
+	mmpb.RegisterGameSessionServiceServer(s.grpc, &gameSessionService{s: s})
 
 	// Splatoon 3's own services. They authenticate through the same
 	// interceptor as everything else -- a fest is announced to a console that
@@ -86,17 +89,6 @@ func (a *authService) ValidateToken(ctx context.Context, _ *emptypb.Empty) (*emp
 		return nil, ErrUnauthenticated
 	}
 	return &emptypb.Empty{}, nil
-}
-
-// userResourceName renders a user id the way NPLN's resource names are shaped.
-//
-// TODO(capture-needed): the exact prefix. Every NPLN resource name in the
-// definitions is a path ("tenants/<t>/users/<u>"-shaped), and this follows that
-// pattern, but no capture confirms what Splatoon 3 receives here or whether it
-// parses it at all. A capture of IssueToken's response would settle it.
-// Change: this function.
-func userResourceName(userID string) string {
-	return "users/" + userID
 }
 
 // ---- nn.npln.maintenance.v1.MaintenanceScheduleService --------------------

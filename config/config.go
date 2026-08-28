@@ -255,6 +255,51 @@ type NPLN struct {
 	JWKSURL string `yaml:"jwks_url"`
 	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds.
 	AccessTokenTTL int `yaml:"access_token_ttl"`
+
+	// PlayersPerMatch is how many players a match takes for any mode
+	// mode_players does not name.
+	//
+	// Two, not eight. This is a server for a handful of consoles, and waiting
+	// for a faithful 4v4 means never playing.
+	PlayersPerMatch int `yaml:"players_per_match"`
+
+	// ModePlayers overrides players_per_match for one matchmaking mode.
+	//
+	// Keyed on the mode name the game sends in the ticket's matchmaking_config,
+	// which nothing public documents — so this is empty by default and every
+	// unknown mode is logged, and that log is how an operator learns the names
+	// to put here. Turf War and Anarchy are 4v4 (eight), Salmon Run is four.
+	ModePlayers map[string]int `yaml:"mode_players"`
+
+	// TicketTTL is how long a matchmaking ticket waits before giving up, in
+	// seconds. A ticket that never resolves shows the player a spinner with no
+	// way out.
+	TicketTTL int `yaml:"ticket_ttl"`
+
+	// IceServers are the STUN and TURN servers handed to a console for NAT
+	// traversal. Splatoon 3 uses ICE, not the Pia NAT-check pair, so
+	// internal/natcheck is not involved in this title.
+	//
+	// **The addresses must be reachable FROM THE CONSOLE**, not merely from
+	// this server. Wrong ones produce "the lobby fills but the match never
+	// starts", which is indistinguishable from a matchmaking bug when read from
+	// the server side. Empty is legitimate: peers on one LAN reach each other
+	// without ICE, and `switchnetctl check` warns rather than refuses.
+	IceServers []IceServer `yaml:"ice_servers"`
+}
+
+// IceServer is one STUN or TURN server offered to a console.
+type IceServer struct {
+	// Kind is "stun" or "turn".
+	Kind string `yaml:"kind"`
+	// Host is an address or hostname the CONSOLE can reach.
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+	// Protocol is "udp", "tcp" or "tls". Empty means udp.
+	Protocol string `yaml:"protocol"`
+	// Username and Password are TURN's long-term credentials. Ignored for stun.
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // Dashboard configures the operator's web view.
@@ -376,6 +421,9 @@ func Default() Config {
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
 			AccessTokenTTL: 10800,
+			// Two, so two friends can start a match. See the field comment.
+			PlayersPerMatch: 2,
+			TicketTTL:       180,
 		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
@@ -563,6 +611,38 @@ func (c Config) Validate() error {
 		default:
 			errs = append(errs, fmt.Errorf(
 				"aauth.title_overrides[%s].online_play_policy: %q is invalid", id, o.OnlinePlayPolicy))
+		}
+	}
+	if c.NPLN.PlayersPerMatch == 1 {
+		// One is not a small match, it is a match that starts the instant
+		// anybody queues and then has nobody to play against.
+		errs = append(errs, errors.New("npln.players_per_match must be at least 2"))
+	}
+	for mode, n := range c.NPLN.ModePlayers {
+		if n < 2 {
+			errs = append(errs, fmt.Errorf(
+				"npln.mode_players[%s] is %d; a match needs at least 2 players", mode, n))
+		}
+	}
+	for i, s := range c.NPLN.IceServers {
+		switch s.Kind {
+		case "stun", "turn":
+		default:
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].kind: %q must be stun or turn", i, s.Kind))
+		}
+		switch s.Protocol {
+		case "", "udp", "tcp", "tls":
+		default:
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].protocol: %q must be udp, tcp or tls", i, s.Protocol))
+		}
+		if s.Host == "" {
+			errs = append(errs, fmt.Errorf("npln.ice_servers[%d].host is required", i))
+		}
+		if s.Port <= 0 || s.Port > 65535 {
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].port: %d is not a port", i, s.Port))
 		}
 	}
 

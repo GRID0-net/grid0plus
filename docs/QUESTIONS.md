@@ -28,12 +28,13 @@ has to hand the console real STUN/TURN addresses — and they must be reachable
 lobby fills but the match never starts", which is indistinguishable from a
 matchmaking bug when read from the server side.
 
-**Proceeding on:** `npln.ice_servers` in config, empty by default, with a
-`switchnetctl check` warning when unset. Matchmaking works for peers on the same
-LAN without it.
+**Proceeding on:** `npln.ice_servers` in config, empty by default, served
+verbatim by `AllocateIceServerSet`, with a `switchnetctl check` warning when
+unset. Nothing is discovered: a server behind NAT cannot know its own reachable
+address, and a guess there produces exactly the failure above. Matchmaking works
+for peers on the same LAN without any of it.
 
-**Changes if answered:** `config/config.go` (`NPLN`), and the
-`AllocateIceServerSet` handler.
+**Changes if answered:** nothing in code — fill in `npln.ice_servers`.
 
 ---
 

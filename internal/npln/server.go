@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -24,6 +25,7 @@ import (
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/matchmaking"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -46,10 +48,27 @@ type Server struct {
 	accessTokenTTL int
 	env            Environment
 
+	// queue forms matches. In memory, because a ticket is worth nothing across
+	// a restart — see internal/matchmaking.
+	queue *matchmaking.Queue
+	// matchModes are the modes with a configured size, used only to decide
+	// whether an arriving mode is worth logging.
+	matchModes map[string]int
+	// unknownModes remembers which modes have already been logged, so a console
+	// re-queuing every thirty seconds does not fill the log with the same line.
+	unknownModes sync.Map
+
+	iceServers []config.IceServer
+
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
 
 	grpc *grpc.Server
+	// stop closes when the server is shutting down, ending the background
+	// sweeper. Separate from a request context because the sweeper outlives
+	// every request.
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 // Options configures a Server.
@@ -99,7 +118,11 @@ func New(opts Options) (*Server, error) {
 		issuerName:     opts.Config.Issuer,
 		accessTokenTTL: opts.Config.AccessTokenTTL,
 		env:            opts.Env,
+		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),
+		matchModes:     opts.Config.ModePlayers,
+		iceServers:     opts.Config.IceServers,
 		now:            opts.Now,
+		stop:           make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(
@@ -107,7 +130,49 @@ func New(opts Options) (*Server, error) {
 		grpc.ChainStreamInterceptor(s.streamInterceptor),
 	)
 	s.register()
+	go s.sweepTickets()
 	return s, nil
+}
+
+// sweepInterval is how often expired matchmaking tickets are swept.
+//
+// Sweeping on a timer rather than when a ticket arrives, because a queue nobody
+// is joining is exactly the one whose tickets need to expire: doing it only on
+// arrival means the last player to give up waits forever.
+const sweepInterval = 15 * time.Second
+
+func (s *Server) sweepTickets() {
+	ticker := time.NewTicker(sweepInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stop:
+			return
+		case <-ticker.C:
+			for _, t := range s.queue.Sweep() {
+				// Logged because a ticket that timed out is the visible half of
+				// "nobody else was queuing", and an operator reading this
+				// wants to know it happened rather than infer it.
+				s.log.Info("npln: matchmaking ticket timed out",
+					"ticket", t.ID, "user", t.UserID, "mode", t.Mode)
+			}
+		}
+	}
+}
+
+// noteUnknownMode logs a mode with no configured size, once per mode.
+//
+// This log line has a job: nothing public documents the strings Splatoon 3 puts
+// in a ticket's matchmaking_config, so it is how an operator learns what to put
+// in npln.mode_players. Once per mode, because a console re-queues often enough
+// to bury everything else.
+func (s *Server) noteUnknownMode(mode string) {
+	if _, seen := s.unknownModes.LoadOrStore(mode, struct{}{}); seen {
+		return
+	}
+	s.log.Info("npln: matchmaking mode has no configured size, using npln.players_per_match",
+		"mode", mode, "players", s.queue.PlayersFor(mode))
 }
 
 // GRPCServer exposes the underlying server, for tests and for serving on a
@@ -123,7 +188,16 @@ func (s *Server) GRPCServer() *grpc.Server { return s.grpc }
 func (s *Server) Serve(l net.Listener) error { return s.grpc.Serve(l) }
 
 // Stop stops the server, waiting for in-flight RPCs.
-func (s *Server) Stop() { s.grpc.GracefulStop() }
+//
+// Idempotent: cmd/npln stops it on a signal and a test's cleanup stops it
+// again, and closing a closed channel panics.
+func (s *Server) Stop() {
+	s.stopOnce.Do(func() { close(s.stop) })
+	s.grpc.GracefulStop()
+}
+
+// Queue exposes the match queue, for the dashboard's live view.
+func (s *Server) Queue() *matchmaking.Queue { return s.queue }
 
 // callerKey is the context key the interceptor stores the resolved caller
 // under. Unexported and of a private type, so nothing outside this package can
