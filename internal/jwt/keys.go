@@ -43,8 +43,9 @@ type Keyring struct {
 	dir               string
 	generateIfMissing bool
 
-	mu   sync.Mutex
-	keys map[string]Key
+	mu     sync.Mutex
+	keys   map[string]Key
+	ecKeys map[string]ECKey
 }
 
 // NewKeyring returns a keyring backed by PEM files in dir. Keys are loaded
@@ -59,6 +60,7 @@ func NewKeyring(dir string, generateIfMissing bool) *Keyring {
 		dir:               dir,
 		generateIfMissing: generateIfMissing,
 		keys:              map[string]Key{},
+		ecKeys:            map[string]ECKey{},
 	}
 }
 
@@ -88,7 +90,7 @@ func (r *Keyring) Key(name string) (Key, error) {
 	default:
 		return Key{}, fmt.Errorf("load signing key %s: %w", name, err)
 	}
-	k := Key{ID: keyIDFor(priv), Private: priv}
+	k := Key{ID: keyIDFor(&priv.PublicKey), Private: priv}
 	r.keys[name] = k
 	return k, nil
 }
@@ -135,6 +137,23 @@ func validKeyName(name string) error {
 }
 
 func loadPEM(path string) (*rsa.PrivateKey, error) {
+	key, err := parsePEM(path)
+	if err != nil {
+		return nil, err
+	}
+	priv, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("%s: not an RSA key", path)
+	}
+	return priv, nil
+}
+
+// parsePEM reads a PEM private key of any type this package supports.
+//
+// The type is deliberately not inferred from the filename: a key directory
+// where npln.key.pem holds an RSA key is a misconfiguration that must fail
+// loudly here, not produce ES256-shaped tokens signed with the wrong algorithm.
+func parsePEM(path string) (any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -146,22 +165,39 @@ func loadPEM(path string) (*rsa.PrivateKey, error) {
 	switch block.Type {
 	case "RSA PRIVATE KEY":
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(block.Bytes)
 	case "PRIVATE KEY":
-		any, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		priv, ok := any.(*rsa.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("%s: not an RSA key", path)
-		}
-		return priv, nil
+		return x509.ParsePKCS8PrivateKey(block.Bytes)
 	default:
 		return nil, fmt.Errorf("%s: unexpected PEM block %q", path, block.Type)
 	}
 }
 
-// generate creates a signing key and writes it to path, exactly once.
+// generate creates an RSA signing key and writes it to path, exactly once.
+// See writeKeyOnce for why "exactly once" is the load-bearing part.
+func generate(path string) (*rsa.PrivateKey, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("generate signing key: %w", err)
+	}
+	existing, err := writeKeyOnce(path, priv)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return priv, nil
+	}
+	other, ok := existing.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("%s: not an RSA key", path)
+	}
+	return other, nil
+}
+
+// writeKeyOnce writes priv to path exactly once, and returns the key that is
+// actually on disk afterwards: nil if ours won the race, or the one another
+// process wrote first.
 //
 // The exclusive create is what makes this safe when several services start at
 // the same moment — which is every `docker compose up`, because they all share
@@ -170,15 +206,11 @@ func loadPEM(path string) (*rsa.PrivateKey, error) {
 // made in memory. The result is dauth signing with one key while aauth verifies
 // with another, and the error the console eventually sees is "device token
 // expired", which points nowhere near the cause.
-func generate(path string) (*rsa.PrivateKey, error) {
+func writeKeyOnce(path string, priv any) (any, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create key dir: %w", err)
 	}
 
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("generate signing key: %w", err)
-	}
 	der, err := x509.MarshalPKCS8PrivateKey(priv)
 	if err != nil {
 		return nil, err
@@ -190,7 +222,7 @@ func generate(path string) (*rsa.PrivateKey, error) {
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			// Somebody else got there first. Use their key, not ours.
-			return loadPEM(path)
+			return parsePEM(path)
 		}
 		return nil, fmt.Errorf("create signing key %s: %w", path, err)
 	}
@@ -204,5 +236,5 @@ func generate(path string) (*rsa.PrivateKey, error) {
 	if err := f.Sync(); err != nil {
 		return nil, fmt.Errorf("sync signing key: %w", err)
 	}
-	return priv, nil
+	return nil, nil
 }

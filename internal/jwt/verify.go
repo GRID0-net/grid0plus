@@ -67,9 +67,19 @@ func ParseUnverified(token string, claims gojwt.Claims) error {
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#jwk-set
 type JWK struct {
-	KeyType   string `json:"kty"`
-	Exponent  string `json:"e"`
-	Modulus   string `json:"n"`
+	KeyType string `json:"kty"`
+
+	// RSA parameters. omitempty because an EC key has neither, and a JWK
+	// carrying "e":"" alongside its real "x"/"y" is malformed — a strict
+	// parser rejects the whole set, taking the RSA keys down with it.
+	Exponent string `json:"e,omitempty"`
+	Modulus  string `json:"n,omitempty"`
+
+	// EC parameters, for the ES256 keys NPLN uses. Same reasoning in reverse.
+	Curve string `json:"crv,omitempty"`
+	X     string `json:"x,omitempty"`
+	Y     string `json:"y,omitempty"`
+
 	Algorithm string `json:"alg"`
 	Use       string `json:"use"`
 	KeyID     string `json:"kid"`
