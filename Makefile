@@ -190,6 +190,11 @@ fest-build:
 seed:
 	scripts/seed-dev-data.sh
 
+## seed-phase2: drive the phase 2 game server end to end (needs `make up` first)
+.PHONY: seed-phase2
+seed-phase2:
+	scripts/seed-phase2.sh
+
 ## capture: capture the real BAAS friends API from a PC (see docs/PACKET_CAPTURE.md)
 .PHONY: capture
 capture:

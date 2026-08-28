@@ -103,6 +103,13 @@ token, register, log in, friend code, friend request, accept, presence — and
 prints the resulting friend list. If it completes, everything except DNS and TLS
 is working.
 
+`make seed-phase2` does the same for the game server: it registers two accounts
+through BAAS, exchanges the id tokens BAAS hands out for NPLN sessions, queues
+both players, and checks that they are told about **the same** session — then
+drives `gamesync` and reads back the announced Splatfest. Two players told about
+different sessions is a lobby that never fills, and it looks fine from either
+side alone, which is why that is the assertion.
+
 Then: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the nginx edge and the
 address/port checklist, and [`switch/README.md`](switch/README.md) for pointing a
 console at it.
@@ -206,8 +213,8 @@ internal/
   natcheck/      the NAT-check UDP responder
   service/       shared startup: logging, signals, graceful shutdown
 switch/          console-side setup and the generated hosts file
-scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py,
-                 build-certstore.py
+scripts/         gen-certs.sh, seed-dev-data.sh, seed-phase2.sh, smoke-npln/,
+                 capture-baas.py, build-certstore.py
 docs/            roadmap, architecture, deployment, packet capture, captures
 ```
 

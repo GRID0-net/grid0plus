@@ -29,12 +29,18 @@ type playerDetail struct {
 	Activity string `json:"activity,omitempty"`
 	AppID    string `json:"appId,omitempty"`
 
-	// The three presence timestamps, kept apart deliberately.
+	// What the console itself last said, and when, kept apart from the
+	// effective state above.
 	//
 	// "Reported OFFLINE" and "never reported" are different states, and
 	// conflating them is what makes a friend list permanently offline. Showing
-	// all three is what lets an operator see which case they are in without
-	// reading the database.
+	// them separately is what lets an operator see which case they are in
+	// without reading the database.
+	//
+	// Both are ABSENT when the console has never reported. The stored state
+	// column defaults to OFFLINE, so filling ReportedState unconditionally
+	// would claim a report that never happened -- which is the same conflation
+	// wearing a different hat.
 	ReportedState string `json:"reportedState,omitempty"`
 	ReportedAt    string `json:"reportedAt,omitempty"`
 	LastSeenAt    string `json:"lastSeenAt,omitempty"`
@@ -91,7 +97,6 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
 		Country:        user.Country,
 		State:          state,
 		AppID:          appID,
-		ReportedState:  presence.State,
 		DeviceAccounts: []deviceAccountRow{},
 		Friends:        []friendRow{},
 		Matches:        []matchRow{},
@@ -99,7 +104,16 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
 	if appID != "" {
 		detail.Activity = titleName(appID)
 	}
+	// ReportedState is filled in ONLY when the console has actually reported.
+	//
+	// The stored state column defaults to OFFLINE, so a console that has never
+	// reported has state=OFFLINE and reported_at=NULL -- and showing that as
+	// "reported OFFLINE" is the exact conflation this page exists to make
+	// visible. "Never reported" and "reported OFFLINE" are different states,
+	// and the whole point of putting the three fields side by side is telling
+	// them apart. Found by running it against a freshly registered account.
 	if !presence.ReportedAt.IsZero() {
+		detail.ReportedState = presence.State
 		detail.ReportedAt = presence.ReportedAt.UTC().Format(time.RFC3339)
 	}
 	if !presence.LastSeenAt.IsZero() {

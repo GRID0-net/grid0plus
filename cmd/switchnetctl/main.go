@@ -215,12 +215,16 @@ func hostsFile(cfg config.Config) string {
 		emit(ip, h)
 	}
 
+	// Every service with hosts must appear in some section here, or its hosts
+	// vanish from the file with no error -- see
+	// TestEveryHostReachesTheGeneratedHostsFile.
 	section("NPLN game servers (phase 2)")
-	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLNRest) {
-		emit(ip, h)
-	}
-	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLN) {
-		emit(ip, h)
+	for _, svc := range []nintendo.Service{
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
+	} {
+		for _, h := range nintendo.ServiceHosts(svc) {
+			emit(ip, h)
+		}
 	}
 
 	section("NAT check")

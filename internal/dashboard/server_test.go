@@ -493,3 +493,38 @@ func getJSON(t *testing.T, srv *Server, path string, into any) {
 		t.Fatalf("%s: decode: %v", path, err)
 	}
 }
+
+// TestAConsoleThatHasNeverReportedDoesNotLookLikeOneThatReportedOffline.
+//
+// The stored state column defaults to OFFLINE while reported_at stays NULL, so a
+// freshly registered account has state=OFFLINE and has never said anything. This
+// page exists to tell those two apart -- claiming a report that never happened is
+// the same conflation that makes a friend list permanently offline.
+//
+// Found by running the dashboard against a real account, not by a test.
+func TestAConsoleThatHasNeverReportedDoesNotLookLikeOneThatReportedOffline(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+
+	addUser(t, store, "fresh", "Fresh")
+	// Request traffic only: registered, polling, never reported.
+	if err := store.TouchPresence(context.Background(), "fresh", now); err != nil {
+		t.Fatalf("touch presence: %v", err)
+	}
+
+	var detail playerDetail
+	getJSON(t, srv, "/api/players/fresh", &detail)
+
+	if detail.State != "ONLINE" {
+		t.Errorf("effective state = %q, want ONLINE from the heartbeat", detail.State)
+	}
+	if detail.ReportedState != "" {
+		t.Errorf("reportedState = %q, but this console has never reported", detail.ReportedState)
+	}
+	if detail.ReportedAt != "" {
+		t.Errorf("reportedAt = %q, but this console has never reported", detail.ReportedAt)
+	}
+	if detail.LastSeenAt == "" {
+		t.Error("lastSeenAt is empty, so there is nothing to explain the ONLINE")
+	}
+}

@@ -156,3 +156,52 @@ func hasDirective(block, prefix string) bool {
 	}
 	return false
 }
+
+// TestEveryHostReachesTheGeneratedHostsFile is the guard for a drift CLAUDE.md
+// warns about and this generator was quietly capable of.
+//
+// The host list is meant to be the single source of truth. But this generator
+// walks it SERVICE BY SERVICE, in named sections — so adding a new Service and
+// forgetting a section here drops its hosts from the file with no error
+// anywhere. That happened: giving gamesync its own service (it is reached on
+// port 7575, not 443) removed gamesync.npln.nintendo.net from the hosts file,
+// and the only symptom would have been a console reaching real Nintendo for it.
+func TestEveryHostReachesTheGeneratedHostsFile(t *testing.T) {
+	file := hostsFile(testConfig())
+
+	for _, h := range nintendo.Hosts {
+		if h.Service == nintendo.ServicePassthrough {
+			// Passthrough hosts are deliberately absent: they must keep
+			// resolving to real Nintendo.
+			continue
+		}
+		if !strings.Contains(file, h.Pattern) {
+			t.Errorf("%s (%s) is in the host list but not in the generated hosts "+
+				"file — a section is missing from hostsFile", h.Pattern, h.Service)
+		}
+	}
+}
+
+// TestEveryProxiedHostReachesTheGeneratedNginxConfig is the same guard for the
+// edge: a TLS host with no server block is a console whose connection reaches
+// the default block and gets nothing useful.
+func TestEveryProxiedHostReachesTheGeneratedNginxConfig(t *testing.T) {
+	conf := nginxConf(testConfig())
+
+	for _, svc := range nintendo.ProxiedServices {
+		for _, h := range nintendo.ServiceHosts(svc) {
+			if !h.TLS {
+				continue
+			}
+			names := []string{h.Pattern}
+			if h.Wildcard {
+				names = h.TLSNames
+			}
+			for _, name := range names {
+				if !strings.Contains(conf, name) {
+					t.Errorf("%s (%s) needs a server block and has none", name, svc)
+				}
+			}
+		}
+	}
+}
