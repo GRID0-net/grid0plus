@@ -32,7 +32,34 @@ type Event struct {
 	Source string `json:"source"`
 }
 
-// Bus publishes and subscribes to presence events.
+// Stats is a snapshot of what a game server is doing right now.
+//
+// A GAUGE, not an event, and that distinction is why it is not on the event
+// stream. A dashboard that has just been opened needs the current value; an
+// event stream only carries changes, so a freshly-loaded page would show
+// nothing until the next player queued. So this is published as a value that
+// replaces the last one and is read on demand.
+type Stats struct {
+	// Matchmaking is how many players are waiting, per mode. Absent modes have
+	// nobody queuing; an empty map means nobody is queuing at all, which is
+	// different from no data — see Stats's second return value.
+	Matchmaking map[string]int `json:"matchmaking"`
+	// At is when the snapshot was taken. The reader uses it to decide whether
+	// the publisher is still alive: a gauge with no staleness check reads as
+	// "nobody is queuing" long after the game server has stopped.
+	At time.Time `json:"at"`
+}
+
+// StatsTTL is how long a published snapshot stays current.
+//
+// Deliberately short relative to how often the game server publishes. A stale
+// gauge is worse than an absent one: "nobody is queuing" and "the game server
+// is not running" look identical on a tile, and only one of them is worth
+// acting on.
+const StatsTTL = 30 * time.Second
+
+// Bus publishes and subscribes to presence events, and carries the game
+// server's live stats.
 //
 // Publish must never block for long and must never fail the caller's request:
 // a presence event that does not reach the dashboard is a cosmetic problem,
@@ -43,6 +70,13 @@ type Bus interface {
 	// Subscribe returns a channel of events. The channel is closed when ctx is
 	// cancelled. Slow subscribers drop events rather than blocking the publisher.
 	Subscribe(ctx context.Context) (<-chan Event, error)
+
+	// PublishStats replaces the current snapshot.
+	PublishStats(ctx context.Context, s Stats) error
+	// Stats returns the current snapshot, and false when there is none or the
+	// last one has gone stale.
+	Stats(ctx context.Context) (Stats, bool, error)
+
 	// Close releases the bus's resources.
 	Close() error
 }

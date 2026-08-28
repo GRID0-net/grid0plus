@@ -334,6 +334,23 @@ type FestEntry struct {
 	UpdatedAt time.Time
 }
 
+// Match is a formed Splatoon 3 match.
+//
+// The queue is deliberately not persisted -- see
+// migrations/0012_npln_matches.up.sql -- so this is only what actually happened.
+type Match struct {
+	// ID is the session id the players were told.
+	ID string
+	// Mode is what they queued for.
+	Mode string
+	// Players are in the order they were matched, which is queue order.
+	Players []string
+	// Host is whose console the others connect to.
+	Host string
+
+	CreatedAt time.Time
+}
+
 type Store interface {
 	// ---- users ----
 
@@ -380,6 +397,15 @@ type Store interface {
 	GetFest(ctx context.Context, id string) (Fest, error)
 	// ListFests returns every fest, soonest first.
 	ListFests(ctx context.Context) ([]Fest, error)
+	// RecordMatch stores a formed match.
+	//
+	// Recording the same id twice is not an error: the alternative is a game
+	// server that fails a request because it already logged something, and a
+	// match log is not worth failing a match over.
+	RecordMatch(ctx context.Context, m Match) error
+	// ListMatches returns the most recent matches, newest first.
+	ListMatches(ctx context.Context, limit int) ([]Match, error)
+
 	// UpsertFestEntry records or changes a player's team choice.
 	//
 	// An upsert rather than an insert: two rows for one player would count them

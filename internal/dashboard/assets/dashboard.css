@@ -405,3 +405,12 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   .grid tbody tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .top { flex-direction: column; align-items: flex-start; }
 }
+
+/* The delivery cache's revision, which is 40 hex characters and unreadable in
+   the body face. */
+.meta.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+  word-break: break-all;
+}

@@ -68,6 +68,14 @@ func (b *recordingBus) Subscribe(context.Context) (<-chan presencebus.Event, err
 	return ch, nil
 }
 
+// The gauge half of the Bus, which internal/baas does not use: presence is an
+// event here, and the matchmaking snapshot belongs to internal/npln.
+func (b *recordingBus) PublishStats(context.Context, presencebus.Stats) error { return nil }
+
+func (b *recordingBus) Stats(context.Context) (presencebus.Stats, bool, error) {
+	return presencebus.Stats{}, false, nil
+}
+
 func (b *recordingBus) Close() error { return nil }
 
 func (b *recordingBus) all() []presencebus.Event {

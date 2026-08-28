@@ -47,7 +47,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images, npln_fests RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests, npln_matches RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -69,6 +69,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"userLogin":             testUserLogin,
 		"fests":                 testFests,
 		"festEntries":           testFestEntries,
+		"matches":               testMatches,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1229,5 +1230,81 @@ func testFestEntries(t *testing.T, s Store) {
 		t.Fatalf("list entries: %v", err)
 	} else if len(list) != 0 {
 		t.Errorf("%d votes outlived the fest they belonged to", len(list))
+	}
+}
+
+// testMatches exercises the match log against both implementations.
+//
+// Two properties matter. Recording the same id twice must not error, because a
+// match log is not worth failing a match over. And the log must NOT be tied to
+// the users in it: history that disappears when somebody leaves is not history,
+// which is why players is an array rather than a join table.
+func testMatches(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	base := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	for i, m := range []Match{
+		{ID: "m1", Mode: "turf_war", Players: []string{"alice", "bob"}, Host: "alice", CreatedAt: base},
+		{ID: "m2", Mode: "turf_war", Players: []string{"bob", "carol"}, Host: "bob", CreatedAt: base.Add(time.Minute)},
+		{ID: "m3", Mode: "salmon_run", Players: []string{"alice"}, Host: "alice", CreatedAt: base.Add(2 * time.Minute)},
+	} {
+		if err := s.RecordMatch(ctx, m); err != nil {
+			t.Fatalf("record match %d: %v", i, err)
+		}
+	}
+
+	// Recording the same id again is a no-op, not an error.
+	if err := s.RecordMatch(ctx, Match{
+		ID: "m1", Mode: "changed", Players: []string{"nobody"}, Host: "nobody",
+	}); err != nil {
+		t.Fatalf("re-recording a match errored: %v", err)
+	}
+
+	list, err := s.ListMatches(ctx, 10)
+	if err != nil {
+		t.Fatalf("list matches: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("got %d matches, want 3", len(list))
+	}
+	// Newest first: the only read this table has is "what happened recently".
+	if list[0].ID != "m3" || list[2].ID != "m1" {
+		t.Errorf("order = %s %s %s, want m3 m2 m1", list[0].ID, list[1].ID, list[2].ID)
+	}
+	if list[2].Mode != "turf_war" {
+		t.Errorf("re-recording overwrote the original: mode = %q", list[2].Mode)
+	}
+	if len(list[0].Players) != 1 || list[0].Players[0] != "alice" {
+		t.Errorf("players = %v", list[0].Players)
+	}
+
+	if limited, err := s.ListMatches(ctx, 2); err != nil {
+		t.Fatalf("list matches: %v", err)
+	} else if len(limited) != 2 {
+		t.Errorf("the limit was ignored: got %d", len(limited))
+	}
+
+	// A match with no players at all: nil and empty must mean the same thing in
+	// both implementations, which is the divergence this contract keeps finding.
+	if err := s.RecordMatch(ctx, Match{ID: "empty", Mode: "turf_war", Host: "alice"}); err != nil {
+		t.Fatalf("a match with a nil player list was refused: %v", err)
+	}
+
+	// The stored slice must not alias the caller's.
+	mutable := []string{"alice"}
+	if err := s.RecordMatch(ctx, Match{
+		ID: "alias", Mode: "turf_war", Players: mutable, Host: "alice",
+	}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	mutable[0] = "MUTATED"
+	list, err = s.ListMatches(ctx, 50)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, m := range list {
+		if m.ID == "alias" && m.Players[0] != "alice" {
+			t.Error("mutating the caller's slice changed stored state")
+		}
 	}
 }

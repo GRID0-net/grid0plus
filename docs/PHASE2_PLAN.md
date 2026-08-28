@@ -15,7 +15,7 @@ Status: **in progress.** Written 2026-08-28.
 | The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, shapes still capture-gated |
 | Splatfest entries, results and the rest of toyohr | done — `internal/toyohr` |
 | `gamesync` document/watch service | done — `internal/gamesync` |
-| Dashboard | not started |
+| Dashboard | done — `internal/dashboard`: players, matches, fests, the delivery cache |
 
 Everything done so far is verifiable without a console, which is the ordering
 this plan committed to while the certificate-pinning question is open. The

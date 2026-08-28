@@ -48,6 +48,41 @@ friends applet disagree goes hunting for a bug that is only in the dashboard.
 including the one that is easy to miss — a console reporting `OFFLINE` is
 signing out, and the heartbeat must not override it.
 
+## The matchmaking tile distinguishes zero from no data
+
+`/api/overview`'s `matchmaking` is **null** when nothing is reporting and an
+object when something is. That distinction is the whole reason the tile was left
+unwired rather than showing a zero: on a tile, "nobody is queuing" and
+"`cmd/npln` is not running, or `redis.url` is unset in one of the two processes"
+look identical, and only one of them is worth acting on.
+
+The seam is a **gauge**, not an event — `presencebus.Stats`, published by
+`internal/npln` on every queue change and on a timer, read on demand here. A
+gauge because a freshly-loaded page needs the current value, and an event stream
+only carries changes: a page opened between two players queuing would otherwise
+show nothing.
+
+It **expires**. A running server with an idle queue keeps republishing "still
+nobody", so a server that stops reads as absent within one TTL rather than as an
+empty queue forever.
+
+## The player page puts the three presence timestamps side by side
+
+`/api/players/{id}` is the page an operator opens when somebody says "it is not
+working for me", and the useful answer is almost always a *combination* of facts:
+a reported `OFFLINE` with a recent `last_seen_at`, a device account that was
+reassigned, a friend list with one entry.
+
+So it shows the effective state **and** the console's own last reported state
+**and** both timestamps. "Reported OFFLINE" and "never reported" are different
+states — conflating them is what makes a friend list permanently offline — and
+only showing all three lets an operator see which case they are in without
+reading the database.
+
+Friends are resolved with the same presence rule as everywhere else, favourites
+first. A friend list here that disagreed with the console's would send the
+operator hunting for a bug that is only in this page.
+
 ## Fest controls normalise what they safely can
 
 A misaligned start time and a capitalised resource name are **fixed**: there is

@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/config"
+	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 )
@@ -68,9 +69,33 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	for _, sess := range sessions {
 		m.s.log.Info("npln: match formed", "session", sess.ID, "mode", sess.Mode,
 			"players", sess.Players, "host", sess.Host)
+		m.s.recordMatch(ctx, sess)
 	}
+	// The gauge, on every change as well as on the timer, so the dashboard
+	// reflects a player queuing within the request rather than within ten
+	// seconds.
+	m.s.publishStats()
 
 	return m.s.ticketProto(ticket), nil
+}
+
+// recordMatch writes a formed match to the match log.
+//
+// Failures are logged and swallowed. The match has already been formed and the
+// players are being told to connect; failing the RPC because the history could
+// not be written would turn a bookkeeping problem into a match that does not
+// happen.
+func (s *Server) recordMatch(ctx context.Context, sess matchmaking.Session) {
+	err := s.store.RecordMatch(ctx, db.Match{
+		ID:        sess.ID,
+		Mode:      sess.Mode,
+		Players:   sess.Players,
+		Host:      sess.Host,
+		CreatedAt: sess.CreatedAt,
+	})
+	if err != nil {
+		s.log.Error("npln: record match", "session", sess.ID, "error", err)
+	}
 }
 
 // TrackMatchmakingTicket streams a ticket's state until it resolves.
@@ -154,6 +179,7 @@ func (m *matchmakerService) CancelMatchmakingTicket(
 	// never succeed. Queue.Cancel reports false; the state the console reads
 	// back on its stream is the truth.
 	m.s.queue.Cancel(id)
+	m.s.publishStats()
 	return &emptypb.Empty{}, nil
 }
 

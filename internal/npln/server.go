@@ -29,6 +29,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
+	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
@@ -67,6 +68,8 @@ type Server struct {
 
 	iceServers []config.IceServer
 
+	bus presencebus.Bus
+
 	// rotation is the stage and mode rotation internal/toyohr's Schedule
 	// service serves. Parsed in New, so a typo in config fails at startup
 	// rather than on the first request from a console.
@@ -88,6 +91,11 @@ type Options struct {
 	Store  db.Store
 	Log    *slog.Logger
 	Config config.NPLN
+
+	// Bus carries the live matchmaking gauge to the dashboard. Optional: nil
+	// means the dashboard's tile reports no data, which is the honest answer
+	// rather than a zero that reads as "nobody is queuing".
+	Bus presencebus.Bus
 
 	// AccessKey signs and verifies NPLN access tokens (ES256).
 	AccessKey sjwt.ECKey
@@ -144,6 +152,7 @@ func New(opts Options) (*Server, error) {
 		matchModes:     opts.Config.ModePlayers,
 		iceServers:     opts.Config.IceServers,
 		rotation:       rotation,
+		bus:            opts.Bus,
 		now:            opts.Now,
 		stop:           make(chan struct{}),
 	}
@@ -156,6 +165,13 @@ func New(opts Options) (*Server, error) {
 	go s.sweepTickets()
 	return s, nil
 }
+
+// statsInterval is how often the matchmaking gauge is republished.
+//
+// Comfortably inside presencebus.StatsTTL, so a running server's gauge never
+// looks stale to the dashboard -- and a server that stops is noticed within one
+// TTL rather than reading as an empty queue forever.
+const statsInterval = 10 * time.Second
 
 // sweepInterval is how often expired matchmaking tickets are swept.
 //
@@ -180,7 +196,31 @@ func (s *Server) sweepTickets() {
 				s.log.Info("npln: matchmaking ticket timed out",
 					"ticket", t.ID, "user", t.UserID, "mode", t.Mode)
 			}
+			s.publishStats()
 		}
+	}
+}
+
+// publishStats republishes the matchmaking gauge.
+//
+// On a timer as well as on every change, because the gauge expires: a running
+// server with an idle queue has to keep saying "still nobody" or the dashboard
+// cannot tell it apart from a server that stopped.
+func (s *Server) publishStats() {
+	if s.bus == nil {
+		return
+	}
+	// A short bound rather than the caller's context, and the error is only
+	// logged: the gauge is cosmetic, and a dashboard tile must never be able to
+	// slow down or fail a console's request.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := s.bus.PublishStats(ctx, presencebus.Stats{
+		Matchmaking: s.queue.Waiting(),
+		At:          s.now(),
+	}); err != nil {
+		s.log.Debug("npln: publish matchmaking stats", "error", err)
 	}
 }
 

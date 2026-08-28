@@ -972,6 +972,51 @@ func (p *Postgres) DeleteFest(ctx context.Context, id string) error {
 	return mapErr(err)
 }
 
+// ---- matches -------------------------------------------------------------
+
+func (p *Postgres) RecordMatch(ctx context.Context, m Match) error {
+	if m.Players == nil {
+		// A nil slice becomes SQL NULL, which the NOT NULL column rejects while
+		// the in-memory store accepts it happily. The contract test is what
+		// catches that class of difference; this is the fix.
+		m.Players = []string{}
+	}
+	// ON CONFLICT DO NOTHING rather than an error: a match log is not worth
+	// failing a match over.
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_matches (id, mode, players, host)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (id) DO NOTHING`,
+		m.ID, m.Mode, m.Players, m.Host)
+	return mapErr(err)
+}
+
+func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	// id as the tiebreak on created_at, so the order is total and matches the
+	// in-memory store's -- two matches formed in the same instant is normal
+	// when several consoles queue at once.
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, mode, players, host, created_at FROM npln_matches
+		 ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Match
+	for rows.Next() {
+		var m Match
+		if err := rows.Scan(&m.ID, &m.Mode, &m.Players, &m.Host, &m.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, m)
+	}
+	return out, mapErr(rows.Err())
+}
+
 // ---- splatfest entries ---------------------------------------------------
 
 const festEntryColumns = `fest_id, user_id, team, region, created_at, updated_at`

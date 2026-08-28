@@ -98,6 +98,28 @@ function renderOverview(o) {
   $("#stat-playing").textContent = o.playing;
   $("#stat-players").textContent = o.players;
 
+  // Null and zero mean different things here and are shown differently. Null is
+  // "the game server is not reporting" -- cmd/npln down, or redis.url unset in
+  // one of the two processes. Zero is "nobody is queuing". A tile that showed 0
+  // for both would have an operator debugging matchmaking when the problem is
+  // that nothing is publishing.
+  const queue = $("#stat-queue");
+  const note = $("#stat-queue-note");
+  if (!o.matchmaking) {
+    queue.textContent = "—";
+    note.textContent = "no report from the game server";
+    note.hidden = false;
+  } else {
+    queue.textContent = o.matchmaking.waiting;
+    const modes = Object.entries(o.matchmaking.byMode || {});
+    note.textContent = modes.length
+      ? modes.map(([m, n]) => `${m} ${n}`).join(" · ")
+      : `reported ${ago(o.matchmaking.reportAt)}`;
+    note.hidden = false;
+  }
+
+  renderSeed(o.seed);
+
   const banner = $("#fest-banner");
   if (!o.fest) {
     banner.classList.add("is-empty");
@@ -109,6 +131,42 @@ function renderOverview(o) {
     <div class="fid">${escape(o.fest.id)}</div>
     <div class="meta">${escape(o.fest.resource)} · ${o.fest.regions.join(" ")} · ${escape(o.fest.phase.replace(/_/g, " "))}</div>
     ${phaseTrack(o.fest.phase)}`;
+}
+
+function renderSeed(seed) {
+  const el = $("#seed-status");
+  if (!el) return;
+  if (!seed || !seed.configured) {
+    el.innerHTML = `<p class="empty">No <code>bcat.seed_dir</code> configured, so the installer has nothing to fetch.</p>`;
+    return;
+  }
+  if (!seed.built) {
+    el.innerHTML = `<p class="empty">Configured, but no seed has been built yet.</p>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="fid">${escape(seed.festId || "(unnamed)")}</div>
+    <div class="meta">${escape(seed.resourceId || "?")} · ${(seed.regions || []).join(" ")}</div>
+    <div class="meta mono">${escape(seed.revision || "")}</div>`;
+}
+
+let matches = [];
+
+function renderMatches() {
+  const tbody = $("#matches-table tbody");
+  if (!tbody) return;
+  tbody.replaceChildren(
+    ...matches.map((m) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="color:var(--fg-dim)">${ago(m.createdAt)}</td>
+        <td><code>${escape(m.mode)}</code></td>
+        <td><strong>${escape(m.host)}</strong></td>
+        <td>${(m.players || []).map((p) => escape(p)).join(", ")}</td>`;
+      return tr;
+    })
+  );
+  $("#matches-empty").hidden = matches.length > 0;
 }
 
 const PHASES = ["announced", "first_half", "second_half", "counting", "closed"];
@@ -264,15 +322,18 @@ function connect() {
 
 async function refresh() {
   try {
-    const [o, ps, fs] = await Promise.all([
+    const [o, ps, fs, ms] = await Promise.all([
       api("/api/overview"),
       api("/api/players"),
       api("/api/fests"),
+      api("/api/matches"),
     ]);
     players = ps;
+    matches = ms;
     renderOverview(o);
     renderPlayers();
     renderFests(fs);
+    renderMatches();
   } catch (e) {
     setLive("down", "server unreachable");
   }

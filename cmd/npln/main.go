@@ -27,6 +27,7 @@ import (
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/npln"
 	"github.com/n-popescu/switchnet/internal/nplnrest"
+	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/service"
 )
 
@@ -66,12 +67,31 @@ func main() {
 		service.Fatal(log, "load baas id key", err)
 	}
 
+	// The matchmaking gauge the dashboard reads. Redis, because the dashboard is
+	// a different process: the in-process bus delivers nothing across a process
+	// boundary and does so silently, so without redis.url the dashboard's tile
+	// honestly reports no data rather than a zero that reads as "nobody is
+	// queuing".
+	var bus presencebus.Bus
+	if cfg.Redis.URL != "" {
+		r, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel, log)
+		if err != nil {
+			service.Fatal(log, "connect redis", err)
+		}
+		defer r.Close()
+		bus = r
+	} else {
+		log.Warn("npln: redis.url is not set, so the dashboard cannot see the " +
+			"matchmaking queue. Set it for both processes, or the tile stays empty.")
+	}
+
 	srv, err := npln.New(npln.Options{
 		Store:     store,
 		Log:       log,
 		Config:    cfg.NPLN,
 		AccessKey: accessKey,
 		BAASIDKey: baasIDKey,
+		Bus:       bus,
 	})
 	if err != nil {
 		service.Fatal(log, "build server", err)

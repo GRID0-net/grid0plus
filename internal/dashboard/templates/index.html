@@ -29,6 +29,7 @@
 <nav class="tabs" role="tablist">
   <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
   <button role="tab" aria-selected="false" data-view="players">Players</button>
+  <button role="tab" aria-selected="false" data-view="matches">Matches</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
 </nav>
 
@@ -51,7 +52,7 @@
       <div class="stat stat-queue">
         <span class="stat-value" id="stat-queue">—</span>
         <span class="stat-label">in matchmaking</span>
-        <span class="stat-note" id="stat-queue-note">not wired yet</span>
+        <span class="stat-note" id="stat-queue-note">no report from the game server</span>
       </div>
     </div>
 
@@ -65,6 +66,23 @@
     <div class="panel">
       <h2>Who's around</h2>
       <ul class="player-strip" id="player-strip"></ul>
+    </div>
+  </section>
+
+  <!-- Matches -->
+  <section id="view-matches" class="view">
+    <div class="panel">
+      <h2>Recent matches</h2>
+      <table class="grid" id="matches-table">
+        <thead>
+          <tr><th>When</th><th>Mode</th><th>Host</th><th>Players</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="matches-empty" hidden>
+        No matches yet. A match appears here when enough players queue for the
+        same mode &mdash; <code>npln.players_per_match</code> decides how many.
+      </p>
     </div>
   </section>
 
@@ -128,19 +146,40 @@
       <p class="empty" id="fests-empty" hidden>Nothing scheduled.</p>
     </div>
 
+    <div class="panel">
+      <h2>Delivery cache</h2>
+      <div id="seed-status"></div>
+      <p class="hint">
+        Built by <code>switchnetctl fest build -out</code> and served to
+        <code>switch/bcat-installer</code> from <code>bcat.seed_dir</code>. The
+        id, resource and revision below are read from the
+        <code>summary.yml</code> on disk &mdash; if they differ from the fest
+        being announced, that difference is what produces
+        <code>BcatInvalid</code>.
+      </p>
+    </div>
+
     <div class="panel panel-note">
       <h2>Assets</h2>
       <p>
-        Pack contents are built from game-ready assets — <code>.bfres</code>,
-        <code>.byaml</code>, <code>.sarc.zs</code> — assembled into a SARC
-        archive and encrypted with your keys.
+        A pack is built from an assets directory, one subdirectory per pack.
+        Files already in the game's formats &mdash; <code>.bfres</code>,
+        <code>.byaml</code>, <code>.sarc.zs</code> &mdash; go in as they are.
       </p>
       <p>
-        Turning a PNG of your splashart into a game-ready texture is a separate
-        and much larger job (texture encoding and swizzling, BFRES authoring).
-        It is planned in <code>TODO.md</code> rather than half-built here — for
-        now, produce assets in Switch Toolbox and point
-        <code>switchnetctl fest build</code> at them.
+        A source file is named <strong>for what it becomes</strong>, with the
+        source extension appended: <code>UI/Splashart.bfres.png</code> becomes
+        <code>UI/Splashart.bfres</code>, converted by whatever
+        <code>bcat.converter</code> points at.
+      </p>
+      <p>
+        <strong>SwitchNet does not convert textures itself, on purpose.</strong>
+        A BFRES texture in the wrong compression or the wrong Tegra swizzle
+        <em>loads and renders as garbage</em> &mdash; on the console, with
+        nothing on the server to look at. Switch Toolbox and the
+        BinaryTextureLibrary family already do it correctly. With no converter
+        configured, a source file is a <em>build error</em> rather than a PNG
+        packed into the archive.
       </p>
     </div>
   </section>

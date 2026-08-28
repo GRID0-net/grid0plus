@@ -150,49 +150,22 @@ the repository has neither.
 
 ## 3. Dashboard
 
-### 3.1 Match history and live matchmaking — **P2**
+### 3.2 Splatfest asset editing — **P2, blocked on §2.1's converter**
 
-The overview has an "in matchmaking" tile that honestly reports *not wired yet*
-rather than showing a zero that reads as "nobody is queuing". The queue is now
-wired to the gateway and `Queue.Waiting()` returns exactly what the tile needs —
-but the queue lives inside `cmd/npln` and the dashboard is a different process,
-so reading it means a seam that does not exist yet. Add a match list at the same
-time.
+The Splatfests tab creates, announces, holds and deletes fests, and now also
+reports the delivery cache on disk — id, resource, revision and regions, read
+from the seed's own `summary.yml` so a disagreement with the announced fest is
+visible rather than hidden.
 
-Needs an `npln_matches` table and store methods on **both** implementations,
-with an entry in `internal/db/store_test.go`'s contract — that contract has
-already caught two real divergences, so do not skip it.
+What it still does not do is edit assets. The intended end state is uploading a
+PNG in the browser, and the blocker is §2.1's converter rather than the UI:
+without one, an upload can only be stored, not turned into anything a console
+reads. The Assets panel says so, with the naming rule and the reason SwitchNet
+does not convert textures itself.
 
-### 3.2 Splatfest asset editing — **P2, depends on §2.1**
-
-The Splatfests tab creates, announces, holds and deletes fests. It does not
-touch assets: splashart, tee designs, team names and idol dialogue all still
-come from files built elsewhere.
-
-The intended end state is doing all of it from the dashboard. §2.1 is the
-blocker, not the UI.
-
-### 3.3 Real authentication — **P2**
-
-The dashboard's only protection is a shared token in config
-(`dashboard.token`), and with it unset there is none at all: anyone who can
-reach the port can schedule and cancel Splatfests.
-
-That is deliberate rather than lazy — **nothing in phase 1 authenticates a
-person.** Every credential in the stack belongs to a console, so there is no
-user account to check against. A shared token is the honest minimum.
-
-A real answer probably arrives with phase 3's Nintendo Account work, which
-introduces the first human-facing login. Until then, do not build a bespoke
-user system for the dashboard alone.
-
-### 3.4 Per-player detail — **P3**
-
-Clicking a player should show their friends, device accounts, presence history
-and match history. `internal/db` has the friendship store; the rest is
-assembly.
-
----
+**When a converter exists**, this becomes an upload endpoint that writes into
+`bcat.seed_dir`'s assets tree and shells out to
+`bcat.BuildPacksWith` — everything below the UI is already in place.
 
 ## 4. Verification and hardware
 

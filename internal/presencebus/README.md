@@ -36,3 +36,26 @@ instead of quietly losing updates.
 The same reasoning applies one level up: `internal/baas` logs a publish failure
 and swallows it. A presence event that misses the dashboard is cosmetic; a
 friend-list request that fails because Redis is down is not.
+
+## Stats is a gauge, not an event
+
+`PublishStats`/`Stats` carry the game server's live matchmaking depth to the
+dashboard, and they are deliberately shaped differently from the event side.
+
+**Readable, because a freshly-loaded page needs the current value.** An event
+stream carries changes; a dashboard opened between two players queuing would show
+nothing until the next one arrived.
+
+**Replaced, not accumulated.** Two players leaving the queue has to be visible,
+so a snapshot supersedes the last one rather than adding to it.
+
+**Expiring.** A stale gauge is worse than an absent one: "nobody is queuing" and
+"the game server is not running" look identical on a tile, and only one of them
+is worth acting on. `StatsTTL` is short relative to how often `internal/npln`
+republishes, so a running server with an idle queue keeps saying "still nobody"
+and a server that stopped is noticed within one TTL.
+
+The Redis implementation uses `SET` with an expiry on a key derived from the
+channel name — derived, so two SwitchNet deployments sharing one Redis do not
+read each other's gauge, which would be a confusing way to find out the channels
+were shared.

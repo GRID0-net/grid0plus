@@ -34,6 +34,7 @@ type Memory struct {
 	images         map[string]Image
 	fests          map[string]Fest
 	festEntries    map[festEntryKey]FestEntry
+	matches        map[string]Match
 }
 
 // NewMemory returns an empty in-memory store.
@@ -45,6 +46,7 @@ func NewMemory() *Memory {
 		friendCodes:    map[string]FriendCode{},
 		fests:          map[string]Fest{},
 		festEntries:    map[festEntryKey]FestEntry{},
+		matches:        map[string]Match{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -842,6 +844,51 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 		}
 	}
 	return nil
+}
+
+// ---- matches -------------------------------------------------------------
+
+func (m *Memory) RecordMatch(_ context.Context, match Match) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.matches[match.ID]; exists {
+		// Same as the PostgreSQL implementation's ON CONFLICT DO NOTHING.
+		return nil
+	}
+	if match.CreatedAt.IsZero() {
+		match.CreatedAt = time.Now().UTC()
+	}
+	// Copied, because the caller keeps a reference to the slice it passed and
+	// PostgreSQL cannot hand out its own backing array.
+	match.Players = append([]string(nil), match.Players...)
+	m.matches[match.ID] = match
+	return nil
+}
+
+func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+	out := make([]Match, 0, len(m.matches))
+	for _, match := range m.matches {
+		match.Players = append([]string(nil), match.Players...)
+		out = append(out, match)
+	}
+	// Newest first, id as the tiebreak so the order is total.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID > out[j].ID
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 // ---- splatfest entries ---------------------------------------------------

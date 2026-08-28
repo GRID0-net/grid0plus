@@ -131,6 +131,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.guard(s.handleIndex))
 	mux.HandleFunc("GET /api/overview", s.guard(s.handleOverview))
 	mux.HandleFunc("GET /api/players", s.guard(s.handlePlayers))
+	mux.HandleFunc("GET /api/players/{id}", s.guard(s.handlePlayer))
+	mux.HandleFunc("GET /api/matches", s.guard(s.handleMatches))
 	mux.HandleFunc("GET /api/fests", s.guard(s.handleFests))
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
@@ -328,10 +330,111 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		"online":  online,
 		"playing": playing,
 		"fest":    live,
-		// Matchmaking is not wired to the gateway yet, so this is honestly
-		// absent rather than a zero that looks like "nobody is queuing".
-		"matchmaking": nil,
+		// Null when the game server is not reporting, NOT zero. A zero reads as
+		// "nobody is queuing", which is a different fact from "cmd/npln is not
+		// running or redis.url is unset" -- and only one of them is worth acting
+		// on. The page renders the two differently.
+		"matchmaking": s.matchmaking(r.Context()),
+		"seed":        s.seedStatus(),
 	})
+}
+
+// matchmaking reads the game server's live queue gauge.
+//
+// nil when there is no bus, no snapshot, or the last snapshot has gone stale.
+// The dashboard is a separate process from cmd/npln, so this is the seam between
+// them -- and it is a gauge rather than an event because a freshly-loaded page
+// needs the current value, not the next change.
+func (s *Server) matchmaking(ctx context.Context) map[string]any {
+	if s.bus == nil {
+		return nil
+	}
+	stats, ok, err := s.bus.Stats(ctx)
+	if err != nil {
+		// Logged, not surfaced: a cosmetic tile must not take the page down.
+		s.log.Debug("dashboard: read matchmaking stats", "error", err)
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+
+	waiting := 0
+	for _, n := range stats.Matchmaking {
+		waiting += n
+	}
+	return map[string]any{
+		"waiting":  waiting,
+		"byMode":   stats.Matchmaking,
+		"reportAt": stats.At.UTC().Format(time.RFC3339),
+	}
+}
+
+// ---- matches -------------------------------------------------------------
+
+type matchRow struct {
+	ID        string   `json:"id"`
+	Mode      string   `json:"mode"`
+	Players   []string `json:"players"`
+	Host      string   `json:"host"`
+	CreatedAt string   `json:"createdAt"`
+}
+
+// handleMatches lists recent matches.
+func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
+	matches, err := s.store.ListMatches(r.Context(), 50)
+	if err != nil {
+		s.fail(w, "list matches", err)
+		return
+	}
+
+	// Nicknames, so the list reads as people rather than as ids. Resolved in one
+	// pass over the user list rather than a lookup per player: a match has up to
+	// eight players and the list has fifty matches, which is four hundred
+	// lookups for a page that does not need them.
+	names := s.nicknames(r.Context())
+
+	out := make([]matchRow, 0, len(matches))
+	for _, m := range matches {
+		row := matchRow{
+			ID:        m.ID,
+			Mode:      m.Mode,
+			Host:      displayName(names, m.Host),
+			CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339),
+		}
+		for _, p := range m.Players {
+			row.Players = append(row.Players, displayName(names, p))
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, out)
+}
+
+// nicknames maps user id to nickname, for the views that show people.
+//
+// A miss is not an error: a match log outlives the accounts in it on purpose --
+// history that disappears when somebody leaves is not history -- so an id with
+// no user is shown as itself.
+func (s *Server) nicknames(ctx context.Context) map[string]string {
+	users, err := s.store.ListUsers(ctx, 500)
+	if err != nil {
+		s.log.Debug("dashboard: list users for nicknames", "error", err)
+		return nil
+	}
+	out := make(map[string]string, len(users))
+	for _, u := range users {
+		if u.Nickname != "" {
+			out[u.ID] = u.Nickname
+		}
+	}
+	return out
+}
+
+func displayName(names map[string]string, id string) string {
+	if name, ok := names[id]; ok {
+		return name
+	}
+	return id
 }
 
 // ---- splatfests -----------------------------------------------------------
