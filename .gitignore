@@ -54,3 +54,17 @@ __pycache__/
 # Upstream NPLN protobuf definitions, fetched by scripts/fetch-proto.sh.
 # Only the generated Go in proto/ is tracked.
 .proto-upstream/
+
+# Service binaries built into the repo root.
+#
+# `go build ./cmd/npln` with no -o writes ./npln, which is easy to do by accident
+# and produces a ~25MB blob that is permanent once committed. `make build` puts
+# them in bin/ (ignored above); these entries catch the other way.
+/dauth
+/aauth
+/baas
+/dns
+/stubs
+/natcheck
+/npln
+/switchnetctl
