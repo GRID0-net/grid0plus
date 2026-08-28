@@ -247,7 +247,12 @@ func TestPresenceIsHiddenWhenTheOwnerSetsItToSelf(t *testing.T) {
 	if got := h.friends(bob)[0].Friend.Presence.State; got != db.StateOffline {
 		t.Errorf("Bob sees %q; a SELF presence setting must read as OFFLINE", got)
 	}
-	// Alice still sees her own state.
+	// A SELF privacy setting is about what OTHERS see, not what Alice sees:
+	// GET /1.0.0/users/{own id} never carries a 'presence' block at all (a
+	// 2026-08-27 capture confirmed this for every self-view endpoint), so
+	// there is nothing for the setting to hide from Alice in the first place
+	// -- the console already knows its own state locally, without asking the
+	// server.
 	if got := h.friends(alice); len(got) != 1 {
 		t.Fatalf("Alice has %d friends", len(got))
 	}
@@ -257,8 +262,8 @@ func TestPresenceIsHiddenWhenTheOwnerSetsItToSelf(t *testing.T) {
 	requireStatus(t, resp, 200)
 	var self UserResponse
 	decode(t, resp, &self)
-	if self.Presence.State != db.StatePlaying {
-		t.Errorf("Alice's own view of her presence = %q, want PLAYING", self.Presence.State)
+	if self.Presence != nil {
+		t.Errorf("Alice's own view of her user object carries a presence block: %+v", self.Presence)
 	}
 }
 

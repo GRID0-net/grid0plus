@@ -41,12 +41,27 @@ type UserResponse struct {
 	Links       LinksResponse    `json:"links"`
 	Permissions db.Permissions   `json:"permissions"`
 	Extras      db.ExtrasByScope `json:"extras"`
-	Presence    PresenceResponse `json:"presence"`
+	// Presence is a pointer, omitted entirely for visSelf: a 2026-08-27 capture
+	// of a working login/federation/GET-self response never has a 'presence'
+	// key at all — only a friend-visible read of someone else's user object
+	// does. Sending it for self is an extra key the console's reader has not
+	// been confirmed to tolerate, unlike the missing-key case the doc comment
+	// above warns about.
+	Presence *PresenceResponse `json:"presence,omitempty"`
 
 	Deleted bool `json:"deleted"`
 
-	BlocksUpdatedAt     int64 `json:"blocksUpdatedAt"`
-	FriendsUpdatedAt    int64 `json:"friendsUpdatedAt"`
+	BlocksUpdatedAt  int64 `json:"blocksUpdatedAt"`
+	FriendsUpdatedAt int64 `json:"friendsUpdatedAt"`
+	// NicknameUpdatedAt has no dedicated column: db.User has no nickname-only
+	// timestamp, so this reuses UpdatedAt, which already moves whenever the
+	// nickname does (just not only then). Omitted for a user whose nickname
+	// was never set -- registerUser's response never carries it, the same
+	// "not set yet" treatment Birthday gives its own sentinel -- and present
+	// otherwise, matching every login/federation/GET-self/friend-view capture
+	// example seen so far. A real capture that shows the value itself
+	// diverging from UpdatedAt would be the signal to give it its own column.
+	NicknameUpdatedAt   int64 `json:"nicknameUpdatedAt,omitempty"`
 	ThumbnailUploadedAt int64 `json:"thumbnailUploadedAt,omitempty"`
 	CreatedAt           int64 `json:"createdAt"`
 	UpdatedAt           int64 `json:"updatedAt"`
@@ -266,12 +281,37 @@ func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence,
 		Links:            LinksResponse{},
 		Permissions:      u.Permissions,
 		Extras:           scopedExtras(u.Extras, vis),
-		Presence:         presenceResponse(pres, vis),
 		Deleted:          u.Deleted,
 		BlocksUpdatedAt:  u.BlocksUpdatedAt.Unix(),
 		FriendsUpdatedAt: u.FriendsUpdatedAt.Unix(),
 		CreatedAt:        u.CreatedAt.Unix(),
 		UpdatedAt:        u.UpdatedAt.Unix(),
+	}
+	if u.Nickname != "" {
+		out.NicknameUpdatedAt = u.UpdatedAt.Unix()
+	}
+	if vis != visSelf {
+		p := presenceResponse(pres, vis)
+		out.Presence = &p
+	}
+	// nintendoAccountId is recordNintendoAccountLink's own bookkeeping key,
+	// read back by this function to populate Links.NintendoAccount above --
+	// it was never meant to reach the client itself, and a 2026-08-27 capture
+	// of a working account's extras.self confirmed real Nintendo doesn't send
+	// it (only nxAccount, which is a different, deliberately-client-visible
+	// key). scopedExtras aliases the stored map rather than copying it, so
+	// this copies the 'self' scope before deleting from it -- deleting
+	// straight from out.Extras would delete from the stored user too.
+	if self, ok := out.Extras[db.ScopeSelf]; ok {
+		if _, present := self["nintendoAccountId"]; present {
+			cleaned := make(map[string]any, len(self))
+			for k, v := range self {
+				if k != "nintendoAccountId" {
+					cleaned[k] = v
+				}
+			}
+			out.Extras[db.ScopeSelf] = cleaned
+		}
 	}
 	if u.ThumbnailUploadedAt != nil {
 		out.ThumbnailUploadedAt = u.ThumbnailUploadedAt.Unix()

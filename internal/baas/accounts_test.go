@@ -83,17 +83,22 @@ func TestFullAuthChain(t *testing.T) {
 	if created.Birthday != "0000-00-00" {
 		t.Errorf("birthday = %q, want the literal 0000-00-00 for 'not set'", created.Birthday)
 	}
-	if created.Presence.State != db.StateOffline {
-		t.Errorf("a new user's presence = %q, want OFFLINE", created.Presence.State)
+	// A 2026-08-27 capture of a real registerUser response has no 'presence'
+	// key at all -- only a friend-visible read of someone else's user object
+	// does. Nickname is blank at registration (the console sets it later), so
+	// 'nicknameUpdatedAt' is absent too, the same "not set yet" treatment as
+	// Birthday's sentinel.
+	if created.Presence != nil {
+		t.Errorf("a freshly registered user's own view carries a presence block: %+v", created.Presence)
+	}
+	if created.NicknameUpdatedAt != 0 {
+		t.Errorf("nicknameUpdatedAt = %d for a user with no nickname yet, want omitted (0)", created.NicknameUpdatedAt)
 	}
 	// Every extras scope must be present even when empty: the console indexes
 	// into these without checking the key exists.
 	for _, scope := range db.Scopes {
 		if _, ok := created.Extras[scope]; !ok {
 			t.Errorf("extras is missing the %q scope", scope)
-		}
-		if _, ok := created.Presence.Extras[scope]; !ok {
-			t.Errorf("presence extras is missing the %q scope", scope)
 		}
 	}
 	// The default has to let friends see presence. SELF as a default is a friend
@@ -149,10 +154,14 @@ func TestFullAuthChain(t *testing.T) {
 			t.Error("login returned the device account password; it is sent only at creation")
 		}
 	}
-	// Logging in is a statement that the console is awake, not that it is
-	// playing: the game has not started yet.
-	if login.User.Presence.State != db.StateOnline {
-		t.Errorf("presence after login = %q, want ONLINE", login.User.Presence.State)
+	// A 2026-08-27 capture of a real /1.0.0/login response has no 'presence'
+	// key in its own self-view user object at all -- only a friend-visible
+	// read of someone else's does. Whether logging in actually marks the user
+	// online for a friend is presence_test.go's job
+	// (TestAnIdleConsoleReadsAsOnlineNotOffline and friends); this is only
+	// about the response shape.
+	if login.User.Presence != nil {
+		t.Errorf("login's own user object carries a presence block: %+v", login.User.Presence)
 	}
 
 	// ---- the user access token ----
@@ -301,6 +310,13 @@ func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 
 	var body loginResponse
 	decode(t, resp, &body)
+	// A 2026-08-27 capture of a real working federation response has no
+	// 'presence' key in its own embedded user object at all -- SwitchNet used
+	// to always include one. Sending it anyway is an extra key the console's
+	// reader has not been confirmed to tolerate.
+	if body.User.Presence != nil {
+		t.Errorf("federation's own embedded user object carries a presence block: %+v", body.User.Presence)
+	}
 	if body.User.Links.NintendoAccount == nil {
 		t.Fatal("federation succeeded but links.nintendoAccount is absent from the response")
 	}
@@ -337,6 +353,30 @@ func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 	nxAccount, _ := body.User.Extras[db.ScopeSelf]["nxAccount"].(string)
 	if nxAccount == "" {
 		t.Error("federation's own embedded user.extras.self.nxAccount is empty")
+	}
+}
+
+// TestNicknameUpdatedAtAppearsOnlyOnceANicknameIsSet guards the other half of
+// the presence/nicknameUpdatedAt shape fix: registerUser's own response never
+// carries 'nicknameUpdatedAt' (nobody has set a nickname yet, the same
+// "not set yet" treatment as Birthday's own sentinel), but a real capture of a
+// working account -- which always has a nickname by the time it logs in --
+// always carries it. A fix that only ever exercises the "absent" branch could
+// silently never populate the "present" one.
+func TestNicknameUpdatedAtAppearsOnlyOnceANicknameIsSet(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+
+	before := h.login(&a, "")
+	if before.User.NicknameUpdatedAt != 0 {
+		t.Errorf("nicknameUpdatedAt = %d before any nickname was set, want 0 (omitted)", before.User.NicknameUpdatedAt)
+	}
+
+	h.setNickname(a, "donut")
+
+	after := h.login(&a, "")
+	if after.User.NicknameUpdatedAt == 0 {
+		t.Error("nicknameUpdatedAt is still 0 (omitted) after setting a nickname")
 	}
 }
 
