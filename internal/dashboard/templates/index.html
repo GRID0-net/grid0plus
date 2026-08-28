@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-token="{{ .Token }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwitchNet</title>
+<link rel="stylesheet" href="/assets/dashboard.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦑</text></svg>">
+</head>
+<body>
+
+<div class="ink-field" aria-hidden="true">
+  <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
+</div>
+
+<header class="top">
+  <div class="brand">
+    <span class="squid">🦑</span>
+    <div>
+      <h1>SwitchNet</h1>
+      <p class="sub">Splatoon&nbsp;3 · tenant <code id="tenant">dce9377b</code></p>
+    </div>
+  </div>
+  <div class="live" id="live-pill" data-state="connecting">
+    <span class="dot"></span><span class="label">connecting</span>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
+  <button role="tab" aria-selected="false" data-view="players">Players</button>
+  <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
+</nav>
+
+<main>
+  <!-- Overview -->
+  <section id="view-overview" class="view is-active">
+    <div class="stat-row">
+      <div class="stat">
+        <span class="stat-value" id="stat-online">–</span>
+        <span class="stat-label">online now</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-playing">–</span>
+        <span class="stat-label">in game</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-players">–</span>
+        <span class="stat-label">accounts</span>
+      </div>
+      <div class="stat stat-queue">
+        <span class="stat-value" id="stat-queue">—</span>
+        <span class="stat-label">in matchmaking</span>
+        <span class="stat-note" id="stat-queue-note">not wired yet</span>
+      </div>
+    </div>
+
+    <div class="panel" id="fest-banner-panel">
+      <h2>Current Splatfest</h2>
+      <div id="fest-banner" class="fest-banner is-empty">
+        <p class="empty">No Splatfest running.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Who's around</h2>
+      <ul class="player-strip" id="player-strip"></ul>
+    </div>
+  </section>
+
+  <!-- Players -->
+  <section id="view-players" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Players</h2>
+        <input type="search" id="player-filter" placeholder="Filter by name…" aria-label="Filter players">
+      </div>
+      <table class="grid" id="players-table">
+        <thead>
+          <tr><th>Player</th><th>Status</th><th>Playing</th><th>Last seen</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="players-empty" hidden>No accounts yet. Register a console and it appears here.</p>
+    </div>
+  </section>
+
+  <!-- Splatfests -->
+  <section id="view-fests" class="view">
+    <div class="panel">
+      <h2>Schedule a Splatfest</h2>
+      <form id="fest-form" class="fest-form">
+        <label>
+          <span>Starts</span>
+          <input type="datetime-local" name="startAt" id="fest-start">
+          <small>Snapped to a two-hour slot. A fest off the slot grid makes the game demand its verdict instead of opening.</small>
+        </label>
+        <label>
+          <span>Regions</span>
+          <div class="chips" id="region-chips">
+            <label><input type="checkbox" value="JP" checked> JP</label>
+            <label><input type="checkbox" value="US" checked> US</label>
+            <label><input type="checkbox" value="EU" checked> EU</label>
+            <label><input type="checkbox" value="AP" checked> AP</label>
+          </div>
+        </label>
+        <label>
+          <span>Pack resource <em>optional</em></span>
+          <input type="text" name="resource" id="fest-resource" placeholder="juea-lovefes2" autocapitalize="off" spellcheck="false">
+          <small>Lowercase. Must match your pack's <code>summary.yml</code> exactly — the decryption IV derives from it.</small>
+        </label>
+        <label>
+          <span>Pack revision <em>optional</em></span>
+          <input type="text" name="revision" id="fest-revision" placeholder="40 hex characters" autocapitalize="off" spellcheck="false">
+          <small>Also from <code>summary.yml</code>. Mismatch here is what produces <code>BcatInvalid</code>.</small>
+        </label>
+        <div class="form-actions">
+          <label class="inline"><input type="checkbox" id="fest-enabled"> Announce immediately</label>
+          <button type="submit" class="btn btn-primary">Schedule fest</button>
+        </div>
+        <p class="form-error" id="fest-error" hidden></p>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Scheduled</h2>
+      <div id="fest-list" class="fest-list"></div>
+      <p class="empty" id="fests-empty" hidden>Nothing scheduled.</p>
+    </div>
+
+    <div class="panel panel-note">
+      <h2>Assets</h2>
+      <p>
+        Pack contents are built from game-ready assets — <code>.bfres</code>,
+        <code>.byaml</code>, <code>.sarc.zs</code> — assembled into a SARC
+        archive and encrypted with your keys.
+      </p>
+      <p>
+        Turning a PNG of your splashart into a game-ready texture is a separate
+        and much larger job (texture encoding and swizzling, BFRES authoring).
+        It is planned in <code>TODO.md</code> rather than half-built here — for
+        now, produce assets in Switch Toolbox and point
+        <code>switchnetctl fest build</code> at them.
+      </p>
+    </div>
+  </section>
+</main>
+
+<script src="/assets/dashboard.js"></script>
+</body>
+</html>

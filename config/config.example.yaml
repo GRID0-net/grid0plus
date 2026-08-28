@@ -221,6 +221,23 @@ stubs:
   log_bodies: false
 
 # ---------------------------------------------------------------------------
+# dashboard -- the operator's web view (phase 2)
+# ---------------------------------------------------------------------------
+dashboard:
+  listen: ":8087"
+
+  # A shared secret required on every request. Empty means NO authentication:
+  # anyone who can reach this port can schedule and cancel Splatfests.
+  #
+  # Nothing in phase 1 authenticates a person -- every credential in the stack
+  # belongs to a console -- so there is no user account to check against yet.
+  token: ""
+
+  # NOTE: the dashboard is a separate process from baas, so it needs redis.url
+  # set to see live presence. The in-process bus does not cross a process
+  # boundary, and it fails silently: the page simply never updates.
+
+# ---------------------------------------------------------------------------
 # npln -- the Splatoon 3 game server (phase 2)
 # ---------------------------------------------------------------------------
 npln:

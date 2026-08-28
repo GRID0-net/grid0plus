@@ -28,13 +28,14 @@ type Config struct {
 
 	Keys Keys `yaml:"keys"`
 
-	DNS      DNS      `yaml:"dns"`
-	DAuth    DAuth    `yaml:"dauth"`
-	AAuth    AAuth    `yaml:"aauth"`
-	BAAS     BAAS     `yaml:"baas"`
-	Stubs    Stubs    `yaml:"stubs"`
-	NPLN     NPLN     `yaml:"npln"`
-	NATCheck NATCheck `yaml:"natcheck"`
+	DNS       DNS       `yaml:"dns"`
+	DAuth     DAuth     `yaml:"dauth"`
+	AAuth     AAuth     `yaml:"aauth"`
+	BAAS      BAAS      `yaml:"baas"`
+	Stubs     Stubs     `yaml:"stubs"`
+	NPLN      NPLN      `yaml:"npln"`
+	Dashboard Dashboard `yaml:"dashboard"`
+	NATCheck  NATCheck  `yaml:"natcheck"`
 
 	Log Log `yaml:"log"`
 }
@@ -256,6 +257,21 @@ type NPLN struct {
 	AccessTokenTTL int `yaml:"access_token_ttl"`
 }
 
+// Dashboard configures the operator's web view.
+type Dashboard struct {
+	Listen string `yaml:"listen"`
+
+	// Token is a shared secret required on every request. Empty means no
+	// authentication at all.
+	//
+	// Nothing in phase 1 authenticates a PERSON -- every credential in the
+	// stack belongs to a console -- so there is no user account to check
+	// against. A shared token is the honest minimum: it keeps the Splatfest
+	// controls off the open network without pretending to be an identity
+	// system. See TODO.md for what a real answer would look like.
+	Token string `yaml:"token"`
+}
+
 // Stubs configures the catch-all server.
 type Stubs struct {
 	Listen string `yaml:"listen"`
@@ -349,6 +365,9 @@ func Default() Config {
 		Stubs: Stubs{
 			Listen: ":8084",
 		},
+		Dashboard: Dashboard{
+			Listen: ":8087",
+		},
 		NPLN: NPLN{
 			Listen:         ":8085",
 			RestListen:     ":8086",
@@ -439,6 +458,9 @@ func applyEnv(c *Config) {
 	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
 
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
+
+	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)
+	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)
 
 	envStr("SWITCHNET_NPLN_LISTEN", &c.NPLN.Listen)
 	envStr("SWITCHNET_NPLN_REST_LISTEN", &c.NPLN.RestListen)
