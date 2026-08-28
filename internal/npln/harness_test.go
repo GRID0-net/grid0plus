@@ -77,7 +77,14 @@ func newHarness(t *testing.T) *harness {
 		baasIDIssuer:     sjwt.NewIssuer(baasIDKey, testBAASIssuer+"/1.0.0/certificates", true),
 		baasAccessIssuer: sjwt.NewIssuer(baasAccessKey, testBAASIssuer+"/1.0.0/internal_certificates", true),
 		accessKey:        accessKey,
-		now:              time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
+		// Anchored to real time, not a fixed date. The server's clock decides
+		// what 'exp' a token gets, but the verifier enforces expiry against
+		// real time -- so a harness pinned to a fixed instant issues tokens
+		// that are valid only while the wall clock happens to be within their
+		// TTL of it, and the suite starts failing at a certain time of day.
+		// A test that fails on the clock rather than on the code is worse than
+		// no test. The one case that needs a different instant sets it itself.
+		now: time.Now(),
 	}
 
 	srv, err := New(Options{

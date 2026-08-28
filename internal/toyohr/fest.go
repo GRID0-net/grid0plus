@@ -211,13 +211,19 @@ func NewFestID(start time.Time) string {
 	return fmt.Sprintf("NXTD-%05d", AlignToSlot(start).Unix()/86400%100000)
 }
 
-// NewResource builds the BCAT pack identifier for a fest id.
+// NewResource builds a DEFAULT BCAT pack identifier for a fest id.
 //
-// Lowercased unconditionally: the decryption IV is derived from this string, so
-// a stray capital produces a pack the console cannot open. Enforced here rather
-// than trusted from the caller, because the failure is silent and remote.
+// A default, and only that. A real fest's resource is a hand-picked slug --
+// "juea-lovefes2" against fest JUEA-00210 -- not anything derived from the id,
+// which was confirmed by reading a real seed folder's summary.yml. So this is
+// what to call a pack nobody has named yet, and the operator overrides it
+// whenever a pack already exists: the announced resource MUST equal the one in
+// that pack's summary.yml, or the console looks for content it cannot find.
+//
+// Lowercased unconditionally, because the decryption IV is derived from this
+// string and a stray capital produces a pack that never opens.
 func NewResource(festID string) string {
-	return strings.ToLower(festID) + "_data"
+	return strings.ToLower(festID) + "-fes"
 }
 
 // NewRevision derives a pack revision from the fest id and resource.
