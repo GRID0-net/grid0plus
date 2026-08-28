@@ -334,15 +334,24 @@ whose shapes nobody knows.
    deliberately preserved. It is also firmware-independent but game-version
    gated, so it silently stops applying after a title update.
 
-   Recommend accepting it for Splatoon 3 specifically, with the narrowness and
-   the version-gating written down where an operator will find them. But it is
-   the operator's call, and nothing in the first slice depends on it.
+   **Settled: accepted.** The narrowness and the version-gating are written up
+   in [`switch/README.md`](../switch/README.md#part-3-splatoon-3-pins-its-own-certificates),
+   along with the failure signature — the TLS handshake completes and the game
+   abandons the call before its first HEADERS frame, which looks identical to a
+   dozen unrelated bugs — and the note that a *game* update silently stops the
+   patch applying.
 2. **STUN/TURN.** ROADMAP §2.3 is right that Splatoon 3 uses ICE, not the Pia
    NAT-check pair, so `natcheck` is not involved and coturn becomes a deployment
-   dependency. Is standing that up in scope for this phase?
+   dependency. Is standing that up in scope for this phase? *Proceeded on
+   `npln.ice_servers`, empty by default, with a `switchnetctl check` warning —
+   consoles on one LAN reach each other without it. Still recorded in
+   `docs/QUESTIONS.md`.*
 3. **Where do custom fest assets come from?** The mechanism is understood; the
-   art is not something this repository can generate. Operator-supplied files, or
-   a small authoring tool?
+   art is not something this repository can generate. *Answered by
+   construction: `bcat.converter` is a command the operator points at their own
+   tool, and a source asset with no converter configured is a build error rather
+   than a PNG packed into the archive. SwitchNet deliberately does not convert
+   textures — see `internal/bcat`'s README.*
 4. **Dashboard authentication.** Nothing in Phase 1 authenticates a human — every
    credential so far belongs to a console. The dashboard needs its own answer.
 5. **`redis.url` must be set before the dashboard runs as its own process.** The

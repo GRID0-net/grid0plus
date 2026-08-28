@@ -169,34 +169,7 @@ does not convert textures itself.
 
 ## 4. Verification and hardware
 
-### 4.1 Certificate pinning — **P1, operator decision recorded**
-
-Splatoon 3 carries its own TLS stack and pins its own certificates,
-independently of the console's CA store — so phase 1's LayeredFS work does not
-cover it.
-
-`kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch
-disabling verification in the game's NSO. **The operator has accepted a
-system-wide patch**, so this is a decision already made, not an open question.
-
-Two properties to write down wherever it is documented: it *disables*
-verification rather than *adding* trust, and it is gated on the game version —
-a title update silently stops it applying.
-
-### 4.2 Nothing here has touched a console — **P1**
-
-Every test in phase 2 runs against a Go client. That was deliberate, so the
-work could proceed while §4.1 was open, but it means **no shape in this phase
-is confirmed against hardware.**
-
-The first console test is worth more than any amount of further server work.
-Expect the JSON front end (`internal/nplnrest`) to be wrong first, because it is
-the least documented and the earliest in the sequence. Set `npln.rest_record_dir`
-before that first attempt: it writes every request and response to disk,
-hexdumped and in order, so one boot produces the transcript that settles all
-three of its shapes at once.
-
-### 4.3 Captures still wanted — **P2**
+### 4.1 Captures still wanted — **P2**
 
 `grep -rn 'TODO(capture-needed)' internal/` for the live list. As of writing:
 every NPLN resource-name shape (collected in `internal/npln/names.go`, so one
