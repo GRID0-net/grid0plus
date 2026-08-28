@@ -45,6 +45,11 @@ type Options struct {
 	// Tenant is the NPLN tenant the fest controls act on.
 	Tenant string
 
+	// SeedDir is where `switchnetctl fest build` writes its seed folders. When
+	// set, the dashboard serves them to the console-side installer -- see
+	// seed.go and switch/bcat-installer/.
+	SeedDir string
+
 	// PresenceTTL is how long a reported state stays current. The dashboard
 	// applies the same rule BAAS does, so the two never disagree about who is
 	// online — a dashboard that says somebody is playing while their friends
@@ -71,6 +76,7 @@ type Server struct {
 	fests *toyohr.Service
 
 	tenant      string
+	seedDir     string
 	presenceTTL time.Duration
 	token       string
 	now         func() time.Time
@@ -108,6 +114,7 @@ func New(opts Options) (*Server, error) {
 			Store: opts.Store, Log: opts.Log, Tenant: opts.Tenant, Now: opts.Now,
 		}),
 		tenant:      opts.Tenant,
+		seedDir:     opts.SeedDir,
 		presenceTTL: opts.PresenceTTL,
 		token:       opts.Token,
 		now:         opts.Now,
@@ -129,6 +136,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
 	mux.HandleFunc("DELETE /api/fests/{id}", s.guard(s.handleDeleteFest))
 	mux.HandleFunc("GET /api/events", s.guard(s.handleEvents))
+
+	// The BCAT delivery cache, for the console-side installer. Behind the same
+	// token as everything else; the installer is configured with it.
+	mux.HandleFunc("GET /api/seed/manifest", s.guard(s.handleSeedManifest))
+	mux.HandleFunc("GET /api/seed/file/{path...}", s.guard(s.handleSeedFile))
 
 	return mux
 }

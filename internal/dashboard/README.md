@@ -58,6 +58,31 @@ answer to substitute — it has to come from the pack's `summary.yml`.
 Validation errors are passed through to the page verbatim rather than flattened
 into "invalid", because "not on a two-hour slot boundary" *is* the explanation.
 
+## It serves the BCAT seed to the console-side installer
+
+`GET /api/seed/manifest` and `GET /api/seed/file/{region}/{name}`, behind the same
+token as everything else. They exist so that
+[`switch/bcat-installer/`](../../switch/bcat-installer/) can fetch a fest's
+delivery cache instead of an operator moving files with JKSV — which works and
+does not survive the second fest.
+
+Three decisions in there:
+
+- **the manifest's fest id, resource and revision come from the `summary.yml` on
+  disk**, not from the fest table. What the console will actually hold is the
+  authority, and a disagreement between the two is exactly the thing worth
+  seeing rather than papering over.
+- **every file carries a SHA-1.** The installer verifies before writing, because
+  a truncated pack is indistinguishable from a valid one to the console's
+  filesystem and the failure surfaces hours later as `BcatInvalid`.
+- **the path is validated against an allowlist** — one region directory and one
+  filename — rather than by rejecting `..`. A rule that enumerates what is
+  allowed cannot be defeated by an encoding nobody thought of.
+
+An unbuilt seed directory answers 404 rather than an empty manifest: an empty
+manifest would have the installer report success having written nothing, and the
+operator would go looking at the console.
+
 ## Authentication is a shared token, and that is deliberate
 
 `dashboard.token` guards every route except the static assets. Unset, there is

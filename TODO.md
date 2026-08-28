@@ -148,27 +148,6 @@ the header becomes writable; then this becomes a small commit.
 console requested and how it reacted. Either answer is worth having; right now
 the repository has neither.
 
-### 2.4a The `.nro` installer — **P2, the path that works today**
-
-A homebrew that fetches a seed from SwitchNet and writes it into Splatoon 3's
-BCAT save data — what JKSV does by hand, automatically.
-
-This exists because §2.4 is unresolved, **not** because serving BCAT is
-forbidden. If §2.4 comes back positive this may become unnecessary; if it comes
-back negative, this is the answer.
-
-Note that the delivery cache is *downstream* of the wire protocol, so dumping a
-console's BCAT save reveals the seed layout (already known) and **not** the
-`list` response format. Do not expect a save dump to settle §2.4.
-
-**No toolchain in this repository's dev container** — `DEVKITPRO` is unset and
-there is no `aarch64-none-elf-gcc`, so an agent working here can write the
-source and a Makefile but cannot compile or test it. Say so plainly if you
-hand over untested C.
-
-**Start at** `switch/`, and serve the seed over plain HTTPS from the dashboard
-or a small endpoint on `cmd/npln`.
-
 ## 3. Dashboard
 
 ### 3.1 Match history and live matchmaking — **P2**

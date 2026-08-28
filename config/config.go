@@ -371,6 +371,14 @@ type BCAT struct {
 	// that never answers.
 	ConverterTimeout int `yaml:"converter_timeout"`
 
+	// SeedDir is where `switchnetctl fest build` writes its seed folders, and
+	// where the dashboard serves them from for the console-side installer.
+	//
+	// Empty means the seed endpoints answer 404. Doing the install by hand with
+	// JKSV works and does not scale past the second fest, which is why the
+	// installer exists -- see switch/bcat-installer/.
+	SeedDir string `yaml:"seed_dir"`
+
 	// SubstituteFestID rewrites {FEST} in an asset's in-pack path to the fest's
 	// own id.
 	//
@@ -605,6 +613,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_STUBS_BCAT_RECORD_DIR", &c.Stubs.BCATRecordDir)
 
 	envStr("SWITCHNET_BCAT_CONVERTER", &c.BCAT.Converter)
+	envStr("SWITCHNET_BCAT_SEED_DIR", &c.BCAT.SeedDir)
 	envInt("SWITCHNET_BCAT_CONVERTER_TIMEOUT", &c.BCAT.ConverterTimeout)
 
 	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)

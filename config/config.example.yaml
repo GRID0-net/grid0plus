@@ -260,6 +260,11 @@ bcat:
   # the build, and on the dashboard a request that never answers.
   converter_timeout: 120
 
+  # Where `switchnetctl fest build -out` writes its seed folders, and where the
+  # dashboard serves them from for the console-side installer
+  # (switch/bcat-installer/). Empty means those endpoints answer 404.
+  seed_dir: ""
+
   # Rewrite {FEST} in an asset's in-pack path to the fest's own id.
   #
   # A real custom pack had every internal file named for the fest it was DERIVED
