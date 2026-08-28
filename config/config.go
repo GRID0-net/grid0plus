@@ -33,6 +33,7 @@ type Config struct {
 	AAuth    AAuth    `yaml:"aauth"`
 	BAAS     BAAS     `yaml:"baas"`
 	Stubs    Stubs    `yaml:"stubs"`
+	NPLN     NPLN     `yaml:"npln"`
 	NATCheck NATCheck `yaml:"natcheck"`
 
 	Log Log `yaml:"log"`
@@ -227,6 +228,34 @@ type BAAS struct {
 	AllowRegistration bool `yaml:"allow_registration"`
 }
 
+// NPLN configures the Splatoon 3 game server (phase 2).
+//
+// Two listeners, not one, and they are not interchangeable. Splatoon 3 opens
+// with ordinary JSON over HTTPS to the vermillion and penne hosts, and only
+// then opens a gRPC channel to the tenant host. nginx must send each to the
+// right one -- grpc_pass for Listen, proxy_pass for RestListen -- because
+// crossing them completes the TLS handshake and then fails with nothing in
+// either log.
+type NPLN struct {
+	// Listen is the gRPC gateway (HTTP/2, protobuf).
+	Listen string `yaml:"listen"`
+	// RestListen is the JSON front end: vermillion, penne, and the persistent
+	// frontline connection.
+	RestListen string `yaml:"rest_listen"`
+	// GamesyncListen is the document/watch service. Splatoon 3 reaches it on
+	// its own port rather than through the tenant host.
+	GamesyncListen string `yaml:"gamesync_listen"`
+
+	// Tenant is the NPLN tenant id. Splatoon 3's is dce9377b.
+	Tenant string `yaml:"tenant"`
+	// Issuer is the 'iss' of the ES256 access tokens this server signs.
+	Issuer string `yaml:"issuer"`
+	// JWKSURL is where those tokens' 'jku' points.
+	JWKSURL string `yaml:"jwks_url"`
+	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds.
+	AccessTokenTTL int `yaml:"access_token_ttl"`
+}
+
 // Stubs configures the catch-all server.
 type Stubs struct {
 	Listen string `yaml:"listen"`
@@ -320,6 +349,15 @@ func Default() Config {
 		Stubs: Stubs{
 			Listen: ":8084",
 		},
+		NPLN: NPLN{
+			Listen:         ":8085",
+			RestListen:     ":8086",
+			GamesyncListen: ":7575",
+			Tenant:         "dce9377b",
+			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
+			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
+			AccessTokenTTL: 10800,
+		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
 			SecondaryListen: ":10125",
@@ -401,6 +439,13 @@ func applyEnv(c *Config) {
 	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
 
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
+
+	envStr("SWITCHNET_NPLN_LISTEN", &c.NPLN.Listen)
+	envStr("SWITCHNET_NPLN_REST_LISTEN", &c.NPLN.RestListen)
+	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
+	envStr("SWITCHNET_NPLN_TENANT", &c.NPLN.Tenant)
+	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
+	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)

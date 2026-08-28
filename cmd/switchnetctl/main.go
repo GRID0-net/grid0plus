@@ -188,6 +188,9 @@ func hostsFile(cfg config.Config) string {
 	}
 
 	section("NPLN game servers (phase 2)")
+	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLNRest) {
+		emit(ip, h)
+	}
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLN) {
 		emit(ip, h)
 	}
@@ -241,13 +244,20 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceAAuth: cfg.AAuth.Listen,
 		nintendo.ServiceBAAS:  cfg.BAAS.Listen,
 		nintendo.ServiceStubs: cfg.Stubs.Listen,
+
+		// Two NPLN backends, deliberately. See config.NPLN: the JSON front and
+		// the gRPC gateway need different nginx, and crossing them fails
+		// silently.
+		nintendo.ServiceNPLN:     cfg.NPLN.Listen,
+		nintendo.ServiceNPLNRest: cfg.NPLN.RestListen,
 	}
 	names := map[nintendo.Service]string{
-		nintendo.ServiceDAuth: "dauth",
-		nintendo.ServiceAAuth: "aauth",
-		nintendo.ServiceBAAS:  "baas",
-		nintendo.ServiceStubs: "stubs",
-		nintendo.ServiceNPLN:  "npln",
+		nintendo.ServiceDAuth:    "dauth",
+		nintendo.ServiceAAuth:    "aauth",
+		nintendo.ServiceBAAS:     "baas",
+		nintendo.ServiceStubs:    "stubs",
+		nintendo.ServiceNPLN:     "npln",
+		nintendo.ServiceNPLNRest: "npln_rest",
 	}
 
 	var b strings.Builder
@@ -269,6 +279,15 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceBAAS, nintendo.ServiceStubs,
 	} {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
+			names[svc], upstreamAddr(backends[svc]))
+	}
+	// Phase 2's upstreams, commented out alongside the server blocks that use
+	// them: uncommenting a block without its upstream is an nginx that will not
+	// start, which is a worse first experience than one that is not there yet.
+	for _, svc := range []nintendo.Service{
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN,
+	} {
+		fmt.Fprintf(&b, "# upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
 	b.WriteString("\n")
@@ -315,6 +334,23 @@ func nginxConf(cfg config.Config) string {
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
 			b.WriteString(commentOut(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}])))
+			b.WriteString("\n")
+			continue
+		}
+		if svc == nintendo.ServiceNPLNRest {
+			b.WriteString("# Phase 2, commented out for the same reason as npln below.\n")
+			b.WriteString("#\n")
+			b.WriteString("# These are the hosts Splatoon 3 talks to BEFORE it opens its gRPC\n")
+			b.WriteString("# channel: vermillion (device init), penne (login tickets), and the\n")
+			b.WriteString("# fro-N frontline connection. They are ordinary JSON, so proxy_pass\n")
+			b.WriteString("# -- NOT grpc_pass. The frontline connection is held open by the\n")
+			b.WriteString("# console and must not be closed or buffered, hence the long read\n")
+			b.WriteString("# timeout and proxy_buffering off in the block below.\n")
+			// One block for the whole service: unlike baas, no host here has a
+			// per-host interop flag, so grouping by variant would only ever
+			// produce one bucket -- and picking the wrong one silently emits a
+			// server block with an empty server_name.
+			b.WriteString(commentOut(frontlineServerBlock(cfg, tlsNamesOf(hosts))))
 			b.WriteString("\n")
 			continue
 		}
@@ -461,6 +497,67 @@ func grpcServerBlock(cfg config.Config, serverNames []string) string {
 
     location / {
         grpc_pass grpc://switchnet_npln;
+    }
+}
+`, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
+}
+
+// tlsNamesOf returns every concrete hostname in hosts that needs a server_name,
+// expanding wildcard entries through their TLSNames.
+func tlsNamesOf(hosts []nintendo.Host) []string {
+	var out []string
+	for _, h := range hosts {
+		if !h.TLS {
+			continue
+		}
+		if h.Wildcard {
+			out = append(out, h.TLSNames...)
+			continue
+		}
+		out = append(out, h.Pattern)
+	}
+	return out
+}
+
+// frontlineServerBlock renders the NPLN JSON front end.
+//
+// Ordinary proxy_pass over HTTP/1.1, with two settings the frontline
+// connection depends on:
+//
+//   - proxy_buffering off, so a frame the server writes reaches the console
+//     when it is written rather than when a buffer happens to fill. The
+//     connection is a stream, and a buffered stream is a dead one.
+//   - a read timeout far longer than nginx's 60s default. The console holds
+//     this connection open and treats a close as a failure -- 2307-2103 on
+//     Splatoon 2, 2321-* on Splatoon 3 -- so an idle-timeout disconnect looks
+//     to the player like the game losing its connection for no reason.
+//
+// No "http2 on", so nginx serves these over HTTP/1.1. That is what the console
+// is known to be served today rather than a measured requirement: unlike
+// accounts.nintendo.com and m-lp1.baas.nintendo.com, no capture shows this
+// client failing on HTTP/2, so no NoHTTP2 flag is claimed on the hosts
+// themselves. If a capture ever shows HTTP/2 working here, turning it on is a
+// one-line change; the reverse -- inventing a flag with no capture behind it --
+// is the thing this repository has been bitten by before.
+func frontlineServerBlock(cfg config.Config, serverNames []string) string {
+	return fmt.Sprintf(`server {
+    listen %d ssl;
+    server_name %s;
+
+    ssl_certificate     /etc/switchnet/certs/edge.crt;
+    ssl_certificate_key /etc/switchnet/certs/edge.key;
+    ssl_verify_client   optional_no_ca;
+
+    location / {
+        proxy_pass http://switchnet_npln_rest;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # The frontline connection is a long-lived stream, not a request.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 `, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))

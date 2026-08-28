@@ -221,6 +221,36 @@ stubs:
   log_bodies: false
 
 # ---------------------------------------------------------------------------
+# npln -- the Splatoon 3 game server (phase 2)
+# ---------------------------------------------------------------------------
+npln:
+  # THREE listeners, and they are not interchangeable.
+  #
+  # Splatoon 3 does not open with gRPC. It first talks ordinary JSON over HTTPS
+  # to the vermillion and penne hosts, and only then opens a gRPC channel to
+  # the tenant host. nginx must send each to the right place: grpc_pass for
+  # `listen`, proxy_pass for `rest_listen`. Crossing them completes the TLS
+  # handshake and then fails with nothing in either log -- the game reports a
+  # generic communication error and the server never sees a request.
+  listen: ":8085"
+  rest_listen: ":8086"
+
+  # gamesync is the document/watch service. The game reaches it on its own
+  # port rather than through the tenant host, and 7575 is the port it expects.
+  gamesync_listen: ":7575"
+
+  # The NPLN tenant id. Splatoon 3's is dce9377b, which is where the tenant
+  # hostname t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net comes from.
+  tenant: "dce9377b"
+
+  # NPLN access tokens are ES256 -- the only ES256 tokens in the stack. See
+  # internal/jwt's README for why that path is deliberately separate from the
+  # RS256 one.
+  issuer: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
+  jwks_url: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates"
+  access_token_ttl: 10800
+
+# ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------
 natcheck:

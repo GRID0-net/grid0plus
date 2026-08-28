@@ -29,6 +29,14 @@ const (
 	ServiceNATCheck Service = "natcheck"
 	// ServiceNPLN is the NPLN gRPC gateway (phase 2).
 	ServiceNPLN Service = "npln"
+	// ServiceNPLNRest is NPLN's JSON front end (phase 2): the hosts Splatoon 3
+	// talks to over ordinary HTTPS *before* it opens a gRPC channel.
+	//
+	// Separate from ServiceNPLN because the two need different nginx: gRPC
+	// needs grpc_pass and HTTP/2, this needs proxy_pass and HTTP/1.1. Routing
+	// either through the other's block completes the TLS handshake and then
+	// fails in a way neither side logs.
+	ServiceNPLNRest Service = "npln_rest"
 	// ServiceEShop is the eShop: the storefront, the commerce API, the eLicense
 	// server and the content server (phase 3).
 	ServiceEShop Service = "eshop"
@@ -250,23 +258,6 @@ var Hosts = []Host{
 		Comment: "push notifications (Penne) discovery",
 	},
 	{
-		Pattern: "val.hac.lp1.penne.srv.nintendo.net",
-		Service: ServiceStubs, TLS: true,
-		Comment: "push notifications (Penne) validation",
-	},
-	{
-		Pattern: "fro-1.hac.lp1.penne.srv.nintendo.net",
-		Service: ServiceStubs, TLS: true,
-		Comment: "push notifications (Penne), purpose unconfirmed — observed in a " +
-			"2026-08-25 SNI capture during account linking. Was null-routed; changed " +
-			"to a stub after a second capture (same day) showed the Nintendo Account " +
-			"link flow reaches this host — and one other, beach.hac.lp1.eshop — " +
-			"before accounts.nintendo.com, on a real working private server. A " +
-			"connection refusal here instead of a real server's answer is one " +
-			"candidate for why the same flow never reaches accounts.nintendo.com " +
-			"against SwitchNet. Untested; see docs/CAPTURES.",
-	},
-	{
 		Pattern: "consumer.lp1.npns.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
 		Comment: "push notifications (NPNS)",
@@ -283,26 +274,6 @@ var Hosts = []Host{
 			"Untested; see docs/CAPTURES.",
 	},
 	{
-		Pattern: "gw.hac.lp1.vermillion.srv.nintendo.net",
-		Service: ServiceStubs, TLS: true,
-		Comment: "background game registration/telemetry, purpose unconfirmed — " +
-			"previously null-routed (ServiceBlackhole) on the assumption that a " +
-			"stub response does nothing useful for it. A 2026-08-27 tcpdump of a " +
-			"real, successful Nintendo Account import (real hardware, real " +
-			"account, stock sysMMC, no Atmosphere) showed this host contacted " +
-			"mid-flow -- between the second m-lp1.baas.nintendo.com federation-" +
-			"adjacent call and the final e0d67c...baas.nintendo.com call -- " +
-			"exchanging 16.5KB, not the negligible amount a background-only " +
-			"contact would suggest. A connection refusal here instead of a " +
-			"real server's answer is a candidate for why SwitchNet's own attempts " +
-			"at this same flow stall after federation with no further network " +
-			"activity. Stubbed rather than reasoned about further: the actual " +
-			"content cannot be recovered (real Nintendo TLS, no MITM possible " +
-			"without Atmosphere on that console), so a generic non-refusing " +
-			"response is the most defensible next step. Untested; see " +
-			"docs/CAPTURES.",
-	},
-	{
 		Pattern: "service-status-lp1.cdn.nintendo.net",
 		Service: ServiceStubs, TLS: true,
 		Comment: "game server availability — always reports everything up",
@@ -313,7 +284,57 @@ var Hosts = []Host{
 		Comment: "smartphone app API (Coral)",
 	},
 
-	// ---- NPLN (phase 2) -------------------------------------------------
+	// ---- NPLN, the JSON front (phase 2) ---------------------------------
+	// Splatoon 3 does NOT open with gRPC. It first talks ordinary JSON over
+	// HTTPS to vermillion and penne, and only then opens the gRPC channel to
+	// the tenant host below. Establishing that reclassified three hosts that
+	// were listed here as push notifications and telemetry.
+	//
+	// These are ServiceNPLNRest, not ServiceNPLN, because they need proxy_pass
+	// and HTTP/1.1 rather than grpc_pass and HTTP/2 -- see the ServiceNPLNRest
+	// doc comment for what happens when the two are swapped.
+	{
+		Pattern: "gw.hac.lp1.vermillion.srv.nintendo.net",
+		Service: ServiceNPLNRest, TLS: true,
+		Comment: "NPLN device initialisation and account config. Was listed as " +
+			"'background game registration/telemetry, purpose unconfirmed' and " +
+			"stubbed. That also explains the open question recorded against it: a " +
+			"2026-08-27 tcpdump of a real, successful Nintendo Account import " +
+			"showed 16.5KB exchanged here mid-flow, 'not the negligible amount a " +
+			"background-only contact would suggest'. It is a device-init handshake " +
+			"that expects real answers, which is why a stub did not satisfy it. " +
+			"Request and response bodies are still TODO(capture-needed) -- see " +
+			"internal/nplnrest",
+	},
+	{
+		Pattern: "val.hac.lp1.penne.srv.nintendo.net",
+		Service: ServiceNPLNRest, TLS: true,
+		Comment: "NPLN login tickets, and the frontline FQDN the console is told " +
+			"to open its persistent connection to. Was listed as 'push " +
+			"notifications (Penne) validation'",
+	},
+	{
+		// fro-N is a family: the frontline host is whichever one penne names in
+		// its response, so listing only fro-1 leaves the console pointed at real
+		// Nintendo the moment it is told to use another. The wildcard covers the
+		// family; TLSNames lists the ones a certificate has to cover, because a
+		// DNS wildcard SAN matches one label and these are multi-label names.
+		Pattern: "fro-*.hac.lp1.penne.srv.nintendo.net",
+		Service: ServiceNPLNRest, TLS: true, Wildcard: true,
+		TLSNames: []string{
+			"fro-1.hac.lp1.penne.srv.nintendo.net",
+			"fro-2.hac.lp1.penne.srv.nintendo.net",
+			"fro-3.hac.lp1.penne.srv.nintendo.net",
+			"fro-4.hac.lp1.penne.srv.nintendo.net",
+		},
+		Comment: "NPLN persistent frontline connection. The console holds this " +
+			"open and treats a close as a failure (2307-2103 on Splatoon 2, " +
+			"2321-* on Splatoon 3), so it is a long-lived streaming response, not " +
+			"a request/response endpoint. Was listed as 'push notifications " +
+			"(Penne), purpose unconfirmed'",
+	},
+
+	// ---- NPLN, the gRPC tenant (phase 2) --------------------------------
 	// The tenant hostname is <tenant id>.lp1.t.npln.srv.nintendo.net. The
 	// Splatoon 3 tenant is t-dce9377b-lp1. gamesync.npln.nintendo.net does not
 	// end in srv.nintendo.net, so a *srv.nintendo.net wildcard misses it.
@@ -513,7 +534,7 @@ func TLSHostnames() []string {
 
 // ProxiedServices are the services that sit behind the nginx TLS edge, in the
 // order their server blocks should be emitted.
-var ProxiedServices = []Service{ServiceDAuth, ServiceAAuth, ServiceBAAS, ServiceNPLN, ServiceStubs}
+var ProxiedServices = []Service{ServiceDAuth, ServiceAAuth, ServiceBAAS, ServiceNPLNRest, ServiceNPLN, ServiceStubs}
 
 // Resolution says what a DNS server should do with a query.
 type Resolution int

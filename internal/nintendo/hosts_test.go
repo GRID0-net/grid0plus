@@ -387,3 +387,86 @@ func TestUnrelatedHostsAreStillForwarded(t *testing.T) {
 		}
 	}
 }
+
+func TestNPLNRestHostsAreNotRoutedToTheGRPCGateway(t *testing.T) {
+	// Splatoon 3 talks JSON to vermillion and penne before it opens a gRPC
+	// channel, so these must be proxy_pass/HTTP-1.1 hosts, not grpc_pass ones.
+	// Putting them under ServiceNPLN would complete the TLS handshake and then
+	// answer with something no gRPC client understands, which neither side
+	// logs -- the exact failure cmd/switchnetctl's NPLN block warns about.
+	wantRest := map[string]bool{
+		"gw.hac.lp1.vermillion.srv.nintendo.net": true,
+		"val.hac.lp1.penne.srv.nintendo.net":     true,
+		"fro-*.hac.lp1.penne.srv.nintendo.net":   true,
+	}
+	for _, h := range ServiceHosts(ServiceNPLNRest) {
+		delete(wantRest, h.Pattern)
+	}
+	for missing := range wantRest {
+		t.Errorf("%s is not routed to ServiceNPLNRest", missing)
+	}
+
+	for _, h := range ServiceHosts(ServiceNPLN) {
+		if strings.Contains(h.Pattern, "vermillion") || strings.Contains(h.Pattern, "penne") {
+			t.Errorf("%s is a JSON host but is routed to the gRPC gateway", h.Pattern)
+		}
+	}
+}
+
+func TestTheFrontlineHostFamilyIsCoveredNotJustFroOne(t *testing.T) {
+	// penne tells the console which fro-N to open its persistent connection
+	// to. SwitchNet writes that response, so it can name fro-1 -- but a console
+	// holding a cached FQDN from real Nintendo may ask for another, and a
+	// console pointed at real Nintendo for its frontline is a console partly
+	// off SwitchNet. The wildcard covers the family.
+	for _, name := range []string{
+		"fro-1.hac.lp1.penne.srv.nintendo.net",
+		"fro-3.hac.lp1.penne.srv.nintendo.net",
+		"fro-9.hac.lp1.penne.srv.nintendo.net",
+	} {
+		res, h, ok := Resolve(name)
+		if !ok || res != ResolveRedirect || h.Service != ServiceNPLNRest {
+			t.Errorf("%s resolved to (%v, %s, %v), want a redirect to %s",
+				name, res, h.Service, ok, ServiceNPLNRest)
+		}
+	}
+
+	// The certificate has to name them individually: a DNS wildcard SAN matches
+	// exactly one label, and these are multi-label.
+	var covered int
+	for _, n := range TLSHostnames() {
+		if strings.HasPrefix(n, "fro-") {
+			covered++
+		}
+	}
+	if covered == 0 {
+		t.Error("no fro-N hostname is in the certificate SANs, so TLS to the " +
+			"frontline host will fail no matter what DNS says")
+	}
+}
+
+func TestAMoreSpecificPenneHostStillBeatsTheFrontlineWildcard(t *testing.T) {
+	// The wildcard's DNS suffix is everything after the '*', which is the whole
+	// penne domain rather than just fro-. Longest-suffix-wins is what keeps the
+	// individually listed penne hosts on their own services; without it the
+	// wildcard would swallow them.
+	for name, want := range map[string]Service{
+		"god.hac.lp1.penne.srv.nintendo.net": ServiceStubs,
+		"val.hac.lp1.penne.srv.nintendo.net": ServiceNPLNRest,
+	} {
+		_, h, ok := Resolve(name)
+		if !ok || h.Service != want {
+			t.Errorf("%s resolved to %s, want %s", name, h.Service, want)
+		}
+	}
+
+	// The consequence worth stating: an unlisted penne host is now redirected
+	// rather than null-routed. That is the intended trade -- it reaches a server
+	// that answers 404 instead of a black hole -- but it is a behaviour change,
+	// so it is pinned here rather than left to be rediscovered.
+	res, h, ok := Resolve("unlisted.hac.lp1.penne.srv.nintendo.net")
+	if !ok || res != ResolveRedirect || h.Service != ServiceNPLNRest {
+		t.Errorf("an unlisted penne host resolved to (%v, %s), want a redirect to %s",
+			res, h.Service, ServiceNPLNRest)
+	}
+}
