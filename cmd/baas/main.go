@@ -75,13 +75,15 @@ func main() {
 		service.Fatal(log, "load application verification key", err)
 	}
 
-	// BAAS tokens carry no 'typ' header, unlike device and application tokens.
-	accessIssuer := sjwt.NewIssuer(accessKey, cfg.BAAS.AccessTokenJWKSURL, false)
-	idIssuer := sjwt.NewIssuer(idKey, cfg.BAAS.IDTokenJWKSURL, false)
+	// All three carry 'typ: JWT', like dauth's and aauth's. These three used to
+	// pass false, on the belief that BAAS tokens have no 'typ' header; every
+	// token in a real working server's capture has one. See Issuer.includeTyp.
+	accessIssuer := sjwt.NewIssuer(accessKey, cfg.BAAS.AccessTokenJWKSURL, true)
+	idIssuer := sjwt.NewIssuer(idKey, cfg.BAAS.IDTokenJWKSURL, true)
 	// naIDIssuer's own JWK set URL, not the BAAS host's -- see naIDTokenJWKSURL's
 	// doc comment. Both handlers are the same one (the mux does not route on
 	// Host), so this needs no new routing, only a different 'jku' in the token.
-	naIDIssuer := sjwt.NewIssuer(naIDKey, baas.NAIDTokenJWKSURL, false)
+	naIDIssuer := sjwt.NewIssuer(naIDKey, baas.NAIDTokenJWKSURL, true)
 
 	srv := baas.New(baas.Config{
 		Issuer:             cfg.BAAS.Issuer,

@@ -228,8 +228,18 @@ reimplements and linking the Kinnay wiki page it was built from. Keep it current
 **Tests assert on the wire, not on Go structs.** `internal/baas/tokens_test.go`
 decodes tokens by hand, because a claim that is present in the struct but
 mis-tagged would round-trip through the verifier and still not match a capture.
-Assert on absences too: an application token has no `aud`, a BAAS token has no
-`typ` header, an anonymous token has no `bs:did`.
+Assert on absences too: an application token has no `aud`, an anonymous token
+has no `bs:did`.
+
+**Assert an absence only when a capture actually shows it absent.** This section
+used to also claim "a BAAS token has no `typ` header", and a test enforced it.
+It was wrong: every one of the twelve JWTs in the decrypted capture of a working
+server carries `typ: JWT`, BAAS tokens included. The claim most likely came from
+confusing the *header* `typ` (the standard `JWT`) with the *payload* `typ`
+(BAAS's own `token`/`id_token`), which really is absent from some tokens. A
+wrong asserted absence is worse than no assertion: it is a test actively holding
+a bug in place, and it survived far longer than it should have because the rule
+was written here as though it were established.
 
 **A test name should say what breaks.** `TestAnIdleConsoleReadsAsOnlineNotOffline`
 over `TestPresence3`.

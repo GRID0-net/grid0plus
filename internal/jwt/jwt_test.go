@@ -335,8 +335,9 @@ func TestFreePolicyOmitsPolicyHandler(t *testing.T) {
 func TestBAASAccessTokenShape(t *testing.T) {
 	key := testKey(t, IssuerBAASAccess)
 	const jku = "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/internal_certificates"
-	// BAAS tokens have no 'typ' header.
-	issuer := NewIssuer(key, jku, false)
+	// BAAS tokens carry 'typ: JWT', like every other token in a real working
+	// server's capture. See Issuer.includeTyp for what this used to be.
+	issuer := NewIssuer(key, jku, true)
 
 	now := time.Now()
 	token, err := issuer.Sign(BAASTokenClaims{
@@ -360,9 +361,11 @@ func TestBAASAccessTokenShape(t *testing.T) {
 
 	header, payload := decodeToken(t, token)
 
-	if _, present := header["typ"]; present {
-		t.Error("BAAS tokens carry no 'typ' header")
-	}
+	// The header 'typ' and the payload 'typ' are different fields: the header
+	// is the standard JWT type ("JWT") and the payload is BAAS's own token
+	// kind ("token"/"id_token"). Conflating the two is what previously had
+	// this issuer emitting no header 'typ' at all.
+	assertString(t, header, "typ", "JWT")
 	assertString(t, header, "jku", jku)
 
 	assertString(t, payload, "typ", "token")
@@ -385,7 +388,7 @@ func TestBAASAccessTokenShape(t *testing.T) {
 
 func TestBAASUserTokenShape(t *testing.T) {
 	key := testKey(t, IssuerBAASAccess)
-	issuer := NewIssuer(key, "https://example.invalid/certs", false)
+	issuer := NewIssuer(key, "https://example.invalid/certs", true)
 
 	now := time.Now()
 	token, err := issuer.Sign(BAASTokenClaims{
@@ -416,7 +419,7 @@ func TestBAASUserTokenShape(t *testing.T) {
 
 func TestIDTokenCarriesMembershipForGameServerPolicy(t *testing.T) {
 	key := testKey(t, IssuerBAASID)
-	issuer := NewIssuer(key, "https://example.invalid/certificates", false)
+	issuer := NewIssuer(key, "https://example.invalid/certificates", true)
 
 	hasMembership := true
 	now := time.Now()

@@ -127,16 +127,18 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 			"https://dcert-lp1.ndas.srv.nintendo.net/keys", true),
 		appIssuer: sjwt.NewIssuer(appKey,
 			"https://acert-lp1.ndas.srv.nintendo.net/keys", true),
-		accessIssuer: sjwt.NewIssuer(accessKey, testIssuer+"/1.0.0/internal_certificates", false),
+		// includeTyp true everywhere, matching cmd/baas -- a harness that signs
+		// differently from production is a test that cannot see a header bug.
+		accessIssuer: sjwt.NewIssuer(accessKey, testIssuer+"/1.0.0/internal_certificates", true),
 	}
 
 	h.srv = New(cfg, Deps{
 		Store:          h.store,
 		Bus:            h.bus,
 		Log:            slog.New(slog.DiscardHandler),
-		AccessIssuer:   sjwt.NewIssuer(accessKey, cfg.AccessTokenJWKSURL, false),
-		IDIssuer:       sjwt.NewIssuer(idKey, cfg.IDTokenJWKSURL, false),
-		NAIDIssuer:     sjwt.NewIssuer(naIDKey, NAIDTokenJWKSURL, false),
+		AccessIssuer:   sjwt.NewIssuer(accessKey, cfg.AccessTokenJWKSURL, true),
+		IDIssuer:       sjwt.NewIssuer(idKey, cfg.IDTokenJWKSURL, true),
+		NAIDIssuer:     sjwt.NewIssuer(naIDKey, NAIDTokenJWKSURL, true),
 		AccessVerifier: sjwt.NewVerifier(accessKey),
 		IDVerifier:     sjwt.NewVerifier(naIDKey),
 		DeviceVerifier: sjwt.NewVerifier(deviceKey),
