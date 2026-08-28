@@ -35,6 +35,25 @@ func keyIDFor(priv *rsa.PrivateKey) KeyID {
 // inside a BAAS access token.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#device-information
+//
+// The wiki does not document two fields a 2026-08-27 capture of a working
+// Nextendo device token showed: 'x5t#S256' and 'esv'. Both are 43-character
+// unpadded base64url strings — the shape of a SHA-256 digest — present on
+// every device token and echoed unchanged into /1.0.0/application/token's
+// access token, so they are static per-console attributes minted once by
+// dauth, not something recomputed per call.
+//
+// 'x5t#S256' is implemented: RFC 7517 §4.9 names this exact key for an X.509
+// SHA-256 certificate thumbprint, and dauth already reads the console's TLS
+// client certificate — untrusted, unverified, exactly as CLAUDE.md requires —
+// so hashing bytes already being read is not new trust placed in Nintendo
+// data, just a real digest of it. See deviceFrom in internal/dauth/handler.go.
+//
+// 'esv' is not implemented. Its meaning is genuinely unknown, it is not a
+// per-connection value we can safely rehash from the client cert, and every
+// plausible source of it (an eTicket, a title key, anything AES/RSA-derived
+// from Nintendo key material) is exactly what CLAUDE.md's first ground rule
+// forbids SwitchNet from touching. See docs/CAPTURES/README.md.
 type DeviceInfo struct {
 	// SerialNumber is the console serial, e.g. "XAW10012345678".
 	SerialNumber string `json:"sn"`
@@ -47,6 +66,10 @@ type DeviceInfo struct {
 	// DeviceID is only present inside a BAAS access token's device block, and
 	// inside an application token for a system title.
 	DeviceID string `json:"di,omitempty"`
+	// X5tS256 is the base64url (no padding) SHA-256 thumbprint of the
+	// console's TLS client certificate, DER-encoded, per RFC 7517 §4.9. Empty
+	// when nginx passed no client certificate through.
+	X5tS256 string `json:"x5t#S256,omitempty"`
 }
 
 // AppInfo is the 'nintendo' claim of an application token, and the block copied
@@ -163,11 +186,50 @@ type BAASTokenClaims struct {
 	TokenID  string `json:"jti"`
 
 	// Type is "token" for access and user tokens, "id_token" for id tokens.
-	Type string `json:"typ"`
+	// Omitempty: this struct is also reused for accounts.nintendo.com's OIDC
+	// tokens (nalink.go), whose id_token never carries a payload 'typ' at all
+	// -- confirmed 2026-08-27 against a real capture. Every BAAS call site
+	// already sets this explicitly, so omitempty changes nothing for them.
+	Type string `json:"typ,omitempty"`
 
 	// GrantType is 1 for an anonymous (application) token and 2 for a user
 	// token. It is absent from id tokens.
 	GrantType int `json:"bs:grt,omitempty"`
+
+	// ACGrantType is accounts.nintendo.com's own grant-type flavour, 'ac:grt'
+	// -- a separate namespace from BAAS's 'bs:grt', only ever set by
+	// nalink.go. Only one value has ever been seen (4, for an
+	// authorization_code exchange); what other grants map to is
+	// TODO(capture-needed).
+	ACGrantType int `json:"ac:grt,omitempty"`
+
+	// ACScopes is accounts.nintendo.com's 'ac:scp': the granted scopes, as
+	// numeric ids rather than the strings the response body's own "scope"
+	// field carries. Only ever set by nalink.go, on the access_token.
+	//
+	// TODO(capture-needed): the string-to-id mapping is read off a single
+	// capture (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow),
+	// where twelve scope strings lined up one-for-one with twelve ids in the
+	// same order. That is enough to reproduce the observed list and no more:
+	// a scope outside those twelve has no known id, so nalink.go emits
+	// nothing rather than guessing one. A capture with a different scope set
+	// would settle the rest. Change: naScopeIDs in internal/baas/nalink.go.
+	ACScopes []int `json:"ac:scp,omitempty"`
+
+	// ATHash and CHash are the OIDC 'at_hash' and 'c_hash' claims: the
+	// left half of the SHA-256 digest of the access_token or authorization
+	// code, base64url-encoded without padding (RFC in the OIDC Core spec,
+	// not Nintendo-specific). Verified byte-for-byte against a 2026-08-27
+	// capture. Only ever set by nalink.go.
+	ATHash string `json:"at_hash,omitempty"`
+	CHash  string `json:"c_hash,omitempty"`
+
+	// Nonce echoes the OIDC 'nonce' the console sent on the original
+	// authorize request. A pointer because a real capture showed the key
+	// present even when the console sent no nonce at all (empty string,
+	// not absent) -- omitempty on a plain string would drop it in exactly
+	// that case. Only ever set by nalink.go's naAuthorizeSubmit.
+	Nonce *string `json:"nonce,omitempty"`
 
 	// DeviceAccountID is the BAAS device account the token was minted for.
 	// Present in user tokens and id tokens.
@@ -224,8 +286,22 @@ var (
 type Issuer struct {
 	key     Key
 	jwksURL string
-	// includeTyp controls whether the 'typ: JWT' header is emitted. The dauth
-	// and aauth servers send it; the BAAS server does not.
+	// includeTyp controls whether the 'typ: JWT' header is emitted.
+	//
+	// Every issuer now sets it. It used to be off for the BAAS and
+	// accounts.nintendo.com issuers, on the belief that "a BAAS token has no
+	// typ header" -- stated as a rule in CLAUDE.md and asserted by a test.
+	// A 2026-08-28 sweep of every JWT in the fully decrypted capture of a
+	// genuinely working server (docs/CAPTURES/raw/nextendo-working-nalink-
+	// 2026-08-27.flow) contradicted it outright: all twelve tokens in that
+	// flow carry 'typ: JWT', including application/token's, federation's and
+	// login's. The belief appears to have come from reasoning about the
+	// payload's own 'typ' claim ("token"/"id_token"), which is a different
+	// field and genuinely is absent from some tokens -- not from a capture.
+	//
+	// Kept as a field rather than hardcoded: it is the standard JWT header,
+	// and an issuer that legitimately needs it off should be able to say so
+	// with a capture behind it.
 	includeTyp bool
 }
 
