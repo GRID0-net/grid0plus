@@ -127,6 +127,60 @@ custom login page (checking a person's own SwitchNet login credentials, from
 OAuth flow. See [nintendo-account-link.md](nintendo-account-link.md) for the
 full writeup of both captures.
 
+### 9. `nintendo.x5t#S256` and `nintendo.esv` — undocumented device-token fields
+
+Not on the [Kinnay wiki's device-information
+page](https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#device-information).
+The 2026-08-27 working Nextendo capture's device token (issued by dauth,
+carried as `assertion`/`device_authentication_token` into both
+`/1.0.0/application/token` and `accounts.nintendo.com/connect/1.0.0/api/token`)
+has a `nintendo` block with two fields SwitchNet did not emit:
+
+- `x5t#S256` — a 43-character unpadded base64url string, the shape of a
+  SHA-256 digest. RFC 7517 §4.9 names this exact key for an X.509 certificate
+  thumbprint. It is present only in the device token's `DeviceInfo` block
+  (dauth) and echoed unchanged into `/1.0.0/application/token`'s access token
+  — never recomputed per call, so it is a static per-console value, not a
+  per-connection one.
+- `esv` — same 43-character base64url shape, present in *both* the device
+  token (dauth) and the app token (aauth)'s `nintendo` blocks. Meaning
+  unknown.
+
+**What SwitchNet does now:** `x5t#S256` is implemented — see
+`jwt.DeviceInfo.X5tS256` and `dauth.Handler.x5tS256` in
+`internal/dauth/handler.go`. nginx forwards the console's already-untrusted
+TLS client certificate (`$ssl_client_escaped_cert`, a new
+`X-SwitchNet-Client-Cert-PEM` header) and dauth hashes it — a real SHA-256
+digest of data already being passed through unverified, not new trust placed
+in anything Nintendo-signed. Verified end-to-end on 2026-08-27 against the
+live stack with a real TLS client certificate: the claim matches
+`openssl x509 -fingerprint -sha256` exactly, on both the device token and the
+`application/token` access token it is echoed into.
+
+`esv` is deliberately **not** implemented. Its derivation is unknown, and
+every plausible source (an eTicket, a title key, anything else AES/RSA-derived
+from Nintendo key material) is exactly what CLAUDE.md's first ground rule
+forbids SwitchNet from touching or reproducing. Guessing a value risks being
+worse than omitting the claim.
+
+**What is still open:** whether the console validates either field locally at
+all. JWTs are opaque to the party that did not sign them; there is no direct
+evidence the Switch OS parses its own device token's `nintendo` block and
+compares it against something it independently knows, as opposed to these
+being Nintendo/Nextendo server-side bookkeeping fields the console never
+reads. This was investigated because `2124-0292` (see
+[nintendo-account-link.md](nintendo-account-link.md)) happens with zero
+network activity after `federation` returns a fully-correct 200, which is
+consistent with — but not proof of — a client-side check on data the console
+already has by that point. Only a real hardware retest of the NA-link flow
+can confirm or rule this out.
+
+**What a capture would settle:** a decrypted capture of the *real Nintendo*
+NA-link flow (not Nextendo's) showing whether `x5t#S256`/`esv` are present
+there too, and — more usefully — any evidence in the Switch's own applet
+logs or behavior of it rejecting a token specifically because one of these
+fields was wrong or missing, as opposed to a generic module-2124 failure.
+
 ---
 
 ## Phase 2 — Splatoon 3 (NPLN)

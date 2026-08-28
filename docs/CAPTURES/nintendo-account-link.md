@@ -227,11 +227,29 @@ cdn-image-e0d67c...baas.nintendo.com        0.5 KB   (final)
 
 ### What is still open
 
-Whether fixing `vermillion` (or anything else here) actually resolves
-SwitchNet's own `2124-0292` failure is untested as of this writing — this
-capture happened after the operator had already spent a full session
-diagnosing that error against SwitchNet directly, and the two efforts have
-not yet been reconciled with a fresh SwitchNet-side retest.
+`2124-0292` has persisted through every fix found by comparing SwitchNet's
+live traffic against the working Nextendo capture, including: the
+`vermillion` gap above, a `response_type` regression that wrongly omitted
+`id_token`/`session_state`, `access_token`/`refresh_token` being signed with
+the wrong issuer's key, and `refresh_token` being a JWT instead of the
+opaque 64-character value real captures show. Each was verified fixed via a
+fresh live decrypted capture; the error is unchanged. `federation` returns a
+fully-correct 200 (checked field-by-field against the working capture) and
+then there is *zero* further network activity before the console shows the
+error — the failure, whatever it is, happens client-side on data the console
+already has.
+
+The most recent lead, not yet tested on hardware: the working Nextendo
+capture's device token carries two fields undocumented anywhere and absent
+from SwitchNet — `nintendo.x5t#S256` and `nintendo.esv`. See item 9 in
+[`README.md`](README.md) for the full writeup. `x5t#S256` (a real SHA-256
+thumbprint of the console's own TLS client certificate) is now implemented
+and verified end-to-end
+against the live stack; `esv`'s derivation is unknown and, per CLAUDE.md's
+first ground rule, has deliberately not been guessed at. Whether the console
+validates either field locally — as opposed to their being server-side-only
+bookkeeping the console never reads — is unconfirmed. Only a hardware retest
+of the NA-link flow settles it.
 
 The raw `.pcap` is not committed (nothing decrypted, but it is still real
 traffic timing/metadata tied to a real account) — see
