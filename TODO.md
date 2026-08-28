@@ -39,6 +39,25 @@ Priority labels are about *unblocking other work*, not importance:
 - **P2** — wanted, nothing blocked
 - **P3** — worth doing eventually
 
+## What is left, and why
+
+Every item below is blocked on something an agent does not have. That is not a
+coincidence and it is worth reading before starting anything:
+
+| Item | Blocked on |
+| --- | --- |
+| §1.1 | **a console**, by design. The remaining services are a backlog the console's own requests are meant to order, and the log line that records them now exists |
+| §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
+| §2.4 | **a console.** The server for the experiment is written, tested and waiting |
+| §3.2 | **§2.1** |
+
+So the highest-value next action is not in this file. It is
+[`switch/README.md`'s Splatoon 3 checklist](switch/README.md#verify-splatoon-3-in-order),
+because **nothing in phase 2 has touched hardware** — every test runs against a
+Go client. Set `npln.rest_record_dir` before that first attempt: it costs one
+config line and produces the transcript that settles three capture-gated shapes
+at once.
+
 ---
 
 ## 1. NPLN protocol
@@ -134,7 +153,8 @@ run it:
 1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
    `ServiceBlackhole` to `ServiceStubs`;
 2. move them out of `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
-   says why — `hosts.go` and that test both say the null-route is contingent);
+   says why (`hosts.go` and that test both record that the null-route is
+   contingent rather than settled);
 3. set `stubs.bcat_record_dir`, regenerate the DNS and nginx configuration, and
    open Splatoon 3.
 
