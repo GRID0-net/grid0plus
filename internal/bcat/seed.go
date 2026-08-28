@@ -101,11 +101,21 @@ type Packs map[string][]byte
 // console at the phase that needs it, which is hours after anyone would connect
 // the two events.
 func (s Seed) Write(dir string, packs Packs, keys map[string][]byte) error {
-	if err := s.Validate(); err != nil {
-		return err
-	}
 	table, err := loadKeyMaterial()
 	if err != nil {
+		return err
+	}
+	return s.WriteWith(dir, packs, keys, table)
+}
+
+// WriteWith is Write against a caller-supplied IV table, so a test can exercise
+// the whole build-and-encrypt path without the operator's file.
+//
+// Same seam as EncryptWith and DecryptWith, for the same reason: the table is
+// lifted from the game binary and is not in this repository, and a path that can
+// only be exercised with it is a path nothing exercises.
+func (s Seed) WriteWith(dir string, packs Packs, keys map[string][]byte, table string) error {
+	if err := s.Validate(); err != nil {
 		return err
 	}
 

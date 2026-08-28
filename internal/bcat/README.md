@@ -73,6 +73,18 @@ signature's offset. Stage 1's hexdumps are how the rest becomes known. Building
 stage 2 from a guess would produce an experiment whose negative result is
 uninterpretable.
 
+## Building one
+
+`switchnetctl fest build` is the only path that should be used, because it derives
+all four of the values that must agree from one source: the packs' bytes give the
+revision, the generated keys go to both the encryption and the fest row, and the
+announced id and resource are the ones written into `summary.yml`.
+
+`TestASeedAndItsKeysRoundTrip` is that contract as a test: it builds, writes, and
+then does exactly what a console does — takes the key `GetFestDecryptionKey` would
+hand over, derives the IV from the announced resource name, decrypts, and parses
+the archive.
+
 ## What it produces
 
 ```

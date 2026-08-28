@@ -136,19 +136,6 @@ being proceeded on (names are inert). Build §2.1 so that changing that
 assumption later is a contained change rather than a rewrite — keep the naming
 decision in one place.
 
-### 2.3 `switchnetctl fest build` — **P2**
-
-One command that takes an assets directory plus a fest id, builds the packs,
-derives the revision from their bytes, writes the seed folder, and registers
-the matching fest — so the id, resource, revision and keys cannot drift apart.
-
-Everything it needs exists: `bcat.BuildPacks`, `bcat.Revision`,
-`Seed.Write`, `toyohr.Service.SaveFest`.
-
-**Why it matters:** those four values agreeing is the entire contract with the
-console. Any path where a human types one of them twice will eventually produce
-`BcatInvalid`, which reaches the player as a generic communication error.
-
 ### 2.4 Serving BCAT natively — **P1 to TEST, and the server is now ready**
 
 **The blocker here is smaller than earlier notes in this repository claimed, and
@@ -174,7 +161,7 @@ run it:
 1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
    `ServiceBlackhole` to `ServiceStubs`;
 2. move them out of `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
-   says why (that entry is explicitly contingent — see §5.2);
+   says why — `hosts.go` and that test both say the null-route is contingent);
 3. set `stubs.bcat_record_dir`, regenerate the DNS and nginx configuration, and
    open Splatoon 3.
 

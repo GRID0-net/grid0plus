@@ -108,6 +108,19 @@ console at it.
 
 `make help` lists every target.
 
+Phase 2 adds one command worth knowing about:
+
+```sh
+switchnetctl fest build -assets ./fest-assets -out ./seed -enable
+```
+
+That builds a Splatfest's BCAT packs, derives the revision from their bytes,
+writes the seed folder for the consoles, generates the pack keys, and registers
+the fest the schedule announces — in one step, because those four values appear
+in two places each and any path where a human types one of them twice eventually
+produces `BcatInvalid`, which the player sees as a generic communication error
+naming nothing.
+
 ## Contributing, or picking this up as an agent
 
 [`CLAUDE.md`](CLAUDE.md) is the orientation document: the two real hardware bugs

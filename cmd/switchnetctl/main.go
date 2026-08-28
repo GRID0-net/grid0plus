@@ -30,9 +30,10 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
-	// "account create" takes further arguments of its own; every other
-	// command takes none.
-	if flag.NArg() == 0 || (flag.Arg(0) != "account" && flag.NArg() != 1) {
+	// "account create" and "fest build" take further arguments of their own;
+	// every other command takes none.
+	subcommands := map[string]bool{"account": true, "fest": true}
+	if flag.NArg() == 0 || (!subcommands[flag.Arg(0)] && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -76,6 +77,14 @@ func main() {
 		}
 		accountCreate(cfg, flag.Args()[2:])
 
+	case "fest":
+		if flag.NArg() < 2 || flag.Arg(1) != "build" {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n\n")
+			fmt.Fprint(os.Stderr, festBuildUsage)
+			os.Exit(2)
+		}
+		festBuild(cfg, flag.Args()[2:])
+
 	default:
 		usage()
 		os.Exit(2)
@@ -99,6 +108,9 @@ Commands:
   account   create a user from a device account id and password you already
             have, rather than one the server generates. See
             'switchnetctl account create -h'.
+  fest      build a Splatfest's BCAT packs, write the seed folder and register
+            the fest, in one step so the four values that must agree cannot
+            drift apart. See 'switchnetctl fest build -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file
