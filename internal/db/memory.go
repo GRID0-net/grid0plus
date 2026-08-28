@@ -32,6 +32,7 @@ type Memory struct {
 	blocks         map[string]map[string]Block
 	presence       map[string]Presence
 	images         map[string]Image
+	fests          map[string]Fest
 }
 
 // NewMemory returns an empty in-memory store.
@@ -41,6 +42,7 @@ func NewMemory() *Memory {
 		devices:        map[string]Device{},
 		deviceAccounts: map[string]DeviceAccount{},
 		friendCodes:    map[string]FriendCode{},
+		fests:          map[string]Fest{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -761,3 +763,67 @@ func cloneExtras(e ExtrasByScope) ExtrasByScope {
 
 // Compile-time check that Memory satisfies the interface.
 var _ Store = (*Memory)(nil)
+
+// ---- splatfests ----------------------------------------------------------
+
+func (m *Memory) UpsertFest(_ context.Context, f Fest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, ok := m.fests[f.ID]; ok {
+		f.CreatedAt = existing.CreatedAt
+	} else if f.CreatedAt.IsZero() {
+		f.CreatedAt = time.Now().UTC()
+	}
+	f.UpdatedAt = time.Now().UTC()
+	// Copy the slice: the caller keeps a reference to the one it passed, and a
+	// store that hands out its own backing array lets a caller mutate stored
+	// state by accident. The PostgreSQL implementation cannot do that, so
+	// without this the two would disagree under the contract test.
+	f.Regions = append([]string(nil), f.Regions...)
+	f.PackKeys = append([]string(nil), f.PackKeys...)
+	m.fests[f.ID] = f
+	return nil
+}
+
+func (m *Memory) GetFest(_ context.Context, id string) (Fest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	f, ok := m.fests[id]
+	if !ok {
+		return Fest{}, ErrNotFound
+	}
+	f.Regions = append([]string(nil), f.Regions...)
+	f.PackKeys = append([]string(nil), f.PackKeys...)
+	return f, nil
+}
+
+func (m *Memory) ListFests(_ context.Context) ([]Fest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]Fest, 0, len(m.fests))
+	for _, f := range m.fests {
+		f.Regions = append([]string(nil), f.Regions...)
+		f.PackKeys = append([]string(nil), f.PackKeys...)
+		out = append(out, f)
+	}
+	// Soonest first, id as the tiebreak so the order is total: a map range is
+	// random, and an unstable order is exactly the kind of difference the
+	// contract test exists to catch between the two implementations.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartAt.Equal(out[j].StartAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].StartAt.Before(out[j].StartAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) DeleteFest(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.fests, id)
+	return nil
+}

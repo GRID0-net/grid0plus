@@ -47,7 +47,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -67,6 +67,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"images":                testImages,
 		"findUsers":             testFindUsers,
 		"userLogin":             testUserLogin,
+		"fests":                 testFests,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1006,5 +1007,132 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	if applied != 0 {
 		t.Errorf("the second migration run applied %d migrations, want 0", applied)
+	}
+}
+
+// testFests exercises the Splatfest store against both implementations.
+//
+// The ordering assertions matter more than they look. ListFests backs the
+// dashboard's fest list and the "which fest is live" lookup, and a map range in
+// the in-memory store is random — so without a total order the two
+// implementations disagree intermittently, which is exactly the class of bug
+// this contract test already caught once for an empty id filter.
+func testFests(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	sept := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
+
+	first := Fest{
+		ID: "NXTD-00042", Resource: "nxtd-00042_data",
+		Revision: "0123456789abcdef0123456789abcdef01234567",
+		StartAt:  sept, Regions: []string{"JP", "EU"}, Enabled: true,
+		PackKeys: []string{"000102030405060708090a0b0c0d0e0f", "0f0e0d0c0b0a09080706050403020100"},
+	}
+	second := Fest{
+		ID: "NXTD-00043", Resource: "nxtd-00043_data",
+		Revision: "89abcdef0123456789abcdef0123456789abcdef",
+		StartAt:  oct, Regions: []string{"US"},
+	}
+
+	if err := s.UpsertFest(ctx, first); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := s.UpsertFest(ctx, second); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	got, err := s.GetFest(ctx, "NXTD-00042")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Resource != "nxtd-00042_data" || got.Revision != first.Revision {
+		t.Errorf("round-tripped %+v, want resource/revision to match", got)
+	}
+	if !got.StartAt.UTC().Equal(sept) {
+		t.Errorf("start_at = %s, want %s", got.StartAt.UTC(), sept)
+	}
+	if len(got.Regions) != 2 || got.Regions[0] != "JP" || got.Regions[1] != "EU" {
+		t.Errorf("regions = %v, want [JP EU] in order", got.Regions)
+	}
+	if !got.Enabled {
+		t.Error("enabled did not round-trip")
+	}
+	// The keys must round-trip in order: GetFestDecryptionKey returns them
+	// positionally (notice, start, result, ...), so a reordering hands the
+	// console the wrong key for a phase and the pack silently fails to open.
+	if len(got.PackKeys) != 2 || got.PackKeys[0] != "000102030405060708090a0b0c0d0e0f" {
+		t.Errorf("pack keys = %v, want them back in order", got.PackKeys)
+	}
+
+	// Soonest first.
+	list, err := s.ListFests(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("listed %d fests, want 2", len(list))
+	}
+	if list[0].ID != "NXTD-00042" || list[1].ID != "NXTD-00043" {
+		t.Errorf("list order = [%s %s], want the sooner fest first", list[0].ID, list[1].ID)
+	}
+
+	// Upsert replaces rather than duplicating, and preserves created_at.
+	updated := first
+	updated.Enabled = false
+	updated.Revision = "ffffffffffffffffffffffffffffffffffffffff"
+	if err := s.UpsertFest(ctx, updated); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	list, err = s.ListFests(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("re-upserting created a duplicate: %d fests", len(list))
+	}
+	again, err := s.GetFest(ctx, "NXTD-00042")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if again.Enabled {
+		t.Error("enabled was not updated")
+	}
+	if !again.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at changed on update: %s -> %s", got.CreatedAt, again.CreatedAt)
+	}
+
+	// A stored fest's regions must not alias the caller's slice.
+	mutable := []string{"JP"}
+	third := Fest{
+		ID: "NXTD-00044", Resource: "nxtd-00044_data",
+		Revision: "1111111111111111111111111111111111111111",
+		StartAt:  oct.Add(24 * time.Hour), Regions: mutable,
+	}
+	if err := s.UpsertFest(ctx, third); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	mutable[0] = "MUTATED"
+	stored, err := s.GetFest(ctx, "NXTD-00044")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Regions[0] != "JP" {
+		t.Error("mutating the caller's slice changed stored state")
+	}
+
+	if _, err := s.GetFest(ctx, "NXTD-99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing fest returned %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetFest(ctx, "NXTD-00044"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted fest returned %v, want ErrNotFound", err)
+	}
+	// Idempotent: the dashboard's delete button should not error on a second click.
+	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
+		t.Errorf("deleting a missing fest errored: %v", err)
 	}
 }

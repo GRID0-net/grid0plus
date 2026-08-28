@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/n-popescu/switchnet/internal/toyohr"
 	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
 	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
 )
@@ -21,6 +22,11 @@ import (
 func (s *Server) register() {
 	authpb.RegisterAuthServer(s.grpc, &authService{s: s})
 	maintpb.RegisterMaintenanceScheduleServiceServer(s.grpc, &maintenanceService{s: s})
+
+	// Splatoon 3's own services. They authenticate through the same
+	// interceptor as everything else -- a fest is announced to a console that
+	// proved who it is, not to anyone who asks.
+	toyohr.NewService(s.store, s.log, s.tenant, s.now).Register(s.grpc)
 }
 
 // ---- nn.npln.auth.v1.Auth -------------------------------------------------

@@ -285,6 +285,35 @@ type UserQuery struct {
 // Store is everything SwitchNet persists.
 //
 // Implementations must be safe for concurrent use.
+// Fest is a Splatfest, as the operator scheduled it.
+//
+// Only the mechanics: when it runs, where it is published, and which BCAT pack
+// carries its content. The team names, banners and idol dialogue live inside
+// that pack, not here. internal/toyohr decides what these values mean --
+// notably that StartAt has to land on a two-hour boundary -- and this type just
+// carries them.
+type Fest struct {
+	// ID is uppercase, "NXTD-00042"-shaped.
+	ID string
+	// Resource is the BCAT pack identifier, lowercase.
+	Resource string
+	// Revision is the pack's 40-hex-character revision.
+	Revision string
+	// StartAt is when play opens; every other phase derives from it.
+	StartAt time.Time
+	// Regions the fest is published in.
+	Regions []string
+	// PackKeys are the hex-encoded AES-128 keys that decrypt this fest's BCAT
+	// packs, in the order GetFestDecryptionKey returns them.
+	PackKeys []string
+	// Enabled is whether the operator has turned this fest on. A scheduled but
+	// disabled fest is how a fest is held ready without being announced.
+	Enabled bool
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type Store interface {
 	// ---- users ----
 
@@ -323,6 +352,20 @@ type Store interface {
 	ListDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
 	// DeleteDeviceAccount marks a device account deleted.
 	DeleteDeviceAccount(ctx context.Context, userID, id string) error
+	// ---- splatfests (phase 2) ----
+
+	// UpsertFest creates or replaces a fest by id.
+	UpsertFest(ctx context.Context, f Fest) error
+	// GetFest returns a fest by id, or ErrNotFound.
+	GetFest(ctx context.Context, id string) (Fest, error)
+	// ListFests returns every fest, soonest first.
+	ListFests(ctx context.Context) ([]Fest, error)
+	// DeleteFest removes a fest. Not an error if it does not exist: the
+	// dashboard's delete button should be idempotent.
+	DeleteFest(ctx context.Context, id string) error
+
+	// ---- devices and device accounts (continued) ----
+
 	// ReassignDeviceAccount moves a device account to a different user,
 	// keeping its id and password unchanged. Used only after the caller has
 	// already proven it holds that password (see completeLogin in
