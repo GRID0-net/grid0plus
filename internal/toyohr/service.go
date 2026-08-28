@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,6 +42,19 @@ type Service struct {
 	// schedule fests and never serves an RPC through it, so a handler reached
 	// without a resolver refuses rather than guessing.
 	callerID func(context.Context) (string, bool)
+
+	// rotation is the operator's configured stage and rule rotation. Empty
+	// means the schedule handlers answer with nothing, which is a state the
+	// game has a reading for.
+	rotation Rotation
+
+	// messages delivers lobby messages between connected players. In memory:
+	// a lobby message is worth nothing to a player who was not connected.
+	messages *messageHub
+
+	// noRotation remembers which schedule kinds have already been reported as
+	// unconfigured, so a console asking on a timer does not fill the log.
+	noRotation sync.Map
 }
 
 // Options configures the Splatoon 3 service set.
@@ -53,6 +66,9 @@ type Options struct {
 	// CallerID resolves the authenticated player behind an RPC. See the field
 	// comment; leaving it nil makes every player-scoped handler refuse.
 	CallerID func(context.Context) (string, bool)
+
+	// Rotation is the stage and rule rotation to serve. Empty is legitimate.
+	Rotation Rotation
 
 	Now func() time.Time
 }
@@ -68,6 +84,8 @@ func NewService(opts Options) *Service {
 		tenant:   opts.Tenant,
 		now:      opts.Now,
 		callerID: opts.CallerID,
+		rotation: opts.Rotation,
+		messages: newMessageHub(),
 	}
 }
 
@@ -85,11 +103,6 @@ func (s *Service) caller(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return id, true
-}
-
-// Register attaches the services to a gRPC server.
-func (s *Service) Register(srv *grpc.Server) {
-	toyohrpb.RegisterFestServiceServer(srv, s)
 }
 
 // tenantPath is the resource-name prefix every fest resource hangs off.

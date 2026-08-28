@@ -3,9 +3,22 @@
 Splatoon 3's own NPLN services (`nn.npln.toyohr.v1.*`). Splatfests first,
 because custom Splatfests are what phase 2 exists for.
 
+## Every service is registered, including the empty ones
+
+`Register` attaches all ten, even the six with no handlers. That is deliberate:
+an RPC on a registered service answers `Unimplemented` and `internal/npln`'s
+interceptor **logs it once, naming the method**, whereas an RPC on a service
+that was never registered fails the same way with nothing in the log. ROADMAP
+§2.4 says to let the console drive the order of this backlog, and that only
+works if the console's asking is recorded.
+
+`services.go` carries a note on each unimplemented one saying what taking it on
+would involve. `GameRecord` is the one that matters most — battle results come
+from there, and battle results are the missing half of a fest verdict.
+
 | | |
 | --- | --- |
-| Reimplements | `nn.npln.toyohr.v1.FestService` |
+| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening` |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
 | Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/fest.proto` |
 | Needs a database | yes |
@@ -73,6 +86,68 @@ SwitchNet built: its pack was encrypted with keys stored alongside it, and
 custom Splatfest possible rather than a rename of one of Nintendo's — both
 inputs to the pack encryption, the key and the resource name, are the server's
 to choose.
+
+## The schedule: the mechanics are ours, the numbers are not
+
+`Schedule` generates the versus rotation rather than storing it: a rotation is a
+deterministic function of the clock and the operator's stage list, so there is
+nothing to keep in sync, and the same request at the same time always produces
+the same answer — which is what makes the etag worth anything.
+
+What this package decides: two-hour slot alignment (the same 7200-second bucket
+a fest's phases must land on), a twelve-slot horizon, back-to-back windows with
+no gaps, wrapping rather than running out, and an etag over exactly the values a
+client would act on.
+
+What it does **not** decide: the stage and rule identifiers. Those are Splatoon
+3's own internal numbering, nothing public documents them, and an invalid one's
+behaviour on the console is itself unknown. They come from `npln.rotation`, as
+strings so a typo is an error rather than quietly becoming stage 0 — which is a
+plausible valid id, so a parse failure would be indistinguishable from an
+intention.
+
+An empty rotation answers with no schedules, which is what the game sees between
+seasons on a real server, and logs once per kind so the operator can tell that
+from a broken server.
+
+`SelectCoopSchedules` answers empty for a sharper reason: a co-op shift is a
+stage, a boss, four weapon ids and a reward, and unlike the versus rotation
+there is nothing useful left once the unknown numbers are removed.
+
+## Lobby messaging: a message, not a mailbox
+
+The hub is in memory, and that is the design rather than a shortcut. A lobby
+message is worth nothing to a player who was not connected when it was sent —
+persisting them would mean deciding when they expire, and the answer is
+"immediately".
+
+Three properties:
+
+- **the sender comes from the token.** `SendMessage` carries a `user` field;
+  honouring it would be impersonation with extra steps.
+- **the lobby is an opaque topic string.** Which lobbies exist is the game's
+  business, and treating it as a string rather than modelling it means there is
+  nothing here to get out of step with the game.
+- **a send that would block is dropped**, and a message nobody received is not
+  an error. A console that stopped reading must not stall delivery for everyone
+  else, and a message to a player who just quit is a message nobody gets —
+  reporting that as a failure has the sender retry something that cannot
+  succeed.
+
+A lobby message is not echoed to its sender: their console already knows what it
+sent, and echoing shows the player their own message twice.
+
+## Reports are logged, not filed
+
+`CreateReport` accepts and logs at **warn**. Accepting because the console shows
+a failure here to the player, and somebody reporting another player should not
+see a communication error. Logging rather than storing because this is a private
+network of consoles one person owns: there is no moderation queue, and the useful
+outcome of a report is that the operator hears about it.
+
+`GetViolation` always reports none. SwitchNet issues no penalties — there is
+nobody to issue them, and a private server that silently banned one of the
+operator's own consoles would be a bug with no way to see it.
 
 ## The vote is measured; the battle ratios are not
 

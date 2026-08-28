@@ -122,10 +122,18 @@ windows, but it cannot express that by returning — returning closes the stream
 which the client reads as the connection failing. It sends keep-alives instead.
 ROADMAP §2.5 records the same rule for the friends streams.
 
-## Not yet implemented
+## Not yet implemented, and how you find out
 
-Registered services answer `Unimplemented` for RPCs that have no handler, and
-log. That log is the to-do list (ROADMAP §2.4).
+An RPC with no handler answers `Unimplemented`, and the interceptor **logs it
+once, naming the method**. That log is the to-do list (ROADMAP §2.4), which is
+why it is a mechanism here rather than a line in each handler — and why
+`internal/toyohr` registers every service including the empty ones. An RPC on an
+unregistered service fails identically with nothing in the log.
+
+The check matches the *generated* message, not the code alone:
+`codes.Unimplemented` is also what this server deliberately answers for a flow it
+will not serve — a delegated matchmaking ticket, malformed metadata — and those
+are decisions rather than gaps.
 
 `grep -rn 'TODO(capture-needed)' .` for the shapes that are reasoned rather than
 known. The two here today are the resource-name shapes — all of them, collected

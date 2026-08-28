@@ -17,15 +17,19 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
+	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -57,8 +61,16 @@ type Server struct {
 	// unknownModes remembers which modes have already been logged, so a console
 	// re-queuing every thirty seconds does not fill the log with the same line.
 	unknownModes sync.Map
+	// unimplemented remembers which RPCs have already been reported as
+	// unanswered, for the same reason: the console retries.
+	unimplemented sync.Map
 
 	iceServers []config.IceServer
+
+	// rotation is the stage and mode rotation internal/toyohr's Schedule
+	// service serves. Parsed in New, so a typo in config fails at startup
+	// rather than on the first request from a console.
+	rotation toyohr.Rotation
 
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
@@ -108,6 +120,16 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("npln: no tenant configured")
 	}
 
+	rotation, err := toyohr.RotationFromStrings(
+		opts.Config.Rotation.RegularStages,
+		opts.Config.Rotation.BankaraRules,
+		opts.Config.Rotation.BankaraStages,
+		opts.Config.Rotation.StagesPerSlot,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Server{
 		store:          opts.Store,
 		log:            opts.Log,
@@ -121,6 +143,7 @@ func New(opts Options) (*Server, error) {
 		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),
 		matchModes:     opts.Config.ModePlayers,
 		iceServers:     opts.Config.IceServers,
+		rotation:       rotation,
 		now:            opts.Now,
 		stop:           make(chan struct{}),
 	}
@@ -234,7 +257,9 @@ func (s *Server) unaryInterceptor(
 	if err != nil {
 		return nil, err
 	}
-	return handler(ctx, req)
+	resp, err := handler(ctx, req)
+	s.noteUnimplemented(info.FullMethod, err)
+	return resp, err
 }
 
 func (s *Server) streamInterceptor(
@@ -245,7 +270,37 @@ func (s *Server) streamInterceptor(
 	if err != nil {
 		return err
 	}
-	return handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	err = handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	s.noteUnimplemented(info.FullMethod, err)
+	return err
+}
+
+// noteUnimplemented logs an RPC the console asked for and this server does not
+// answer, once per method.
+//
+// **This log is the to-do list**, which is why it is worth a mechanism rather
+// than a line in each handler. ROADMAP §2.4 says to let the console drive the
+// order of the remaining toyohr services; that only works if an unanswered RPC
+// says so, and it only says so if its service is registered. So: register
+// everything, and catch the refusals here.
+//
+// Matched on the generated message rather than on the code alone. codes
+// .Unimplemented is also what this server deliberately answers for a flow it
+// will not serve — a delegated matchmaking ticket, malformed metadata — and
+// those are decisions, not gaps. protoc-gen-go-grpc's stubs all say "method X
+// not implemented"; SwitchNet's own refusals never do.
+func (s *Server) noteUnimplemented(method string, err error) {
+	if status.Code(err) != codes.Unimplemented {
+		return
+	}
+	if !strings.HasSuffix(status.Convert(err).Message(), "not implemented") {
+		return
+	}
+	if _, seen := s.unimplemented.LoadOrStore(method, struct{}{}); seen {
+		return
+	}
+	s.log.Info("npln: the console asked for an RPC this server does not implement",
+		"method", method)
 }
 
 // enter parses and authenticates one call, returning the context the handler

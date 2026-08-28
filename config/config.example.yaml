@@ -331,6 +331,31 @@ npln:
   # Off by default: it writes whatever the console sends.
   rest_record_dir: ""
 
+  # The stage and mode rotation the lobby shows.
+  #
+  # THE NUMBERS ARE SPLATOON 3'S OWN and nothing public documents them, so they
+  # are yours to supply rather than SwitchNet's to guess -- an invalid stage id's
+  # behaviour on the console is itself unknown. What SwitchNet does supply is
+  # everything around them: two-hour slot alignment, the rotation order, the
+  # window a client asked for, and the etag its conditional request compares.
+  #
+  # Empty is fine. The schedule handlers then answer with no schedules, which is
+  # what the game sees between seasons on a real server, and the absence is
+  # logged once so you can tell it from a broken server.
+  #
+  # Written as strings on purpose: stage 0 is a plausible id, so a typo has to
+  # be an error rather than quietly becoming zero.
+  rotation:
+    regular_stages: []
+    bankara_rules: []
+    bankara_stages: []
+    # How many stages one slot offers. Zero means two, which is what a real
+    # rotation offers.
+    stages_per_slot: 0
+    # regular_stages: ["1", "2", "3", "4"]
+    # bankara_rules: ["1", "2"]
+    # bankara_stages: ["5", "6", "7", "8"]
+
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------

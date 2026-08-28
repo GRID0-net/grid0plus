@@ -296,6 +296,13 @@ type NPLN struct {
 	// internal/nplnrest refuses to start rather than allow it.
 	FrontlineHost string `yaml:"frontline_host"`
 
+	// Rotation is the stage and mode rotation the Schedule service serves.
+	//
+	// Empty is legitimate: the schedule handlers then answer with no schedules,
+	// which is what the game sees between seasons on a real server, and the
+	// absence is logged once per kind.
+	Rotation Rotation `yaml:"rotation"`
+
 	// RestRecordDir, when set, is a directory the JSON front end writes every
 	// request and response to.
 	//
@@ -305,6 +312,28 @@ type NPLN struct {
 	// console sends, headers included — credentials are redacted, bodies are
 	// not.
 	RestRecordDir string `yaml:"rest_record_dir"`
+}
+
+// Rotation is the stage and mode rotation Splatoon 3's lobby shows.
+//
+// **The identifiers are Splatoon 3's own internal numbering, and nothing public
+// documents them** — so they are operator input rather than a table in
+// SwitchNet's source. Given as strings so that a typo is reported with the
+// offending value: stage 0 is a plausible valid id, so a zero produced by a
+// failed parse would be indistinguishable from an intended one.
+//
+// The mechanics around them — two-hour slot alignment, windowing, ordering, the
+// etag — are SwitchNet's and live in internal/toyohr.
+type Rotation struct {
+	// RegularStages are the stage ids Turf War rotates through, in order.
+	RegularStages []string `yaml:"regular_stages"`
+	// BankaraRules are the rule ids Anarchy rotates through, in order.
+	BankaraRules []string `yaml:"bankara_rules"`
+	// BankaraStages are the stage ids Anarchy rotates through, in order.
+	BankaraStages []string `yaml:"bankara_stages"`
+	// StagesPerSlot is how many stages one slot offers. Zero means two, which
+	// is what a real rotation offers.
+	StagesPerSlot int `yaml:"stages_per_slot"`
 }
 
 // IceServer is one STUN or TURN server offered to a console.

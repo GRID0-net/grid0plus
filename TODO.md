@@ -40,12 +40,33 @@ Priority labels are about *unblocking other work*, not importance:
 
 ### 1.1 The rest of `nn.npln.toyohr.v1.*` — **P2**
 
-Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
-`GameRecord`, `CoopScenario` (Salmon Run), then `Locker`, `CloudSave`,
-`Replay`, `Canola`, `UserScreening`.
+Every service is now registered, so an RPC with no handler answers
+`codes.Unimplemented` and `internal/npln`'s interceptor logs it once, naming the
+method. **That log is the to-do list** — it exists now, which it did not when
+the services were unregistered.
 
-Treat it as a backlog and let the console drive the order: an unimplemented RPC
-answers `codes.Unimplemented` and logs, and **that log is the to-do list**.
+Implemented: `FestService` in full, `Schedule` (versus and season; co-op is
+capture-gated, see below), `LobbyMessaging`, `UserScreening`.
+
+Still open, roughly in the order a console will ask for them:
+
+| Service | What it needs beyond a handler |
+| --- | --- |
+| `GameRecord` | **the most valuable one.** Battle results come from here, and battle results are the missing half of a Splatfest verdict — see `GetFestResult` |
+| `CloudSave` | be deliberate rather than quick: this holds the player's actual save, so a bug loses progress rather than degrading a feature |
+| `CoopScenario`, `Replay` | a document store and a shared code namespace |
+| `Locker`, `Canola` | the same document shape, per player |
+
+Two things inside what *is* implemented are capture-gated rather than
+unwritten:
+
+- **`SelectCoopSchedules` answers empty.** A co-op shift is a stage, a boss,
+  four weapon ids and a reward — all Splatoon 3 internal numbers, and unlike the
+  versus rotation nothing useful is left once they are removed. An empty
+  response is a state the game has a reading for; a shift full of invented ids
+  is not.
+- **`Schedule`'s stage and rule ids come from `npln.rotation`.** The mechanics
+  around them are SwitchNet's; the numbers are not, so they are operator input.
 
 ### 1.2 `gamesync` — **P2**
 

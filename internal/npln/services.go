@@ -30,10 +30,11 @@ func (s *Server) register() {
 	// interceptor as everything else -- a fest is announced to a console that
 	// proved who it is, not to anyone who asks.
 	toyohr.NewService(toyohr.Options{
-		Store:  s.store,
-		Log:    s.log,
-		Tenant: s.tenant,
-		Now:    s.now,
+		Store:    s.store,
+		Log:      s.log,
+		Tenant:   s.tenant,
+		Now:      s.now,
+		Rotation: s.rotation,
 		// The identity comes from this package's interceptor. toyohr cannot
 		// import it back without a cycle, so it is handed in.
 		CallerID: func(ctx context.Context) (string, bool) {
