@@ -278,6 +278,7 @@ func nginxConf(cfg config.Config) string {
 		// silently.
 		nintendo.ServiceNPLN:     cfg.NPLN.Listen,
 		nintendo.ServiceNPLNRest: cfg.NPLN.RestListen,
+		nintendo.ServiceGamesync: cfg.NPLN.GamesyncListen,
 	}
 	names := map[nintendo.Service]string{
 		nintendo.ServiceDAuth:    "dauth",
@@ -286,6 +287,7 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceStubs:    "stubs",
 		nintendo.ServiceNPLN:     "npln",
 		nintendo.ServiceNPLNRest: "npln_rest",
+		nintendo.ServiceGamesync: "gamesync",
 	}
 
 	var b strings.Builder
@@ -312,7 +314,7 @@ func nginxConf(cfg config.Config) string {
 	// Phase 2's upstreams. Both are served by cmd/npln, which exists now: the
 	// gRPC gateway on npln.listen and the JSON front end on npln.rest_listen.
 	for _, svc := range []nintendo.Service{
-		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN,
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
 	} {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
@@ -351,13 +353,20 @@ func nginxConf(cfg config.Config) string {
 		}
 
 		fmt.Fprintf(&b, "# ---- %s ----\n", names[svc])
-		if svc == nintendo.ServiceNPLN {
+		if svc == nintendo.ServiceNPLN || svc == nintendo.ServiceGamesync {
 			b.WriteString("# NPLN is gRPC over HTTP/2, so it needs grpc_pass and http2, not\n")
 			b.WriteString("# proxy_pass. Routing it to an HTTP/1.1 backend completes the TLS\n")
 			b.WriteString("# handshake and then says nothing a gRPC client understands, which\n")
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
-			b.WriteString(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}]))
+			if svc == nintendo.ServiceGamesync {
+				b.WriteString("#\n")
+				b.WriteString("# On its OWN PORT: the console reaches gamesync directly on 7575\n")
+				b.WriteString("# rather than through the tenant host, so a block on the edge port\n")
+				b.WriteString("# would never match it.\n")
+			}
+			b.WriteString(grpcServerBlock(cfg, names[svc],
+				listenPort(cfg, hosts), grouped[variant{verifyClient: true, http2: true}]))
 			b.WriteString("\n")
 			continue
 		}
@@ -508,7 +517,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
 	return b.String()
 }
 
-func grpcServerBlock(cfg config.Config, serverNames []string) string {
+func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames []string) string {
 	return fmt.Sprintf(`server {
     listen %d ssl;
     http2 on;
@@ -518,10 +527,25 @@ func grpcServerBlock(cfg config.Config, serverNames []string) string {
     ssl_certificate_key /etc/switchnet/certs/edge.key;
 
     location / {
-        grpc_pass grpc://switchnet_npln;
+        grpc_pass grpc://switchnet_%s;
     }
 }
-`, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
+`, port, strings.Join(serverNames, "\n                "), upstream)
+}
+
+// listenPort returns the port a service's hosts are reached on.
+//
+// The edge port unless a host says otherwise. Only gamesync says otherwise, and
+// a mismatch here means a server block that never matches -- which on the
+// console looks like the game rejecting our implementation rather than like a
+// routing mistake.
+func listenPort(cfg config.Config, hosts []nintendo.Host) int {
+	for _, h := range hosts {
+		if h.TLSPort != 0 {
+			return h.TLSPort
+		}
+	}
+	return cfg.Network.EdgeTLSPort
 }
 
 // tlsNamesOf returns every concrete hostname in hosts that needs a server_name,

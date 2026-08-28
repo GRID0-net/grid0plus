@@ -150,7 +150,7 @@ switchnet-mode:
 config-check:
 	$(GO) run ./cmd/switchnetctl $(if $(wildcard $(CONFIG)),-config $(CONFIG),) check
 
-## up: start Postgres, Redis and every phase 1 service
+## up: start Postgres, Redis and every service (phases 1 and 2)
 .PHONY: up
 up:
 	docker compose up -d --build
@@ -178,6 +178,12 @@ clean-data:
 .PHONY: logs
 logs:
 	docker compose logs -f
+
+## fest-build: build a Splatfest's packs, seed folder and schedule in one step
+.PHONY: fest-build
+fest-build:
+	@test -n "$(ASSETS)" || { echo "usage: make fest-build ASSETS=./fest-assets OUT=./dev/seed"; exit 2; }
+	go run ./cmd/switchnetctl fest build -assets "$(ASSETS)" -out "$(OUT:=./dev/seed)"
 
 ## seed: create dev accounts, friendships and presence through the real API
 .PHONY: seed

@@ -296,24 +296,46 @@ func TestAccountsNintendoComIsRoutedToBAAS(t *testing.T) {
 }
 
 func TestNPLNTenantForSplatoon3IsListed(t *testing.T) {
-	// Phase 2 needs this, and it is listed now so the hosts file an operator
-	// installs today does not have to be regenerated then. gamesync does not end
-	// in srv.nintendo.net, which is why a broad wildcard would miss it.
-	var haveTenant, haveGamesync bool
+	var haveTenant bool
 	for _, h := range ServiceHosts(ServiceNPLN) {
 		if strings.HasPrefix(h.Pattern, "t-dce9377b-lp1.") {
 			haveTenant = true
-		}
-		if strings.HasPrefix(h.Pattern, "gamesync.") {
-			haveGamesync = true
 		}
 	}
 	if !haveTenant {
 		t.Error("the Splatoon 3 NPLN tenant host is missing")
 	}
-	if !haveGamesync {
-		t.Error("gamesync.npln.nintendo.net is missing; it does not end in " +
-			"srv.nintendo.net, so no wildcard covers it")
+}
+
+// TestGamesyncIsItsOwnServiceOnItsOwnPort.
+//
+// gamesync is reached by the console on PORT 7575, not the edge port, and it is
+// a different backend from the tenant gateway. Grouping it with ServiceNPLN
+// emitted one nginx block on 443 that grpc_passed both to the gateway -- which
+// answers, wrongly, with a service that implements none of gamesync's RPCs. That
+// failure looks like the game disliking our gamesync implementation rather than
+// like a routing mistake, which is why it is worth a test rather than a comment.
+//
+// It also does not end in srv.nintendo.net, so no broad wildcard covers it.
+func TestGamesyncIsItsOwnServiceOnItsOwnPort(t *testing.T) {
+	hosts := ServiceHosts(ServiceGamesync)
+	if len(hosts) != 1 {
+		t.Fatalf("ServiceGamesync has %d hosts, want 1", len(hosts))
+	}
+	if hosts[0].Pattern != "gamesync.npln.nintendo.net" {
+		t.Errorf("gamesync host = %q", hosts[0].Pattern)
+	}
+	if hosts[0].TLSPort != 7575 {
+		t.Errorf("TLSPort = %d, want 7575 — a block on the edge port never matches", hosts[0].TLSPort)
+	}
+	if !hosts[0].TLS {
+		t.Error("gamesync is TLS, so it needs a certificate SAN and a server block")
+	}
+
+	for _, h := range ServiceHosts(ServiceNPLN) {
+		if strings.HasPrefix(h.Pattern, "gamesync.") {
+			t.Error("gamesync is still grouped with the tenant gateway")
+		}
 	}
 }
 

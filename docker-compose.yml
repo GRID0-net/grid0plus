@@ -1,4 +1,5 @@
-# SwitchNet, phase 1: accounts and the stock friends list.
+# SwitchNet: accounts and the stock friends list (phase 1), plus the Splatoon 3
+# game server and the operator dashboard (phase 2).
 #
 #   make up          start everything
 #   make seed        create dev accounts, friendships and presence
@@ -180,6 +181,85 @@ services:
     network_mode: host
 
   # ---------------------------------------------------------------------------
+  # npln: the Splatoon 3 game server (phase 2)
+  # ---------------------------------------------------------------------------
+  # THREE listeners in one process, and they are not interchangeable:
+  #
+  #   8085  the gRPC gateway     nginx must reach it with grpc_pass, HTTP/2
+  #   8086  the JSON front end   nginx must reach it with proxy_pass, HTTP/1.1
+  #   8088  gamesync             nginx terminates TLS for it on 7575, the port
+  #                              the console actually connects to
+  #
+  # Crossing the first two in nginx completes the TLS handshake and then fails
+  # with nothing in either log. One process because gamesync verifies tokens the
+  # gateway signs -- see cmd/npln.
+  npln:
+    <<: *defaults
+    command: ["/usr/local/bin/npln"]
+    environment:
+      <<: *env
+      SWITCHNET_NPLN_LISTEN: ":8085"
+      SWITCHNET_NPLN_REST_LISTEN: ":8086"
+      SWITCHNET_NPLN_GAMESYNC_LISTEN: ":8088"
+      SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
+      SWITCHNET_DATABASE_AUTO_MIGRATE: "true"
+      # Redis, not the in-process bus: the dashboard is a different process and
+      # the local bus delivers nothing across a process boundary -- silently.
+      # Without this the dashboard's matchmaking tile reports no data.
+      SWITCHNET_REDIS_URL: "redis://redis:6379/0"
+      # Set this before the FIRST console test. It writes every JSON front-end
+      # request and response to disk, hexdumped and in order, which is the only
+      # record anyone has of three undocumented request shapes. See
+      # internal/nplnrest.
+      SWITCHNET_NPLN_REST_RECORD_DIR: ${SWITCHNET_NPLN_REST_RECORD_DIR:-}
+      SWITCHNET_NPLN_PLAYERS_PER_MATCH: ${SWITCHNET_NPLN_PLAYERS_PER_MATCH:-2}
+    volumes:
+      - ./dev/keys:/var/lib/switchnet/keys
+      - ./dev/captures:/var/lib/switchnet/captures
+    ports:
+      - "127.0.0.1:8085:8085"
+      - "127.0.0.1:8086:8086"
+      # NOT 7575: that port belongs to the nginx edge, which is where the
+      # console connects. Binding it here too means nginx cannot start.
+      - "127.0.0.1:8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      baas:
+        condition: service_started
+
+  # ---------------------------------------------------------------------------
+  # dashboard: the operator's view (phase 2)
+  # ---------------------------------------------------------------------------
+  # Bound to 0.0.0.0 like baas, for the same reason: it is a page for a person's
+  # own browser on the LAN. Set SWITCHNET_DASHBOARD_TOKEN, or anybody who can
+  # reach the port can schedule and cancel Splatfests.
+  dashboard:
+    <<: *defaults
+    command: ["/usr/local/bin/dashboard"]
+    environment:
+      <<: *env
+      SWITCHNET_DASHBOARD_LISTEN: ":8087"
+      SWITCHNET_DASHBOARD_TOKEN: ${SWITCHNET_DASHBOARD_TOKEN:-}
+      SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
+      SWITCHNET_REDIS_URL: "redis://redis:6379/0"
+      # Where `switchnetctl fest build -out` writes its seed folders, and what
+      # switch/bcat-installer fetches from.
+      SWITCHNET_BCAT_SEED_DIR: /var/lib/switchnet/seed
+    volumes:
+      - ./dev/keys:/var/lib/switchnet/keys
+      - ./dev/seed:/var/lib/switchnet/seed
+    ports:
+      - "0.0.0.0:8087:8087"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
   # nginx: TLS edge; routes Nintendo hostnames to the right backend by SNI
   # ---------------------------------------------------------------------------
   # Runs with host networking so the upstream addresses in the generated config
@@ -204,6 +284,8 @@ services:
       baas:
         condition: service_started
       stubs:
+        condition: service_started
+      npln:
         condition: service_started
 
 volumes:

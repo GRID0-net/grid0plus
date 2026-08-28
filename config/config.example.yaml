@@ -305,9 +305,14 @@ npln:
   listen: ":8085"
   rest_listen: ":8086"
 
-  # gamesync is the document/watch service. The game reaches it on its own
-  # port rather than through the tenant host, and 7575 is the port it expects.
-  gamesync_listen: ":7575"
+  # gamesync is the document/watch service, and this is where it listens
+  # INTERNALLY -- deliberately not 7575.
+  #
+  # The console reaches gamesync on 7575, and that port belongs to the nginx
+  # edge: it terminates TLS there and grpc_passes to this address. Binding the
+  # backend to 7575 too means nginx cannot start, and two listeners racing for
+  # the port is a much worse first symptom than a port that reads oddly here.
+  gamesync_listen: ":8088"
 
   # The NPLN tenant id. Splatoon 3's is dce9377b, which is where the tenant
   # hostname t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net comes from.

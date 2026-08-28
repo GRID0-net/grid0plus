@@ -244,8 +244,13 @@ type NPLN struct {
 	// RestListen is the JSON front end: vermillion, penne, and the persistent
 	// frontline connection.
 	RestListen string `yaml:"rest_listen"`
-	// GamesyncListen is the document/watch service. Splatoon 3 reaches it on
-	// its own port rather than through the tenant host.
+	// GamesyncListen is where the document/watch service listens INTERNALLY.
+	//
+	// Not 7575. The console reaches gamesync on 7575, and that port belongs to
+	// the nginx edge -- which terminates TLS there and grpc_passes to this
+	// address. Binding the backend to 7575 as well means nginx cannot start,
+	// and the two listeners racing for it is a much worse first symptom than a
+	// port that reads oddly in config.
 	GamesyncListen string `yaml:"gamesync_listen"`
 
 	// Tenant is the NPLN tenant id. Splatoon 3's is dce9377b.
@@ -512,7 +517,7 @@ func Default() Config {
 		NPLN: NPLN{
 			Listen:         ":8085",
 			RestListen:     ":8086",
-			GamesyncListen: ":7575",
+			GamesyncListen: ":8088",
 			Tenant:         "dce9377b",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
@@ -625,6 +630,10 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_TENANT", &c.NPLN.Tenant)
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
+	envStr("SWITCHNET_NPLN_FRONTLINE_HOST", &c.NPLN.FrontlineHost)
+	envStr("SWITCHNET_NPLN_REST_RECORD_DIR", &c.NPLN.RestRecordDir)
+	envInt("SWITCHNET_NPLN_PLAYERS_PER_MATCH", &c.NPLN.PlayersPerMatch)
+	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
