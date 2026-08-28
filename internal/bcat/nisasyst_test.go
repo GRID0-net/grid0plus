@@ -201,3 +201,79 @@ func mustHex(t *testing.T, s string) []byte {
 	}
 	return b
 }
+
+// TestEveryPackHasExactlyOneKeyField guards the mapping between the five packs a
+// seed folder holds and the six key fields GetFestDecryptionKey declares.
+//
+// There is no positional mapping between five and six, and pretending there was
+// one is the bug this test exists to keep out: with PackOrder used as a key
+// order, wa's key landed in result_winning_team, wb's in team_alpha, and every
+// team pack failed to open — with nothing in the failure naming a phase.
+func TestEveryPackHasExactlyOneKeyField(t *testing.T) {
+	if len(KeyFields) != 6 {
+		t.Fatalf("KeyFields has %d entries, want the 6 the message declares", len(KeyFields))
+	}
+
+	seen := map[string]string{}
+	for _, field := range KeyFields {
+		pack, ok := PackForKeyField[field]
+		if !ok {
+			t.Errorf("key field %q has no entry in PackForKeyField", field)
+			continue
+		}
+		if pack == "" {
+			continue
+		}
+		if other, dup := seen[pack]; dup {
+			t.Errorf("pack %q is claimed by both %q and %q", pack, other, field)
+		}
+		seen[pack] = field
+	}
+
+	for _, pack := range PackOrder {
+		if _, ok := seen[pack]; !ok {
+			t.Errorf("pack %q has no key field, so its key can never reach the console", pack)
+		}
+	}
+
+	// The certain half: nothing else reads sensibly.
+	for field, wantPack := range map[string]string{
+		KeyTeamAlpha:   PackTeamAlpha,
+		KeyTeamBravo:   PackTeamBravo,
+		KeyTeamCharlie: PackTeamChar,
+	} {
+		if got := PackForKeyField[field]; got != wantPack {
+			t.Errorf("%s opens %q, want %q", field, got, wantPack)
+		}
+	}
+}
+
+func TestKeysInFieldOrderKeepsAbsentPacksAsEmptySlots(t *testing.T) {
+	// A two-team fest has no wc, and result_winning_team has no pack at all.
+	// Both must be empty slots rather than omissions, or every later key shifts
+	// into the wrong phase.
+	keys := KeysInFieldOrder(map[string][]byte{
+		PackBase:      make([]byte, 16),
+		PackTeamAlpha: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+	})
+
+	if len(keys) != len(KeyFields) {
+		t.Fatalf("got %d slots, want one per key field (%d)", len(keys), len(KeyFields))
+	}
+	for i, field := range KeyFields {
+		switch field {
+		case KeyNotice:
+			if len(keys[i]) != 32 {
+				t.Errorf("%s is %q, want base's key", field, keys[i])
+			}
+		case KeyTeamAlpha:
+			if keys[i] != "0102030405060708090a0b0c0d0e0f10" {
+				t.Errorf("%s is %q, want wa's key", field, keys[i])
+			}
+		default:
+			if keys[i] != "" {
+				t.Errorf("%s is %q, want an empty slot", field, keys[i])
+			}
+		}
+	}
+}

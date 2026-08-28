@@ -1,6 +1,7 @@
 package toyohr
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/n-popescu/switchnet/internal/bcat"
 	"github.com/n-popescu/switchnet/internal/db"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
@@ -271,14 +273,14 @@ func TestTheDecryptionKeysComeBackInTheOrderTheMessageDeclares(t *testing.T) {
 	}
 }
 
-// TestAllSevenKeySlotsAreAvailable.
+// TestAllSixKeySlotsAreAvailable.
 //
 // The reference implementation this protocol knowledge came from caps its
 // response at three keys, on the grounds that the game never asks for more. The
-// schema declares seven and the request carries a show_all_keys flag, so that
-// cap is a property of the phases they happened to test rather than of the
-// protocol. Not inherited.
-func TestAllSevenKeySlotsAreAvailable(t *testing.T) {
+// schema declares six and the request carries a show_all_keys flag, so that cap
+// is a property of the phases they happened to test rather than of the protocol.
+// Not inherited.
+func TestAllSixKeySlotsAreAvailable(t *testing.T) {
 	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	svc, _ := newService(t, start.Add(6*time.Hour))
 
@@ -354,5 +356,87 @@ func TestAFestThatWouldFailOnHardwareIsRefusedAtSaveTime(t *testing.T) {
 	}
 	if len(fests) != 0 {
 		t.Errorf("%d invalid fests were stored", len(fests))
+	}
+}
+
+// TestAPackThatDoesNotExistKeepsItsKeySlotEmpty guards the positional contract
+// between SaveFest and assignPackKeys.
+//
+// The keys are returned positionally — notice, start, result, then one per team
+// — so a two-team fest, which has no wc pack, needs an empty slot rather than a
+// shorter list. Requiring 32 characters everywhere would mean either inventing a
+// key for a pack nobody built or shifting every later key by one, which hands
+// the console the wrong key for the wrong phase and fails with nothing saying
+// which phase was wrong.
+//
+// This was found by running `switchnetctl fest build` rather than by a test:
+// SaveFest rejected exactly the shape the builder produces.
+func TestAPackThatDoesNotExistKeepsItsKeySlotEmpty(t *testing.T) {
+	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	svc, store := newService(t, start.Add(-24*time.Hour))
+
+	f := NewFest(start, DefaultRegions)
+	key := strings.Repeat("ab", 16)
+	// base and bh built; the three team packs are not.
+	if err := svc.SaveFest(context.Background(), f, true,
+		[]string{key, key, "", "", "", ""}); err != nil {
+		t.Fatalf("a fest with unbuilt packs was refused: %v", err)
+	}
+
+	row, err := store.GetFest(context.Background(), f.ID)
+	if err != nil {
+		t.Fatalf("get fest: %v", err)
+	}
+	if len(row.PackKeys) != 6 || row.PackKeys[2] != "" {
+		t.Errorf("keys stored as %v, want the empty slots kept", row.PackKeys)
+	}
+
+	// A key that is present must still be the right length: a truncated key is
+	// a pack that never opens, and that is worth refusing at the point it is
+	// entered.
+	if err := svc.SaveFest(context.Background(), f, true, []string{"abcd"}); err == nil {
+		t.Error("a short pack key was accepted")
+	}
+}
+
+// TestATeamPackKeyReachesItsOwnTeamField is the other half of
+// bcat.TestEveryPackHasExactlyOneKeyField: the mapping is right in bcat, and it
+// survives the trip through the store and out of GetFestDecryptionKey.
+func TestATeamPackKeyReachesItsOwnTeamField(t *testing.T) {
+	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	svc, _ := newService(t, start.Add(-24*time.Hour))
+
+	f := NewFest(start, DefaultRegions)
+	keys := bcat.KeysInFieldOrder(map[string][]byte{
+		bcat.PackBase:      bytes.Repeat([]byte{0xaa}, 16),
+		bcat.PackTeamAlpha: bytes.Repeat([]byte{0xbb}, 16),
+		bcat.PackTeamBravo: bytes.Repeat([]byte{0xcc}, 16),
+	})
+	if err := svc.SaveFest(context.Background(), f, true, keys); err != nil {
+		t.Fatalf("save fest: %v", err)
+	}
+
+	got, err := svc.GetFestDecryptionKey(context.Background(),
+		&toyohrpb.GetFestDecryptionKeyRequest{
+			Name: "tenants/" + testTenant + "/fests/" + f.ID + "/decryptionKey",
+		})
+	if err != nil {
+		t.Fatalf("get keys: %v", err)
+	}
+
+	if got.GetTeamAlphaKey() != strings.Repeat("bb", 16) {
+		t.Errorf("team_alpha_key = %q, want wa's key", got.GetTeamAlphaKey())
+	}
+	if got.GetTeamBravoKey() != strings.Repeat("cc", 16) {
+		t.Errorf("team_bravo_key = %q, want wb's key", got.GetTeamBravoKey())
+	}
+	// wc was not built, so its field stays absent rather than carrying wb's key
+	// shifted along — which is what a positional five-onto-six list did.
+	if got.GetTeamCharlieKey() != "" {
+		t.Errorf("team_charlie_key = %q, but no wc pack exists", got.GetTeamCharlieKey())
+	}
+	if got.GetResultWinningTeamKey() != "" {
+		t.Errorf("result_winning_team_key = %q, but no pack corresponds to it",
+			got.GetResultWinningTeamKey())
 	}
 }

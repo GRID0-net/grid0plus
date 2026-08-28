@@ -45,12 +45,17 @@ Nextendo's server contributes only *behaviour* on top: timing constants, the
 pack encryption scheme, and the alignment rule. Nothing structural depends on it.
 
 Cross-checking the two found a place where the public schema is the better
-guide. `FestDecryptionKey` defines **seven** key fields — `notice_key`,
+guide. `FestDecryptionKey` defines **six** key fields — `notice_key`,
 `start_key`, `result_winning_team_key`, then `team_alpha_key`, `team_bravo_key`,
 `team_charlie_key` — and `GetFestDecryptionKeyRequest` carries a `show_all_keys`
 flag. The reference caps its response at three on the grounds that the game never
 asks for more, which is plausibly true of the phases it was tested against and
-not a property of the protocol. Implement all seven; let the request decide.
+not a property of the protocol. Implement all six; let the request decide.
+
+(An earlier version of this paragraph said seven, and then listed six. The
+miscount mattered: a seed folder holds **five** packs, and a positional mapping
+from packs to key fields therefore cannot be right in either count — see
+`internal/bcat`'s `PackForKeyField`, and the off-by-one it replaced.)
 
 The second is a study of NextendoNetwork's own Splatoon 3 server, which the
 operator supplied. It is **PolyForm Shield 1.0.0** — source-available, with a

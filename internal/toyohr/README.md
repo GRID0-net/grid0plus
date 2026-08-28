@@ -62,17 +62,22 @@ decryption IV from that string, so one wrong capital means the pack never opens
 and nothing in the failure points back at the name.
 
 **A key in the wrong slot is silent.** `GetFestDecryptionKey` returns keys
-positionally — notice, start, result, then the three per-team keys. A
-misordered key is handed to the console for the wrong phase and the pack fails
-to open, with nothing saying which phase was wrong.
+positionally — notice, start, result, then the three per-team keys. A misordered
+key is handed to the console for the wrong phase and the pack fails to open, with
+nothing saying which phase was wrong.
 
-## Seven key slots, not three
+There are **five packs and six key fields**, so the mapping is named rather than
+positional: `bcat.KeyFields` and `bcat.PackForKeyField`. Treating the pack list
+as a key order put `wa`'s key in `result_winning_team` and `wb`'s in
+`team_alpha`, and every team pack failed to open.
 
-The message declares seven key fields and the request carries a `show_all_keys`
+## Six key slots, not three
+
+The message declares six key fields and the request carries a `show_all_keys`
 flag. A reference implementation this protocol knowledge was checked against
 caps its response at three, on the grounds that the game never asks for more —
 which is plausibly true of the phases it was tested against and is not a
-property of the protocol. All seven are filled when supplied.
+property of the protocol. All six are filled when supplied.
 
 A key that was **not** supplied is left absent rather than empty. Nintendo omits
 the key for a phase that has not happened yet, and an empty string is a key the

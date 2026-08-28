@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -145,8 +146,79 @@ const (
 	PackTeamChar   = "wc"
 )
 
-// PackOrder is the pack list in key order.
+// PackOrder is the packs a seed folder holds, in a stable order.
+//
+// Note what this is NOT: the order GetFestDecryptionKey returns its keys in.
+// There are five packs and SIX key fields, so no positional mapping between the
+// two can be right — KeyFields and PackForKeyField below are the mapping.
 var PackOrder = []string{PackBase, PackBattleHelp, PackTeamAlpha, PackTeamBravo, PackTeamChar}
+
+// The key fields FestDecryptionKey declares, in the order it declares them.
+//
+// GetFestDecryptionKey returns keys POSITIONALLY, so this order is the contract:
+// a key in the wrong slot is handed to the console for the wrong phase, the pack
+// fails to open, and nothing in the failure says which phase was wrong.
+const (
+	KeyNotice            = "notice"
+	KeyStart             = "start"
+	KeyResultWinningTeam = "result_winning_team"
+	KeyTeamAlpha         = "team_alpha"
+	KeyTeamBravo         = "team_bravo"
+	KeyTeamCharlie       = "team_charlie"
+)
+
+// KeyFields is the key-field order, which is also the order keys are stored in.
+var KeyFields = []string{
+	KeyNotice, KeyStart, KeyResultWinningTeam,
+	KeyTeamAlpha, KeyTeamBravo, KeyTeamCharlie,
+}
+
+// PackForKeyField maps each key field onto the pack its key opens.
+//
+// **The three team fields are the certain half**: team_alpha opens wa, bravo
+// opens wb, charlie opens wc. Nothing else reads sensibly, and getting these
+// wrong is what a five-packs-onto-six-fields positional list silently did —
+// wa's key landed in result_winning_team, wb's in team_alpha, and every team
+// pack failed to open.
+//
+// TODO(capture-needed): which of notice and start opens base, and which opens
+// bh — and what result_winning_team opens, since a seed folder has five files
+// and there are six fields, so at least one field has no pack in the layout
+// confirmed against a real seed. The reading here is chronological: base is the
+// fest's main content and is present from the announcement, bh is battle help
+// which matters once play starts, and result_winning_team has no pack because
+// nothing in a real seed folder corresponds to it. A capture of
+// GetFestDecryptionKey's response for a fest whose packs are known would settle
+// it. Change: this map.
+var PackForKeyField = map[string]string{
+	KeyNotice:            PackBase,
+	KeyStart:             PackBattleHelp,
+	KeyResultWinningTeam: "",
+	KeyTeamAlpha:         PackTeamAlpha,
+	KeyTeamBravo:         PackTeamBravo,
+	KeyTeamCharlie:       PackTeamChar,
+}
+
+// KeysInFieldOrder renders per-pack keys as the positional list a fest row
+// stores and GetFestDecryptionKey returns.
+//
+// A field with no pack, or a pack that was not built, gets an EMPTY slot rather
+// than being left out. Nintendo omits the key for a phase that has not happened
+// yet, and an empty string is a key the console would try to use — so the
+// consumer skips empties, and the slot keeps every later key in position.
+func KeysInFieldOrder(keys map[string][]byte) []string {
+	out := make([]string, 0, len(KeyFields))
+	for _, field := range KeyFields {
+		pack := PackForKeyField[field]
+		key, ok := keys[pack]
+		if pack == "" || !ok {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, hex.EncodeToString(key))
+	}
+	return out
+}
 
 // Decrypt turns an encrypted pack into its zstd-compressed contents.
 //

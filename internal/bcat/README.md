@@ -121,6 +121,27 @@ Two consequences worth stating, each with a test:
   name (`juea-lovefes2_bh.pack.zs`). Getting it wrong breaks exactly one of the
   five — the largest.
 
+## Five packs, six key fields
+
+A seed folder holds **five** packs. `FestDecryptionKey` declares **six** key
+fields, and the keys are returned *positionally* — so no positional mapping
+between the two can be right, and treating `PackOrder` as a key order was a real
+bug: `wa`'s key landed in `result_winning_team`, `wb`'s in `team_alpha`, and every
+team pack failed to open with nothing in the failure naming a phase.
+
+`KeyFields` and `PackForKeyField` are the mapping, and `KeysInFieldOrder` is the
+only place that turns per-pack keys into the stored list.
+
+The three team fields are the certain half — `team_alpha` opens `wa` and so on;
+nothing else reads sensibly. Which of `notice` and `start` opens `base` and which
+opens `bh`, and what `result_winning_team` opens at all, is
+`TODO(capture-needed)`: a real seed folder has five files and the message has six
+fields, so at least one field has no pack.
+
+An absent pack keeps an **empty slot** rather than being left out. A two-team
+fest has no `wc`, and dropping its slot shifts every later key into the wrong
+phase.
+
 The container is a 4-byte little-endian length followed by block-padded
 ciphertext. The length bounds the real content, so there is no padding scheme to
 strip; trusting the block size instead hands zstd up to fifteen bytes of rubbish.

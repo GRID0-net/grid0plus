@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/n-popescu/switchnet/internal/bcat"
 	"github.com/n-popescu/switchnet/internal/db"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
@@ -211,29 +212,30 @@ func (s *Service) GetFestDecryptionKey(
 
 // assignPackKeys fills the key fields from an ordered list.
 //
-// A key that is absent is left absent rather than filled with an empty string.
-// Nintendo omits the key for a phase that has not happened yet, and an empty
-// string is a key the console would try to use.
+// The order is bcat.KeyFields, which is the order the message declares its
+// fields in. A key that is absent is left absent rather than filled with an
+// empty string: Nintendo omits the key for a phase that has not happened yet,
+// and an empty string is a key the console would try to use.
+//
+// The reference implementation this protocol knowledge came from caps its
+// response at three fields, on the grounds that the game never asks for more --
+// which is plausibly true of the phases it was tested against and is not a
+// property of the protocol, since the schema declares six and the request
+// carries a show_all_keys flag. All six are filled when they are supplied.
 func assignPackKeys(dst *toyohrpb.FestDecryptionKey, keys []string) {
-	// The seven slots the message declares, in order. The reference
-	// implementation this protocol knowledge came from stops at three, on the
-	// grounds that the game never asks for more -- but the schema has seven and
-	// the request carries a show_all_keys flag, so that is a property of the
-	// phases they tested rather than of the protocol. All seven are filled when
-	// they are supplied.
-	set := []func(string){
-		func(v string) { dst.NoticeKey = v },
-		func(v string) { dst.StartKey = v },
-		func(v string) { dst.ResultWinningTeamKey = v },
-		func(v string) { dst.TeamAlphaKey = v },
-		func(v string) { dst.TeamBravoKey = v },
-		func(v string) { dst.TeamCharlieKey = v },
+	set := map[string]func(string){
+		bcat.KeyNotice:            func(v string) { dst.NoticeKey = v },
+		bcat.KeyStart:             func(v string) { dst.StartKey = v },
+		bcat.KeyResultWinningTeam: func(v string) { dst.ResultWinningTeamKey = v },
+		bcat.KeyTeamAlpha:         func(v string) { dst.TeamAlphaKey = v },
+		bcat.KeyTeamBravo:         func(v string) { dst.TeamBravoKey = v },
+		bcat.KeyTeamCharlie:       func(v string) { dst.TeamCharlieKey = v },
 	}
 	for i, k := range keys {
-		if i >= len(set) || k == "" {
+		if i >= len(bcat.KeyFields) || k == "" {
 			continue
 		}
-		set[i](k)
+		set[bcat.KeyFields[i]](k)
 	}
 }
 
@@ -346,8 +348,18 @@ func (s *Service) SaveFest(ctx context.Context, f Fest, enabled bool, packKeys [
 		return err
 	}
 	for i, k := range packKeys {
+		// An EMPTY key is legitimate and means "this pack does not exist", which
+		// is how the remaining keys stay in their declared positions --
+		// assignPackKeys returns them positionally and skips the empty ones. A
+		// two-team fest has no wc, and requiring 32 characters for its slot
+		// would mean either inventing a key for a pack nobody built or shifting
+		// every later key by one, which hands the console the wrong key for the
+		// wrong phase.
+		if k == "" {
+			continue
+		}
 		if len(k) != 32 {
-			return fmt.Errorf("pack key %d is %d characters, want 32 (a 16-byte AES-128 key in hex)", i, len(k))
+			return fmt.Errorf("pack key %d is %d characters, want 32 (a 16-byte AES-128 key in hex) or empty for a pack that does not exist", i, len(k))
 		}
 	}
 	return s.store.UpsertFest(ctx, RowFromFest(f, enabled, packKeys))
