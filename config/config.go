@@ -34,6 +34,7 @@ type Config struct {
 	BAAS      BAAS      `yaml:"baas"`
 	Stubs     Stubs     `yaml:"stubs"`
 	NPLN      NPLN      `yaml:"npln"`
+	BCAT      BCAT      `yaml:"bcat"`
 	Dashboard Dashboard `yaml:"dashboard"`
 	NATCheck  NATCheck  `yaml:"natcheck"`
 
@@ -350,6 +351,37 @@ type IceServer struct {
 	Password string `yaml:"password"`
 }
 
+// BCAT configures Splatfest content packs.
+type BCAT struct {
+	// Converter is a command that turns a source asset into a game format.
+	//
+	// SwitchNet does not convert textures itself, and that is deliberate: a
+	// BFRES texture in the wrong compression or the wrong Tegra swizzle LOADS
+	// and renders as garbage, on a console, with nothing on the server to look
+	// at. Switch Toolbox and the BinaryTextureLibrary family already do it
+	// correctly. See internal/bcat/convert.go for the contract this command
+	// has to meet.
+	//
+	// Empty means there is no converter, and a source asset is then a build
+	// error rather than a file packed as-is.
+	Converter string `yaml:"converter"`
+
+	// ConverterTimeout bounds one conversion, in seconds. A converter that
+	// hangs would otherwise hang the build — and on the dashboard, a request
+	// that never answers.
+	ConverterTimeout int `yaml:"converter_timeout"`
+
+	// SubstituteFestID rewrites {FEST} in an asset's in-pack path to the fest's
+	// own id.
+	//
+	// A real custom pack had every internal file named for the fest it was
+	// DERIVED from while announcing a different one, and nobody has established
+	// what the game keys on. On is the consistent choice; off keeps whatever
+	// names the source files carry. Either way the decision lives in one place
+	// — see internal/bcat.Naming and docs/QUESTIONS.md.
+	SubstituteFestID bool `yaml:"substitute_fest_id"`
+}
+
 // Dashboard configures the operator's web view.
 type Dashboard struct {
 	Listen string `yaml:"listen"`
@@ -485,6 +517,10 @@ func Default() Config {
 			// certificate SAN; this one is the least likely to surprise.
 			FrontlineHost: "fro-3.hac.lp1.penne.srv.nintendo.net",
 		},
+		BCAT: BCAT{
+			ConverterTimeout: 120,
+			SubstituteFestID: true,
+		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
 			SecondaryListen: ":10125",
@@ -566,6 +602,10 @@ func applyEnv(c *Config) {
 	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
 
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
+	envStr("SWITCHNET_STUBS_BCAT_RECORD_DIR", &c.Stubs.BCATRecordDir)
+
+	envStr("SWITCHNET_BCAT_CONVERTER", &c.BCAT.Converter)
+	envInt("SWITCHNET_BCAT_CONVERTER_TIMEOUT", &c.BCAT.ConverterTimeout)
 
 	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)
 	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)

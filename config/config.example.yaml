@@ -229,6 +229,46 @@ stubs:
   bcat_record_dir: ""
 
 # ---------------------------------------------------------------------------
+# bcat -- Splatfest content packs (phase 2)
+# ---------------------------------------------------------------------------
+bcat:
+  # A command that turns a source asset into a game format.
+  #
+  # SWITCHNET DOES NOT CONVERT TEXTURES ITSELF, deliberately. A BFRES texture in
+  # the wrong compression or the wrong Tegra swizzle LOADS and renders as
+  # garbage -- on a console, with nothing on the server to look at. Switch
+  # Toolbox and the BinaryTextureLibrary family already do it correctly, and they
+  # exist because it is hard.
+  #
+  # The command is called as:
+  #
+  #     <command> <source> <destination> <kind> <target-extension>
+  #
+  # It must write <destination> and exit zero. A non-zero exit, a missing file or
+  # an empty one all stop the build with the command line that produced them.
+  #
+  # A source asset is named for what it must BECOME, with the source extension
+  # appended: UI/Splashart.bfres.png becomes UI/Splashart.bfres. So the target
+  # format is visible in a directory listing and nothing has to guess it.
+  #
+  # Empty means no converter -- and then a source asset is a BUILD ERROR rather
+  # than a file packed as-is. That refusal is the point: packing a PNG gives a
+  # fest that loads on the console with art the game cannot decode.
+  converter: ""
+
+  # Seconds one conversion may take. A converter that hangs would otherwise hang
+  # the build, and on the dashboard a request that never answers.
+  converter_timeout: 120
+
+  # Rewrite {FEST} in an asset's in-pack path to the fest's own id.
+  #
+  # A real custom pack had every internal file named for the fest it was DERIVED
+  # from while announcing a different one, and nobody has established what the
+  # game keys on. On is the consistent choice; off keeps whatever names the
+  # source files carry. See docs/QUESTIONS.md.
+  substitute_fest_id: true
+
+# ---------------------------------------------------------------------------
 # dashboard -- the operator's web view (phase 2)
 # ---------------------------------------------------------------------------
 dashboard:

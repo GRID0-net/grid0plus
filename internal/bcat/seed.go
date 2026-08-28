@@ -91,7 +91,11 @@ func (s Seed) Validate() error {
 	return nil
 }
 
-// Packs maps a pack's short name to its zstd-compressed, UNencrypted contents.
+// Packs maps a pack's short name to its UNencrypted contents.
+//
+// A SARC archive, not a compressed one, despite the ".pack.zs" filename. That
+// was confirmed against a real seed: decrypting a pack yields SARC magic
+// directly, and the ".zs" is a leftover. See internal/bcat/sarc.go.
 type Packs map[string][]byte
 
 // Write builds the seed folder under dir.

@@ -70,71 +70,39 @@ unwritten:
 
 ## 2. Splatfests and BCAT
 
-### 2.1 Asset conversion: images → game-ready textures — **P2, large**
+### 2.1 A texture converter — **P2, and the only remaining part is external**
 
-**This is the rewrite the dashboard currently points at.**
+**The pipeline is built; the converter is not, and probably should not be
+written here.**
 
-Today `internal/bcat` takes assets that are *already* in the game's formats
-(`.bfres`, `.byaml`, `.sarc.zs`), assembles them into a SARC archive and
-encrypts it. That is the whole of what "custom assets" means right now: the
-operator produces files in Switch Toolbox and points the builder at them.
+`internal/bcat` now has the conversion seam: a source asset is named for what it
+must become (`UI/Splashart.bfres.png` → `UI/Splashart.bfres`), `bcat.converter`
+is a command that does the conversion, its output is validated, and — the part
+that mattered most — **a source asset with no converter configured is a build
+error** rather than a PNG packed into the archive. The dashboard's Assets panel
+reports the same thing.
 
-What is wanted is uploading a **PNG of the splashart, the tee designs, the
-banners** and having the server produce a loadable pack.
+What is left is a converter to point it at, and that means:
 
-**Why it is not done:** it is a genuinely large piece of work, not a missing
-function. It needs:
+- **texture encoding** — BC1/BC3/BC7, plus the exact format each slot expects;
+- **Tegra swizzling** — the GPU's block-linear memory layout;
+- **BFRES authoring** — the container Nintendo's textures live in;
+- **BYAML authoring** — team names and idol dialogue are structured data, not
+  images.
 
-- **BFRES authoring** — the container Nintendo's textures live in.
-- **Texture encoding** — BC1/BC3/BC7 compression, plus the exact format each
-  slot expects.
-- **Tegra swizzling** — the GPU's block-linear memory layout. Getting this
-  wrong produces a texture that loads and renders as garbage, which is worse
-  than one that fails.
-- **BYAML editing** — team names and idol dialogue live in structured data
-  inside the pack, not in the images.
-
-**Strongly consider not writing this in Go.** Switch Toolbox and the
+**Do not write this in Go.** Switch Toolbox and the
 `BinaryTextureLibrary`/`Syroot.NintenTools` family already do it, and they exist
-because it is hard. Shelling out to an existing converter, or vendoring one, is
-likely to beat a reimplementation that is subtly wrong in ways only a console
-reveals.
+because it is hard. The failure mode is the worst available: a texture that
+*loads and renders as garbage*, on a console, with nothing on the server to look
+at — so a reimplementation that is subtly wrong is worse than no
+reimplementation. Wrapping one of those tools in a script that meets the
+contract in `internal/bcat/convert.go` is the tractable job.
 
-**Start at** `internal/bcat/build.go` (`BuildPacks`), which is where converted
-files would enter, and the dashboard's Assets panel
-(`internal/dashboard/templates/index.html`), which currently explains the
-limitation to the operator.
-
-**Done when** an operator uploads a PNG in the dashboard and a console loads
-the resulting fest with that image visible in-game. Nothing short of the last
-clause counts — a pack that builds, encrypts and decrypts can still contain a
-texture the game renders as noise.
-
-### 2.2 Internal asset names embed the ORIGINAL fest id — **P2, and a trap**
-
-Reading a real custom pack showed every file inside named for the fest it was
-derived from:
-
-```
-Mals/Msg_EUde.Fest_JUEA-DUMPLING_Bh.sarc.zs
-Event/EventSetting/Fest_JUEA-DUMPLING_WinA.engine__event__EventSettingParam.bgyml
-RSDB/Tag.Fest_JUEA-DUMPLING.dev.rstbl.byml.zs
-```
-
-That pack's `summary.yml` announces `JUEA-00210` / `juea-lovefes2`. So the
-*container* is named for the custom fest while its *contents* are named for
-Nintendo's `JUEA-DUMPLING` — because it was made by editing that fest.
-
-**Nobody has established what the game actually keys on.** If it resolves
-assets by the announced fest id, a genuinely from-scratch fest needs every
-internal path renamed consistently *and* the RSDB/rstbl tables that reference
-them rebuilt. If it only reads the pack it was handed, the names are inert.
-
-**This needs a console, so an autonomous agent cannot settle it.** It is
-already recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption
-being proceeded on (names are inert). Build §2.1 so that changing that
-assumption later is a contained change rather than a rewrite — keep the naming
-decision in one place.
+**Done when** an operator uploads a PNG in the dashboard and a console loads the
+resulting fest with that image visible in-game. Nothing short of the last clause
+counts — a pack that builds, encrypts and decrypts can still contain a texture
+the game renders as noise. **That last clause needs a console, so an agent
+cannot close this item.**
 
 ### 2.4 Serving BCAT natively — **P1 to TEST, and the server is now ready**
 

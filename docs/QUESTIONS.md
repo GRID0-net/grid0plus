@@ -55,11 +55,14 @@ the pack it was given, the names are inert and this is a non-issue.
 **The experiment:** build a pack whose internal names match its own fest id, put
 it on a console, see whether the fest loads.
 
-**Proceeding on:** names are inert — packs are built with whatever names the
-source assets carry. This is the cheaper assumption and it is what existing
-custom fests do, but it is unverified.
+**Proceeding on:** `bcat.substitute_fest_id` is **on** by default, and an asset
+path containing `{FEST}` gets the announced fest id substituted in. An operator
+who writes literal names gets them left alone, so both readings are reachable
+without a code change.
 
-**Changes if answered:** `internal/bcat/build.go`, and TODO §2.1's scope.
+**Changes if answered:** `internal/bcat.Naming.Apply`, and nothing else — the
+naming decision was deliberately confined to that one function so that acting on
+an answer is a one-line change rather than a rewrite.
 
 ---
 

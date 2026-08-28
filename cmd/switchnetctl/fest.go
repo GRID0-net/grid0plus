@@ -63,16 +63,9 @@ func festBuild(cfg config.Config, args []string) {
 		os.Exit(2)
 	}
 
-	// 1. Build the packs. Their bytes decide the revision, so this comes first:
-	//    a revision chosen before the packs exist is a revision that will not
-	//    match them.
-	packs, err := bcat.BuildPacks(*assets)
-	if err != nil {
-		fail(err)
-	}
-	revision := bcat.Revision(packs)
-
-	// 2. Settle the fest's identity.
+	// 1. Settle the fest's identity, because the in-pack asset names may
+	//    contain the fest id -- see bcat.FestPlaceholder. The revision comes
+	//    from the packs, so it is filled in after they are built.
 	start := toyohr.NextFestStart(time.Now().UTC())
 	if *startAt != "" {
 		parsed, err := time.Parse(time.RFC3339, *startAt)
@@ -88,7 +81,6 @@ func festBuild(cfg config.Config, args []string) {
 	if *resource != "" {
 		fest.Resource = strings.ToLower(strings.TrimSpace(*resource))
 	}
-	fest.Revision = revision
 
 	if !toyohr.IsSlotAligned(start) {
 		// Reported rather than silently aligned, because an operator who asked
@@ -98,6 +90,27 @@ func festBuild(cfg config.Config, args []string) {
 			"note: -start %s is not on a two-hour slot boundary; using %s instead\n",
 			start.UTC().Format(time.RFC3339), fest.Timetable().Start.Format(time.RFC3339))
 	}
+
+	// 2. Build the packs. Their bytes decide the revision, so a revision chosen
+	//    before they exist is a revision that will not match them.
+	opts := bcat.BuildOptions{}
+	if cfg.BCAT.SubstituteFestID {
+		opts.Naming = bcat.Naming{FestID: fest.ID}
+	}
+	if cfg.BCAT.Converter != "" {
+		conv, err := bcat.NewCommandConverter(cfg.BCAT.Converter,
+			time.Duration(cfg.BCAT.ConverterTimeout)*time.Second)
+		if err != nil {
+			fail(err)
+		}
+		opts.Converter = conv
+	}
+
+	packs, err := bcat.BuildPacksWith(context.Background(), *assets, opts)
+	if err != nil {
+		fail(err)
+	}
+	fest.Revision = bcat.Revision(packs)
 
 	// 3. One key per pack, generated. The raw bytes encrypt the pack and the
 	//    hex goes in the fest row, both from bcat.KeysInFieldOrder -- so the two
