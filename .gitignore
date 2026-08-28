@@ -50,3 +50,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Upstream NPLN protobuf definitions, fetched by scripts/fetch-proto.sh.
+# Only the generated Go in proto/ is tracked.
+.proto-upstream/

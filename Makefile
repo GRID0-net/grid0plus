@@ -92,6 +92,15 @@ lint:
 .PHONY: check
 check: fmt-check vet test
 
+## gen-proto: fetch the upstream NPLN definitions and regenerate proto/
+.PHONY: gen-proto
+gen-proto:
+	scripts/fetch-proto.sh
+	scripts/gen-proto.sh
+	@echo
+	@echo "proto/ is generated and tracked in git, so a plain build needs neither"
+	@echo "the network nor a protobuf toolchain. Commit the regenerated files."
+
 ## gen-certs: create the local CA and the edge certificate
 .PHONY: gen-certs
 gen-certs:
