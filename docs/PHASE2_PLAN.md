@@ -16,6 +16,22 @@ and [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) are public
 reverse-engineering documentation. The protobuf definitions come from there and
 are regenerated, never hand-transcribed — same rule as ROADMAP §2.1.
 
+**That upstream covers more than expected, which matters for how this phase is
+built.** `latest/proto/` carries not just the generic NPLN services but Splatoon
+3's own `toyohr/v1` — including `fest.proto`, with `SelectFestSchedule` and
+`GetFestDecryptionKey`, the two RPCs custom Splatfests turn on. So the message
+shapes are public, and the implementation is built against them. The study of
+Nextendo's server contributes only *behaviour* on top: timing constants, the
+pack encryption scheme, and the alignment rule. Nothing structural depends on it.
+
+Cross-checking the two found a place where the public schema is the better
+guide. `FestDecryptionKey` defines **seven** key fields — `notice_key`,
+`start_key`, `result_winning_team_key`, then `team_alpha_key`, `team_bravo_key`,
+`team_charlie_key` — and `GetFestDecryptionKeyRequest` carries a `show_all_keys`
+flag. The reference caps its response at three on the grounds that the game never
+asks for more, which is plausibly true of the phases it was tested against and
+not a property of the protocol. Implement all seven; let the request decide.
+
 The second is a study of NextendoNetwork's own Splatoon 3 server, which the
 operator supplied. It is **PolyForm Shield 1.0.0** — source-available, with a
 noncompete clause — not an open-source licence, and it is incompatible with this
@@ -269,11 +285,27 @@ internal.
 
 ## Open questions for the operator
 
-1. **Certificate pinning.** Splatoon 3 pins its own certificates, independently
-   of the console's CA store, so Phase 1's LayeredFS route does not cover it.
-   The reference gets past this with a patched client. What is acceptable here?
-   Without an answer, everything above is verifiable only against a Go test
-   client — which is worth building regardless, but is not the same as working.
+1. **Certificate pinning — there is a known route, and it needs a decision.**
+   Splatoon 3 pins its own certificates independently of the console's CA store,
+   so Phase 1's LayeredFS work does not cover it. `kinnay/NPLN-Protocols` ships
+   `generate_patch.py`, which builds an IPS patch disabling TLS certificate
+   verification in the game's main NSO — written for exactly this purpose
+   ("if you want to capture traffic or write your own NPLN servers"). The
+   reference reaches hardware the same way, with game patches.
+
+   The decision is one this repository has already taken a position on in a
+   neighbouring case, and the position does not transfer cleanly.
+   [`ROADMAP.md`](ROADMAP.md#phase-1--accounts-and-the-stock-friends-list)
+   rejects the Prelude-style route partly because it "turns off certificate
+   verification system-wide". An NSO patch is meaningfully narrower — one
+   game's binary, not the system TLS stack — but it is still *disabling*
+   verification rather than *adding* trust, which is the property Phase 1
+   deliberately preserved. It is also firmware-independent but game-version
+   gated, so it silently stops applying after a title update.
+
+   Recommend accepting it for Splatoon 3 specifically, with the narrowness and
+   the version-gating written down where an operator will find them. But it is
+   the operator's call, and nothing in the first slice depends on it.
 2. **STUN/TURN.** ROADMAP §2.3 is right that Splatoon 3 uses ICE, not the Pia
    NAT-check pair, so `natcheck` is not involved and coturn becomes a deployment
    dependency. Is standing that up in scope for this phase?
