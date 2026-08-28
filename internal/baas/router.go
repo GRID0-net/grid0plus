@@ -88,12 +88,17 @@ type Server struct {
 	naIDIssuer   *sjwt.Issuer
 
 	accessVerifier *sjwt.Verifier
-	// idVerifier checks an id_token presented to /1.0.0/federation against
-	// naIDIssuer's key. A REAL Nintendo Account id_token can never verify
-	// here — SwitchNet does not have Nintendo's key — so this only ever
-	// succeeds for a token nalink.go minted itself. That is exactly what
-	// makes it safe to treat a successful verification as proof the subject
-	// names a real, existing SwitchNet person: see completeLogin's use of it.
+	// idVerifier wraps naIDIssuer's key for verification. Two uses:
+	//   - the id_token presented to /1.0.0/federation. A REAL Nintendo
+	//     Account id_token can never verify here — SwitchNet does not have
+	//     Nintendo's key — so this only ever succeeds for a token nalink.go
+	//     minted itself. That is exactly what makes it safe to treat a
+	//     successful verification as proof the subject names a real,
+	//     existing SwitchNet person: see completeLogin's use of it.
+	//   - the refresh_token presented to naToken's "refresh_token" grant,
+	//     which nalink.go also signs with naIDIssuer's key (see
+	//     NAIDTokenJWKSURL's doc comment for why every token minted at
+	//     accounts.nintendo.com shares one key).
 	idVerifier *sjwt.Verifier
 	// deviceVerifier checks the device token a console presents to
 	// /1.0.0/application/token. SwitchNet's own dauth server issued it.
@@ -113,6 +118,15 @@ type Server struct {
 	// caller, and there is no reason for this map to be the exception.
 	naAuthCodes   map[string]authCode
 	naAuthCodesMu sync.Mutex
+
+	// naRefreshTokens holds the Nintendo Account link stub's refresh tokens
+	// (nalink.go). A plain opaque string, not a JWT: a real working capture
+	// (2026-08-27) showed refresh_token from this same endpoint is 64
+	// characters, not JWT-shaped, unlike every other token minted alongside
+	// it. Kept server-side rather than self-verified like the JWTs, for the
+	// same reason authCode is: an opaque value has nothing in it to verify.
+	naRefreshTokens   map[string]authCode
+	naRefreshTokensMu sync.Mutex
 }
 
 // Deps are the collaborators a Server needs.
@@ -132,19 +146,20 @@ type Deps struct {
 // New returns a BAAS server.
 func New(cfg Config, d Deps) *Server {
 	return &Server{
-		cfg:            cfg,
-		store:          d.Store,
-		bus:            d.Bus,
-		log:            d.Log,
-		accessIssuer:   d.AccessIssuer,
-		idIssuer:       d.IDIssuer,
-		naIDIssuer:     d.NAIDIssuer,
-		accessVerifier: d.AccessVerifier,
-		idVerifier:     d.IDVerifier,
-		deviceVerifier: d.DeviceVerifier,
-		appVerifier:    d.AppVerifier,
-		now:            func() time.Time { return time.Now().UTC() },
-		naAuthCodes:    map[string]authCode{},
+		cfg:             cfg,
+		store:           d.Store,
+		bus:             d.Bus,
+		log:             d.Log,
+		accessIssuer:    d.AccessIssuer,
+		idIssuer:        d.IDIssuer,
+		naIDIssuer:      d.NAIDIssuer,
+		accessVerifier:  d.AccessVerifier,
+		idVerifier:      d.IDVerifier,
+		deviceVerifier:  d.DeviceVerifier,
+		appVerifier:     d.AppVerifier,
+		now:             func() time.Time { return time.Now().UTC() },
+		naAuthCodes:     map[string]authCode{},
+		naRefreshTokens: map[string]authCode{},
 	}
 }
 
