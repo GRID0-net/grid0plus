@@ -151,7 +151,13 @@ var Hosts = []Host{
 	},
 	{
 		Pattern: "cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
-		Service: ServiceBAAS, TLS: true,
+		Service: ServiceBAAS, TLS: true, NoHTTP2: true,
+		// Never individually verified against a real capture until
+		// 2026-08-28: it was running nginx's default HTTP/2-on variant, the
+		// exact configuration m-lp1.baas.nintendo.com needed NoHTTP2 for. The
+		// console's image fetch is system-level account-data traffic, not
+		// the browser applet, so it gets that host's treatment, not
+		// accounts.nintendo.com's.
 		Comment: "BAAS profile image CDN",
 	},
 	{
