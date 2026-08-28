@@ -78,7 +78,8 @@ var SourceSuffix = map[string]string{
 // who writes a literal name gets it left alone. Whichever way the question is
 // answered, acting on the answer is a change to Naming.Apply and nothing else.
 //
-// Recorded in docs/QUESTIONS.md. TODO.md §2.2 has the experiment.
+// The experiment, and the assumption being proceeded on, are recorded in
+// docs/QUESTIONS.md. It needs a console.
 const FestPlaceholder = "{FEST}"
 
 // Naming decides the path an asset gets inside a pack.

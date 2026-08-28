@@ -21,6 +21,11 @@ Keep the categories. Add items to the category they belong to rather than the
 bottom. When you finish something, delete the item rather than marking it done
 — `git log` is the record of what happened.
 
+**The numbers are stable identifiers, not an ordering.** Items are referenced
+from source comments, config and `docs/`, so a finished item is deleted and the
+gap it leaves is kept rather than closed. §2.4 is §2.4 for as long as
+`internal/bcat` and `hosts.go` point at it.
+
 **If you are working autonomously, you cannot ask anything.** Several items
 below would benefit from an operator's answer. Do not stop for one: write the
 question into [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption you
@@ -166,31 +171,3 @@ does not convert textures itself.
 **When a converter exists**, this becomes an upload endpoint that writes into
 `bcat.seed_dir`'s assets tree and shells out to
 `bcat.BuildPacksWith` — everything below the UI is already in place.
-
-## 4. Verification and hardware
-
-### 4.1 Captures still wanted — **P2**
-
-`grep -rn 'TODO(capture-needed)' internal/` for the live list. As of writing:
-every NPLN resource-name shape (collected in `internal/npln/names.go`, so one
-capture settles all of them), whether Splatoon 3 ever calls `RefreshToken`, and
-the three `internal/nplnrest` bodies — those last are what `npln.rest_record_dir`
-exists to produce.
-
-Write captures up under `docs/CAPTURES/` using the template, redacted,
-reconcile the implementation, and **delete the `TODO` comment in the same
-commit** so the source and the notes cannot disagree.
-
----
-
-## 5. Housekeeping
-
-### 5.1 `docs/ROADMAP.md` §2 is out of date — **P3**
-
-[`docs/PHASE2_PLAN.md`](docs/PHASE2_PLAN.md) corrects it in four places — gRPC
-is not first, three hosts were misidentified, BCAT is missing entirely, and
-cert trust is a separate problem. The roadmap has not been amended, so the two
-disagree.
-
-Fold the corrections in and leave the plan as the record of how they were
-found.

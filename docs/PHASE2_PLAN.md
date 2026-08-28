@@ -1,6 +1,12 @@
 # Phase 2 implementation plan — NPLN, Splatoon 3, and the dashboard
 
-Status: **in progress.** Written 2026-08-28.
+Status: **complete, and folded back into the roadmap.** Written 2026-08-28.
+
+[`ROADMAP.md`](ROADMAP.md) §2 now carries the corrections this document found,
+marked in place, with the subsection numbers preserved because source comments
+cite them. **This file stays as the record of how they were found**, and of the
+licensing boundary the reference study was conducted under — neither of which
+belongs in a roadmap.
 
 | Step | State |
 | --- | --- |
@@ -11,6 +17,7 @@ Status: **in progress.** Written 2026-08-28.
 | Splatfest scheduling | done — `internal/toyohr` |
 | Match queue and formation | done — `internal/matchmaking` |
 | Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go` |
+| Certificate pinning decision | settled: accepted, written up in `switch/README.md` part 3 |
 | BCAT pack building and serving | not started — `internal/bcat` |
 | The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, shapes still capture-gated |
 | Splatfest entries, results and the rest of toyohr | done — `internal/toyohr` |
@@ -22,10 +29,12 @@ this plan committed to while the certificate-pinning question is open. The
 store work is verified against a real PostgreSQL 16, not only the in-memory
 implementation.
 
-This plan revises [`ROADMAP.md`](ROADMAP.md) §2 in four places where the roadmap
-turns out to be wrong or incomplete. Those corrections are the reason this
-document exists; if you read nothing else, read
-[What the roadmap gets wrong](#what-the-roadmap-gets-wrong).
+This plan revised [`ROADMAP.md`](ROADMAP.md) §2 in four places where the roadmap
+turned out to be wrong or incomplete. Those corrections are the reason this
+document exists, and they are now **also** in the roadmap itself — so if you read
+nothing else, read
+[What the roadmap gets wrong](#what-the-roadmap-gets-wrong) for the reasoning,
+and the roadmap for the current state.
 
 ## Where the knowledge came from
 

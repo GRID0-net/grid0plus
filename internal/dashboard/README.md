@@ -125,8 +125,12 @@ no authentication at all.
 
 Nothing in phase 1 authenticates a **person** — every credential in the stack
 belongs to a console — so there is no account to check against. A shared token
-is the honest minimum rather than a pretend identity system. See
-[`TODO.md`](../../TODO.md) §3.3.
+is the honest minimum rather than a pretend identity system.
+
+A real answer probably arrives with phase 3's Nintendo Account work, which
+introduces the first human-facing login. **Do not build a bespoke user system for
+one page before then** — it would be thrown away. Recorded in
+[`docs/QUESTIONS.md`](../../docs/QUESTIONS.md).
 
 ## No build step
 
