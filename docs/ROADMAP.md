@@ -68,6 +68,17 @@ That is good news. Compared to NEX's custom binary protocol, NPLN is a standard
 transport with mature tooling, and **Kinnay has published the decompiled protobuf
 definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols).
 
+> **This section was written before any of it was built, and four things in it
+> turned out to be wrong.** They are corrected in place below, and
+> [`PHASE2_PLAN.md`](PHASE2_PLAN.md) is the record of how each was found.
+> [`../TODO.md`](../TODO.md) is the live work list — this is the shape of the
+> phase, not its state.
+>
+> In short: **gRPC is not the first thing the game talks to**; three hosts were
+> misfiled; **BCAT was missing from the plan entirely** and is what makes a
+> Splatfest actually appear; and certificate trust for this title is a separate
+> problem from Phase 1's, because Splatoon 3 pins its own.
+
 ### 2.1 Protobuf pipeline
 
 `scripts/fetch-proto.sh` clones the upstream definitions; `scripts/gen-proto.sh`
@@ -78,6 +89,24 @@ an update is a one-command refresh rather than a diffing exercise.
 
 This step is genuinely independent of Phase 1's hardware verification, so it is
 the safe thing to do first if Phase 1 is still waiting on consoles.
+
+### 2.1a The JSON front end comes FIRST
+
+**Splatoon 3 does not open with gRPC.** It speaks ordinary JSON over HTTPS to
+`gw.hac.lp1.vermillion…` (device init) and `val.hac.lp1.penne…` (login tickets,
+and the FQDN of a `fro-*.hac.lp1.penne…` frontline host), and only *then* opens
+the gRPC channel to the tenant. Those four hosts were originally filed as
+ordinary stubs; they are `ServiceNPLNRest` now.
+
+They need different nginx from the gateway — `proxy_pass` and HTTP/1.1, against
+`grpc_pass` and HTTP/2. Routing either through the other's block completes the
+TLS handshake and then fails with nothing in either log.
+
+The frontline connection is a long-lived stream the console holds open; closing
+it is an error on the console, not a clean end.
+
+Nothing implements these yet, and all three request/response shapes are
+`TODO(capture-needed)` — see [`../TODO.md`](../TODO.md) §1.3.
 
 ### 2.2 Gateway and core services
 
@@ -99,15 +128,23 @@ does. `internal/jwt` currently only does RS256 and will need an EC path.
 
 ### 2.3 Matchmaking and sessions
 
-A FIFO or skill-bucket queue for Turf War to start. On a match, create a
-`GameSession` row and return station info so each client's Pia handshake can
-proceed. Log every match to `npln_matches` for the dashboard.
+A FIFO queue per mode, in memory. On a match, form a session naming a host and
+hand it to every player on their ticket stream. Log every match to
+`npln_matches` for the dashboard.
 
 **NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
 so `natcheck` is not involved in this title, and a STUN/TURN server (coturn) is a
 new deployment dependency. The addresses handed to the console must be reachable
 *from the console*: this is the most common cause of "the lobby fills but the
 match never starts".
+
+Note that gameplay is **peer-to-peer**: once a match starts the consoles talk
+directly and SwitchNet is out of the path, so the session names a *host player*,
+not a station address. `AllocateIceServerSet` reads `npln.ice_servers`, which is
+empty by default — consoles on one LAN connect directly, which is the common
+case for a private server.
+
+The match log is still to do ([`../TODO.md`](../TODO.md) §3.1).
 
 ### 2.4 Splatoon 3 services (`nn.npln.toyohr.v1.*`)
 
@@ -117,6 +154,30 @@ Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 
 Treat this list as a backlog and let capture data drive the order. Log every
 unimplemented RPC with a hexdump — that log is the to-do list.
+
+`FestService` turned out to be the one with a dependency outside NPLN entirely,
+which is 2.4a.
+
+### 2.4a BCAT — how a Splatfest actually appears
+
+**Missing from this plan as first written, and it is half the feature.**
+
+`FestService` announces only a fest's *mechanics*: which pack to load, its
+revision, the phase times. Every piece of content — team names, splashart, tee
+designs, idol dialogue — lives in a **BCAT** pack the console fetches
+separately, encrypted with `nisasyst` (AES-128-CBC, IV derived from a CRC32 of
+the resource path seeding `sead::Random`).
+
+The announced id, the resource name, the revision and the decryption keys must
+all agree, or the game reports `BcatInvalid` — which reaches the player as a
+generic communication error. And every fest timestamp must land on a two-hour
+boundary or the game demands its verdict instead of opening.
+
+`internal/bcat` builds and encrypts the packs, verified byte-identical against
+real ones. What it cannot do is **serve** them: the `list` response body is
+undocumented and whether the console verifies the container signature has never
+been established. §2.4 of [`../TODO.md`](../TODO.md) has the experiment that
+would settle it, and the probe for stage 1 is built.
 
 ### 2.5 Friends integration
 
@@ -145,6 +206,24 @@ list and match history, and a recent match list.
 `internal/presencebus` already exists for this. **Switch `redis.url` on before the
 dashboard runs as a separate process** — the in-process bus delivers nothing
 across a process boundary, silently.
+
+Built, plus a Splatfest section that schedules, announces, holds and deletes
+fests. Match history and live matchmaking counts are not wired ([`../TODO.md`](../TODO.md)
+§3.1) — and the same cross-process problem applies to them, since the queue lives
+in `cmd/npln`.
+
+### 2.7 Certificate trust is a SEPARATE problem here
+
+Phase 1's CA-store work does not cover Splatoon 3. The game carries its own TLS
+stack and pins its own certificates independently of the console's trust store,
+so redirection succeeding tells you nothing about whether the handshake will.
+
+`kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch
+disabling verification in the game's NSO. The operator has accepted a
+system-wide patch, so this is a decision already made rather than an open
+question — but write down both properties: it *disables* verification rather
+than *adding* trust, and it is gated on the game version, so a title update
+silently stops it applying.
 
 ---
 

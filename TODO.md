@@ -346,16 +346,6 @@ commit** so the source and the notes cannot disagree.
 
 ## 5. Housekeeping
 
-### 5.1 `docs/ROADMAP.md` §2 is out of date — **P3**
-
-[`docs/PHASE2_PLAN.md`](docs/PHASE2_PLAN.md) corrects it in four places — gRPC
-is not first, three hosts were misidentified, BCAT is missing entirely, and
-cert trust is a separate problem. The roadmap has not been amended, so the two
-disagree.
-
-Fold the corrections in and leave the plan as the record of how they were
-found.
-
 ### 5.2 The `bcat-*` hosts are null-routed — **contingent, not settled**
 
 `hosts.go` null-routes `bcat-list`, `bcat-data` and `bcat-topics`, and
