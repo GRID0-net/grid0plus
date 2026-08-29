@@ -68,6 +68,11 @@ type Options struct {
 	NPLNAdminURL   string
 	NPLNAdminToken string
 
+	// Addresses is where each service listens, for the health view. Taken from
+	// the same config the services themselves read, so a changed port cannot
+	// leave the page probing the old one.
+	Addresses ServiceAddresses
+
 	Now func() time.Time
 }
 
@@ -85,6 +90,12 @@ type Server struct {
 
 	// matchmaking is nil when the controls are not configured.
 	matchmaking *matchmakingClient
+
+	addresses ServiceAddresses
+	// probeClient is separate from the matchmaking client: health probes must
+	// not be queued behind a slow control call, or a service looks down because
+	// a different one is busy.
+	probeClient *http.Client
 
 	tmpl *template.Template
 }
@@ -119,6 +130,8 @@ func New(opts Options) (*Server, error) {
 		token:       opts.Token,
 		now:         opts.Now,
 		matchmaking: newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
+		addresses:   opts.Addresses,
+		probeClient: &http.Client{Timeout: probeTimeout},
 		tmpl:        tmpl,
 	}, nil
 }
@@ -136,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
 	mux.HandleFunc("DELETE /api/fests/{id}", s.guard(s.handleDeleteFest))
+	mux.HandleFunc("GET /api/health", s.guard(s.handleHealth))
 	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))

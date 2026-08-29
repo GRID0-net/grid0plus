@@ -54,6 +54,10 @@ func NewMemory() *Memory {
 // Close is a no-op.
 func (m *Memory) Close() error { return nil }
 
+// Ping always succeeds: the in-memory store is reachable exactly as long as the
+// process using it is.
+func (m *Memory) Ping(context.Context) error { return nil }
+
 // ---- users ---------------------------------------------------------------
 
 // CreateUser inserts a user and its first device account.

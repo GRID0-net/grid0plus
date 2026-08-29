@@ -210,6 +210,70 @@ $("#fest-form").addEventListener("submit", async (e) => {
   }
 });
 
+// ---- service health -------------------------------------------------------
+
+const HEALTH_WORD = { ok: "up", degraded: "degraded", down: "down", unknown: "not probed" };
+
+function renderHealth(services) {
+  const down = services.filter((s) => s.status === "down").length;
+  const degraded = services.filter((s) => s.status === "degraded").length;
+
+  $("#health-summary").textContent =
+    down || degraded
+      ? `${down} down · ${degraded} degraded`
+      : `all ${services.length} services up`;
+
+  $("#health-list").replaceChildren(
+    ...services.map((s) => {
+      const card = document.createElement("div");
+      card.className = "svc svc-" + s.status;
+
+      const checks = Object.entries(s.checks || {})
+        .map(([name, c]) =>
+          `<span class="pill ${c.ok ? "on" : "warn"}" title="${escape(c.error || "")}">` +
+          `${escape(name)}${c.ok ? "" : " failed"}</span>`)
+        .join(" ");
+
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">
+            <span class="pip ${s.status === "ok" ? "online" : s.status === "unknown" ? "offline" : "playing"}"></span>
+            ${escape(s.name)}
+            <span class="pill ${s.status === "ok" ? "on" : s.status === "unknown" ? "" : "warn"}">${HEALTH_WORD[s.status] || s.status}</span>
+            ${checks}
+          </div>
+          <div class="meta">${escape(s.addr)}${
+            s.uptimeSeconds ? " · up " + uptime(s.uptimeSeconds) : ""
+          } · ${s.tookMs}ms</div>
+          ${s.detail ? `<div class="meta svc-detail">${escape(s.detail)}</div>` : ""}
+        </div>`;
+      return card;
+    })
+  );
+}
+
+/** "3d 4h" / "2h 10m" / "45s" — an uptime that is always small is a crash loop. */
+function uptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m`;
+  return `${seconds}s`;
+}
+
+async function loadHealth() {
+  try {
+    renderHealth((await api("/api/health")).services || []);
+  } catch (e) {
+    $("#health-summary").textContent = "could not read health";
+    $("#health-list").replaceChildren(
+      Object.assign(document.createElement("p"), { className: "empty", textContent: e.message })
+    );
+  }
+}
+
 // ---- matchmaking ----------------------------------------------------------
 
 let matchmaking = { configured: false };
@@ -468,6 +532,16 @@ async function refresh() {
 })();
 
 refresh();
+
+// Health is loaded SEPARATELY from refresh(), and never inside its try.
+//
+// refresh() reads players and the overview, both of which fail when the
+// database is down -- which is exactly when the health page is the thing being
+// looked at. Chaining health onto the end of it meant the one view that could
+// explain the outage was the one that rendered empty during it.
+loadHealth();
+setInterval(loadHealth, 15000);
+
 connect();
 // Presence arrives on the stream; this catches everything else -- a fest
 // crossing into its next phase, an account created elsewhere.

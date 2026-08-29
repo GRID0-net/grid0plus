@@ -68,6 +68,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"findUsers":             testFindUsers,
 		"userLogin":             testUserLogin,
 		"fests":                 testFests,
+		"ping":                  testPing,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1134,5 +1135,14 @@ func testFests(t *testing.T, s Store) {
 	// Idempotent: the dashboard's delete button should not error on a second click.
 	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
 		t.Errorf("deleting a missing fest errored: %v", err)
+	}
+}
+
+// testPing is in the contract because health checks read it, and a Ping that
+// answers on one implementation and not the other would make a service look
+// degraded only in the deployment that matters.
+func testPing(t *testing.T, s Store) {
+	if err := s.Ping(context.Background()); err != nil {
+		t.Errorf("Ping on a live store: %v", err)
 	}
 }

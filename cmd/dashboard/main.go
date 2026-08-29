@@ -8,6 +8,7 @@ import (
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/dashboard"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/health"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/service"
 )
@@ -61,6 +62,7 @@ func main() {
 
 		NPLNAdminURL:   cfg.Dashboard.NPLNAdminURL,
 		NPLNAdminToken: cfg.Dashboard.NPLNAdminToken,
+		Addresses:      dashboard.AddressesFrom(cfg),
 	})
 	if err != nil {
 		service.Fatal(log, "build dashboard", err)
@@ -71,8 +73,10 @@ func main() {
 			"this port can schedule and cancel Splatfests")
 	}
 
+	healthz := health.New("dashboard").Add("database", store.Ping)
+
 	log.Info("dashboard: listening", "addr", cfg.Dashboard.Listen)
-	if err := service.ServeHTTP(ctx, log, cfg.Dashboard.Listen, srv.Handler()); err != nil {
+	if err := service.ServeHTTPWithHealth(ctx, log, cfg.Dashboard.Listen, srv.Handler(), healthz); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

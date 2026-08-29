@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/n-popescu/switchnet/config"
+	"github.com/n-popescu/switchnet/internal/health"
 )
 
 // ConfigFlag registers the -config flag and returns a pointer to its value.
@@ -70,6 +71,30 @@ const shutdownGrace = 10 * time.Second
 // network: a console that drops off mid-request must not hold a connection open
 // indefinitely.
 func ServeHTTP(ctx context.Context, log *slog.Logger, addr string, handler http.Handler) error {
+	return ServeHTTPWithHealth(ctx, log, addr, handler, nil)
+}
+
+// ServeHTTPWithHealth is ServeHTTP with a /healthz endpoint in front.
+//
+// In front of the service's own router, not inside it: every service has its
+// own mux that answers a Nintendo API, and threading health through each of
+// them is how one gets missed. A nil health handler serves nothing extra, so
+// this is also just ServeHTTP.
+func ServeHTTPWithHealth(
+	ctx context.Context, log *slog.Logger, addr string,
+	handler http.Handler, healthz *health.Handler,
+) error {
+	if healthz != nil {
+		inner := handler
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == health.Path {
+				healthz.ServeHTTP(w, r)
+				return
+			}
+			inner.ServeHTTP(w, r)
+		})
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,

@@ -14,6 +14,26 @@
 
 ---
 
+## Running it
+
+```sh
+cp config/config.example.yaml config/config.yaml   # then edit it
+scripts/start.sh                                   # start everything
+scripts/update.sh                                  # pull, restart only what changed
+```
+
+`start.sh` generates the edge certificate and the nginx configuration if they
+are missing, validates the config, brings the stack up and waits until it is
+actually answering — `docker compose ps` saying "running" is not the same thing.
+
+`update.sh` works out which services a change reaches by reading each binary's
+Go package graph, so a change to `internal/baas` restarts only baas and a change
+to `internal/db` restarts everything that imports it. `--dry-run` says what it
+would do.
+
+The dashboard's **Health** tab asks every service directly and shows what each
+one's own dependencies are doing.
+
 ## What this is
 
 Accounts, friend codes, friend requests, friend lists and presence — including

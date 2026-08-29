@@ -30,6 +30,7 @@
   <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
   <button role="tab" aria-selected="false" data-view="players">Players</button>
   <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
+  <button role="tab" aria-selected="false" data-view="health">Health</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
 </nav>
 
@@ -83,6 +84,20 @@
         <tbody></tbody>
       </table>
       <p class="empty" id="players-empty" hidden>No accounts yet. Register a console and it appears here.</p>
+    </div>
+  </section>
+
+  <!-- Health -->
+  <section id="view-health" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Services</h2>
+        <span class="meta" id="health-summary"></span>
+      </div>
+      <div id="health-list"></div>
+      <p class="note">Each service is asked directly, on the address it is
+        configured to listen on. A service that cannot be probed says so rather
+        than showing green — green for “we did not look” is worse than a gap.</p>
     </div>
   </section>
 

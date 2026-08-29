@@ -27,6 +27,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
         -o /out/natcheck   ./cmd/natcheck && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+        -o /out/npln       ./cmd/npln && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+        -o /out/dashboard  ./cmd/dashboard && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
         -o /out/switchnetctl ./cmd/switchnetctl
 
 # Run the tests in the image build, so a broken commit cannot produce a

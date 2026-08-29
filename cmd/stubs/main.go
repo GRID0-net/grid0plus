@@ -6,6 +6,7 @@ import (
 	"flag"
 
 	"github.com/n-popescu/switchnet/config"
+	"github.com/n-popescu/switchnet/internal/health"
 	"github.com/n-popescu/switchnet/internal/service"
 	"github.com/n-popescu/switchnet/internal/stubs"
 )
@@ -31,7 +32,11 @@ func main() {
 	ctx, cancel := service.SignalContext()
 	defer cancel()
 
-	if err := service.ServeHTTP(ctx, log, cfg.Stubs.Listen, handler.Handler()); err != nil {
+	// No dependency checks: these services hold their signing keys in memory and
+	// talk to nothing else, so answering at all IS the health.
+	healthz := health.New("stubs")
+
+	if err := service.ServeHTTPWithHealth(ctx, log, cfg.Stubs.Listen, handler.Handler(), healthz); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

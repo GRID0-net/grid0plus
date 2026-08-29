@@ -315,6 +315,13 @@ type Fest struct {
 }
 
 type Store interface {
+	// Ping reports whether the store is reachable.
+	//
+	// For health checks. A service whose database has gone away is running and
+	// useless, and that is the state worth being able to see from the outside --
+	// "the process is up" is already answered by the connection succeeding.
+	Ping(ctx context.Context) error
+
 	// ---- users ----
 
 	// CreateUser inserts a new user together with its first device account, in

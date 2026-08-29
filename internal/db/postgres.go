@@ -18,6 +18,9 @@ type Postgres struct {
 	pool *pgxpool.Pool
 }
 
+// Ping reports whether the pool can reach PostgreSQL.
+func (p *Postgres) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }
+
 // OpenPostgres connects to PostgreSQL and, if autoMigrate is set, brings the
 // schema up to date.
 func OpenPostgres(ctx context.Context, url string, maxConns int32, autoMigrate bool) (*Postgres, error) {

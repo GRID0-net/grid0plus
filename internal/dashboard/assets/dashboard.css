@@ -456,3 +456,30 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   background: var(--bg-raised); border: 1px solid var(--line); border-radius: 5px;
   padding: 1px 5px; font-size: 12px;
 }
+
+/* ---- service health ------------------------------------------------------
+ *
+ * Same card as the matchmaking panel. The left border is the whole signal, so
+ * a column of services reads at a glance without any text being parsed: green
+ * up, amber degraded, pink down, plain grey for "not probed" — which is a
+ * deliberate absence of colour, because it is not a state anyone should act on. */
+.svc {
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.svc .fid {
+  font-weight: 800; letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.svc .meta { color: var(--fg-dim); font-size: 12px; margin-top: 3px; }
+.svc-detail { color: var(--warn); word-break: break-word; }
+
+.svc-ok       { border-left-color: var(--ink-b); }
+.svc-degraded { border-left-color: var(--warn); }
+.svc-down     { border-left-color: var(--ink-a); }
+.svc-unknown  { border-left-color: var(--line); }
+.svc-unknown .svc-detail { color: var(--fg-dim); }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/npln"
 	"github.com/n-popescu/switchnet/internal/service"
@@ -72,9 +73,14 @@ func main() {
 				errors.New("npln.admin_token is set but npln.admin_listen is empty, "+
 					"so the matchmaking controls would not be served anywhere"))
 		}
+		// Health rides on the admin listener rather than the gRPC port: gRPC
+		// does not answer plain HTTP, and this is the port the dashboard
+		// already reaches npln on.
+		healthz := health.New("npln").Add("database", store.Ping)
+
 		go func() {
 			log.Info("npln: matchmaking controls listening", "addr", cfg.NPLN.AdminListen)
-			if err := service.ServeHTTP(ctx, log, cfg.NPLN.AdminListen, admin.Handler()); err != nil {
+			if err := service.ServeHTTPWithHealth(ctx, log, cfg.NPLN.AdminListen, admin.Handler(), healthz); err != nil {
 				log.Error("npln: matchmaking controls stopped", "error", err)
 			}
 		}()
