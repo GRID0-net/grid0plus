@@ -24,6 +24,7 @@ import (
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/matchmaking"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -46,10 +47,20 @@ type Server struct {
 	accessTokenTTL int
 	env            Environment
 
+	// queue forms matches. In memory: a ticket is worth nothing once the
+	// process restarts, because the console that owned it has already given up
+	// and made a new one.
+	queue *matchmaking.Queue
+	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
+	iceServers []config.ICEServer
+
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
 
 	grpc *grpc.Server
+
+	// stopSweep ends the background sweeper. Closed by Stop.
+	stopSweep chan struct{}
 }
 
 // Options configures a Server.
@@ -66,6 +77,10 @@ type Options struct {
 
 	// Env selects how malformed metadata is refused. Production by default.
 	Env Environment
+
+	// Matchmaking tunes the queue. The zero value takes matchmaking's own
+	// defaults, which suit a small private network.
+	Matchmaking matchmaking.Config
 
 	// Now is overridable in tests. Defaults to time.Now.
 	Now func() time.Time
@@ -99,7 +114,10 @@ func New(opts Options) (*Server, error) {
 		issuerName:     opts.Config.Issuer,
 		accessTokenTTL: opts.Config.AccessTokenTTL,
 		env:            opts.Env,
+		queue:          matchmaking.New(opts.Matchmaking, opts.Now),
+		iceServers:     iceServersFrom(opts.Config.ICEServers),
 		now:            opts.Now,
+		stopSweep:      make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(
@@ -107,7 +125,30 @@ func New(opts Options) (*Server, error) {
 		grpc.ChainStreamInterceptor(s.streamInterceptor),
 	)
 	s.register()
+	go s.sweep()
 	return s, nil
+}
+
+// sweep times out tickets nobody matched, on a timer, until Stop.
+//
+// A timer rather than doing it on arrival: a queue nobody is joining is exactly
+// the one whose tickets need to expire, so the last player to give up would
+// otherwise wait forever.
+func (s *Server) sweep() {
+	ticker := time.NewTicker(sweepInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopSweep:
+			return
+		case <-ticker.C:
+			for _, t := range s.queue.Sweep() {
+				s.log.Info("npln: matchmaking ticket timed out",
+					"ticket", t.ID, "user", t.UserID, "mode", t.Mode)
+			}
+		}
+	}
 }
 
 // GRPCServer exposes the underlying server, for tests and for serving on a
@@ -123,7 +164,10 @@ func (s *Server) GRPCServer() *grpc.Server { return s.grpc }
 func (s *Server) Serve(l net.Listener) error { return s.grpc.Serve(l) }
 
 // Stop stops the server, waiting for in-flight RPCs.
-func (s *Server) Stop() { s.grpc.GracefulStop() }
+func (s *Server) Stop() {
+	close(s.stopSweep)
+	s.grpc.GracefulStop()
+}
 
 // callerKey is the context key the interceptor stores the resolved caller
 // under. Unexported and of a private type, so nothing outside this package can

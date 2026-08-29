@@ -1,0 +1,408 @@
+package npln
+
+import (
+	"context"
+	"io"
+	"testing"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/n-popescu/switchnet/config"
+	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+)
+
+// TestTwoPlayersQueueAndBothReceiveTheSameSession is TODO.md §1.1's own
+// acceptance criterion: two clients queue, both receive a session on their
+// streams naming the same session id and the same host.
+//
+// Driven through a real gRPC client over bufconn rather than by calling the
+// service methods directly, because the stream, the metadata and the
+// interceptor that authenticates it are the parts most likely to be wrong.
+func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("player-one", "device-one")
+	h.createUser("player-two", "device-two")
+
+	one := h.ctx(h.sessionFor(t, "player-one", "device-one"), "")
+	two := h.ctx(h.sessionFor(t, "player-two", "device-two"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+
+	// The first player queues and finds nobody: the default is two per match.
+	first, err := client.CreateMatchmakingTicket(one, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (one): %v", err)
+	}
+	if first.GetState() != mmpb.MatchmakingTicket_SEARCHING {
+		t.Fatalf("a lone ticket should still be searching, got %v", first.GetState())
+	}
+
+	// Attach the stream BEFORE the second player arrives, which is the order a
+	// console does it in and the order that actually exercises a live update
+	// rather than Watch's immediate first send.
+	streamOne, err := client.TrackMatchmakingTicket(one,
+		&mmpb.TrackMatchmakingTicketRequest{Name: first.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket (one): %v", err)
+	}
+
+	second, err := client.CreateMatchmakingTicket(two, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
+	}
+	if second.GetState() != mmpb.MatchmakingTicket_SUCCEEDED {
+		t.Fatalf("the ticket that completes a match should succeed, got %v", second.GetState())
+	}
+
+	streamTwo, err := client.TrackMatchmakingTicket(two,
+		&mmpb.TrackMatchmakingTicketRequest{Name: second.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket (two): %v", err)
+	}
+
+	gotOne := awaitSucceeded(t, streamOne)
+	gotTwo := awaitSucceeded(t, streamTwo)
+
+	if gotOne.GetGameSession().GetName() == "" {
+		t.Fatal("a succeeded ticket carries no game session")
+	}
+	if gotOne.GetGameSession().GetName() != gotTwo.GetGameSession().GetName() {
+		t.Errorf("the two players were placed in different sessions: %q and %q",
+			gotOne.GetGameSession().GetName(), gotTwo.GetGameSession().GetName())
+	}
+	if gotOne.GetGameSession().GetHost() != gotTwo.GetGameSession().GetHost() {
+		t.Errorf("the two players were told to connect to different hosts: %q and %q",
+			gotOne.GetGameSession().GetHost(), gotTwo.GetGameSession().GetHost())
+	}
+	// The longest-waiting player hosts, and player one queued first.
+	if want := userResourceName("player-one"); gotOne.GetGameSession().GetHost() != want {
+		t.Errorf("host = %q, want the player who queued first, %q",
+			gotOne.GetGameSession().GetHost(), want)
+	}
+	if n := gotOne.GetGameSession().GetCurrentParticipantCount(); n != 2 {
+		t.Errorf("participant count = %d, want 2", n)
+	}
+
+	// Both players can then read the session back, which is what the console
+	// does between matching and connecting.
+	sessions := mmpb.NewGameSessionServiceClient(h.conn)
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+	}{{"one", one}, {"two", two}} {
+		got, err := sessions.GetGameSession(tc.ctx,
+			&mmpb.GetGameSessionRequest{Name: gotOne.GetGameSession().GetName()})
+		if err != nil {
+			t.Fatalf("GetGameSession (%s): %v", tc.name, err)
+		}
+		if got.GetName() != gotOne.GetGameSession().GetName() {
+			t.Errorf("GetGameSession (%s) returned a different session", tc.name)
+		}
+	}
+}
+
+// TestACancelledTicketIsNeverMatched is the other half of §1.1's criterion.
+//
+// The dangerous version of getting this wrong is silent: the cancelled player
+// is matched anyway, never connects, and the other console sits in a lobby that
+// never fills -- which reads as a matchmaking bug rather than a cancellation
+// one.
+func TestACancelledTicketIsNeverMatched(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("quitter", "device-quitter")
+	h.createUser("stayer", "device-stayer")
+
+	quitter := h.ctx(h.sessionFor(t, "quitter", "device-quitter"), "")
+	stayer := h.ctx(h.sessionFor(t, "stayer", "device-stayer"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+
+	first, err := client.CreateMatchmakingTicket(quitter, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket: %v", err)
+	}
+	if _, err := client.CancelMatchmakingTicket(quitter,
+		&mmpb.CancelMatchmakingTicketRequest{Name: first.GetName()}); err != nil {
+		t.Fatalf("CancelMatchmakingTicket: %v", err)
+	}
+
+	// A second player arrives. There is nobody left to match with.
+	second, err := client.CreateMatchmakingTicket(stayer, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (stayer): %v", err)
+	}
+	if second.GetState() != mmpb.MatchmakingTicket_SEARCHING {
+		t.Fatalf("matched against a cancelled ticket: state = %v", second.GetState())
+	}
+	if second.GetGameSession().GetName() != "" {
+		t.Errorf("a session was formed with a cancelled player: %q",
+			second.GetGameSession().GetName())
+	}
+
+	// And the cancelled ticket stays cancelled rather than being revived.
+	got, err := client.TrackMatchmakingTicket(quitter,
+		&mmpb.TrackMatchmakingTicketRequest{Name: first.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket: %v", err)
+	}
+	msg, err := got.Recv()
+	if err != nil {
+		t.Fatalf("Recv: %v", err)
+	}
+	if msg.GetState() != mmpb.MatchmakingTicket_CANCELLED {
+		t.Errorf("state = %v, want CANCELLED", msg.GetState())
+	}
+}
+
+// TestATicketIsCreatedForTheTokenNotForTheUserTheRequestNames is the guard
+// against this package's founding bug in its matchmaking form.
+//
+// The request carries UserDefinitions naming who is queuing. Honouring that
+// would let any authenticated console queue as anybody else -- the same shape
+// as the device-account fallback internal/baas is built around, which made
+// every console act as one person.
+func TestATicketIsCreatedForTheTokenNotForTheUserTheRequestNames(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("liar", "device-liar")
+	h.createUser("victim", "device-victim")
+
+	liar := h.ctx(h.sessionFor(t, "liar", "device-liar"), "")
+
+	req := ticketFor("turf-war")
+	req.MatchmakingTicket.UserDefinitions = []*mmpb.UserDefinition{
+		{User: userResourceName("victim")},
+	}
+
+	got, err := mmpb.NewMatchmakerClient(h.conn).CreateMatchmakingTicket(liar, req)
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket: %v", err)
+	}
+
+	users := got.GetUserDefinitions()
+	if len(users) != 1 {
+		t.Fatalf("expected exactly one user definition, got %d", len(users))
+	}
+	if want := userResourceName("liar"); users[0].GetUser() != want {
+		t.Errorf("ticket belongs to %q, want the authenticated caller %q",
+			users[0].GetUser(), want)
+	}
+}
+
+// TestOnePlayerCannotTrackOrCancelAnothersTicket keeps a ticket private to the
+// console that made it.
+//
+// NotFound rather than PermissionDenied, deliberately: whether somebody else's
+// ticket exists is not this caller's to learn. The same rule internal/baas's
+// requireSelf follows.
+func TestOnePlayerCannotTrackOrCancelAnothersTicket(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("owner", "device-owner")
+	h.createUser("snoop", "device-snoop")
+
+	owner := h.ctx(h.sessionFor(t, "owner", "device-owner"), "")
+	snoop := h.ctx(h.sessionFor(t, "snoop", "device-snoop"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+	ticket, err := client.CreateMatchmakingTicket(owner, ticketFor("salmon-run"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket: %v", err)
+	}
+
+	stream, err := client.TrackMatchmakingTicket(snoop,
+		&mmpb.TrackMatchmakingTicketRequest{Name: ticket.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket: %v", err)
+	}
+	if _, err := stream.Recv(); status.Code(err) != codes.NotFound {
+		t.Errorf("tracking another player's ticket: got %v, want NotFound", err)
+	}
+
+	_, err = client.CancelMatchmakingTicket(snoop,
+		&mmpb.CancelMatchmakingTicketRequest{Name: ticket.GetName()})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("cancelling another player's ticket: got %v, want NotFound", err)
+	}
+
+	// And the ticket really is untouched, not merely refused loudly.
+	if got, _ := h.srv.queue.Get(lastSegment(ticket.GetName())); got.State != 0 {
+		t.Errorf("the ticket's state changed to %v", got.State)
+	}
+}
+
+// TestAGameSessionIsNotReadableByAPlayerWhoIsNotInIt keeps the players list --
+// which names other people -- from any authenticated caller who guesses an id.
+func TestAGameSessionIsNotReadableByAPlayerWhoIsNotInIt(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("in-one", "device-in-one")
+	h.createUser("in-two", "device-in-two")
+	h.createUser("outsider", "device-outsider")
+
+	one := h.ctx(h.sessionFor(t, "in-one", "device-in-one"), "")
+	two := h.ctx(h.sessionFor(t, "in-two", "device-in-two"), "")
+	outsider := h.ctx(h.sessionFor(t, "outsider", "device-outsider"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+	if _, err := client.CreateMatchmakingTicket(one, ticketFor("turf-war")); err != nil {
+		t.Fatalf("CreateMatchmakingTicket (one): %v", err)
+	}
+	matched, err := client.CreateMatchmakingTicket(two, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
+	}
+	name := matched.GetGameSession().GetName()
+	if name == "" {
+		t.Fatal("no session was formed")
+	}
+
+	sessions := mmpb.NewGameSessionServiceClient(h.conn)
+	if _, err := sessions.GetGameSession(outsider,
+		&mmpb.GetGameSessionRequest{Name: name}); status.Code(err) != codes.NotFound {
+		t.Errorf("GetGameSession by an outsider: got %v, want NotFound", err)
+	}
+	if _, err := sessions.JoinGameSession(outsider,
+		&mmpb.JoinGameSessionRequest{Name: name}); status.Code(err) != codes.NotFound {
+		t.Errorf("JoinGameSession by an outsider: got %v, want NotFound", err)
+	}
+
+	// A player who WAS matched in can still join, so the refusal above is the
+	// membership check and not the whole call being broken.
+	joined, err := sessions.JoinGameSession(two, &mmpb.JoinGameSessionRequest{Name: name})
+	if err != nil {
+		t.Fatalf("JoinGameSession by a matched player: %v", err)
+	}
+	if len(joined.GetMatchedUserSessions()) != 2 {
+		t.Errorf("matched user sessions = %d, want 2", len(joined.GetMatchedUserSessions()))
+	}
+}
+
+// TestAllocateIceServerSetReturnsWhatWasConfigured covers TODO.md §1.2's
+// config-only path, including the empty default.
+//
+// An empty set is a valid answer, not a failure: consoles on one LAN connect
+// directly. 'switchnetctl check' is what warns about it, because the failure it
+// causes on hardware -- the lobby fills and the match never starts -- reads as
+// a matchmaking bug from this side.
+func TestAllocateIceServerSetReturnsWhatWasConfigured(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("player", "device")
+	ctx := h.ctx(h.sessionFor(t, "player", "device"), "")
+
+	got, err := mmpb.NewGameSessionServiceClient(h.conn).
+		AllocateIceServerSet(ctx, &mmpb.AllocateIceServerSetRequest{})
+	if err != nil {
+		t.Fatalf("AllocateIceServerSet: %v", err)
+	}
+	if got.GetStunServer() != nil || len(got.GetTurnServers()) != 0 {
+		t.Errorf("an unconfigured server offered ICE servers: %v", got)
+	}
+	if got.GetTtl().AsDuration() <= 0 {
+		t.Error("ttl is not set; a zero reads as already stale")
+	}
+
+	// Now with servers configured.
+	h.srv.iceServers = iceServersFrom([]config.ICEServer{
+		{Kind: "stun", Host: "10.0.0.5", Port: 3478},
+		{Kind: "turn", Host: "10.0.0.5", Port: 3478, Protocol: "tcp",
+			Username: "switchnet", Password: "secret"},
+		// Dropped: no host. A half-specified server handed to a console is
+		// worse than one not offered, because the console tries it.
+		{Kind: "turn", Port: 3478},
+	})
+
+	got, err = mmpb.NewGameSessionServiceClient(h.conn).
+		AllocateIceServerSet(ctx, &mmpb.AllocateIceServerSetRequest{})
+	if err != nil {
+		t.Fatalf("AllocateIceServerSet: %v", err)
+	}
+	if got.GetStunServer().GetHost() != "10.0.0.5" {
+		t.Errorf("stun host = %q", got.GetStunServer().GetHost())
+	}
+	if got.GetStunServer().GetProtocol() != mmpb.StunServer_UDP {
+		t.Errorf("an unset protocol should default to udp, got %v",
+			got.GetStunServer().GetProtocol())
+	}
+	if len(got.GetTurnServers()) != 1 {
+		t.Fatalf("turn servers = %d, want 1 (the incomplete one dropped)",
+			len(got.GetTurnServers()))
+	}
+	turn := got.GetTurnServers()[0]
+	if turn.GetProtocol() != mmpb.TurnServer_TCP {
+		t.Errorf("turn protocol = %v, want TCP", turn.GetProtocol())
+	}
+	if turn.GetUsername() != "switchnet" || turn.GetPassword() != "secret" {
+		t.Error("turn credentials were not passed through")
+	}
+}
+
+// TestMatchmakingRequiresAToken is the allowlist working: a service added later
+// is authenticated unless somebody says otherwise.
+func TestMatchmakingRequiresAToken(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := mmpb.NewMatchmakerClient(h.conn).
+		CreateMatchmakingTicket(h.ctx("", ""), ticketFor("turf-war"))
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("got %v, want Unauthenticated", err)
+	}
+
+	_, err = mmpb.NewGameSessionServiceClient(h.conn).
+		AllocateIceServerSet(h.ctx("", ""), &mmpb.AllocateIceServerSetRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("got %v, want Unauthenticated", err)
+	}
+}
+
+// ---- helpers --------------------------------------------------------------
+
+func ticketFor(mode string) *mmpb.CreateMatchmakingTicketRequest {
+	return &mmpb.CreateMatchmakingTicketRequest{
+		MatchmakingTicket: &mmpb.MatchmakingTicket{MatchmakingConfig: mode},
+	}
+}
+
+// awaitSucceeded reads a ticket stream until the ticket succeeds.
+//
+// Bounded by the test's own deadline rather than looping forever: a stream that
+// never delivers is exactly the bug this is here to catch, and a hung test
+// reports it far less clearly than a failed one.
+func awaitSucceeded(
+	t *testing.T, stream grpc_ClientStream,
+) *mmpb.MatchmakingTicket {
+	t.Helper()
+
+	done := make(chan *mmpb.MatchmakingTicket, 1)
+	errc := make(chan error, 1)
+	go func() {
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if msg.GetState() == mmpb.MatchmakingTicket_SUCCEEDED {
+				done <- msg
+				return
+			}
+		}
+	}()
+
+	select {
+	case msg := <-done:
+		return msg
+	case err := <-errc:
+		if err == io.EOF {
+			t.Fatal("the ticket stream ended without the ticket succeeding")
+		}
+		t.Fatalf("ticket stream: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the ticket to succeed")
+	}
+	return nil
+}
+
+// grpc_ClientStream is the little of a ticket stream these tests use.
+type grpc_ClientStream interface {
+	Recv() (*mmpb.MatchmakingTicket, error)
+}

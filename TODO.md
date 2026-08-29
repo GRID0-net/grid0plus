@@ -38,48 +38,6 @@ Priority labels are about *unblocking other work*, not importance:
 
 ## 1. NPLN protocol
 
-### 1.1 Wire the matchmaking queue to its gRPC services — **P1**
-
-`internal/matchmaking` has the queue, the ticket state machine and match
-formation, all tested and race-clean. Nothing calls it: `Matchmaker` and
-`GameSessionService` are not registered on the gateway.
-
-**Start at** `internal/npln/services.go` (`register`), and
-`proto/matchmaking/v1/`. The core RPCs are `CreateMatchmakingTicket`,
-`TrackMatchmakingTicket` (a **stream** — the console lives on it),
-`CancelMatchmakingTicket`, then `GameSessionService.GetGameSession` and
-`JoinGameSession`.
-
-`Queue.Watch` already returns a channel shaped for `TrackMatchmakingTicket`,
-including an immediate first send so a stream that attaches after its ticket
-matched does not wait for an event that already happened.
-
-**Blocked on nothing.** It can be driven from a Go client over bufconn exactly
-the way `internal/npln/auth_test.go` does.
-
-**Done when** two test clients queue, both receive a session on their streams
-naming the same session id and the same host, and a cancelled ticket is never
-matched.
-
-### 1.2 `AllocateIceServerSet` and a STUN/TURN deployment — **P1 for hardware**
-
-Splatoon 3 uses ICE, not the Pia NAT-check pair, so `internal/natcheck` is not
-involved in this title and coturn becomes a deployment dependency.
-
-**The addresses must be reachable *from the console*.** This is the single most
-common cause of "the lobby fills but the match never starts", and it looks
-identical to a matchmaking bug from the server side.
-
-**Start at** `proto/matchmaking/v1/game_session_service.proto`
-(`AllocateIceServerSet`), and add `npln.ice_servers` to `config/config.go` with
-a `switchnetctl check` warning when it is empty — an unset ICE list produces
-exactly the silent failure above.
-
-**Do not block on whether coturn exists.** Record it in
-[`docs/QUESTIONS.md`](docs/QUESTIONS.md) (already seeded) and proceed with the
-config-only path: peers on one LAN work without ICE, so matchmaking is testable
-either way.
-
 ### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware**
 
 Splatoon 3 does **not** open with gRPC. It talks JSON over HTTPS to
@@ -284,12 +242,22 @@ concludes.
 ### 3.1 Match history and live matchmaking — **P2**
 
 The overview has an "in matchmaking" tile that honestly reports *not wired yet*
-rather than showing a zero that reads as "nobody is queuing". Fill it in once
-§1.1 lands, and add a match list.
+rather than showing a zero that reads as "nobody is queuing".
 
-Needs an `npln_matches` table and store methods on **both** implementations,
-with an entry in `internal/db/store_test.go`'s contract — that contract has
-already caught two real divergences, so do not skip it.
+The queue is now served, so the live half is reachable: `Queue.Waiting()`
+returns tickets per mode and exists for exactly this. It is on the **npln**
+process, though, and the dashboard is a **separate** one — so this needs a way
+across that boundary, the same problem `internal/presencebus` already solves for
+presence with Redis. Do not add an in-process call that silently returns zero in
+the deployed configuration; that is the failure `internal/dashboard`'s README
+warns about, in a new place.
+
+Match history is the other half and needs an `npln_matches` table plus store
+methods on **both** implementations, with an entry in
+`internal/db/store_test.go`'s contract — that contract has already caught two
+real divergences, so do not skip it. `internal/matchmaking` keeps sessions in
+memory for `SessionTTL` only; anything the dashboard should still show tomorrow
+has to be written down when the match forms.
 
 ### 3.2 Splatfest asset editing — **P2, depends on §2.1**
 
@@ -351,8 +319,14 @@ documented and the earliest in the sequence.
 ### 4.3 Captures still wanted — **P2**
 
 `grep -rn 'TODO(capture-needed)' internal/` for the live list. As of writing:
-the NPLN resource-name prefix in `IssueToken`'s response, and whether Splatoon 3
-ever calls `RefreshToken`.
+the NPLN resource-name prefix in `IssueToken`'s response, whether Splatoon 3
+ever calls `RefreshToken`, the matchmaking resource-name shapes, whether the
+game sends more than one `UserDefinition` when a squad queues together, and
+whether it refuses to start a match with an empty `MatchmakingIdToken`.
+
+The last two are the ones that change behaviour rather than cosmetics: a squad
+currently has everyone but the leader dropped, and an absent id token is a gap
+SwitchNet cannot fill without issuing a credential nothing verifies.
 
 Write captures up under `docs/CAPTURES/` using the template, redacted,
 reconcile the implementation, and **delete the `TODO` comment in the same

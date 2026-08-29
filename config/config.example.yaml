@@ -267,6 +267,39 @@ npln:
   jwks_url: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates"
   access_token_ttl: 10800
 
+  # STUN/TURN servers for peer-to-peer connectivity.
+  #
+  # Splatoon 3 uses ICE, NOT the Pia NAT-check pair below -- natcheck is not
+  # involved in this title at all. Once a match starts, gameplay is between the
+  # consoles and SwitchNet is out of the path; these addresses are how two
+  # consoles behind different NATs find each other.
+  #
+  # THE ADDRESSES MUST BE REACHABLE FROM THE CONSOLE. A server-side address
+  # here produces "the lobby fills but the match never starts", which is
+  # indistinguishable from a matchmaking bug when read from the server side --
+  # so this is one of the settings 'switchnetctl check' warns about.
+  #
+  # Leaving it empty is fine on a single LAN, where consoles connect directly.
+  # It is the default precisely because that is the common case for a private
+  # server, and running coturn for it would be work with nothing to show.
+  #
+  # ice_servers:
+  #   - kind: stun          # stun or turn
+  #     host: "192.168.1.50"
+  #     port: 3478
+  #     protocol: udp       # udp (default), tcp or tls
+  #   - kind: turn
+  #     host: "192.168.1.50"
+  #     port: 3478
+  #     protocol: udp
+  #     # TURN's long-term credentials, as configured in coturn. A static
+  #     # user rather than coturn's time-limited HMAC scheme: that variant
+  #     # needs the console to derive a matching username, and nothing here
+  #     # can make it do that.
+  #     username: "switchnet"
+  #     password: "change-me"
+  ice_servers: []
+
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------

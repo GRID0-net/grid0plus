@@ -255,6 +255,40 @@ type NPLN struct {
 	JWKSURL string `yaml:"jwks_url"`
 	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds.
 	AccessTokenTTL int `yaml:"access_token_ttl"`
+
+	// ICEServers are the STUN/TURN servers handed to a console for peer-to-peer
+	// connectivity. Empty means none are offered.
+	//
+	// Splatoon 3 uses ICE rather than the Pia NAT-check pair, so internal/natcheck
+	// is not involved in this title and these addresses are what let two consoles
+	// behind different NATs reach each other. They must be reachable FROM THE
+	// CONSOLE, not merely from the server -- a server-side address here produces
+	// "the lobby fills but the match never starts", which is indistinguishable
+	// from a matchmaking bug when read from this side.
+	//
+	// Peers on one LAN find each other without any of this, which is why an empty
+	// list is a warning rather than an error.
+	ICEServers []ICEServer `yaml:"ice_servers"`
+}
+
+// ICEServer is one STUN or TURN server offered to a console.
+type ICEServer struct {
+	// Kind is "stun" or "turn".
+	Kind string `yaml:"kind"`
+	// Host is the address the CONSOLE must be able to reach.
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+	// Protocol is "udp", "tcp" or "tls". Defaults to udp.
+	Protocol string `yaml:"protocol"`
+
+	// Username and Password are TURN's long-term credentials. Ignored for stun.
+	//
+	// A static credential rather than coturn's time-limited HMAC scheme: this is
+	// one operator's server for consoles they own, and the shared-secret variant
+	// would need the console to derive the same username, which nothing here can
+	// make it do.
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
 }
 
 // Dashboard configures the operator's web view.
@@ -563,6 +597,27 @@ func (c Config) Validate() error {
 		default:
 			errs = append(errs, fmt.Errorf(
 				"aauth.title_overrides[%s].online_play_policy: %q is invalid", id, o.OnlinePlayPolicy))
+		}
+	}
+	for i, s := range c.NPLN.ICEServers {
+		switch s.Kind {
+		case "stun", "turn":
+		default:
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].kind: %q must be stun or turn", i, s.Kind))
+		}
+		if s.Host == "" {
+			errs = append(errs, fmt.Errorf("npln.ice_servers[%d].host is required", i))
+		}
+		if s.Port <= 0 || s.Port > 65535 {
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].port: %d is not a port", i, s.Port))
+		}
+		switch s.Protocol {
+		case "", "udp", "tcp", "tls":
+		default:
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].protocol: %q must be udp, tcp or tls", i, s.Protocol))
 		}
 	}
 

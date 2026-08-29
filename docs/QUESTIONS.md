@@ -30,10 +30,18 @@ matchmaking bug when read from the server side.
 
 **Proceeding on:** `npln.ice_servers` in config, empty by default, with a
 `switchnetctl check` warning when unset. Matchmaking works for peers on the same
-LAN without it.
+LAN without it. **This is built** — `AllocateIceServerSet` serves whatever the
+list holds, and an empty list means no ICE servers are offered.
 
-**Changes if answered:** `config/config.go` (`NPLN`), and the
-`AllocateIceServerSet` handler.
+So the question is now only *what to put in the file*, not what to write. If
+coturn exists, its addresses and a TURN username/password go in
+`config.yaml`; if it does not, this stays empty and consoles on one LAN are
+unaffected.
+
+**Changes if answered:** `config.yaml` only. One further thing would need code
+if coturn is deployed with the time-limited HMAC credential scheme rather than a
+static user: `AllocateIceServerSet` in `internal/npln/matchmaking.go` would have
+to derive the username, which it currently does not.
 
 ---
 

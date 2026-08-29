@@ -30,7 +30,8 @@ keeps them apart and `cmd/switchnetctl`'s generator tests assert it.
 | `server.go` | the gRPC server, the interceptors, and the unauthenticated-method allowlist |
 | `metadata.go` | the `npln-tenant-id` / `authorization` / `uid` metadata |
 | `auth.go` | the BAAS id-token seam, token issue, and identity resolution |
-| `services.go` | the implemented services |
+| `services.go` | auth and maintenance |
+| `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking`'s queue |
 | `errors.go` | how a refusal is shaped |
 
 ## Identity is fail-closed, and `uid` is not a credential
@@ -100,5 +101,29 @@ Registered services answer `Unimplemented` for RPCs that have no handler, and
 log. That log is the to-do list (ROADMAP §2.4).
 
 `grep -rn 'TODO(capture-needed)' .` for the shapes that are reasoned rather than
-known. The two here today are the resource-name prefix in `IssueToken`'s
-response and whether the game ever calls `RefreshToken`.
+known.
+
+## Matchmaking
+
+`matchmaking.go` serves the two services; the queue and its rules are
+`internal/matchmaking`, which knows nothing about gRPC.
+
+Three things it refuses, each the same shape as the bug this repository is built
+around:
+
+- a ticket is created for the **token's** user, never for the `UserDefinitions`
+  the request names;
+- a ticket may only be tracked or cancelled by the console that made it, and
+  somebody else's answers `NotFound` rather than `PermissionDenied` — whether it
+  exists is not that caller's to learn;
+- a game session may only be read or joined by a player who was actually matched
+  into it, because the players list names other people.
+
+Joining a session you were *not* matched into is backfill or a short alias.
+Neither is implemented and neither shape is documented, so it is refused rather
+than guessed at.
+
+Resource names (`tenants/<t>/matchmakingTickets/<id>` and friends) are
+`TODO(capture-needed)`. `lastSegment` parses whatever the console echoes back
+leniently, including a bare id, so a wrong prefix costs a cosmetic mismatch
+instead of making every `Track` and `Cancel` answer `NotFound`.

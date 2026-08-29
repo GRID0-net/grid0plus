@@ -126,6 +126,22 @@ func warn(cfg config.Config) {
 			"warning: keys.device_id_secret is empty. Device ids and the 'edi' claim "+
 				"will be derived from an empty secret, so they are predictable.")
 	}
+	if len(cfg.NPLN.ICEServers) == 0 {
+		fmt.Fprintln(os.Stderr,
+			"warning: npln.ice_servers is empty. Splatoon 3 uses ICE rather than the "+
+				"NAT-check pair, so consoles behind different NATs will match and then "+
+				"fail to connect -- the lobby fills and the match never starts, which "+
+				"looks like a matchmaking bug from the server side. Consoles on one LAN "+
+				"are unaffected.")
+	}
+	for i, s := range cfg.NPLN.ICEServers {
+		if s.Kind == "turn" && s.Username == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: npln.ice_servers[%d] is a TURN server with no username. "+
+					"TURN needs a credential; the console will be handed one it cannot "+
+					"use, and will fall back to a direct connection that may not work.\n", i)
+		}
+	}
 	if cfg.Keys.GenerateIfMissing {
 		fmt.Fprintln(os.Stderr,
 			"note: keys.generate_if_missing is on. Once "+cfg.Keys.Dir+" is backed up, "+
