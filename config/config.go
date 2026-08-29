@@ -269,6 +269,24 @@ type NPLN struct {
 	// Peers on one LAN find each other without any of this, which is why an empty
 	// list is a warning rather than an error.
 	ICEServers []ICEServer `yaml:"ice_servers"`
+
+	// AdminListen is the operator API for the matchmaking controls: the queue,
+	// force-start, mode sizes, cancelling a ticket. The dashboard is a separate
+	// process from this one and the queue lives here, so this is how the two
+	// meet.
+	//
+	// NOT one of the Nintendo hostnames and never reached by a console. Bind it
+	// to loopback or a private interface.
+	AdminListen string `yaml:"admin_listen"`
+
+	// AdminToken is a shared secret required on every admin request. Empty
+	// means the admin API is NOT SERVED AT ALL.
+	//
+	// Off rather than open, because this API starts matches and changes how
+	// many players one takes. An operator who has not set a token has not opted
+	// in, and there is no version of these controls that is safe to hand to
+	// whoever can reach the port.
+	AdminToken string `yaml:"admin_token"`
 }
 
 // ICEServer is one STUN or TURN server offered to a console.
@@ -304,6 +322,15 @@ type Dashboard struct {
 	// controls off the open network without pretending to be an identity
 	// system. See TODO.md for what a real answer would look like.
 	Token string `yaml:"token"`
+
+	// NPLNAdminURL and NPLNAdminToken reach cmd/npln's matchmaking controls,
+	// and must match that server's npln.admin_listen and npln.admin_token.
+	//
+	// The queue lives in the npln process. Without these the dashboard's
+	// matchmaking panel says it is not configured -- deliberately, rather than
+	// showing an empty queue that reads as "nobody is playing".
+	NPLNAdminURL   string `yaml:"npln_admin_url"`
+	NPLNAdminToken string `yaml:"npln_admin_token"`
 }
 
 // Stubs configures the catch-all server.
@@ -509,6 +536,8 @@ func applyEnv(c *Config) {
 
 	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)
 	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)
+	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_URL", &c.Dashboard.NPLNAdminURL)
+	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_TOKEN", &c.Dashboard.NPLNAdminToken)
 
 	envStr("SWITCHNET_NPLN_LISTEN", &c.NPLN.Listen)
 	envStr("SWITCHNET_NPLN_REST_LISTEN", &c.NPLN.RestListen)
@@ -516,6 +545,8 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_TENANT", &c.NPLN.Tenant)
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
+	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
+	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
 	envBool("SWITCHNET_STUBS_BCAT_PROBE", &c.Stubs.BCATProbe)
 

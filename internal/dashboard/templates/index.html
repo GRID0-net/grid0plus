@@ -29,6 +29,7 @@
 <nav class="tabs" role="tablist">
   <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
   <button role="tab" aria-selected="false" data-view="players">Players</button>
+  <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
 </nav>
 
@@ -51,7 +52,7 @@
       <div class="stat stat-queue">
         <span class="stat-value" id="stat-queue">—</span>
         <span class="stat-label">in matchmaking</span>
-        <span class="stat-note" id="stat-queue-note">not wired yet</span>
+        <span class="stat-note" id="stat-queue-note">not configured</span>
       </div>
     </div>
 
@@ -82,6 +83,39 @@
         <tbody></tbody>
       </table>
       <p class="empty" id="players-empty" hidden>No accounts yet. Register a console and it appears here.</p>
+    </div>
+  </section>
+
+  <!-- Matchmaking -->
+  <section id="view-matchmaking" class="view">
+    <!-- Shown when npln.admin_* is not set. Explaining the gap beats an empty
+         queue, which reads as "nobody is playing". -->
+    <div class="panel" id="mm-unconfigured" hidden>
+      <h2>Matchmaking controls are not set up</h2>
+      <p class="empty" id="mm-unconfigured-reason"></p>
+      <p class="note">The queue lives in the <code>npln</code> process, not in the
+        dashboard, so the two have to be introduced to each other.</p>
+    </div>
+
+    <div id="mm-configured" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Queue</h2>
+          <span class="meta" id="mm-summary"></span>
+        </div>
+        <div id="mm-modes"></div>
+        <p class="empty" id="mm-empty" hidden>Nobody is queuing. A console that
+          enters matchmaking appears here within a few seconds.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Live matches</h2>
+          <span class="meta">Peer-to-peer once started — SwitchNet is out of the path.</span>
+        </div>
+        <div id="mm-sessions"></div>
+        <p class="empty" id="mm-sessions-empty" hidden>No matches running.</p>
+      </div>
     </div>
   </section>
 

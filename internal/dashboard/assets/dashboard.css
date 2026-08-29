@@ -405,3 +405,54 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   .grid tbody tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .top { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---- matchmaking ---------------------------------------------------------
+ *
+ * Reuses the fest-card shape: same sunk panel, same pill vocabulary, so the two
+ * control surfaces read as one page rather than as two features bolted together.
+ *
+ * The one colour decision worth naming: a mode that is SHORT of a full match
+ * gets --warn, not --ink-a or --ink-b. Pink and green mean a player is in game
+ * or online and are used for nothing else on this page; a queue that will not
+ * fill is neither of those, it is a thing needing the operator's attention. */
+.mm-mode, .mm-session {
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.mm-mode > .cols, .mm-session > .cols { display: inline-block; vertical-align: top; }
+.mm-mode { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.mm-mode .cols { flex: 1; min-width: 200px; }
+.mm-mode .fid, .mm-session .fid {
+  font-weight: 800; letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.mm-mode .meta, .mm-session .meta {
+  color: var(--fg-dim); font-size: 12px; margin-top: 3px;
+}
+.mm-mode .actions { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+
+.mm-size { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); }
+.mm-size input {
+  width: 62px; text-align: center;
+  background: var(--bg-raised); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--fg); padding: 6px 8px; font: inherit; font-size: 13px;
+}
+
+/* The waiting tickets sit under their mode rather than in a table of their own:
+ * a ticket only means anything next to the queue it is in. */
+.mm-tickets { list-style: none; margin: 12px 0 0; padding: 12px 0 0; width: 100%;
+  border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.mm-tickets li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.mm-tickets .what { color: var(--fg-dim); font-size: 12px; }
+.mm-tickets .btn { margin-left: auto; }
+
+.btn-tiny { padding: 4px 10px; font-size: 12px; }
+
+.note { color: var(--fg-dim); font-size: 13px; margin: 10px 0 0; }
+.note code {
+  background: var(--bg-raised); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 5px; font-size: 12px;
+}

@@ -87,9 +87,17 @@ type Session struct {
 
 // Config tunes the queue.
 type Config struct {
-	// PlayersPerMatch is how many tickets make a match. Turf War is 4v4, so
-	// eight; a mode's real size comes from the mode table.
+	// PlayersPerMatch is how many tickets make a match for a mode with no entry
+	// in ModeSizes. Turf War is 4v4, so eight.
 	PlayersPerMatch int
+
+	// ModeSizes overrides PlayersPerMatch for named modes.
+	//
+	// The mode table this project has wanted since the queue was written. It is
+	// a map rather than a fixed list because the mode strings come from the
+	// game, not from here, and a mode nobody has seen a capture of should be
+	// settable without a code change.
+	ModeSizes map[string]int
 	// TicketTTL is how long a ticket waits before giving up.
 	//
 	// A ticket that waits forever is worse than one that times out: the console
@@ -131,8 +139,12 @@ type Queue struct {
 	cfg Config
 	now func() time.Time
 
-	mu      sync.Mutex
-	tickets map[string]*Ticket
+	mu sync.Mutex
+	// modeSizes is Config.ModeSizes, mutable at runtime: an operator watching a
+	// queue that will not fill needs to be able to shrink a mode without
+	// restarting the server and dropping every ticket on it.
+	modeSizes map[string]int
+	tickets   map[string]*Ticket
 	// waiting is the queue order per mode, holding ticket ids. A slice rather
 	// than a heap: it is FIFO, it is short, and the order has to be readable
 	// when something goes wrong.
@@ -161,13 +173,21 @@ func New(cfg Config, now func() time.Time) *Queue {
 	if now == nil {
 		now = time.Now
 	}
+	sizes := make(map[string]int, len(cfg.ModeSizes))
+	for mode, n := range cfg.ModeSizes {
+		if n >= 1 {
+			sizes[mode] = n
+		}
+	}
+
 	return &Queue{
-		cfg:      cfg,
-		now:      now,
-		tickets:  map[string]*Ticket{},
-		waiting:  map[string][]string{},
-		sessions: map[string]*Session{},
-		watchers: map[string][]chan Ticket{},
+		cfg:       cfg,
+		now:       now,
+		modeSizes: sizes,
+		tickets:   map[string]*Ticket{},
+		waiting:   map[string][]string{},
+		sessions:  map[string]*Session{},
+		watchers:  map[string][]chan Ticket{},
 	}
 }
 
@@ -268,6 +288,156 @@ func (q *Queue) IsPlayer(sessionID, userID string) bool {
 		}
 	}
 	return false
+}
+
+// ForceMatch forms a match in a mode from whoever is waiting, however few that
+// is, and returns it.
+//
+// The escape hatch for the situation this whole package is shaped around: a
+// private server where the people who actually turned up are fewer than the
+// mode wants. Without it a mode sized for eight never starts for three friends,
+// and the queue is correct and useless.
+//
+// It takes the SAME path as a queue filling normally -- see formSessionLocked --
+// so a forced match is a real match in every respect the console can see. What
+// it does not do is guess whether the game will accept an undersized session:
+// that is unknown, and finding out is the point of the button.
+//
+// A mode with nobody waiting is (Session{}, false, nil) rather than an error:
+// asking to start an empty queue is a no-op, not a mistake.
+func (q *Queue) ForceMatch(mode string) (Session, bool, error) {
+	if mode == "" {
+		return Session{}, false, fmt.Errorf("matchmaking: no mode")
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	ids := q.liveWaitingLocked(mode)
+	if len(ids) == 0 {
+		return Session{}, false, nil
+	}
+	// Everyone waiting, not the first `size` of them: an operator forcing a
+	// start means "play with who is here", and leaving somebody in the queue
+	// they were about to be matched into is the opposite of that.
+	return q.formSessionLocked(mode, append([]string(nil), ids...)), true, nil
+}
+
+// SetModeSize changes how many tickets make a match in a mode, and forms any
+// match the new size now allows.
+//
+// The durable fix that ForceMatch is the one-off for: an operator who sets turf
+// war to two stops having to press a button every round. Passing zero removes
+// the override and returns the mode to PlayersPerMatch.
+//
+// Matches are formed immediately rather than at the next Enqueue, because the
+// tickets that a smaller size just made viable are already waiting and nobody
+// is about to arrive to trigger it.
+func (q *Queue) SetModeSize(mode string, players int) ([]Session, error) {
+	if mode == "" {
+		return nil, fmt.Errorf("matchmaking: no mode")
+	}
+	if players < 0 {
+		return nil, fmt.Errorf("matchmaking: a match cannot have %d players", players)
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if players == 0 {
+		delete(q.modeSizes, mode)
+	} else {
+		q.modeSizes[mode] = players
+	}
+	return q.formMatchesLocked(), nil
+}
+
+// ModeQueue is one mode's queue, for the operator's view.
+type ModeQueue struct {
+	Mode string
+	// Size is how many tickets currently make a match here.
+	Size int
+	// Overridden is true when Size comes from a mode override rather than from
+	// PlayersPerMatch. The dashboard shows the difference, because "8" being a
+	// default and "8" having been set are different things to look at.
+	Overridden bool
+	Waiting    []WaitingTicket
+}
+
+// WaitingTicket is one ticket still searching.
+type WaitingTicket struct {
+	ID     string
+	UserID string
+	// WaitingFor is how long it has been queued.
+	WaitingFor time.Duration
+}
+
+// Snapshot is everything the operator's view needs, taken under one lock.
+//
+// One call rather than several accessors: a view assembled from separate reads
+// can show a ticket in a queue and the session it was just matched into at the
+// same time, which reads as a bug in the server rather than in the page.
+type Snapshot struct {
+	Modes    []ModeQueue
+	Sessions []Session
+	// DefaultSize is PlayersPerMatch, for a mode with no override.
+	DefaultSize int
+}
+
+// Snapshot returns the queue and the live sessions.
+func (q *Queue) Snapshot() Snapshot {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	now := q.now()
+	out := Snapshot{DefaultSize: q.cfg.PlayersPerMatch}
+
+	// Every mode with somebody waiting, plus every mode with an override, so a
+	// size the operator set stays visible when its queue empties -- otherwise
+	// the control they just used disappears.
+	modes := map[string]bool{}
+	for _, mode := range sortedKeys(q.waiting) {
+		if len(q.liveWaitingLocked(mode)) > 0 {
+			modes[mode] = true
+		}
+	}
+	for mode := range q.modeSizes {
+		modes[mode] = true
+	}
+
+	names := make([]string, 0, len(modes))
+	for mode := range modes {
+		names = append(names, mode)
+	}
+	sort.Strings(names)
+
+	for _, mode := range names {
+		_, overridden := q.modeSizes[mode]
+		mq := ModeQueue{
+			Mode:       mode,
+			Size:       q.playersForLocked(mode),
+			Overridden: overridden,
+		}
+		for _, id := range q.liveWaitingLocked(mode) {
+			t := q.tickets[id]
+			mq.Waiting = append(mq.Waiting, WaitingTicket{
+				ID:         t.ID,
+				UserID:     t.UserID,
+				WaitingFor: now.Sub(t.CreatedAt),
+			})
+		}
+		out.Modes = append(out.Modes, mq)
+	}
+
+	for _, s := range q.sessions {
+		out.Sessions = append(out.Sessions, *s)
+	}
+	// Newest first: the match that just formed is the one being looked for.
+	sort.Slice(out.Sessions, func(i, j int) bool {
+		return out.Sessions[i].CreatedAt.After(out.Sessions[j].CreatedAt)
+	})
+
+	return out
 }
 
 // Watch returns a channel that receives the ticket every time its state
@@ -403,40 +573,56 @@ func (q *Queue) formMatchesLocked() []Session {
 	var formed []Session
 
 	for _, mode := range sortedKeys(q.waiting) {
+		size := q.playersForLocked(mode)
 		for {
 			ids := q.liveWaitingLocked(mode)
-			if len(ids) < q.cfg.PlayersPerMatch {
+			if len(ids) < size {
 				break
 			}
-			chosen := ids[:q.cfg.PlayersPerMatch]
-
-			s := Session{
-				ID:        uuid.NewString(),
-				Mode:      mode,
-				CreatedAt: q.now(),
-			}
-			for _, id := range chosen {
-				t := q.tickets[id]
-				s.Players = append(s.Players, t.UserID)
-			}
-			// The longest-waiting player hosts. Arbitrary but not random: it is
-			// stable, it is explainable to somebody reading a match log, and it
-			// spreads hosting over time rather than always picking whoever
-			// happens to be first in a map.
-			s.Host = s.Players[0]
-
-			q.sessions[s.ID] = &s
-
-			for _, id := range chosen {
-				t := q.tickets[id]
-				t.SessionID = s.ID
-				q.setStateLocked(t, StateSucceeded)
-				q.removeFromWaitingLocked(t)
-			}
-			formed = append(formed, s)
+			formed = append(formed, q.formSessionLocked(mode, ids[:size]))
 		}
 	}
 	return formed
+}
+
+// formSessionLocked turns a chosen set of waiting tickets into a session.
+//
+// The only place a session is created. Force-starting takes the same path as
+// filling a queue normally, so a forced match is a real match in every respect
+// the console can see -- the alternative, a second construction path, is how
+// the two drift until one of them produces a session the game will not join.
+func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
+	s := Session{
+		ID:        uuid.NewString(),
+		Mode:      mode,
+		CreatedAt: q.now(),
+	}
+	for _, id := range chosen {
+		s.Players = append(s.Players, q.tickets[id].UserID)
+	}
+	// The longest-waiting player hosts. Arbitrary but not random: it is
+	// stable, it is explainable to somebody reading a match log, and it
+	// spreads hosting over time rather than always picking whoever
+	// happens to be first in a map.
+	s.Host = s.Players[0]
+
+	q.sessions[s.ID] = &s
+
+	for _, id := range chosen {
+		t := q.tickets[id]
+		t.SessionID = s.ID
+		q.setStateLocked(t, StateSucceeded)
+		q.removeFromWaitingLocked(t)
+	}
+	return s
+}
+
+// playersForLocked is how many tickets make a match in a mode.
+func (q *Queue) playersForLocked(mode string) int {
+	if n, ok := q.modeSizes[mode]; ok && n >= 1 {
+		return n
+	}
+	return q.cfg.PlayersPerMatch
 }
 
 // liveWaitingLocked returns the still-searching ticket ids for a mode, in queue

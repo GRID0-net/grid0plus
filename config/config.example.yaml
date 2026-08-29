@@ -244,6 +244,13 @@ stubs:
 dashboard:
   listen: ":8087"
 
+  # Where to reach npln's matchmaking controls, and the token for them. Both
+  # must match npln.admin_listen and npln.admin_token above. Leave either empty
+  # and the matchmaking panel says it is not configured -- deliberately, rather
+  # than showing an empty queue that reads as "nobody is playing".
+  npln_admin_url: "127.0.0.1:8088"
+  npln_admin_token: ""
+
   # A shared secret required on every request. Empty means NO authentication:
   # anyone who can reach this port can schedule and cancel Splatfests.
   #
@@ -317,6 +324,19 @@ npln:
   #     username: "switchnet"
   #     password: "change-me"
   ice_servers: []
+
+  # The matchmaking controls the dashboard drives: the live queue, force-start,
+  # per-mode player counts, cancelling a ticket.
+  #
+  # The queue lives in THIS process and the dashboard is a different one, so it
+  # needs a way across. NOT one of the Nintendo hostnames and never reached by a
+  # console -- bind it to loopback or a private interface.
+  #
+  # Served ONLY when admin_token is set. These controls start matches and change
+  # how many players one takes, so there is no version of them that is safe to
+  # hand to whoever can reach the port. Must match dashboard.npln_admin_token.
+  admin_listen: "127.0.0.1:8088"
+  admin_token: ""
 
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder

@@ -210,6 +210,180 @@ $("#fest-form").addEventListener("submit", async (e) => {
   }
 });
 
+// ---- matchmaking ----------------------------------------------------------
+
+let matchmaking = { configured: false };
+
+/** "3m 20s" — a wait is read as a duration, not as a count of seconds. */
+function waited(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  return `${m}m ${seconds % 60}s`;
+}
+
+function renderMatchmaking(mm) {
+  matchmaking = mm;
+
+  $("#mm-unconfigured").hidden = mm.configured;
+  $("#mm-configured").hidden = !mm.configured;
+
+  if (!mm.configured) {
+    $("#mm-unconfigured-reason").textContent = mm.reason || "";
+    $("#stat-queue").textContent = "—";
+    $("#stat-queue-note").textContent = "not configured";
+    return;
+  }
+
+  const modes = mm.modes || [];
+  const waiting = mm.waiting || 0;
+
+  // The overview tile, finally showing a real number rather than admitting it
+  // is not wired up.
+  $("#stat-queue").textContent = waiting;
+  $("#stat-queue-note").textContent =
+    modes.length === 0 ? "no modes queuing" : `across ${modes.length} mode${modes.length === 1 ? "" : "s"}`;
+
+  $("#mm-summary").textContent =
+    `${waiting} waiting · default ${mm.defaultSize} per match`;
+  $("#mm-empty").hidden = modes.length > 0;
+
+  $("#mm-modes").replaceChildren(
+    ...modes.map((m) => {
+      const short = m.waiting.length > 0 && m.waiting.length < m.size;
+      const card = document.createElement("div");
+      card.className = "mm-mode";
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${escape(m.mode)}
+            <span class="pill ${short ? "warn" : "on"}">${m.waiting.length} / ${m.size}</span>
+            ${m.overridden ? `<span class="pill" title="Set here rather than taken from the default">custom size</span>` : ""}
+          </div>
+          <div class="meta">${
+            m.waiting.length === 0
+              ? "nobody waiting"
+              : short
+                ? `${m.size - m.waiting.length} short of a full match`
+                : "enough players to start"
+          }</div>
+        </div>
+        <div class="actions">
+          <label class="mm-size">
+            <span>players</span>
+            <input type="number" min="1" max="16" value="${m.size}" data-size-for="${escape(m.mode)}">
+          </label>
+          <button class="btn btn-ghost" data-start="${escape(m.mode)}"
+            ${m.waiting.length === 0 ? "disabled" : ""}
+            title="Form a match right now from everyone waiting, however few that is">
+            Start now
+          </button>
+        </div>`;
+
+      if (m.waiting.length > 0) {
+        const list = document.createElement("ul");
+        list.className = "mm-tickets";
+        list.replaceChildren(
+          ...m.waiting.map((t) => {
+            const li = document.createElement("li");
+            li.innerHTML =
+              `<span class="pip online"></span>` +
+              `<span>${escape(playerName(t.userId))}</span>` +
+              `<span class="what">waiting ${waited(t.waitingForSeconds)}</span>` +
+              `<button class="btn btn-ghost btn-danger btn-tiny" data-drop="${escape(t.id)}" ` +
+              `title="Take this ticket out of the queue">Drop</button>`;
+            return li;
+          })
+        );
+        card.appendChild(list);
+      }
+      return card;
+    })
+  );
+
+  const sessions = mm.sessions || [];
+  $("#mm-sessions-empty").hidden = sessions.length > 0;
+  $("#mm-sessions").replaceChildren(
+    ...sessions.map((s) => {
+      const card = document.createElement("div");
+      card.className = "mm-session";
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${escape(s.mode)}
+            ${s.forced ? `<span class="pill warn" title="Fewer players than this mode currently wants. Either it was force-started, or the mode was resized after it formed.">undersized</span>` : ""}
+          </div>
+          <div class="meta">${s.players.length} player${s.players.length === 1 ? "" : "s"} ·
+            host ${escape(playerName(s.host))} ·
+            ${new Date(s.createdAt).toLocaleTimeString()}</div>
+          <div class="meta">${s.players.map((p) => escape(playerName(p))).join(", ")}</div>
+        </div>`;
+      return card;
+    })
+  );
+}
+
+/** A user id is not a name. Resolve it against the players list when we can. */
+function playerName(userId) {
+  const p = players.find((x) => x.id === userId);
+  return p ? p.nickname : userId;
+}
+
+async function loadMatchmaking() {
+  try {
+    renderMatchmaking(await api("/api/matchmaking"));
+  } catch (e) {
+    // Reaching the dashboard but not npln is worth saying plainly, and is a
+    // different problem from the dashboard being down.
+    renderMatchmaking({ configured: false, reason: e.message });
+  }
+}
+
+$("#mm-modes").addEventListener("click", async (e) => {
+  const start = e.target.closest("[data-start]");
+  const drop = e.target.closest("[data-drop]");
+  if (!start && !drop) return;
+
+  try {
+    if (start) {
+      const mode = start.dataset.start;
+      const m = (matchmaking.modes || []).find((x) => x.mode === mode);
+      // Only ask when it is actually short. Confirming something that was going
+      // to happen anyway is the kind of dialog people learn to click through.
+      if (m && m.waiting.length < m.size &&
+          !confirm(`Start ${mode} with ${m.waiting.length} of ${m.size} players?\n\n` +
+                   `Whether the game accepts an undersized match is not known — that is what this finds out.`)) {
+        return;
+      }
+      renderMatchmaking({ ...(await api(`/api/matchmaking/modes/${encodeURIComponent(mode)}/start`,
+        { method: "POST" })) });
+    } else {
+      renderMatchmaking(await api(`/api/matchmaking/tickets/${encodeURIComponent(drop.dataset.drop)}/cancel`,
+        { method: "POST" }));
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("#mm-modes").addEventListener("change", async (e) => {
+  const input = e.target.closest("[data-size-for]");
+  if (!input) return;
+
+  const players = Number(input.value);
+  if (!Number.isInteger(players) || players < 1) {
+    alert("A match needs at least one player.");
+    await loadMatchmaking();
+    return;
+  }
+
+  try {
+    renderMatchmaking(await api(
+      `/api/matchmaking/modes/${encodeURIComponent(input.dataset.sizeFor)}/size`,
+      { method: "POST", body: JSON.stringify({ players }) }));
+  } catch (err) {
+    alert(err.message);
+    await loadMatchmaking();
+  }
+});
+
 // ---- live stream ----------------------------------------------------------
 
 function setLive(state, label) {
@@ -273,6 +447,8 @@ async function refresh() {
     renderOverview(o);
     renderPlayers();
     renderFests(fs);
+    // After players, so a ticket can be shown by nickname rather than by id.
+    await loadMatchmaking();
   } catch (e) {
     setLive("down", "server unreachable");
   }

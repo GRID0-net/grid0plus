@@ -53,6 +53,8 @@ type Server struct {
 	queue *matchmaking.Queue
 	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
 	iceServers []config.ICEServer
+	// adminToken guards the operator API. Empty means it is not served at all.
+	adminToken string
 
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
@@ -116,6 +118,7 @@ func New(opts Options) (*Server, error) {
 		env:            opts.Env,
 		queue:          matchmaking.New(opts.Matchmaking, opts.Now),
 		iceServers:     iceServersFrom(opts.Config.ICEServers),
+		adminToken:     opts.Config.AdminToken,
 		now:            opts.Now,
 		stopSweep:      make(chan struct{}),
 	}

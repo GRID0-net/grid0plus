@@ -249,25 +249,19 @@ concludes.
 
 ## 3. Dashboard
 
-### 3.1 Match history and live matchmaking — **P2**
+### 3.1 Match history — **P2**
 
-The overview has an "in matchmaking" tile that honestly reports *not wired yet*
-rather than showing a zero that reads as "nobody is queuing".
+The live half is done: the overview's queue tile is wired, and the Matchmaking
+tab shows the queue, per-mode sizes, force-start, and the running matches. It
+reaches the queue through `cmd/npln`'s admin API (`internal/npln/admin.go`),
+because the queue is in that process and the dashboard is a different one.
 
-The queue is now served, so the live half is reachable: `Queue.Waiting()`
-returns tickets per mode and exists for exactly this. It is on the **npln**
-process, though, and the dashboard is a **separate** one — so this needs a way
-across that boundary, the same problem `internal/presencebus` already solves for
-presence with Redis. Do not add an in-process call that silently returns zero in
-the deployed configuration; that is the failure `internal/dashboard`'s README
-warns about, in a new place.
-
-Match history is the other half and needs an `npln_matches` table plus store
-methods on **both** implementations, with an entry in
-`internal/db/store_test.go`'s contract — that contract has already caught two
-real divergences, so do not skip it. `internal/matchmaking` keeps sessions in
-memory for `SessionTTL` only; anything the dashboard should still show tomorrow
-has to be written down when the match forms.
+**What is left is history.** Sessions live in memory for `SessionTTL` only, so
+nothing survives a restart and yesterday's matches are gone. That needs an
+`npln_matches` table and store methods on **both** implementations, with an
+entry in `internal/db/store_test.go`'s contract — that contract has already
+caught two real divergences, so do not skip it. Write the row when the match
+forms (`Queue.formSessionLocked` is the single place one is created).
 
 ### 3.2 Splatfest asset editing — **P2, depends on §2.1**
 
@@ -366,10 +360,12 @@ this entry as a rule.
 
 ### 5.3 A mode table for matchmaking — **P3**
 
-`matchmaking.DefaultConfig.PlayersPerMatch` is **2**, not 8. On a private
-network of a handful of consoles, waiting for eight players means never
-playing.
+`matchmaking.DefaultConfig.PlayersPerMatch` is still **2**, and per-mode sizes
+are now settable at runtime from the dashboard and seeded from
+`matchmaking.Config.ModeSizes`. So an operator can already make a mode the right
+size without a code change.
 
-The faithful sizes belong in a table keyed by mode, driven by what a capture
-shows the game expects. Until there is one, a number that lets two friends
-start a match beats one that is correct and idle.
+What is still missing is knowing what the **faithful** sizes are. They belong in
+the config's `ModeSizes`, driven by what a capture shows the game expects. Until
+there is one, a number that lets two friends start a match beats one that is
+correct and idle.

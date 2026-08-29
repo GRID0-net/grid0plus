@@ -58,6 +58,9 @@ func main() {
 		Tenant:      cfg.NPLN.Tenant,
 		PresenceTTL: time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
 		Token:       cfg.Dashboard.Token,
+
+		NPLNAdminURL:   cfg.Dashboard.NPLNAdminURL,
+		NPLNAdminToken: cfg.Dashboard.NPLNAdminToken,
 	})
 	if err != nil {
 		service.Fatal(log, "build dashboard", err)

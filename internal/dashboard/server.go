@@ -60,6 +60,14 @@ type Options struct {
 	// off the open network without pretending to be an identity system.
 	Token string
 
+	// NPLNAdminURL and NPLNAdminToken reach cmd/npln's matchmaking controls.
+	//
+	// The queue is in that process, not this one. Leave either empty and the
+	// matchmaking panel says it is not configured rather than showing an empty
+	// queue, which would read as "nobody is playing".
+	NPLNAdminURL   string
+	NPLNAdminToken string
+
 	Now func() time.Time
 }
 
@@ -74,6 +82,9 @@ type Server struct {
 	presenceTTL time.Duration
 	token       string
 	now         func() time.Time
+
+	// matchmaking is nil when the controls are not configured.
+	matchmaking *matchmakingClient
 
 	tmpl *template.Template
 }
@@ -107,6 +118,7 @@ func New(opts Options) (*Server, error) {
 		presenceTTL: opts.PresenceTTL,
 		token:       opts.Token,
 		now:         opts.Now,
+		matchmaking: newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
 		tmpl:        tmpl,
 	}, nil
 }
@@ -124,6 +136,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
 	mux.HandleFunc("DELETE /api/fests/{id}", s.guard(s.handleDeleteFest))
+	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))
+	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))
+	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))
+	mux.HandleFunc("POST /api/matchmaking/tickets/{id}/cancel", s.guard(s.handleCancelTicket))
+
 	mux.HandleFunc("GET /api/events", s.guard(s.handleEvents))
 
 	return mux

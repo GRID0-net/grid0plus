@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"net"
 
@@ -60,6 +61,27 @@ func main() {
 	})
 	if err != nil {
 		service.Fatal(log, "build server", err)
+	}
+
+	// The matchmaking controls the dashboard drives. A separate listener from
+	// the gRPC gateway, not on a Nintendo hostname, and served only when a token
+	// is configured -- see internal/npln/admin.go.
+	if admin := srv.AdminHandler(); admin != nil {
+		if cfg.NPLN.AdminListen == "" {
+			service.Fatal(log, "serve admin api",
+				errors.New("npln.admin_token is set but npln.admin_listen is empty, "+
+					"so the matchmaking controls would not be served anywhere"))
+		}
+		go func() {
+			log.Info("npln: matchmaking controls listening", "addr", cfg.NPLN.AdminListen)
+			if err := service.ServeHTTP(ctx, log, cfg.NPLN.AdminListen, admin.Handler()); err != nil {
+				log.Error("npln: matchmaking controls stopped", "error", err)
+			}
+		}()
+	} else if cfg.NPLN.AdminListen != "" {
+		log.Warn("npln: npln.admin_listen is set but npln.admin_token is not, so the " +
+			"matchmaking controls are NOT served. They can start matches and change " +
+			"how many players one takes, so they are not served without a token.")
 	}
 
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)
