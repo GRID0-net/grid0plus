@@ -96,6 +96,16 @@ type Config struct {
 	// shows a spinner with no way back, and the player force-quits. Timing out
 	// lets the game say "no opponents found" and offer to try again.
 	TicketTTL time.Duration
+
+	// SessionTTL is how long a formed session stays available to look up.
+	//
+	// Sessions have to outlive the ticket that produced it -- the console gets
+	// a session on its ticket stream and only then calls GetGameSession and
+	// JoinGameSession -- but not forever. Gameplay is peer-to-peer once a match
+	// starts, so SwitchNet is out of the path and has no way to learn the match
+	// ended; without a TTL the map only grows. Long enough to cover joining
+	// plus a full match, short enough that a day's play does not accumulate.
+	SessionTTL time.Duration
 }
 
 // DefaultConfig is a sensible starting point for a small private network.
@@ -108,6 +118,7 @@ type Config struct {
 var DefaultConfig = Config{
 	PlayersPerMatch: 2,
 	TicketTTL:       3 * time.Minute,
+	SessionTTL:      30 * time.Minute,
 }
 
 // Queue forms matches from waiting tickets.
@@ -127,6 +138,11 @@ type Queue struct {
 	// when something goes wrong.
 	waiting map[string][]string
 
+	// sessions are the matches formed so far, by id, so a console can look one
+	// up after its ticket handed it the id. Pruned by Sweep once SessionTTL has
+	// passed.
+	sessions map[string]*Session
+
 	// watchers are the streams waiting on a ticket's state to change.
 	watchers map[string][]chan Ticket
 }
@@ -139,6 +155,9 @@ func New(cfg Config, now func() time.Time) *Queue {
 	if cfg.TicketTTL <= 0 {
 		cfg.TicketTTL = DefaultConfig.TicketTTL
 	}
+	if cfg.SessionTTL <= 0 {
+		cfg.SessionTTL = DefaultConfig.SessionTTL
+	}
 	if now == nil {
 		now = time.Now
 	}
@@ -147,6 +166,7 @@ func New(cfg Config, now func() time.Time) *Queue {
 		now:      now,
 		tickets:  map[string]*Ticket{},
 		waiting:  map[string][]string{},
+		sessions: map[string]*Session{},
 		watchers: map[string][]chan Ticket{},
 	}
 }
@@ -214,6 +234,42 @@ func (q *Queue) Get(ticketID string) (Ticket, bool) {
 	return *t, true
 }
 
+// Session returns a formed match by id.
+//
+// Available until SessionTTL has passed and Sweep has run, which is what lets a
+// console call GetGameSession and JoinGameSession after its ticket stream
+// already handed it the id.
+func (q *Queue) Session(sessionID string) (Session, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return Session{}, false
+	}
+	return *s, true
+}
+
+// IsPlayer reports whether a user was matched into a session.
+//
+// The membership check every session-scoped call makes. Kept here rather than
+// left to callers because the players list is the queue's to know, and a caller
+// that reimplements the check is a caller that can get it subtly wrong.
+func (q *Queue) IsPlayer(sessionID, userID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return false
+	}
+	for _, p := range s.Players {
+		if p == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // Watch returns a channel that receives the ticket every time its state
 // changes, and a function to stop watching.
 //
@@ -255,7 +311,9 @@ func (q *Queue) unwatch(ticketID string, ch chan Ticket) {
 	}
 }
 
-// Sweep times out tickets that have waited too long, and returns them.
+// Sweep times out tickets that have waited too long, and returns them. It also
+// discards sessions and tickets that are old enough that nobody can still be
+// asking about them.
 //
 // Called on a timer by the service. Not folded into Enqueue: a queue nobody is
 // joining is exactly the one whose tickets need to expire, and doing it only on
@@ -263,6 +321,8 @@ func (q *Queue) unwatch(ticketID string, ch chan Ticket) {
 func (q *Queue) Sweep() []Ticket {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
+	q.pruneLocked()
 
 	deadline := q.now().Add(-q.cfg.TicketTTL)
 	var expired []Ticket
@@ -307,6 +367,37 @@ func (q *Queue) Waiting() map[string]int {
 
 // ---- internals, all called with the lock held ----------------------------
 
+// pruneLocked drops sessions and finished tickets older than SessionTTL.
+//
+// Gameplay is peer-to-peer, so nothing tells SwitchNet a match ended and the
+// only honest signal is age. Tickets are pruned on the same clock rather than a
+// shorter one: a ticket outlives its own TTL once it succeeds, because it is
+// what the console reads its session id off, and dropping it while the session
+// it points at is still live would make TrackMatchmakingTicket answer NotFound
+// mid-match.
+func (q *Queue) pruneLocked() {
+	deadline := q.now().Add(-q.cfg.SessionTTL)
+
+	for id, s := range q.sessions {
+		if s.CreatedAt.Before(deadline) {
+			delete(q.sessions, id)
+		}
+	}
+	for id, t := range q.tickets {
+		if t.State == StateSearching || !t.CreatedAt.Before(deadline) {
+			continue
+		}
+		// A watcher still attached is a stream still open. Leave the ticket
+		// alone: unwatch is what closes those channels, and deleting the ticket
+		// out from under one strands the console on a stream that will never
+		// say anything again.
+		if len(q.watchers[id]) > 0 {
+			continue
+		}
+		delete(q.tickets, id)
+	}
+}
+
 // formMatchesLocked pairs off waiting tickets into sessions.
 func (q *Queue) formMatchesLocked() []Session {
 	var formed []Session
@@ -333,6 +424,8 @@ func (q *Queue) formMatchesLocked() []Session {
 			// spreads hosting over time rather than always picking whoever
 			// happens to be first in a map.
 			s.Host = s.Players[0]
+
+			q.sessions[s.ID] = &s
 
 			for _, id := range chosen {
 				t := q.tickets[id]

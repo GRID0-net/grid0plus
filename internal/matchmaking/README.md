@@ -5,9 +5,14 @@ and gets a game session when enough others are waiting for the same mode.
 
 | | |
 | --- | --- |
-| Reimplements | `nn.npln.matchmaking.v1.Matchmaker`, `GameSessionService` |
+| Reimplements | the queue behind `nn.npln.matchmaking.v1.Matchmaker` and `GameSessionService` |
+| Served by | `internal/npln/matchmaking.go`, which is where the gRPC surface lives |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
 | Needs a database | no (the queue); yes for the match log |
+
+This package is the queue and the rules; it knows nothing about gRPC. The two
+services are implemented in `internal/npln`, so the wire shapes and the
+matching logic can each be read without the other.
 
 ## The queue is in memory, and that is deliberate
 
@@ -64,6 +69,22 @@ which is why the addresses handed over have to be reachable *from the console*,
 and why NAT traversal matters out of proportion to its size.
 
 Splatoon 3 uses ICE (STUN/TURN), not the Pia NAT-check pair, so `internal/natcheck`
-is not involved in this title. `AllocateIceServerSet` is where those addresses
-come from and is **not yet implemented** — it needs a STUN/TURN deployment, which
-is an open question for the operator (see `docs/PHASE2_PLAN.md`).
+is not involved in this title. `AllocateIceServerSet` hands over those addresses
+and reads them from `npln.ice_servers`, which is **empty by default**: consoles
+on one LAN connect directly, and that is the common case for a private server.
+
+An empty list is a valid answer rather than a failure, so `switchnetctl check`
+is what warns about it — the failure it causes on hardware is that the lobby
+fills and the match never starts, which reads as a matchmaking bug from this
+side. Whether the operator runs coturn at all is recorded in
+[`docs/QUESTIONS.md`](../../docs/QUESTIONS.md).
+
+## Sessions outlive their tickets, but not forever
+
+A console reads a session id off its ticket stream and only *then* calls
+`GetGameSession` and `JoinGameSession`, so `Session` has to answer after the
+match is formed. But gameplay is peer-to-peer, so nothing ever tells SwitchNet a
+match ended — the only honest signal is age. `Sweep` drops sessions and finished
+tickets older than `SessionTTL`, and skips any ticket that still has a watcher
+attached, because deleting one out from under an open stream strands the console
+on a stream that will never say anything again.
