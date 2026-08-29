@@ -27,6 +27,11 @@ type Config struct {
 	// LogBodies logs request bodies. Useful exactly once, while working out what
 	// an unimplemented endpoint is being asked for; far too chatty to leave on.
 	LogBodies bool
+
+	// BCATProbe answers the bcat-* hosts, logging each request in full, instead
+	// of leaving them to the null route. An experiment, not a service --
+	// see bcatprobe.go and TODO.md 2.4.
+	BCATProbe bool
 }
 
 // Handler serves the stub endpoints.
@@ -73,6 +78,13 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isConnectionTest(host, path):
 		h.connectionTest(w)
+
+	case h.cfg.BCATProbe && isBCATHost(host):
+		// Only when the operator turned it on. Without the flag a BCAT host
+		// should not be reaching this server at all -- it is null-routed on the
+		// console -- and if one does, the default empty object below is a
+		// safer answer than a deliberate 200.
+		h.bcatProbe(w, r)
 
 	case strings.Contains(host, ".frs.srv.nintendo.net"):
 		// Friend recommendations. An empty list is the correct answer: there is

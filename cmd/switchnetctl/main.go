@@ -27,6 +27,9 @@ import (
 func main() {
 	configPath := flag.String("config", os.Getenv("SWITCHNET_CONFIG"),
 		"path to config.yaml")
+	bcatProbe := flag.Bool("bcat-probe", false,
+		"hosts: point the bcat-* hosts at SwitchNet instead of null-routing them, "+
+			"for the TODO.md 2.4 experiment. Needs stubs.bcat_probe on as well.")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -46,7 +49,7 @@ func main() {
 	switch flag.Arg(0) {
 	case "hosts":
 		requirePublicIP(cfg)
-		fmt.Print(hostsFile(cfg))
+		fmt.Print(hostsFile(cfg, *bcatProbe))
 
 	case "dnsmasq":
 		requirePublicIP(cfg)
@@ -157,7 +160,7 @@ func warn(cfg config.Config) {
 // Atmosphère applies the LAST matching line, so order is significant: broad
 // entries first, specific overrides last. In the hosts file '*' matches zero or
 // more characters and '%' expands to the environment ("lp1").
-func hostsFile(cfg config.Config) string {
+func hostsFile(cfg config.Config, bcatProbe bool) string {
 	ip := cfg.Network.PublicIP
 	nncs2 := cfg.Network.NATCheckSecondaryIP
 
@@ -229,8 +232,22 @@ func hostsFile(cfg config.Config) string {
 	section("telemetry: null-routed")
 	b.WriteString("# Not redirected to SwitchNet: there is nothing useful to do with a\n")
 	b.WriteString("# console's crash and play reports, and answering them only fills the log.\n")
+	if bcatProbe {
+		b.WriteString("#\n")
+		b.WriteString("# -bcat-probe is ON: the three bcat-* hosts below point at SwitchNet\n")
+		b.WriteString("# instead of 0.0.0.0. This is the TODO.md 2.4 experiment, NOT a working\n")
+		b.WriteString("# BCAT service -- SwitchNet logs what the console asks for and answers\n")
+		b.WriteString("# 200 with an empty body. Set stubs.bcat_probe as well, or the requests\n")
+		b.WriteString("# arrive and get the ordinary empty-object stub instead of a hexdump.\n")
+		b.WriteString("# Regenerate WITHOUT the flag when the experiment is over: answering a\n")
+		b.WriteString("# console that expected content turns a clean failure into a hang.\n")
+	}
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceBlackhole) {
-		emit("0.0.0.0", h)
+		addr := "0.0.0.0"
+		if bcatProbe && strings.HasPrefix(h.Pattern, "bcat-") {
+			addr = ip
+		}
+		emit(addr, h)
 	}
 
 	// Passthrough hosts get their own section only when there are any: on a

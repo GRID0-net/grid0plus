@@ -80,6 +80,18 @@ covers `fs`, `es`, `ldr` and `nifm`; `bcat` is not on that list.
 does not serve BCAT. Note that this is only *half* the blocker — the `list`
 response body is undocumented regardless.
 
+**The experiment is now five minutes of your time**, and the tooling for stage 1
+is built and tested:
+
+```sh
+switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
+# stubs.bcat_probe: true
+```
+
+Open Splatoon 3, watch the stubs log, then turn both back off. Whatever appears
+— including nothing at all — is the first record anyone has. Write it up under
+`docs/CAPTURES/`.
+
 **Changes if answered:** `internal/nintendo/hosts.go` (the three `bcat-*`
 entries), `TestBlackholedHostsAreAccountedFor`, and whether §2.4a is built at
 all.

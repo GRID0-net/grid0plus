@@ -155,11 +155,9 @@ Everything it needs exists: `bcat.BuildPacks`, `bcat.Revision`,
 console. Any path where a human types one of them twice will eventually produce
 `BcatInvalid`, which reaches the player as a generic communication error.
 
-### 2.4 Serving BCAT natively — **P1 to TEST, cheap, do this early**
+### 2.4 Serving BCAT natively — **P1 to TEST, and the tooling is now built**
 
-**The blocker here is smaller than earlier notes in this repository claimed,
-and it is worth an hour of an operator's time before any more is built around
-the workaround.**
+**The blocker here is smaller than earlier notes in this repository claimed.**
 
 What was previously written down: Nintendo's delivery container carries an
 RSA-2048 signature, therefore the console verifies it, therefore serving BCAT
@@ -173,36 +171,48 @@ already depends on that for phase 3. Whether they reach the `bcat` sysmodule is
 unknown: `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and `bcat` is not
 listed. Unknown is not impossible.
 
-**The experiment**, in two stages, both needing an operator and a console:
+#### Stage 1 — does the console reach us at all? **Built. Needs an operator.**
 
-1. **Does the console reach us at all?** Flip the three `bcat-*` hosts from
-   `ServiceBlackhole` to a server that logs every request with a full hexdump
-   and answers 200 with an empty body. Point a console at it and open Splatoon
-   3. If requests arrive, the paths are right and TLS/DNS work — and the log is
-   the first record anyone has of what the console actually asks for.
-2. **Does it care about the signature?** Answer `/api/nx/v1/list/<name>` with a
-   container that has the right 0x120 header shape and a deliberately garbage
-   signature. If the console proceeds, sigpatches cover `bcat` and the
-   signature is a non-issue. If it refuses, that is the first real evidence
-   either way.
+`internal/stubs/bcatprobe.go` logs every BCAT request in full — method, path,
+query, headers, a hexdump of the body — and answers 200 with an empty body. It
+is off by default and needs **both** halves to do anything:
+
+```sh
+switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
+# stubs.bcat_probe: true   (or SWITCHNET_STUBS_BCAT_PROBE=1)
+```
+
+Then open Splatoon 3 and watch the stubs log. `cmd/stubs` warns loudly at
+start-up when the probe is on, so a flag that did not take is obvious.
+
+If requests arrive, the paths are right and DNS and TLS work — and the log is
+the first record anyone has of what the console actually asks for. **Turn it
+back off afterwards**: answering a console that expected content turns an
+immediate failure into a hang, which is why those hosts are null-routed the rest
+of the time.
+
+#### Stage 2 — does it care about the signature? **Not built.**
+
+Answer `/api/nx/v1/list/<name>` with a container that has the right 0x120 header
+shape and a deliberately garbage signature. If the console proceeds, sigpatches
+cover `bcat` and the signature is a non-issue. If it refuses, that is the first
+real evidence either way.
+
+Stage 1 has to run first, because its hexdumps are what say which path to answer
+and what the console sent. Do not build stage 2 against a guess when stage 1
+costs an operator five minutes.
 
 **Even a positive result does not finish it**: the `list` response *body* is
-still undocumented, and stage 1's hexdumps are how that gets chipped away. But
-a positive result turns "nobody has documented how" into a tractable
+still undocumented, and stage 1's hexdumps are how that gets chipped away. But a
+positive result turns "nobody has documented how" into a tractable
 reverse-engineering job instead of a closed door.
-
-**Start at** `internal/nintendo/hosts.go` (the three `bcat-*` entries and
-`TestBlackholedHostsAreAccountedFor`), and a logging handler in
-`internal/stubs` — this needs no new package to run the experiment.
 
 **Done when** there is a written record, under `docs/CAPTURES/`, of what the
 console requested and how it reacted. Either answer is worth having; right now
 the repository has neither.
 
-**An autonomous agent cannot run this** — it needs a console. What it CAN do is
-build the logging stub so the experiment is a five-minute job when an operator
-is available, and record the question in
-[`docs/QUESTIONS.md`](docs/QUESTIONS.md) (already seeded).
+**An autonomous agent cannot run stage 1** — it needs a console. The question is
+recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md).
 
 ### 2.4a The `.nro` installer — **P2, the path that works today**
 
@@ -354,10 +364,15 @@ found.
 That is correct **while SwitchNet cannot answer them** — redirecting to a
 server that fails to respond usefully turns an immediate failure into a hang.
 
-It is not a permanent decision. §2.4's experiment requires flipping them to a
-logging stub, and a positive result would keep them flipped. Amend the test
-deliberately, in a commit that says why, rather than treating this entry as a
-rule.
+It is not a permanent decision, and §2.4's experiment no longer requires
+changing it: `switchnetctl hosts -bcat-probe` overrides the address at
+*generation* time, leaving the classification in `hosts.go` — and the test that
+pins it — untouched. That was deliberate. The flag is opt-in and temporary; the
+classification is what the default deployment does.
+
+A positive result from §2.4 would be the reason to change the classification
+itself. Amend the test then, in a commit that says why, rather than treating
+this entry as a rule.
 
 ### 5.3 A mode table for matchmaking — **P3**
 

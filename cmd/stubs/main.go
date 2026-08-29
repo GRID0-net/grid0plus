@@ -22,7 +22,11 @@ func main() {
 	}
 	log = service.Logger(cfg.Log, "stubs")
 
-	handler := stubs.New(stubs.Config{LogBodies: cfg.Stubs.LogBodies}, log)
+	handler := stubs.New(stubs.Config{
+		LogBodies: cfg.Stubs.LogBodies,
+		BCATProbe: cfg.Stubs.BCATProbe,
+	}, log)
+	stubs.LogBCATProbeState(log, cfg.Stubs.BCATProbe)
 
 	ctx, cancel := service.SignalContext()
 	defer cancel()

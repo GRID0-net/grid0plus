@@ -312,6 +312,20 @@ type Stubs struct {
 	// LogBodies logs request bodies. Useful exactly once, while working out
 	// what an unimplemented endpoint is being asked for.
 	LogBodies bool `yaml:"log_bodies"`
+
+	// BCATProbe answers the bcat-* hosts, logging every request in full, rather
+	// than leaving them null-routed on the console.
+	//
+	// An EXPERIMENT, not a service. SwitchNet cannot serve BCAT: the `list`
+	// response body is undocumented, and whether the console verifies the
+	// container's RSA signature is unknown. This establishes only whether the
+	// console reaches us at all and what it asks for, which is the first record
+	// anyone would have of either. See TODO.md 2.4.
+	//
+	// Off by default and it should stay that way outside the experiment:
+	// answering 200-empty to a console expecting content turns an immediate,
+	// legible failure into a hang.
+	BCATProbe bool `yaml:"bcat_probe"`
 }
 
 // NATCheck configures the UDP NAT-check responder.
@@ -503,6 +517,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
+	envBool("SWITCHNET_STUBS_BCAT_PROBE", &c.Stubs.BCATProbe)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
 	envStr("SWITCHNET_NATCHECK_SECONDARY_LISTEN", &c.NATCheck.SecondaryListen)
