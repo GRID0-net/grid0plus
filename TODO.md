@@ -306,9 +306,19 @@ cover it.
 disabling verification in the game's NSO. **The operator has accepted a
 system-wide patch**, so this is a decision already made, not an open question.
 
-Two properties to write down wherever it is documented: it *disables*
-verification rather than *adding* trust, and it is gated on the game version —
+**Done:** `make patch-splatoon3 NSO=<main>` builds the patch from the operator's
+own dump and installs it for Ryujinx or an Atmosphère SD card. Nothing is
+checked in and nothing can be: the address the patch writes to is found by
+searching the dump, and the file has to be named for that build's module id, so
+a prebuilt patch would be a patch for somebody else's copy. Both properties are
+written down in the script's header and in `README.md` — it *disables*
+verification rather than *adding* trust, and it is gated on the game version, so
 a title update silently stops it applying.
+
+Still unverified against a real dump: no Splatoon 3 NSO has been near this. The
+script is exercised end to end against a synthetic NSO carrying the signature
+upstream looks for, which proves the plumbing and the emitted IPS bytes but not
+that the signature is present in the operator's build.
 
 ### 4.2 Nothing here has touched a console — **P1**
 

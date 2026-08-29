@@ -22,7 +22,7 @@ TEST_REDIS_URL    ?=
 help:
 	@echo "SwitchNet"
 	@echo
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed -E 's/^## ([a-z-]+): (.*)/  \1|\2/' | awk -F'|' '{printf "  %-16s %s\n", $$1, $$2}'
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed -E 's/^## ([a-z0-9-]+): (.*)/  \1|\2/' | awk -F'|' '{printf "  %-16s %s\n", $$1, $$2}'
 	@echo
 	@echo "Configuration:"
 	@echo "  CONFIG=$(CONFIG)"
@@ -100,6 +100,19 @@ gen-proto:
 	@echo
 	@echo "proto/ is generated and tracked in git, so a plain build needs neither"
 	@echo "the network nor a protobuf toolchain. Commit the regenerated files."
+
+## patch-splatoon3: build the game's cert-verification patch from your own dump
+.PHONY: patch-splatoon3
+patch-splatoon3:
+	@test -n "$(NSO)" || { \
+	  echo "usage: make patch-splatoon3 NSO=/path/to/main [OUT=<mods dir>] [SD=<sd root>]"; \
+	  echo; \
+	  echo "NSO is the game's main NSO. Ryujinx dumps one: right-click the title,"; \
+	  echo "then Extract Data, ExeFS. There is no patch checked in and there cannot"; \
+	  echo "be one -- see the comment at the top of scripts/splatoon3-patch.sh."; \
+	  exit 2; \
+	}
+	scripts/splatoon3-patch.sh "$(NSO)" $(if $(OUT),--out "$(OUT)") $(if $(SD),--sd "$(SD)")
 
 ## gen-certs: create the local CA and the edge certificate
 .PHONY: gen-certs

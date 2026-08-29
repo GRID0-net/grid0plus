@@ -155,6 +155,23 @@ LayeredFS data file rather than a code patch — with an honest note about the p
 of it that is not yet confirmed. See
 [`switch/README.md`](switch/README.md#part-2-certificate-trust).
 
+**Splatoon 3 is a third problem**, and neither of the above touches it. It carries
+its own TLS stack and talks over a raw socket, never calling the console's `ssl`
+service — so it does not consult the CA store, and it is unaffected by anything
+you install for the two problems above. It needs a patch to its own executable,
+which has to be built against your own dump because the address it patches is
+found by searching that dump:
+
+```sh
+make patch-splatoon3 NSO=/path/to/main            # into Ryujinx's mods directory
+make patch-splatoon3 NSO=/path/to/main SD=/mnt/sd # onto an Atmosphère SD card
+```
+
+Ryujinx will dump the NSO for you: right-click the title, Extract Data, ExeFS.
+The patch *disables* verification rather than adding trust, so it applies to every
+server the game talks to; and it is matched on the build id, so a title update
+silently stops it applying and the fix is to re-run the above.
+
 ## The one setting people get wrong
 
 **`nncs1` and `nncs2` must be two different IP addresses.** Pia probes them as
