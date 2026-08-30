@@ -314,15 +314,16 @@ func nginxConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
-	// Phase 2's upstreams, commented out alongside the server blocks that use
-	// them: uncommenting a block without its upstream is an nginx that will not
-	// start, which is a worse first experience than one that is not there yet.
-	for _, svc := range []nintendo.Service{
-		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN,
-	} {
-		fmt.Fprintf(&b, "# upstream switchnet_%s { server %s; }\n",
-			names[svc], upstreamAddr(backends[svc]))
-	}
+	// cmd/npln implements the gRPC tenant gateway, so its upstream is live.
+	fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
+		names[nintendo.ServiceNPLN], upstreamAddr(backends[nintendo.ServiceNPLN]))
+	// npln_rest has no backend yet -- internal/nplnrest does not exist, and
+	// cmd/npln never listens on NPLN.RestListen -- so this upstream stays
+	// commented out. Uncommenting it with nothing to resolve is an nginx that
+	// will not start, which is a worse first experience than the host just not
+	// being routed yet.
+	fmt.Fprintf(&b, "# upstream switchnet_%s { server %s; }\n",
+		names[nintendo.ServiceNPLNRest], upstreamAddr(backends[nintendo.ServiceNPLNRest]))
 	b.WriteString("\n")
 
 	for _, svc := range nintendo.ProxiedServices {
@@ -358,20 +359,30 @@ func nginxConf(cfg config.Config) string {
 
 		fmt.Fprintf(&b, "# ---- %s ----\n", names[svc])
 		if svc == nintendo.ServiceNPLN {
-			b.WriteString("# Phase 2. Until cmd/npln exists this block is commented out: an\n")
-			b.WriteString("# nginx that cannot resolve its upstream refuses to start.\n")
-			b.WriteString("#\n")
 			b.WriteString("# NPLN is gRPC over HTTP/2, so it needs grpc_pass and http2, not\n")
 			b.WriteString("# proxy_pass. Routing it to an HTTP/1.1 backend completes the TLS\n")
 			b.WriteString("# handshake and then says nothing a gRPC client understands, which\n")
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
-			b.WriteString(commentOut(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}])))
+			b.WriteString("#\n")
+			b.WriteString("# gamesync.npln.nintendo.net is grouped in here too (both are\n")
+			b.WriteString("# ServiceNPLN), but cmd/npln only registers Auth, MaintenanceSchedule,\n")
+			b.WriteString("# Matchmaker and GameSessionService -- not a gamesync/document-watch\n")
+			b.WriteString("# service. A console that reaches gamesync here gets a clean gRPC\n")
+			b.WriteString("# Unimplemented, not a hang -- correctly reachable is still better\n")
+			b.WriteString("# than routed to the JSON stub, but implementing gamesync is its own\n")
+			b.WriteString("# task.\n")
+			b.WriteString(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}]))
 			b.WriteString("\n")
 			continue
 		}
 		if svc == nintendo.ServiceNPLNRest {
-			b.WriteString("# Phase 2, commented out for the same reason as npln below.\n")
+			b.WriteString("# Commented out: internal/nplnrest does not exist yet and cmd/npln\n")
+			b.WriteString("# never listens on NPLN.RestListen, so there is no backend for this\n")
+			b.WriteString("# block's upstream to resolve. An nginx that cannot resolve an\n")
+			b.WriteString("# upstream in an active server block refuses to start, which is a\n")
+			b.WriteString("# worse first experience than these hosts falling through to the\n")
+			b.WriteString("# stub server for now.\n")
 			b.WriteString("#\n")
 			b.WriteString("# These are the hosts Splatoon 3 talks to BEFORE it opens its gRPC\n")
 			b.WriteString("# channel: vermillion (device init), penne (login tickets), and the\n")
