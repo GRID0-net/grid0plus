@@ -5,10 +5,10 @@ because custom Splatfests are what phase 2 exists for.
 
 | | |
 | --- | --- |
-| Reimplements | `nn.npln.toyohr.v1.FestService` |
+| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `CloudSave.GetSaveRecord` |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
-| Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/fest.proto` |
-| Needs a database | yes |
+| Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/{fest,schedule,cloud_save}.proto` |
+| Needs a database | yes, for fests -- `Schedule` and `GetSaveRecord` need none |
 
 ## A Splatfest lives in two places, and they must agree
 
@@ -79,3 +79,35 @@ to choose.
 Two fests live at once is a state the game has no reading for. The operator can
 create it by mistake, so `currentFest` picks the most recently started and logs
 a warning rather than picking arbitrarily.
+
+## `Schedule`: honest emptiness, not an invented rotation
+
+`schedule.go` answers all five `Schedule` RPCs with an empty schedule list
+rather than `Unimplemented`, because the console calls these early in boot
+and the alternative is a to-do-list log line where a working boot query
+should be.
+
+The content those RPCs would normally carry — which stages, which mode,
+which weapons are in Salmon Run's rotation — is Nintendo's own game design
+data. Unlike a fest, which the operator authors and `SaveFest` validates,
+there is no equivalent authoring path for a normal Vs/Coop rotation and no
+dump of one. CLAUDE.md is explicit that a genuinely undocumented shape must
+not be filled with an invented-but-plausible Nintendo internal, so this
+stays honestly empty (`TODO(capture-needed)`, in `schedule.go`) rather than
+serving a fabricated rotation nothing here would ever catch as wrong.
+
+## `CloudSave.GetSaveRecord`: `NotFound` is the correct answer, not a stub
+
+A cloud save is real player save state. SwitchNet has no legitimate way to
+have one — the same "no game dump, no save data" boundary CLAUDE.md draws
+for phase 3 applies here too. `GetSaveRecord` answers `NotFound` for every
+account, which is not a placeholder: a fresh account has no cloud save on a
+real server either, and the game already has to handle that case on its
+very first boot.
+
+The other five `CloudSave` RPCs are left to
+`UnimplementedCloudSaveServer`. Nothing calls them this early, and actually
+implementing `Write`/`Create`/`Delete` convincingly would mean this server
+keeping opaque save blobs it has no way to validate — a materially
+different scope than answering the one boot query that would otherwise
+hang.

@@ -160,12 +160,30 @@ Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 `GameRecord`, `CoopScenario` (Salmon Run), `FestService` (Splatfests), then
 `Locker`, `CloudSave`, `Replay`, `Canola`, `UserScreening`.
 
-**Built: `FestService` only** (`internal/toyohr`, package doc: "starting with
-Splatfests"). `Schedule` and `CloudSave` are called during ordinary boot
-queries, ahead of Fest in the sequence a session actually needs — worth
-prioritising over the rest of this backlog for that reason.  Everything else
-listed above has a generated proto binding under `proto/toyohr/v1` and no
-implementation.
+**Built: `FestService`, `Schedule`, and `CloudSave.GetSaveRecord`**
+(`internal/toyohr`, package doc: "starting with Splatfests"). `Schedule` and
+`CloudSave` were prioritised over the rest of this backlog because they are
+called during ordinary boot queries, ahead of Fest in the sequence a session
+actually needs.
+
+`Schedule`'s five RPCs (`SelectVsParams`, `SelectVsSchedules`,
+`SelectCoopSchedules`, `SelectSeasonSchedules`, `SelectLeagueSchedules`) all
+answer "nothing scheduled" rather than `Unimplemented` — the map/mode
+rotation content itself is Nintendo's own game design data, not something
+this server can fabricate; see the `TODO(capture-needed)` in
+`internal/toyohr/schedule.go`. `CloudSave.GetSaveRecord` answers `NotFound`
+for every account — a fresh account genuinely has no cloud save on a real
+server either, so this is a correct answer rather than a placeholder. The
+other five `CloudSave` RPCs (`Create`/`Validate`/`Write`SaveRecord,
+`ChangeUserName`, `Delete`) are left unimplemented: nothing calls them this
+early, and actually writing save state is a different scope than answering
+the boot query that would otherwise hang, on top of being real player data
+this server has no legitimate way to have — see CLAUDE.md's "anything
+needing a game dump" boundary.
+
+Everything else listed above (`LobbyMessaging`, `GameRecord`,
+`CoopScenario`, `Locker`, `Replay`, `Canola`, `UserScreening`) has a
+generated proto binding under `proto/toyohr/v1` and no implementation.
 
 Treat this list as a backlog and let capture data drive the order. Log every
 unimplemented RPC with a hexdump — that log is the to-do list.

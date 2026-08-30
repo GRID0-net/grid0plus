@@ -25,6 +25,8 @@ import (
 // Service implements the Splatoon 3 services.
 type Service struct {
 	toyohrpb.UnimplementedFestServiceServer
+	toyohrpb.UnimplementedScheduleServer
+	toyohrpb.UnimplementedCloudSaveServer
 
 	store  db.Store
 	log    *slog.Logger
@@ -43,6 +45,8 @@ func NewService(store db.Store, log *slog.Logger, tenant string, now func() time
 // Register attaches the services to a gRPC server.
 func (s *Service) Register(srv *grpc.Server) {
 	toyohrpb.RegisterFestServiceServer(srv, s)
+	toyohrpb.RegisterScheduleServer(srv, s)
+	toyohrpb.RegisterCloudSaveServer(srv, s)
 }
 
 // tenantPath is the resource-name prefix every fest resource hangs off.
