@@ -56,19 +56,20 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 // runStoreContract exercises one Store implementation.
 func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 	tests := map[string]func(*testing.T, Store){
-		"users":                 testUsers,
-		"deviceAccounts":        testDeviceAccounts,
-		"reassignDeviceAccount": testReassignDeviceAccount,
-		"friendCodes":           testFriendCodes,
-		"friendships":           testFriendships,
-		"friendRequests":        testFriendRequests,
-		"blocks":                testBlocks,
-		"presence":              testPresence,
-		"images":                testImages,
-		"findUsers":             testFindUsers,
-		"userLogin":             testUserLogin,
-		"fests":                 testFests,
-		"ping":                  testPing,
+		"users":                     testUsers,
+		"deviceAccounts":            testDeviceAccounts,
+		"reassignDeviceAccount":     testReassignDeviceAccount,
+		"revokeDeviceAccountTokens": testRevokeDeviceAccountTokens,
+		"friendCodes":               testFriendCodes,
+		"friendships":               testFriendships,
+		"friendRequests":            testFriendRequests,
+		"blocks":                    testBlocks,
+		"presence":                  testPresence,
+		"images":                    testImages,
+		"findUsers":                 testFindUsers,
+		"userLogin":                 testUserLogin,
+		"fests":                     testFests,
+		"ping":                      testPing,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -422,6 +423,55 @@ func testReassignDeviceAccount(t *testing.T, s Store) {
 	}
 	if err := s.ReassignDeviceAccount(ctx, da.ID, "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("reassign to a missing user: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testRevokeDeviceAccountTokens(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Revocable")
+	das, err := s.ListDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	da := das[0]
+
+	if da.TokensRevokedBefore != nil {
+		t.Fatalf("a fresh device account already has TokensRevokedBefore set: %v", da.TokensRevokedBefore)
+	}
+
+	cutoff := time.Now().UTC().Truncate(time.Microsecond)
+	if err := s.RevokeDeviceAccountTokens(ctx, da.ID, cutoff); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+
+	got, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatalf("get device account: %v", err)
+	}
+	if got.TokensRevokedBefore == nil || !got.TokensRevokedBefore.Equal(cutoff) {
+		t.Errorf("tokens_revoked_before = %v, want it to equal %v exactly", got.TokensRevokedBefore, cutoff)
+	}
+	// Everything else about the account is untouched.
+	if got.PasswordSHA256 != da.PasswordSHA256 || got.UserID != da.UserID {
+		t.Error("revoking tokens changed the device account's password or owner")
+	}
+
+	// Revoking again with a later cutoff moves it forward -- an operator
+	// noticing a second leak should not have to remember the first cutoff.
+	later := cutoff.Add(time.Hour)
+	if err := s.RevokeDeviceAccountTokens(ctx, da.ID, later); err != nil {
+		t.Fatalf("revoke again: %v", err)
+	}
+	got, err = s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TokensRevokedBefore == nil || !got.TokensRevokedBefore.Equal(later) {
+		t.Errorf("tokens_revoked_before after a second revoke = %v, want %v", got.TokensRevokedBefore, later)
+	}
+
+	if err := s.RevokeDeviceAccountTokens(ctx, "ffffffffffffffff", cutoff); !errors.Is(err, ErrNotFound) {
+		t.Errorf("revoke a missing device account: err = %v, want ErrNotFound", err)
 	}
 }
 

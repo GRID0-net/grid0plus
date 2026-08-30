@@ -732,6 +732,55 @@ func TestAnExistingTokenStopsWorkingWhenItsDeviceAccountIsDeleted(t *testing.T) 
 	requireError(t, resp, 401, "invalid_token")
 }
 
+// TestATokenStopsWorkingAfterItsDeviceAccountsTokensAreRevoked covers
+// switchnetctl account revoke-tokens: the operator's way to react to a
+// leaked-but-unexpired token without rotating the whole server's signing key
+// (which would break every OTHER console's sessions too).
+func TestATokenStopsWorkingAfterItsDeviceAccountsTokensAreRevoked(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+
+	resp := h.do(request{
+		method: "GET", path: "/1.0.0/users/" + a.UserID, token: a.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+
+	// A revocation with a cutoff BEFORE the token was minted must not affect
+	// it -- an operator revoking an old, already-expired leak should not
+	// accidentally kill sessions minted since.
+	past := h.clock().Add(-time.Hour)
+	if err := h.store.RevokeDeviceAccountTokens(t.Context(), a.DeviceAccountID, past); err != nil {
+		t.Fatal(err)
+	}
+	resp = h.do(request{
+		method: "GET", path: "/1.0.0/users/" + a.UserID, token: a.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+
+	// A cutoff AFTER the token was minted refuses it, even though it has not
+	// expired and its signature is still valid.
+	future := h.clock().Add(time.Hour)
+	if err := h.store.RevokeDeviceAccountTokens(t.Context(), a.DeviceAccountID, future); err != nil {
+		t.Fatal(err)
+	}
+	resp = h.do(request{
+		method: "GET", path: "/1.0.0/users/" + a.UserID, token: a.AccessToken,
+	})
+	requireError(t, resp, 401, "invalid_token")
+
+	// The device account itself is untouched: a fresh login mints a new
+	// token, with a fresh iat after the revocation cutoff, and that one
+	// works normally. Revoking tokens is not the same as disabling the
+	// account.
+	h.advance(2 * time.Hour)
+	fresh := a
+	h.login(&fresh, "")
+	resp = h.do(request{
+		method: "GET", path: "/1.0.0/users/" + fresh.UserID, token: fresh.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+}
+
 // TestATokenWhoseSubjectDoesNotOwnItsDeviceAccountIsRefused covers a forged or
 // mixed-up token: the signature is ours, but the user and the device account do
 // not belong together. Accepting it is how one console ends up acting as another

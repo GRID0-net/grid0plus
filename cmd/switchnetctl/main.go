@@ -33,8 +33,8 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
-	// "account create" takes further arguments of its own; every other
-	// command takes none.
+	// "account create" and "account revoke-tokens" take further arguments of
+	// their own; every other command takes none.
 	if flag.NArg() == 0 || (flag.Arg(0) != "account" && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
@@ -72,12 +72,19 @@ func main() {
 		warn(cfg)
 
 	case "account":
-		if flag.NArg() < 2 || flag.Arg(1) != "create" {
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account create ...\n\n")
-			fmt.Fprint(os.Stderr, accountCreateUsage)
+		if flag.NArg() < 2 {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens> ...\n")
 			os.Exit(2)
 		}
-		accountCreate(cfg, flag.Args()[2:])
+		switch flag.Arg(1) {
+		case "create":
+			accountCreate(cfg, flag.Args()[2:])
+		case "revoke-tokens":
+			accountRevokeTokens(cfg, flag.Args()[2:])
+		default:
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens> ...\n")
+			os.Exit(2)
+		}
 
 	default:
 		usage()
@@ -100,8 +107,10 @@ Commands:
   sans      the hostnames the edge certificate needs, one per line
   check     validate the configuration and report anything risky
   account   create a user from a device account id and password you already
-            have, rather than one the server generates. See
-            'switchnetctl account create -h'.
+            have, rather than one the server generates, or revoke a device
+            account's live sessions without deleting it. See
+            'switchnetctl account create -h' and
+            'switchnetctl account revoke-tokens -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file

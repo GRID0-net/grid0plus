@@ -316,6 +316,22 @@ func (m *Memory) ReassignDeviceAccount(_ context.Context, deviceAccountID, newUs
 	return nil
 }
 
+// RevokeDeviceAccountTokens invalidates every token minted before `before`.
+func (m *Memory) RevokeDeviceAccountTokens(_ context.Context, deviceAccountID string, before time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	da, ok := m.deviceAccounts[deviceAccountID]
+	if !ok {
+		return ErrNotFound
+	}
+	t := before
+	da.TokensRevokedBefore = &t
+	da.UpdatedAt = time.Now().UTC()
+	m.deviceAccounts[deviceAccountID] = da
+	return nil
+}
+
 // ---- friend codes --------------------------------------------------------
 
 // GetFriendCode returns a user's friend code.

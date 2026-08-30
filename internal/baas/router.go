@@ -388,6 +388,18 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*caller, 
 			writeError(w, r, errInvalidToken)
 			return nil, false
 		}
+		if da.TokensRevokedBefore != nil && time.Unix(claims.IssuedAt, 0).Before(*da.TokensRevokedBefore) {
+			// Minted before an operator revoked this device account's sessions
+			// (switchnetctl account revoke-tokens) -- cryptographically valid,
+			// not expired, refused anyway. The only way to react to a
+			// leaked-but-unexpired token before this existed was rotating the
+			// key every token for every console is signed with.
+			s.log.Warn("baas: refused a token minted before this device account's tokens were revoked",
+				"device_account", claims.DeviceAccountID,
+				"issued_at", time.Unix(claims.IssuedAt, 0), "revoked_before", *da.TokensRevokedBefore)
+			writeError(w, r, errInvalidToken)
+			return nil, false
+		}
 
 		return &caller{
 			UserID:          claims.Subject,

@@ -71,6 +71,63 @@ func accountCreate(cfg config.Config, args []string) {
 	fmt.Println("time it logs in.")
 }
 
+// accountRevokeTokens implements `switchnetctl account revoke-tokens`.
+func accountRevokeTokens(cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("account revoke-tokens", flag.ExitOnError)
+	deviceAccountID := fs.String("device-account-id", "",
+		"16 hex character device account id whose live sessions should be revoked")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, accountRevokeTokensUsage) }
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if *deviceAccountID == "" {
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.OpenPostgres(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.AutoMigrate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Now().UTC()
+	err = store.RevokeDeviceAccountTokens(ctx, *deviceAccountID, now)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		fmt.Fprintf(os.Stderr, "switchnetctl: no device account with id %s\n", *deviceAccountID)
+		os.Exit(1)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("revoked tokens for device account %s, minted before %s\n",
+		*deviceAccountID, now.Format(time.RFC3339))
+	fmt.Println()
+	fmt.Println("Every access, user and id token already minted for this device account is")
+	fmt.Println("refused from now on, even though it has not expired. The console's next")
+	fmt.Println("login (POST /1.0.0/login) mints a fresh one and works normally -- this does")
+	fmt.Println("not disable the account. To stop it logging in at all, delete the device")
+	fmt.Println("account or user instead.")
+}
+
+const accountRevokeTokensUsage = `switchnetctl account revoke-tokens -device-account-id <id>
+
+Invalidates every access, user and id token already minted for a device
+account, without rotating the server's signing key (which would invalidate
+every OTHER console's sessions too) and without deleting anything.
+
+Use this if a token for this console leaked -- from a debug log, a shared
+screen, a compromised machine that had a copy of one. The device account's
+password is untouched, so its normal next login still works and mints a
+new, valid session.
+`
+
 const accountCreateUsage = `switchnetctl account create -device-account-id <id> -password <password> [-nickname <name>]
 
 Creates a user whose device account id and password are exactly what you

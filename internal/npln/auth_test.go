@@ -186,6 +186,40 @@ func TestATokenStopsWorkingWhenItsDeviceAccountMovesToAnotherUser(t *testing.T) 
 	}
 }
 
+// TestATokenStopsWorkingAfterItsDeviceAccountsTokensAreRevoked mirrors
+// BAAS's equivalent: switchnetctl account revoke-tokens must end an
+// already-active NPLN session immediately, not merely stop a new one being
+// minted.
+func TestATokenStopsWorkingAfterItsDeviceAccountsTokensAreRevoked(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("user-1", "device-account-1")
+	access := h.sessionFor(t, "user-1", "device-account-1")
+
+	client := authpb.NewAuthClient(h.conn)
+	if _, err := client.ValidateToken(h.ctx(access, ""), &emptypb.Empty{}); err != nil {
+		t.Fatalf("the session did not work before revocation: %v", err)
+	}
+
+	// A cutoff before the session was minted must not affect it.
+	if err := h.store.RevokeDeviceAccountTokens(context.Background(), "device-account-1",
+		h.now.Add(-time.Hour)); err != nil {
+		t.Fatalf("revoke (past cutoff): %v", err)
+	}
+	if _, err := client.ValidateToken(h.ctx(access, ""), &emptypb.Empty{}); err != nil {
+		t.Fatalf("a revocation with a cutoff before the session was minted affected it: %v", err)
+	}
+
+	// A cutoff after the session was minted ends it immediately, on the very
+	// next call -- not merely when it would next need to be re-minted.
+	if err := h.store.RevokeDeviceAccountTokens(context.Background(), "device-account-1",
+		h.now.Add(time.Hour)); err != nil {
+		t.Fatalf("revoke (future cutoff): %v", err)
+	}
+	if _, err := client.ValidateToken(h.ctx(access, ""), &emptypb.Empty{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("a token minted before its device account's tokens were revoked still worked: %v", err)
+	}
+}
+
 func TestAnExpiredSessionIsRefused(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("user-1", "device-account-1")

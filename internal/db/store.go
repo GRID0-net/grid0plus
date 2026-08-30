@@ -138,6 +138,11 @@ type DeviceAccount struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
+	// TokensRevokedBefore invalidates every token minted for this device
+	// account before this instant, without touching the password or deleting
+	// the account: a token whose 'iat' predates it is refused even though it
+	// has not expired. Nil means nothing has ever been revoked.
+	TokensRevokedBefore *time.Time
 }
 
 // Device is a console, identified by its TLS client certificate.
@@ -380,6 +385,11 @@ type Store interface {
 	// not who is allowed to present it. ErrNotFound if the device account or
 	// the target user does not exist.
 	ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error
+
+	// RevokeDeviceAccountTokens sets TokensRevokedBefore, invalidating every
+	// token minted for this device account before `before`. ErrNotFound if the
+	// device account does not exist.
+	RevokeDeviceAccountTokens(ctx context.Context, deviceAccountID string, before time.Time) error
 
 	// ---- friend codes ----
 

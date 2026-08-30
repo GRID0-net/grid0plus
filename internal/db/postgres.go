@@ -373,12 +373,12 @@ func (p *Postgres) UpsertDevice(ctx context.Context, d Device) error {
 	return mapErr(err)
 }
 
-const deviceAccountColumns = `id, user_id, password_sha256, coalesce(device_id, ''), created_at, updated_at, deleted_at`
+const deviceAccountColumns = `id, user_id, password_sha256, coalesce(device_id, ''), created_at, updated_at, deleted_at, tokens_revoked_before`
 
 func scanDeviceAccount(row pgx.Row) (DeviceAccount, error) {
 	var da DeviceAccount
 	err := row.Scan(&da.ID, &da.UserID, &da.PasswordSHA256, &da.DeviceID,
-		&da.CreatedAt, &da.UpdatedAt, &da.DeletedAt)
+		&da.CreatedAt, &da.UpdatedAt, &da.DeletedAt, &da.TokensRevokedBefore)
 	if err != nil {
 		return DeviceAccount{}, mapErr(err)
 	}
@@ -433,6 +433,20 @@ func (p *Postgres) ReassignDeviceAccount(ctx context.Context, deviceAccountID, n
 	tag, err := p.pool.Exec(ctx, `
 		UPDATE device_accounts SET user_id = $2, updated_at = now()
 		WHERE id = $1`, deviceAccountID, newUserID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RevokeDeviceAccountTokens invalidates every token minted before `before`.
+func (p *Postgres) RevokeDeviceAccountTokens(ctx context.Context, deviceAccountID string, before time.Time) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE device_accounts SET tokens_revoked_before = $2, updated_at = now()
+		WHERE id = $1`, deviceAccountID, before)
 	if err != nil {
 		return mapErr(err)
 	}

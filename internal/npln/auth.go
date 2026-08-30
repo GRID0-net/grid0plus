@@ -126,6 +126,16 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 				"owner", da.UserID, "deleted", da.DeletedAt != nil)
 			return Caller{}, ErrUnauthenticated
 		}
+		if da.TokensRevokedBefore != nil && time.Unix(claims.IssuedAt, 0).Before(*da.TokensRevokedBefore) {
+			// Re-checked on every call, the same as the deleted/reassigned checks
+			// above -- this is what actually ends an already-active NPLN session
+			// the moment an operator revokes it (switchnetctl account
+			// revoke-tokens), rather than only stopping a NEW one from being
+			// minted at exchangeIDToken below.
+			s.log.Warn("npln: refused an access token minted before its device account's tokens were revoked",
+				"device_account", claims.DeviceAccountID)
+			return Caller{}, ErrUnauthenticated
+		}
 	}
 
 	return Caller{UserID: claims.Subject, DeviceAccountID: claims.DeviceAccountID}, nil
@@ -180,6 +190,15 @@ func (s *Server) exchangeIDToken(ctx context.Context, idToken string) (Caller, e
 			return Caller{}, ErrUnauthenticated
 		}
 		if da.DeletedAt != nil || da.UserID != claims.Subject {
+			return Caller{}, ErrUnauthenticated
+		}
+		if da.TokensRevokedBefore != nil && time.Unix(claims.IssuedAt, 0).Before(*da.TokensRevokedBefore) {
+			// Same check as internal/baas/router.go's authenticate, and for the
+			// same reason: an id token minted before an operator revoked this
+			// device account's tokens stays cryptographically valid, but must
+			// not seed a new NPLN session either.
+			s.log.Warn("npln: refused an id token minted before its device account's tokens were revoked",
+				"device_account", claims.DeviceAccountID)
 			return Caller{}, ErrUnauthenticated
 		}
 	}
