@@ -7,7 +7,7 @@ causes and no way to tell them apart.
 | Phase | Scope | State |
 | --- | --- | --- |
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
-| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | not started |
+| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | in progress: gateway, matchmaking+ICE, dashboard and BCAT pack-building are built and tested; the JSON front end, most `toyohr` services and BCAT serving are not |
 | [3](#phase-3--the-eshop) | eShop, served from local NSP dumps | not started |
 
 ---
@@ -117,20 +117,28 @@ production, 14 (`Unavailable`) on development.
 
 Then, in order of what a session needs:
 
-| Service | Note |
-| --- | --- |
-| `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built |
-| `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" |
-| `nn.npln.hydro.v1.Datastore`, `leaderboard`, `messaging` | start with the minimum that does not crash the client |
+| Service | Note | Built? |
+| --- | --- | --- |
+| `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built | yes |
+| `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
+| `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | no — proto bindings exist, nothing registers them |
+| `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | no — same as above |
+| `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
 
 **NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that
 does. `internal/jwt` currently only does RS256 and will need an EC path.
 
 ### 2.3 Matchmaking and sessions
 
-A FIFO queue per mode, in memory. On a match, form a session naming a host and
-hand it to every player on their ticket stream. Log every match to
-`npln_matches` for the dashboard.
+**Built** (`internal/npln/matchmaking.go`, with `matchmaking_test.go` covering
+the queue and session formation): a FIFO queue per mode, in memory. On a match,
+form a session naming a host and hand it to every player on their ticket
+stream. `AllocateIceServerSet` is built too.
+
+**Not built:** `SyncGameSession` — the host publishing its reachable address
+and joiners reading it back, needed once a match actually needs to connect
+peer-to-peer rather than just form. Log every match to `npln_matches` for the
+dashboard.
 
 **NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
 so `natcheck` is not involved in this title, and a STUN/TURN server (coturn) is a
@@ -151,6 +159,13 @@ The match log is still to do ([`../TODO.md`](../TODO.md) §3.1).
 Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
 `GameRecord`, `CoopScenario` (Salmon Run), `FestService` (Splatfests), then
 `Locker`, `CloudSave`, `Replay`, `Canola`, `UserScreening`.
+
+**Built: `FestService` only** (`internal/toyohr`, package doc: "starting with
+Splatfests"). `Schedule` and `CloudSave` are called during ordinary boot
+queries, ahead of Fest in the sequence a session actually needs — worth
+prioritising over the rest of this backlog for that reason.  Everything else
+listed above has a generated proto binding under `proto/toyohr/v1` and no
+implementation.
 
 Treat this list as a backlog and let capture data drive the order. Log every
 unimplemented RPC with a hexdump — that log is the to-do list.

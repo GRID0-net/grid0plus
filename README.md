@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
   <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
   <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
-  <img src="https://img.shields.io/badge/phase%202-not%20started-lightgrey" alt="Phase 2">
+  <img src="https://img.shields.io/badge/phase%202-in%20progress-yellow" alt="Phase 2">
   <img src="https://img.shields.io/badge/phase%203-not%20started-lightgrey" alt="Phase 3">
 </p>
 
@@ -45,7 +45,7 @@ Three phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
-| **2** | NPLN game server for Splatoon 3, web dashboard | not started |
+| **2** | NPLN game server for Splatoon 3, web dashboard | in progress -- see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) for what's built |
 | **3** | eShop, served from local `.NSP` dumps of games you own | not started |
 
 Phase 1 is what this repository contains today.

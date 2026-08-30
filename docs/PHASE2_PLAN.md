@@ -10,10 +10,11 @@ Status: **in progress.** Written 2026-08-28.
 | gRPC gateway, and the phase-1 auth seam | done — `internal/npln`, `cmd/npln` |
 | Splatfest scheduling | done — `internal/toyohr` |
 | Match queue and formation | done — `internal/matchmaking` |
-| Matchmaker/GameSession gRPC services | not started |
-| BCAT pack building and serving | not started — `internal/bcat` |
+| Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go`, incl. `AllocateIceServerSet`; `SyncGameSession` still missing |
+| BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
+| BCAT serving | not started |
 | The JSON front end (vermillion, penne, frontline) | not started — `internal/nplnrest` |
-| Dashboard | not started |
+| Dashboard | done — `internal/dashboard`, `cmd/dashboard`; match history and live matchmaking counts still not wired |
 
 Everything done so far is verifiable without a console, which is the ordering
 this plan committed to while the certificate-pinning question is open. The
