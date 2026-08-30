@@ -25,6 +25,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
+	"github.com/n-popescu/switchnet/internal/messaging"
 	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 )
@@ -57,6 +58,10 @@ type Server struct {
 	iceServers []config.ICEServer
 	// adminToken guards the operator API. Empty means it is not served at all.
 	adminToken string
+
+	// messages is every user's mailbox for the Messaging service. In memory,
+	// like queue above -- see internal/messaging's package doc for why.
+	messages *messaging.Queue
 
 	// presence resolves a user's presence through the exact same TTL rules
 	// BAAS's HTTP endpoints do -- see internal/presence's package doc.
@@ -148,6 +153,7 @@ func New(opts Options) (*Server, error) {
 		queue:          matchmaking.New(opts.Matchmaking, opts.Now),
 		iceServers:     iceServersFrom(opts.Config.ICEServers),
 		adminToken:     opts.Config.AdminToken,
+		messages:       messaging.New(opts.Now),
 		presence: presence.Resolver{
 			Store:      opts.Store,
 			ReportTTL:  opts.PresenceTTL,

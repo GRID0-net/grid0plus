@@ -122,7 +122,7 @@ Then, in order of what a session needs:
 | `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built | yes |
 | `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
 | `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | yes — `internal/npln/friends.go`, `presence_service.go` |
-| `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | no — same as above |
+| `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | yes — `internal/npln/messaging.go`, over `internal/messaging`'s in-memory mailbox |
 | `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
 
 **NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that

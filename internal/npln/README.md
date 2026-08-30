@@ -34,6 +34,7 @@ keeps them apart and `cmd/switchnetctl`'s generator tests assert it.
 | `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking`'s queue |
 | `friends.go` | `Friends`, over `internal/db`'s friendship store — the same rows BAAS reads |
 | `presence_service.go` | `PresenceService`, over `internal/presence`'s TTL rules — the same rules BAAS reads |
+| `messaging.go` | `Messaging`, over `internal/messaging`'s in-memory mailbox |
 | `errors.go` | how a refusal is shaped |
 
 ## Identity is fail-closed, and `uid` is not a credential
@@ -170,3 +171,25 @@ reads, and `resources.proto`'s own `State` enum has no `PLAYING` — `PLAYING`
 is read down to `ONLINE` here, on the theory that BAAS's richer detail (title
 id, app field) is what the friends applet reads separately rather than
 through this service. Both are `TODO(capture-needed)`.
+
+## Messaging
+
+`messaging.go` relays opaque payloads between two authenticated users:
+`SendMessage` fans one out to any number of receivers, `SendAck`
+acknowledges one back to its original sender, and `RecvMessage` streams a
+caller's own mailbox — everything retained since its resume tokens, then
+live as it arrives.
+
+`MessageBody`'s `message_type` and `fields` are never read here, the same
+reason `internal/baas` never parses a game's `appField`: guessing at a
+game-private format is exactly what CLAUDE.md warns against for an
+undocumented shape. Routing an ack needs nothing this server tracked
+itself — `AckBody` already carries the original message's sender, so
+`SendAck` delivers straight there.
+
+`internal/messaging`'s mailbox is in memory, the same tradeoff
+`internal/matchmaking`'s queue makes: a message undelivered when this
+process restarts is one the sender's own retry resends, and it keeps this
+package as protocol-agnostic as that one — it imports nothing from `proto/`,
+and `messaging.go` is where a `Message` or `Ack` becomes a
+`RecvMessageResponse`.

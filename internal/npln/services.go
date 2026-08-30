@@ -13,6 +13,7 @@ import (
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
 	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	messagingpb "github.com/n-popescu/switchnet/proto/messaging/v1"
 )
 
 // register attaches the implemented services to the gRPC server.
@@ -28,6 +29,7 @@ func (s *Server) register() {
 	mmpb.RegisterGameSessionServiceServer(s.grpc, &gameSessionService{s: s})
 	friendspb.RegisterFriendsServer(s.grpc, &friendsService{s: s})
 	friendspb.RegisterPresenceServiceServer(s.grpc, &presenceService{s: s})
+	messagingpb.RegisterMessagingServer(s.grpc, &messagingService{s: s})
 
 	// Splatoon 3's own services. They authenticate through the same
 	// interceptor as everything else -- a fest is announced to a console that

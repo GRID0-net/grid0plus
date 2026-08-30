@@ -215,7 +215,7 @@ fields was wrong or missing, as opposed to a generic module-2124 failure.
 ## Phase 2 — Splatoon 3 (NPLN)
 
 In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
-and already has eleven of its own `TODO(capture-needed)` markers -- this section
+and already has twelve of its own `TODO(capture-needed)` markers -- this section
 was written when the phase genuinely had none yet and was never updated once
 it did, which is exactly the kind of drift this file exists to prevent.
 
@@ -280,6 +280,13 @@ it did, which is exactly the kind of drift this file exists to prevent.
   but no capture shows what keys a real client reads, and a guessed key that
   silently never matches is worse than an empty map that visibly does
   nothing.
+- **Whether `Messaging.RecvMessage`'s empty resume token replays the whole
+  retained mailbox**
+  (`internal/npln/messaging.go`, `RecvMessage`): the defensible reading, since
+  this is the invite mailbox opened early in boot and a pending invite sent
+  while the console was off has to still be there -- but nothing confirms it
+  against a real client. Getting it backwards either loses an invite
+  silently or replays a stale one on every reconnect.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not
@@ -291,6 +298,7 @@ mitmproxy, and it does need the console.
 | entering the lobby | `Schedule` and `LobbyMessaging`, the first things the lobby draws |
 | a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
 | the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
+| an invite sent while the receiving console is off, then a boot | `Messaging.RecvMessage`'s empty-resume-token behaviour, and its resource-name shapes |
 | post-match results upload | `GameRecord` |
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
