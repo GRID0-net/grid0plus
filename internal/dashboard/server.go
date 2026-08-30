@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
@@ -45,11 +46,18 @@ type Options struct {
 	// Tenant is the NPLN tenant the fest controls act on.
 	Tenant string
 
-	// PresenceTTL is how long a reported state stays current. The dashboard
-	// applies the same rule BAAS does, so the two never disagree about who is
-	// online — a dashboard that says somebody is playing while their friends
-	// see them offline is worse than no dashboard.
+	// PresenceTTL and ConsolePresenceTTL apply the exact same rule BAAS does
+	// (internal/presence), so the two never disagree about who is online — a
+	// dashboard that says somebody is playing while their friends see them
+	// offline is worse than no dashboard. Pass the same values as BAAS's own
+	// config: cfg.BAAS.PresenceTTL and cfg.BAAS.ConsolePresenceTTL.
 	PresenceTTL time.Duration
+	// ConsolePresenceTTL is how long a console counts as ONLINE after its last
+	// authenticated request. Left zero, it defaults to PresenceTTL's default
+	// rather than to PresenceTTL's own value, because the two are configured
+	// independently and defaulting one from the other would silently reproduce
+	// the exact single-TTL bug this field exists to fix.
+	ConsolePresenceTTL time.Duration
 
 	// Token, when set, is required as a bearer token or ?token= on every
 	// request.
@@ -83,10 +91,10 @@ type Server struct {
 	log   *slog.Logger
 	fests *toyohr.Service
 
-	tenant      string
-	presenceTTL time.Duration
-	token       string
-	now         func() time.Time
+	tenant   string
+	presence presence.Resolver
+	token    string
+	now      func() time.Time
 
 	// matchmaking is nil when the controls are not configured.
 	matchmaking *matchmakingClient
@@ -114,6 +122,9 @@ func New(opts Options) (*Server, error) {
 	if opts.PresenceTTL <= 0 {
 		opts.PresenceTTL = 5 * time.Minute
 	}
+	if opts.ConsolePresenceTTL <= 0 {
+		opts.ConsolePresenceTTL = 5 * time.Minute
+	}
 
 	tmpl, err := template.ParseFS(templates, "templates/*.html")
 	if err != nil {
@@ -121,12 +132,16 @@ func New(opts Options) (*Server, error) {
 	}
 
 	return &Server{
-		store:       opts.Store,
-		bus:         opts.Bus,
-		log:         opts.Log,
-		fests:       toyohr.NewService(opts.Store, opts.Log, opts.Tenant, opts.Now),
-		tenant:      opts.Tenant,
-		presenceTTL: opts.PresenceTTL,
+		store:  opts.Store,
+		bus:    opts.Bus,
+		log:    opts.Log,
+		fests:  toyohr.NewService(opts.Store, opts.Log, opts.Tenant, opts.Now),
+		tenant: opts.Tenant,
+		presence: presence.Resolver{
+			Store:      opts.Store,
+			ReportTTL:  opts.PresenceTTL,
+			ConsoleTTL: opts.ConsolePresenceTTL,
+		},
 		token:       opts.Token,
 		now:         opts.Now,
 		matchmaking: newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
@@ -216,22 +231,22 @@ func (s *Server) players(ctx context.Context) ([]Player, error) {
 	for _, u := range users {
 		ids = append(ids, u.ID)
 	}
-	presences, err := s.store.GetPresences(ctx, ids)
+	presences, err := s.presence.EffectiveMany(ctx, ids, s.now())
 	if err != nil {
 		return nil, err
 	}
 
-	now := s.now()
 	out := make([]Player, 0, len(users))
 	for _, u := range users {
 		p := presences[u.ID]
-		state, appID := s.resolvePresence(p, now)
+		// Resolve has already cleared AppID for anything but PLAYING.
+		appID := p.AppID
 
 		name := u.Nickname
 		if name == "" {
 			name = u.ID
 		}
-		row := Player{ID: u.ID, Nickname: name, State: state, AppID: appID}
+		row := Player{ID: u.ID, Nickname: name, State: p.State, AppID: appID}
 		if appID != "" {
 			row.Activity = titleName(appID)
 		}
@@ -251,35 +266,6 @@ func (s *Server) players(ctx context.Context) ([]Player, error) {
 		return strings.ToLower(out[i].Nickname) < strings.ToLower(out[j].Nickname)
 	})
 	return out, nil
-}
-
-// resolvePresence applies the same rule internal/baas does.
-//
-// Deliberately duplicated in shape rather than imported, because BAAS's version
-// is a handler-level concern there — but the RULE must not drift. A dashboard
-// that disagrees with the friends applet about who is online sends the operator
-// hunting for a bug that is only in the dashboard.
-//
-//	fresh report?           use it exactly, including OFFLINE
-//	otherwise seen recently? ONLINE, with the app fields cleared
-//	otherwise                OFFLINE
-func (s *Server) resolvePresence(p db.Presence, now time.Time) (state, appID string) {
-	if !p.ReportedAt.IsZero() && now.Sub(p.ReportedAt) < s.presenceTTL {
-		if p.State == "PLAYING" {
-			return "PLAYING", p.AppID
-		}
-		// Not playing: the app fields are cleared. A console that closes a game
-		// reports ONLINE without clearing them, so keeping them would leave the
-		// dashboard showing a game that is no longer running.
-		return p.State, ""
-	}
-	if !p.LastSeenAt.IsZero() && now.Sub(p.LastSeenAt) < s.presenceTTL {
-		// Request traffic is proof of life. Without this branch a console
-		// sitting in the Home Menu -- which reports nothing but keeps polling --
-		// reads as offline.
-		return "ONLINE", ""
-	}
-	return "OFFLINE", ""
 }
 
 // titleName maps the title ids SwitchNet is likely to see onto something a

@@ -53,12 +53,13 @@ func main() {
 	}
 
 	srv, err := dashboard.New(dashboard.Options{
-		Store:       store,
-		Bus:         bus,
-		Log:         log,
-		Tenant:      cfg.NPLN.Tenant,
-		PresenceTTL: time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
-		Token:       cfg.Dashboard.Token,
+		Store:              store,
+		Bus:                bus,
+		Log:                log,
+		Tenant:             cfg.NPLN.Tenant,
+		PresenceTTL:        time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
+		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,
+		Token:              cfg.Dashboard.Token,
 
 		NPLNAdminURL:   cfg.Dashboard.NPLNAdminURL,
 		NPLNAdminToken: cfg.Dashboard.NPLNAdminToken,

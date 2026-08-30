@@ -32,6 +32,52 @@ func newTestServer(t *testing.T, token string, now time.Time) (*Server, *db.Memo
 	return srv, store
 }
 
+// newTestServerWithTTLs is newTestServer, but with PresenceTTL and
+// ConsolePresenceTTL set independently -- for the regression test below,
+// which needs them to actually differ.
+func newTestServerWithTTLs(t *testing.T, reportTTL, consoleTTL time.Duration, now time.Time) (*Server, *db.Memory) {
+	t.Helper()
+	store := db.NewMemory()
+	srv, err := New(Options{
+		Store:              store,
+		Log:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Tenant:             "dce9377b",
+		PresenceTTL:        reportTTL,
+		ConsolePresenceTTL: consoleTTL,
+		Now:                func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	return srv, store
+}
+
+// TestPresenceUsesConsolePresenceTTLNotPresenceTTLForLiveness is a regression
+// test for a bug where the dashboard resolved BOTH the report TTL and the
+// console-liveness TTL from the same field, so an operator who configured
+// them differently (as BAAS itself allows) got a dashboard that disagreed
+// with the friends applet about who was online.
+func TestPresenceUsesConsolePresenceTTLNotPresenceTTLForLiveness(t *testing.T) {
+	now := time.Now().UTC()
+	// A report TTL so short it is already stale, and a console TTL long
+	// enough that the last-seen heartbeat is still fresh.
+	srv, store := newTestServerWithTTLs(t, time.Second, time.Hour, now)
+	ctx := context.Background()
+
+	addUser(t, store, "idle", "idle")
+	store.TouchPresence(ctx, "idle", now.Add(-time.Minute))
+
+	players, err := srv.players(ctx)
+	if err != nil {
+		t.Fatalf("players: %v", err)
+	}
+	if len(players) != 1 || players[0].State != "ONLINE" {
+		t.Fatalf("got %+v, want a single ONLINE player -- ConsolePresenceTTL (1h) "+
+			"should have covered a 1-minute-old heartbeat even though PresenceTTL (1s) would not",
+			players)
+	}
+}
+
 func addUser(t *testing.T, store *db.Memory, id, nick string) {
 	t.Helper()
 	now := time.Now()
