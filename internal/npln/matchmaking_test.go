@@ -404,6 +404,47 @@ func TestSyncGameSessionRefusesAStrangerTheSameWayGetGameSessionDoes(t *testing.
 	}
 }
 
+// TestAFormedMatchIsRecordedToHistory is the dashboard's match history
+// source: a match forming because the queue filled, not because an operator
+// forced it, must still show up -- and unforced, since nobody forced it.
+func TestAFormedMatchIsRecordedToHistory(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("history-one", "device-history-one")
+	h.createUser("history-two", "device-history-two")
+
+	one := h.ctx(h.sessionFor(t, "history-one", "device-history-one"), "")
+	two := h.ctx(h.sessionFor(t, "history-two", "device-history-two"), "")
+	client := mmpb.NewMatchmakerClient(h.conn)
+
+	if _, err := client.CreateMatchmakingTicket(one, ticketFor("turf-war")); err != nil {
+		t.Fatalf("CreateMatchmakingTicket (one): %v", err)
+	}
+	matched, err := client.CreateMatchmakingTicket(two, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
+	}
+	if matched.GetState() != mmpb.MatchmakingTicket_SUCCEEDED {
+		t.Fatalf("no match formed: %v", matched.GetState())
+	}
+
+	history, err := h.store.ListMatches(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListMatches: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("got %d matches in history, want 1", len(history))
+	}
+	if history[0].Forced {
+		t.Error("a match that formed on its own is recorded as forced")
+	}
+	if history[0].Mode != "turf-war" {
+		t.Errorf("mode = %q, want turf-war", history[0].Mode)
+	}
+	if len(history[0].PlayerIDs) != 2 {
+		t.Errorf("player_ids = %v, want both players", history[0].PlayerIDs)
+	}
+}
+
 // TestAllocateIceServerSetReturnsWhatWasConfigured covers TODO.md §1.2's
 // config-only path, including the empty default.
 //

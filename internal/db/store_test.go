@@ -70,6 +70,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"findUsers":                 testFindUsers,
 		"userLogin":                 testUserLogin,
 		"fests":                     testFests,
+		"matches":                   testMatches,
 		"ping":                      testPing,
 	}
 	for name, fn := range tests {
@@ -1252,6 +1253,76 @@ func testFests(t *testing.T, s Store) {
 	// Idempotent: the dashboard's delete button should not error on a second click.
 	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
 		t.Errorf("deleting a missing fest errored: %v", err)
+	}
+}
+
+func testMatches(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	older := Match{
+		ID: "session-older", Tenant: "dce9377b", Mode: "turf_war",
+		HostUserID: "aaaaaaaaaaaaaaaa",
+		PlayerIDs:  []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"},
+		CreatedAt:  now.Add(-time.Hour),
+	}
+	newer := Match{
+		ID: "session-newer", Tenant: "dce9377b", Mode: "salmon_run",
+		HostUserID: "cccccccccccccccc",
+		PlayerIDs:  []string{"cccccccccccccccc", "dddddddddddddddd", "eeeeeeeeeeeeeeee"},
+		Forced:     true,
+		CreatedAt:  now,
+	}
+
+	if err := s.CreateMatch(ctx, older); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.CreateMatch(ctx, newer); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	list, err := s.ListMatches(ctx, 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d matches, want 2", len(list))
+	}
+	// Newest first.
+	if list[0].ID != "session-newer" || list[1].ID != "session-older" {
+		t.Errorf("order = [%s %s], want the newer match first", list[0].ID, list[1].ID)
+	}
+	if !list[0].Forced {
+		t.Error("forced did not round-trip")
+	}
+	if len(list[0].PlayerIDs) != 3 || list[0].PlayerIDs[0] != "cccccccccccccccc" {
+		t.Errorf("player_ids = %v, want them back in order", list[0].PlayerIDs)
+	}
+	if list[1].HostUserID != "aaaaaaaaaaaaaaaa" {
+		t.Errorf("host_user_id = %q, want aaaaaaaaaaaaaaaa", list[1].HostUserID)
+	}
+
+	// limit is honoured.
+	limited, err := s.ListMatches(ctx, 1)
+	if err != nil {
+		t.Fatalf("list limited: %v", err)
+	}
+	if len(limited) != 1 || limited[0].ID != "session-newer" {
+		t.Errorf("limited list = %+v, want just the newer match", limited)
+	}
+
+	// Re-recording the same id is not an error and does not duplicate the
+	// row: a match is written once, at formation, and a retried write after a
+	// network blip must not fail the caller or grow the history.
+	if err := s.CreateMatch(ctx, older); err != nil {
+		t.Fatalf("re-create: %v", err)
+	}
+	list, err = s.ListMatches(ctx, 10)
+	if err != nil {
+		t.Fatalf("list after re-create: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("re-recording an existing match id created a duplicate: %d matches", len(list))
 	}
 }
 

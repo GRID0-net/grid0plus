@@ -33,6 +33,9 @@ type Memory struct {
 	presence       map[string]Presence
 	images         map[string]Image
 	fests          map[string]Fest
+	// matches is append-only, ordered by insertion (which is creation order,
+	// since CreateMatch is the only writer and never rewrites an existing id).
+	matches []Match
 }
 
 // NewMemory returns an empty in-memory store.
@@ -861,4 +864,44 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	defer m.mu.Unlock()
 	delete(m.fests, id)
 	return nil
+}
+
+// ---- match history ---------------------------------------------------------
+
+func (m *Memory) CreateMatch(_ context.Context, match Match) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// A match is written once, at formation. Matches the PostgreSQL
+	// implementation's ON CONFLICT (id) DO NOTHING: a retried write after a
+	// network blip must not fail the caller or duplicate the row.
+	for _, existing := range m.matches {
+		if existing.ID == match.ID {
+			return nil
+		}
+	}
+	match.PlayerIDs = append([]string(nil), match.PlayerIDs...)
+	m.matches = append(m.matches, match)
+	return nil
+}
+
+func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]Match, len(m.matches))
+	for i, match := range m.matches {
+		match.PlayerIDs = append([]string(nil), match.PlayerIDs...)
+		out[i] = match
+	}
+	// Newest first, matching the PostgreSQL implementation's ORDER BY
+	// created_at DESC.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if limit <= 0 || limit > DefaultMatchListLimit {
+		limit = DefaultMatchListLimit
+	}
+	if limit < len(out) {
+		out = out[:limit]
+	}
+	return out, nil
 }

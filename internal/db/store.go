@@ -319,6 +319,34 @@ type Fest struct {
 	UpdatedAt time.Time
 }
 
+// Match is one game session NPLN's matchmaking queue has formed, recorded
+// for the dashboard's match history.
+//
+// The queue itself lives in memory (internal/matchmaking) and does not
+// survive a restart; this is the record that does. SwitchNet only ever knows
+// a match was FORMED — gameplay is peer-to-peer, so there is no signal for
+// when, or whether, one actually starts or ends, and no EndedAt to carry.
+type Match struct {
+	// ID is the session id internal/matchmaking.Queue assigned.
+	ID     string
+	Tenant string
+	Mode   string
+	// HostUserID is the player whose console the others connect to.
+	HostUserID string
+	PlayerIDs  []string
+	// Forced is whether an operator started this match with fewer players
+	// than the mode wanted, via the dashboard's matchmaking controls.
+	Forced    bool
+	CreatedAt time.Time
+}
+
+// DefaultMatchListLimit bounds ListMatches when the caller passes zero or a
+// number larger than this, the same way internal/baas's page-size caps do —
+// the dashboard is the only caller today, and it always asks for a bounded
+// page, but the store's contract should not depend on that being true
+// forever.
+const DefaultMatchListLimit = 200
+
 type Store interface {
 	// Ping reports whether the store is reachable.
 	//
@@ -375,6 +403,16 @@ type Store interface {
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.
 	DeleteFest(ctx context.Context, id string) error
+
+	// ---- match history (phase 2) ----
+
+	// CreateMatch records a formed game session. Called once, at formation —
+	// there is nothing to update afterward, since nothing tells this server
+	// when a match ends.
+	CreateMatch(ctx context.Context, m Match) error
+	// ListMatches returns the most recent matches, newest first, capped at
+	// limit.
+	ListMatches(ctx context.Context, limit int) ([]Match, error)
 
 	// ---- devices and device accounts (continued) ----
 

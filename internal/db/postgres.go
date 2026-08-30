@@ -1023,3 +1023,46 @@ func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 	}
 	return f, nil
 }
+
+// ---- match history ---------------------------------------------------------
+
+const matchColumns = `id, tenant, mode, host_user_id, player_ids, forced, created_at`
+
+func (p *Postgres) CreateMatch(ctx context.Context, m Match) error {
+	if m.PlayerIDs == nil {
+		m.PlayerIDs = []string{}
+	}
+	// ON CONFLICT DO NOTHING: a match is recorded exactly once, at formation,
+	// and session ids do not repeat within the queue's own lifetime -- but a
+	// retried write after a network blip must not fail the caller (the match
+	// already formed either way) or duplicate the row.
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_matches (`+matchColumns+`)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO NOTHING`,
+		m.ID, m.Tenant, m.Mode, m.HostUserID, m.PlayerIDs, m.Forced, m.CreatedAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) {
+	if limit <= 0 || limit > DefaultMatchListLimit {
+		limit = DefaultMatchListLimit
+	}
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+matchColumns+` FROM npln_matches ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Match
+	for rows.Next() {
+		var m Match
+		if err := rows.Scan(&m.ID, &m.Tenant, &m.Mode, &m.HostUserID,
+			&m.PlayerIDs, &m.Forced, &m.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, m)
+	}
+	return out, mapErr(rows.Err())
+}

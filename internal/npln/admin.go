@@ -30,6 +30,11 @@ type AdminHandler struct {
 	queue *matchmaking.Queue
 	log   *slog.Logger
 	token string
+
+	// srv is used only to record a forced match to the history -- see
+	// forceStart. Everything else here goes through queue directly, which
+	// predates this field and there is no reason to churn it.
+	srv *Server
 }
 
 // AdminHandler returns the operator API for this server's queue, or nil when no
@@ -43,7 +48,7 @@ func (s *Server) AdminHandler() *AdminHandler {
 	if s.adminToken == "" {
 		return nil
 	}
-	return &AdminHandler{queue: s.queue, log: s.log, token: s.adminToken}
+	return &AdminHandler{queue: s.queue, log: s.log, token: s.adminToken, srv: s}
 }
 
 // Handler returns the routed handler.
@@ -200,6 +205,7 @@ func (h *AdminHandler) forceStart(w http.ResponseWriter, r *http.Request) {
 	h.log.Info("npln: operator forced a match",
 		"mode", mode, "session", session.ID,
 		"players", len(session.Players), "host", session.Host)
+	h.srv.recordMatch(r.Context(), session, true)
 
 	body, sizeOf := h.snapshotBody()
 	started := sessionBody(session, sizeOf)

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/config"
+	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 )
@@ -74,9 +75,25 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		m.s.log.Info("npln: match formed",
 			"session", sess.ID, "mode", sess.Mode,
 			"players", len(sess.Players), "host", sess.Host)
+		m.s.recordMatch(ctx, sess, false)
 	}
 
 	return m.s.ticketProto(ticket), nil
+}
+
+// recordMatch persists a formed session to the match history, for the
+// dashboard. Best-effort: a match already formed in the live queue either
+// way, and failing the caller's request over a history write it did not ask
+// for would turn a cosmetic gap into a dropped ticket.
+func (s *Server) recordMatch(ctx context.Context, sess matchmaking.Session, forced bool) {
+	err := s.store.CreateMatch(ctx, db.Match{
+		ID: sess.ID, Tenant: s.tenant, Mode: sess.Mode,
+		HostUserID: sess.Host, PlayerIDs: sess.Players,
+		Forced: forced, CreatedAt: sess.CreatedAt,
+	})
+	if err != nil {
+		s.log.Warn("npln: record match history", "session", sess.ID, "error", err)
+	}
 }
 
 // TrackMatchmakingTicket streams a ticket until it reaches a terminal state.

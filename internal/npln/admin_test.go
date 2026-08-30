@@ -123,6 +123,23 @@ func TestForcingAMatchThroughTheAdminAPIStartsItUndersized(t *testing.T) {
 	if body.Waiting != 0 {
 		t.Errorf("%d players were left in the queue", body.Waiting)
 	}
+
+	// The dashboard's match history is what this button is for as much as the
+	// live queue is: an operator checking "did that actually work" later has
+	// nothing else to look at once the session ages out of the queue.
+	history, err := h.store.ListMatches(t.Context(), 10)
+	if err != nil {
+		t.Fatalf("ListMatches: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("got %d matches in history, want 1", len(history))
+	}
+	if !history[0].Forced {
+		t.Error("a force-started match is not recorded as forced")
+	}
+	if history[0].Mode != "turf_war" || history[0].HostUserID != "alice" {
+		t.Errorf("recorded match = %+v, want mode turf_war, host alice", history[0])
+	}
 }
 
 // TestForcingAnEmptyQueueSaysSoRatherThanFailing: an operator pressing a button
