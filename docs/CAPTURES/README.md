@@ -41,6 +41,12 @@ items}` envelope (not a bare array). Each item is a relationship object with
 **What SwitchNet does now:** returns `CollectionEnvelope[FriendResponse]` with
 `FriendResponse` as the confirmed relationship object.
 
+**Still open within this item:** `models.go`'s `Channels` field
+(`TODO(capture-needed)` at `internal/baas/models.go:175`) — the envelope shape
+is settled, but what triggers a `FRIEND_CODE` entry inside it and what its
+`authorizedAt` timestamp represents are not. SwitchNet always sends an empty
+map, which is a defensible default rather than a confirmed one.
+
 ### 2. `POST /2.0.0/friend_requests` — the request body
 
 **What is known:** nothing documented. The applet can add a friend two ways —
@@ -54,6 +60,21 @@ refused request during bring-up is a dead end with nothing to go on.
 can be dropped.
 
 **How to capture:** type a friend code into Add Friend on a real console.
+
+**Related, separately guessed:** the block-request body
+(`TODO(capture-needed)` at `internal/baas/friendcodes.go:185`) accepts the
+same form/JSON, `userId`/`nsaId` ambiguity, for the same undocumented reason —
+blocking a user on a real console would settle this one independently of the
+friend-request body above, since nothing confirms the friends sysmodule uses
+the same encoding for both actions.
+
+**Also open:** the per-item shape of the inbox/outbox this request populates
+(`TODO(capture-needed)` at `internal/baas/models.go:187`, `FriendRequestResponse`)
+— captures 04 and 05 both returned empty item lists, so `id`/`from`/`to` are
+SwitchNet's best guess at the minimum a console needs to draw the "friend
+requests" screen, not a confirmed shape. A capture with a real pending request
+in the list (send one from a second console and capture the first one's inbox
+before accepting) would settle it.
 
 ### 3. `PATCH /2.0.0/friend_requests/<id>` — the body
 
@@ -118,7 +139,15 @@ flow differs from what SwitchNet (modeled on the Nextendo capture) currently
 sends — undecryptable without either a working private server that redirects
 real Nintendo Account holders, or CFW-level cert trust on a console signed in
 with a real account, neither of which was available for the 2026-08-27
-real-hardware capture.
+real-hardware capture. Two narrower sub-details within the same flow:
+`ac:grt` (`jwt.Claims.ACGrantType`, `TODO(capture-needed)` at
+`internal/jwt/issue.go:206` and `internal/baas/nalink.go:368`) has only ever
+been observed as `4`, for this exact grant — what other values map to is
+unknown; and `accounts.go:486`'s `nxAccount` opaque blob is confirmed
+non-empty on every working account but its exact ~200-character content is
+unconfirmed to matter to the console at all (SwitchNet uses the account id
+rather than fabricating a Nintendo-shaped value, per CLAUDE.md's rule against
+inventing plausible-looking internals).
 
 **What SwitchNet does now:** `internal/baas/nalink.go` implements
 `GET/POST /connect/1.0.0/authorize` and `POST /connect/1.0.0/api/token` as a
@@ -185,9 +214,44 @@ fields was wrong or missing, as opposed to a generic module-2124 failure.
 
 ## Phase 2 — Splatoon 3 (NPLN)
 
-Not started, so nothing is guessed yet. When it is, these are the captures that
-will unblock it. NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or
-`proxide`, not mitmproxy, and it does need the console.
+In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
+and already has six of its own `TODO(capture-needed)` markers -- this section
+was written when the phase genuinely had none yet and was never updated once
+it did, which is exactly the kind of drift this file exists to prevent.
+
+### What is already guessed
+
+- **Squad/delegated matchmaking tickets**
+  (`internal/npln/matchmaking.go:42`, `CreateMatchmakingTicket`): whether
+  Splatoon 3 ever sends more than one `UserDefinition` in a ticket. NPLN
+  supports one console queuing on behalf of a party; if the game uses it for a
+  squad, everyone but the leader is currently dropped. A capture of a squad
+  entering matchmaking together would settle it.
+- **Matchmaking/session resource-name shapes**
+  (`internal/npln/matchmaking.go:320`, `ticketProto`, and `:448`,
+  `lastSegment`): every NPLN resource name is a path, and SwitchNet follows
+  the same AIP-style convention the rest of the definitions do, but nothing
+  confirms what Splatoon 3 actually receives or how strictly it parses it.
+  `lastSegment` deliberately parses leniently so a wrong prefix costs a
+  cosmetic mismatch rather than a broken `Track`/`Cancel`.
+- **The matched-session security token**
+  (`internal/npln/matchmaking.go:394`, `matchedUserSessions`): whether
+  Splatoon 3 refuses to start a match when this is absent. If it does, it
+  needs to become a real token signed with the same key `IssueToken` uses.
+- **`Auth.RefreshToken`**
+  (`internal/npln/services.go:72`, `IssueToken`): whether Splatoon 3 ever
+  calls it at all, and what it expects back. SwitchNet issues no refresh
+  token and relies on the game re-authenticating from its BAAS id token on
+  reconnect instead -- a path already served, so this is a defensible
+  default rather than a fabricated response, but unconfirmed.
+- **The NPLN user resource-name prefix**
+  (`internal/npln/services.go:96`, `userResourceName`): follows the
+  `tenants/<t>/users/<u>`-shaped convention every other NPLN name uses, but
+  no capture confirms Splatoon 3 receives or parses this specific one.
+
+When it is further along, these are the captures that will unblock the rest.
+NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not
+mitmproxy, and it does need the console.
 
 | Capture | Why |
 | --- | --- |
