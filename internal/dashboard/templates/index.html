@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SwitchNet</title>
 <link rel="stylesheet" href="/assets/dashboard.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦑</text></svg>">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23f5407e'/%3E%3Cstop offset='100%25' stop-color='%2338b6ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M24 2c9 0 16 8 16 18 0 6-3 10-3 14 0 5 4 6 4 10 0 3-3 3-5 1-2-2-4-5-7-5-3 0-4 4-8 4s-5-4-8-4c-3 0-5 3-7 5-2 2-5 2-5-1 0-4 4-5 4-10 0-4-3-8-3-14C2 10 9 2 18 2c2 0 4 1 6 1s4-1 6-1z'/%3E%3Ccircle cx='17' cy='19' r='3.4' fill='%230e0e12'/%3E%3Ccircle cx='31' cy='19' r='3.4' fill='%230e0e12'/%3E%3C/svg%3E">
 </head>
 <body>
 
@@ -15,14 +15,30 @@
 
 <header class="top">
   <div class="brand">
-    <span class="squid">🦑</span>
+    <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+      <defs>
+        <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="var(--ink-a)"/>
+          <stop offset="100%" stop-color="var(--ink-c)"/>
+        </linearGradient>
+      </defs>
+      <path fill="url(#brandGrad)" d="M24 2c9 0 16 8 16 18 0 6-3 10-3 14 0 5 4 6 4 10 0 3-3 3-5 1-2-2-4-5-7-5-3 0-4 4-8 4s-5-4-8-4c-3 0-5 3-7 5-2 2-5 2-5-1 0-4 4-5 4-10 0-4-3-8-3-14C2 10 9 2 18 2c2 0 4 1 6 1s4-1 6-1z"/>
+      <circle class="brand-eye" cx="17" cy="19" r="3.4"/>
+      <circle class="brand-eye" cx="31" cy="19" r="3.4"/>
+    </svg>
     <div>
       <h1>SwitchNet</h1>
       <p class="sub">Splatoon&nbsp;3 · tenant <code id="tenant">dce9377b</code></p>
     </div>
   </div>
-  <div class="live" id="live-pill" data-state="connecting">
-    <span class="dot"></span><span class="label">connecting</span>
+  <div class="top-actions">
+    <div class="live" id="live-pill" data-state="connecting">
+      <span class="dot"></span><span class="label">connecting</span>
+    </div>
+    <button type="button" class="theme-toggle" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
+      <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g stroke-linecap="round"><path d="M12 2.5v3"/><path d="M12 18.5v3"/><path d="M2.5 12h3"/><path d="M18.5 12h3"/><path d="M5 5l2 2"/><path d="M17 17l2 2"/><path d="M19 5l-2 2"/><path d="M7 17l-2 2"/></g></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
+    </button>
   </div>
 </header>
 
@@ -38,19 +54,23 @@
   <!-- Overview -->
   <section id="view-overview" class="view is-active">
     <div class="stat-row">
-      <div class="stat">
+      <div class="stat stat-online">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
         <span class="stat-value" id="stat-online">–</span>
         <span class="stat-label">online now</span>
       </div>
-      <div class="stat">
+      <div class="stat stat-playing">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg>
         <span class="stat-value" id="stat-playing">–</span>
         <span class="stat-label">in game</span>
       </div>
-      <div class="stat">
+      <div class="stat stat-accounts">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         <span class="stat-value" id="stat-players">–</span>
         <span class="stat-label">accounts</span>
       </div>
       <div class="stat stat-queue">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18v-2a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v2"/><circle cx="7.5" cy="7.5" r="3"/><path d="M15 18v-1.5a3.8 3.8 0 0 1 3-3.7 3 3 0 1 0-2.2-5.4"/></svg>
         <span class="stat-value" id="stat-queue">—</span>
         <span class="stat-label">in matchmaking</span>
         <span class="stat-note" id="stat-queue-note">not configured</span>

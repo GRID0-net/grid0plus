@@ -18,6 +18,20 @@ Two colours carry meaning and are used for nothing else: **pink is in game**,
 **green is online**. Everything decorative stays grey, so a splash of colour on
 the page always means somebody is actually there.
 
+A player's avatar colour is the one exception, and it is deliberate: it is
+hashed from their user id (`hueForID` in `dashboard.js`), stable for the
+whole session, and picked from hues that skip the pink/green bands
+specifically so it never gets confused for a status. It exists so a player
+becomes a colour the operator recognises at a glance, not another line of
+text — the small status dot at the avatar's corner is what still carries the
+actual state.
+
+The theme (dark by default, light on request) is a **viewer-local**
+preference, not a server one: the toggle in the header writes
+`data-theme` on `<html>` and remembers it in `localStorage`, falling back to
+the OS preference when nothing has been chosen. It has nothing to do with
+`dashboard.token` and nothing is sent to the server about it.
+
 ## Set `redis.url`, or the page never updates
 
 The dashboard is a **separate process** from `baas`. `internal/presencebus`'s

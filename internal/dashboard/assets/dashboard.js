@@ -18,6 +18,52 @@ function url(path) {
   return TOKEN ? `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(TOKEN)}` : path;
 }
 
+// ---- theme ------------------------------------------------------------
+
+// A viewer-local preference: what looks right on the operator's own screen
+// has nothing to do with what the server should remember, so this lives in
+// localStorage rather than a setting. Falls back to the OS preference (the
+// CSS media query) when nothing has been chosen yet -- "system" is a real
+// third state, not just "light" wearing a different name.
+const THEME_KEY = "switchnet-dashboard-theme";
+
+function applyTheme(theme) {
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.dataset.theme = theme;
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+}
+
+function currentTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY) || "system";
+  } catch {
+    return "system"; // A private window or blocked storage: fall back quietly.
+  }
+}
+
+(function initTheme() {
+  applyTheme(currentTheme());
+  $("#theme-toggle").addEventListener("click", () => {
+    // System -> the opposite of whatever just rendered -> the other one ->
+    // back to system. Two explicit states plus "let the OS decide" covers
+    // everything without a three-way menu for a header button.
+    const now = currentTheme();
+    const rendersLight =
+      now === "light" || (now === "system" && matchMedia("(prefers-color-scheme: light)").matches);
+    const next = now === "system" ? (rendersLight ? "dark" : "light") : now === "light" ? "dark" : "system";
+    applyTheme(next);
+    try {
+      if (next === "system") localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // Best-effort: the theme still applies to this load, it just will not
+      // survive a refresh.
+    }
+  });
+})();
+
 async function api(path, options) {
   const res = await fetch(url(path), {
     headers: { "Content-Type": "application/json" },
@@ -45,6 +91,43 @@ $$(".tabs button").forEach((tab) => {
 const stateClass = (s) => (s === "PLAYING" ? "playing" : s === "ONLINE" ? "online" : "offline");
 const stateWord = (s) => (s === "PLAYING" ? "in game" : s === "ONLINE" ? "online" : "offline");
 
+/**
+ * A stable colour per user id, so the same player is always the same colour
+ * across a session rather than reshuffling on every render. Two hue bands are
+ * skipped -- roughly pink and green -- because those already mean something
+ * (in game, online) and an avatar in either would read as a status pip
+ * instead of an identity.
+ */
+function hueForID(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) >>> 0;
+  let hue = h % 360;
+  if (hue > 300 || hue < 20) hue = (hue + 60) % 360;
+  if (hue > 95 && hue < 140) hue = (hue + 80) % 360;
+  return hue;
+}
+
+/** "MarinaFan" -> "MF", "agent3" -> "AG" -- initials for an avatar with no image. */
+function initials(nickname) {
+  const clean = (nickname || "").trim();
+  if (!clean) return "?";
+  const parts = clean.split(/[\s_.-]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return clean.slice(0, 2).toUpperCase();
+}
+
+/** Renders one avatar. sizeClass is "" for the table/strip default or "avatar-sm". */
+function avatarHTML(id, nickname, sizeClass = "") {
+  return `<span class="avatar ${sizeClass}" style="background:hsl(${hueForID(id)}deg 62% 45%)">` +
+    `${escape(initials(nickname))}</span>`;
+}
+
+/** An avatar with a small status dot in the corner, for a player's own state. */
+function avatarWithStatusHTML(p, sizeClass = "") {
+  return `<span class="avatar-wrap">${avatarHTML(p.id, p.nickname, sizeClass)}` +
+    `<span class="avatar-status ${stateClass(p.state)}"></span></span>`;
+}
+
 /** Human "3 minutes ago", because an ISO timestamp is not what the eye wants. */
 function ago(iso) {
   if (!iso) return "never";
@@ -67,7 +150,7 @@ function renderPlayers() {
       const tr = document.createElement("tr");
       tr.dataset.player = p.id;
       tr.innerHTML = `
-        <td><strong>${escape(p.nickname)}</strong></td>
+        <td><span class="player-cell">${avatarWithStatusHTML(p, "avatar-sm")}<strong>${escape(p.nickname)}</strong></span></td>
         <td><span class="badge ${stateClass(p.state)}">${stateWord(p.state)}</span></td>
         <td>${p.activity ? escape(p.activity) : "<span style='color:var(--fg-faint)'>—</span>"}</td>
         <td style="color:var(--fg-dim)">${ago(p.lastSeenAt)}</td>`;
@@ -84,7 +167,7 @@ function renderPlayers() {
       ? around.map((p) => {
           const li = document.createElement("li");
           li.innerHTML =
-            `<span class="pip ${stateClass(p.state)}"></span>` +
+            avatarWithStatusHTML(p) +
             `<span>${escape(p.nickname)}</span>` +
             (p.activity ? `<span class="what">${escape(p.activity)}</span>` : "");
           return li;

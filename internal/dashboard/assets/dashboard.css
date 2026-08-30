@@ -35,7 +35,9 @@
 
 /* The dashboard is dark by design rather than by preference -- it sits on a
  * screen in a room, often next to the console it is reporting on. A light
- * variant is still honoured for anyone who needs it. */
+ * variant is still honoured for anyone who needs it, either by the OS
+ * preference below or by the explicit toggle in the header, which stamps
+ * data-theme="light"/"dark" on the root and wins over the OS either way. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg:        #f6f6f9;
@@ -53,6 +55,23 @@
    * and a tinted background steals from that. */
   :root:not([data-theme="dark"]) .blob { opacity: .07; }
 }
+
+/* The explicit toggle. Same values as the media query above, just reachable
+ * regardless of what the OS says -- an operator whose OS is dark but who
+ * wants this one page light (or the reverse) is not a hypothetical, it is
+ * the whole reason the button exists rather than deferring to the media
+ * query alone. */
+:root[data-theme="light"] {
+  --bg:        #f6f6f9;
+  --bg-raised: #ffffff;
+  --bg-sunk:   #eeeef3;
+  --line:      #dcdce5;
+  --fg:        #16161c;
+  --fg-dim:    #55555f;
+  --fg-faint:  #8a8a97;
+  color-scheme: light;
+}
+:root[data-theme="light"] .blob { opacity: .07; }
 
 * { box-sizing: border-box; }
 
@@ -109,7 +128,11 @@ header, nav, main { position: relative; z-index: 1; }
   margin: 0 auto;
 }
 .brand { display: flex; align-items: center; gap: 14px; }
-.squid { font-size: 34px; line-height: 1; }
+.brand-mark {
+  width: 38px; height: 38px; flex: none;
+  filter: drop-shadow(0 2px 10px color-mix(in srgb, var(--ink-a) 35%, transparent));
+}
+.brand-eye { fill: var(--bg); }
 h1 {
   margin: 0;
   font-size: clamp(22px, 3.4vw, 30px);
@@ -117,6 +140,36 @@ h1 {
   font-weight: 800;
 }
 .sub { margin: 2px 0 0; color: var(--fg-dim); font-size: 13px; }
+
+.top-actions { display: flex; align-items: center; gap: 10px; }
+
+.theme-toggle {
+  appearance: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.theme-toggle:hover { color: var(--fg); border-color: color-mix(in srgb, var(--ink-c) 40%, var(--line)); }
+.theme-toggle:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 2px; }
+.theme-toggle svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.theme-toggle .icon-sun circle { fill: currentColor; stroke: none; }
+.theme-toggle .icon-moon { fill: currentColor; stroke: none; }
+/* Both icons live in the button; only one shows, and it shows what the page
+ * currently IS rather than what clicking would switch to -- a moon while
+ * dark, a sun while light. Dark is the default, so the sun stays hidden
+ * until something actually makes the page light. */
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-sun { display: inline; }
+:root[data-theme="light"] .theme-toggle .icon-moon { display: none; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .theme-toggle .icon-sun { display: inline; }
+  :root:not([data-theme="dark"]) .theme-toggle .icon-moon { display: none; }
+}
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .92em;
@@ -219,6 +272,8 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--pad); }
   margin-bottom: 18px;
 }
 .stat {
+  position: relative;
+  overflow: hidden;
   background: var(--bg-raised);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -226,7 +281,29 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--pad); }
   display: flex;
   flex-direction: column;
   gap: 2px;
+  transition: border-color .15s, transform .15s;
 }
+.stat:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--fg) 18%, var(--line)); }
+/* A thin top accent per metric, so the row reads by colour before the eye
+ * gets to the number -- the same "colour means something" rule the badges
+ * and pips follow, just stretched into a stripe. */
+.stat::before {
+  content: "";
+  position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: var(--line);
+}
+.stat-online::before  { background: var(--ink-b); }
+.stat-playing::before { background: var(--ink-a); }
+.stat-accounts::before { background: var(--ink-c); }
+.stat-icon {
+  width: 18px; height: 18px;
+  margin-bottom: 8px;
+  fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  color: var(--fg-faint);
+}
+.stat-online .stat-icon  { color: var(--ink-b); fill: currentColor; stroke: none; }
+.stat-playing .stat-icon { color: var(--ink-a); fill: currentColor; }
+.stat-accounts .stat-icon { color: var(--ink-c); }
 .stat-value {
   font-size: clamp(30px, 5vw, 42px);
   font-weight: 800;
@@ -246,6 +323,38 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--pad); }
 .stat-queue .stat-value { color: var(--fg-faint); }
 .stat-note { font-size: 11px; color: var(--fg-faint); margin-top: 2px; }
 
+/* ---- avatars -------------------------------------------------------------
+ *
+ * A deterministic colour per user id (hashed in dashboard.js, not chosen) so
+ * the same player is always the same colour across a session -- a small
+ * thing, but it is what turns "a row of names" into "a room full of people"
+ * at a glance. Pink and green stay reserved for state, so avatar hues avoid
+ * that band -- see hueForID in dashboard.js. */
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  font-size: 11px; font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0,0,0,.25);
+}
+.avatar-sm { width: 20px; height: 20px; font-size: 9.5px; }
+
+.avatar-wrap { position: relative; display: inline-flex; flex: none; }
+.avatar-status {
+  position: absolute; right: -1px; bottom: -1px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-sunk);
+}
+.avatar-status.playing { background: var(--ink-a); }
+.avatar-status.online  { background: var(--ink-b); }
+.avatar-status.offline { background: var(--fg-faint); }
+/* The table's avatars sit on --bg-raised, not --bg-sunk -- the ring has to
+ * match whatever is actually behind it or it reads as a grey halo. */
+.grid .avatar-status { border-color: var(--bg-raised); }
+
 /* ---- player strip ------------------------------------------------------ */
 
 .player-strip { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -254,9 +363,11 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--pad); }
   background: var(--bg-sunk);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 6px 14px 6px 10px;
+  padding: 6px 14px 6px 6px;
   font-size: 14px;
+  transition: border-color .15s, transform .15s;
 }
+.player-strip li:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--line)); transform: translateY(-1px); }
 .player-strip .pip { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .pip.playing { background: var(--ink-a); }
 .pip.online  { background: var(--ink-b); }
@@ -264,6 +375,8 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--pad); }
 .player-strip .what { color: var(--fg-dim); font-size: 12px; }
 
 /* ---- table ------------------------------------------------------------- */
+
+.player-cell { display: inline-flex; align-items: center; gap: 9px; }
 
 .grid { width: 100%; border-collapse: collapse; font-size: 14px; }
 .grid th {
@@ -383,7 +496,9 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 14px 16px;
+  transition: border-color .15s, background .15s;
 }
+.fest-card:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--line)); background: color-mix(in srgb, var(--bg-raised) 55%, var(--bg-sunk)); }
 .fest-card.live { border-color: color-mix(in srgb, var(--ink-a) 50%, var(--line)); }
 .fest-card .fid { font-weight: 800; letter-spacing: -0.01em; }
 .fest-card .cols { flex: 1; min-width: 200px; }
@@ -421,7 +536,9 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 10px;
+  transition: border-color .15s, background .15s;
 }
+.mm-mode:hover, .mm-session:hover { border-color: color-mix(in srgb, var(--fg) 22%, var(--line)); background: color-mix(in srgb, var(--bg-raised) 55%, var(--bg-sunk)); }
 .mm-mode > .cols, .mm-session > .cols { display: inline-block; vertical-align: top; }
 .mm-mode { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
 .mm-mode .cols { flex: 1; min-width: 200px; }
@@ -470,7 +587,9 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   border-radius: 12px;
   padding: 12px 16px;
   margin-bottom: 8px;
+  transition: border-color .15s, background .15s;
 }
+.svc:hover { background: color-mix(in srgb, var(--bg-raised) 55%, var(--bg-sunk)); }
 .svc .fid {
   font-weight: 800; letter-spacing: -0.01em;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
