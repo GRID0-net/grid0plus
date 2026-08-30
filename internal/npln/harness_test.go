@@ -19,6 +19,7 @@ import (
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/presencebus"
 )
 
 const (
@@ -26,6 +27,9 @@ const (
 	testIssuerName = "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
 	testJWKSURL    = testIssuerName + "/1.0.0/certificates"
 	testBAASIssuer = "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com"
+
+	testPresenceTTL        = 5 * time.Minute
+	testConsolePresenceTTL = 5 * time.Minute
 )
 
 // harness is an NPLN gateway over an in-process listener, with an in-memory
@@ -40,6 +44,7 @@ type harness struct {
 	srv   *Server
 	store *db.Memory
 	conn  *grpc.ClientConn
+	bus   *presencebus.Local
 
 	// baasIDIssuer mints the id tokens a real BAAS would hand the game.
 	baasIDIssuer *sjwt.Issuer
@@ -74,6 +79,7 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{
 		t:                t,
 		store:            db.NewMemory(),
+		bus:              presencebus.NewLocal(),
 		baasIDIssuer:     sjwt.NewIssuer(baasIDKey, testBAASIssuer+"/1.0.0/certificates", true),
 		baasAccessIssuer: sjwt.NewIssuer(baasAccessKey, testBAASIssuer+"/1.0.0/internal_certificates", true),
 		accessKey:        accessKey,
@@ -98,9 +104,12 @@ func newHarness(t *testing.T) *harness {
 			JWKSURL:        testJWKSURL,
 			AccessTokenTTL: 10800,
 		},
-		AccessKey: accessKey,
-		BAASIDKey: baasIDKey,
-		Now:       func() time.Time { return h.now },
+		AccessKey:          accessKey,
+		BAASIDKey:          baasIDKey,
+		PresenceTTL:        testPresenceTTL,
+		ConsolePresenceTTL: testConsolePresenceTTL,
+		Bus:                h.bus,
+		Now:                func() time.Time { return h.now },
 	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
@@ -125,6 +134,7 @@ func newHarness(t *testing.T) *harness {
 		_ = conn.Close()
 		srv.Stop()
 		_ = lis.Close()
+		_ = h.bus.Close()
 	})
 	return h
 }

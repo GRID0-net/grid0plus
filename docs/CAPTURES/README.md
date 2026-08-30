@@ -215,7 +215,7 @@ fields was wrong or missing, as opposed to a generic module-2124 failure.
 ## Phase 2 — Splatoon 3 (NPLN)
 
 In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
-and already has six of its own `TODO(capture-needed)` markers -- this section
+and already has eleven of its own `TODO(capture-needed)` markers -- this section
 was written when the phase genuinely had none yet and was never updated once
 it did, which is exactly the kind of drift this file exists to prevent.
 
@@ -248,6 +248,38 @@ it did, which is exactly the kind of drift this file exists to prevent.
   (`internal/npln/services.go:96`, `userResourceName`): follows the
   `tenants/<t>/users/<u>`-shaped convention every other NPLN name uses, but
   no capture confirms Splatoon 3 receives or parses this specific one.
+- **What `Friends.ActivateUser` actually changes server-side**
+  (`internal/npln/friends.go:51`): SwitchNet has no separate activation state
+  to flip -- presence already resolves fresh on every read -- so this
+  acknowledges the call and does nothing else. If a capture shows the console
+  waiting on some effect this does not produce, that effect is what is
+  missing here.
+- **`FriendUser`/`BlockingUser` resource-name shapes**
+  (`internal/npln/friends.go:287`, `friendUserProto`): same AIP-style
+  `.../friendUsers/<id>` and `.../blockingUsers/<id>` convention as
+  matchmaking's resource names, and the same caveat -- `lastSegment` parses
+  leniently, so a wrong prefix costs a cosmetic mismatch rather than breaking
+  a call.
+- **`PresenceService.KeepAlive`'s `UpdatePresence` field**
+  (`internal/npln/presence_service.go:43`): whether Splatoon 3 ever reports
+  richer, game-specific presence over this RPC rather than only through
+  BAAS's `PATCH .../device_accounts/<id>`. SwitchNet does not persist it --
+  giving the one presence store a second writer is the same class of bug as
+  the second friend graph ROADMAP §2.5 warns against -- but every message on
+  the stream still counts as liveness.
+- **Presence resource-name shape**
+  (`internal/npln/presence_service.go:231`, `presenceUserID`): follows the
+  same `.../users/<u>/presence` singleton convention `resources.proto`'s
+  `Presence.name` field implies, parsed leniently for the same reason as the
+  matchmaking and friends names above.
+- **`Presence.Attributes`' keys**
+  (`internal/npln/presence_service.go:245`, `presenceProto`): left empty.
+  `resources.proto` carries a `map<string, nn.npln.common.Value>` here, and
+  its own `State` enum has no `PLAYING`, which suggests title-specific detail
+  (SwitchNet's BAAS-side `AppField`, in spirit) belongs here instead --
+  but no capture shows what keys a real client reads, and a guessed key that
+  silently never matches is worse than an empty map that visibly does
+  nothing.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not

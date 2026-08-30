@@ -121,7 +121,7 @@ Then, in order of what a session needs:
 | --- | --- | --- |
 | `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built | yes |
 | `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
-| `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | no — proto bindings exist, nothing registers them |
+| `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | yes — `internal/npln/friends.go`, `presence_service.go` |
 | `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | no — same as above |
 | `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
 
@@ -195,6 +195,13 @@ been established. §2.4 of [`../TODO.md`](../TODO.md) has the experiment that
 would settle it, and the probe for stage 1 is built.
 
 ### 2.5 Friends integration
+
+**Built** (`internal/npln/friends.go`, `presence_service.go`, backed by
+`internal/presence` — the TTL and visibility rules `internal/baas`'s own HTTP
+presence endpoints were refactored onto, for exactly this section's reason).
+Not built: `Presence.Attributes` (undocumented keys) and richer
+game-reported presence over `KeepAlive`'s `UpdatePresence` field — see
+`docs/CAPTURES/README.md`.
 
 **One friend graph, not two.** NPLN has its own friends layer, but it must read
 the *same* friendships as BAAS. Either `internal/npln/friends.go` calls into

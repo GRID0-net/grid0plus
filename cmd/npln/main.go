@@ -8,12 +8,14 @@ import (
 	"errors"
 	"flag"
 	"net"
+	"time"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/npln"
+	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/service"
 )
 
@@ -53,12 +55,36 @@ func main() {
 		service.Fatal(log, "load baas id key", err)
 	}
 
+	// This is a SEPARATE PROCESS from baas, so the in-process bus delivers
+	// nothing to it -- silently. Without redis.url, Friends and
+	// PresenceService's streams still work, just refreshed only on their own
+	// keep-alive timer rather than the moment a friend's presence changes.
+	// Same tradeoff internal/dashboard makes for the same reason -- see
+	// cmd/dashboard/main.go.
+	var bus presencebus.Bus
+	if cfg.Redis.URL != "" {
+		r, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel, log)
+		if err != nil {
+			service.Fatal(log, "connect redis", err)
+		}
+		defer r.Close()
+		bus = r
+	} else {
+		log.Warn("npln: redis.url is not set, so Friends and PresenceService only refresh " +
+			"on their own keep-alive timer rather than the moment a friend's presence changes. " +
+			"The in-process bus does not cross a process boundary: set redis.url for both baas " +
+			"and npln to get live pushes.")
+	}
+
 	srv, err := npln.New(npln.Options{
-		Store:     store,
-		Log:       log,
-		Config:    cfg.NPLN,
-		AccessKey: accessKey,
-		BAASIDKey: baasIDKey,
+		Store:              store,
+		Log:                log,
+		Config:             cfg.NPLN,
+		AccessKey:          accessKey,
+		BAASIDKey:          baasIDKey,
+		PresenceTTL:        time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
+		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,
+		Bus:                bus,
 	})
 	if err != nil {
 		service.Fatal(log, "build server", err)

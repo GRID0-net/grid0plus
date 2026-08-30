@@ -25,6 +25,8 @@ import (
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
+	"github.com/n-popescu/switchnet/internal/presence"
+	"github.com/n-popescu/switchnet/internal/presencebus"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -56,6 +58,19 @@ type Server struct {
 	// adminToken guards the operator API. Empty means it is not served at all.
 	adminToken string
 
+	// presence resolves a user's presence through the exact same TTL rules
+	// BAAS's HTTP endpoints do -- see internal/presence's package doc.
+	presence presence.Resolver
+	// bus is where a fresh BAAS presence report arrives, so the Friends and
+	// PresenceService streams can push a change instead of only reporting what
+	// was already true when the stream opened. Nil is a valid value: the
+	// streams still work, they just only refresh on their own keep-alive timer
+	// -- the same graceful degradation internal/dashboard has without
+	// redis.url set (see cmd/npln/main.go and ROADMAP §2.6, and the same
+	// reason: this process is not the one BAAS's HTTP handlers run in, so the
+	// in-process bus variant delivers nothing across the boundary).
+	bus presencebus.Bus
+
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
 
@@ -83,6 +98,20 @@ type Options struct {
 	// Matchmaking tunes the queue. The zero value takes matchmaking's own
 	// defaults, which suit a small private network.
 	Matchmaking matchmaking.Config
+
+	// PresenceTTL and ConsolePresenceTTL apply the exact same TTL rules
+	// BAAS's presence read path does -- pass the same values as BAAS's own
+	// config (cfg.BAAS.PresenceTTL, cfg.BAAS.ConsolePresenceTTL), not a
+	// separate NPLN setting: presence is one user's state, not one per
+	// service, and a second pair of knobs is a second way for the two to
+	// disagree about who is online.
+	PresenceTTL        time.Duration
+	ConsolePresenceTTL time.Duration
+
+	// Bus delivers live presence changes for the Friends and PresenceService
+	// streams to push. Optional -- nil means the streams still work, refreshed
+	// only on their own keep-alive timer. See Server.bus's doc comment.
+	Bus presencebus.Bus
 
 	// Now is overridable in tests. Defaults to time.Now.
 	Now func() time.Time
@@ -119,8 +148,14 @@ func New(opts Options) (*Server, error) {
 		queue:          matchmaking.New(opts.Matchmaking, opts.Now),
 		iceServers:     iceServersFrom(opts.Config.ICEServers),
 		adminToken:     opts.Config.AdminToken,
-		now:            opts.Now,
-		stopSweep:      make(chan struct{}),
+		presence: presence.Resolver{
+			Store:      opts.Store,
+			ReportTTL:  opts.PresenceTTL,
+			ConsoleTTL: opts.ConsolePresenceTTL,
+		},
+		bus:       opts.Bus,
+		now:       opts.Now,
+		stopSweep: make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(
@@ -245,6 +280,18 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 		logAuthFailure(s.log, method, err)
 		return nil, err
 	}
+
+	// The console is talking to us over NPLN, so it is online -- the same
+	// liveness signal internal/baas/router.go's authenticated middleware
+	// records for every HTTP request. Without this, a console that only ever
+	// touches BAAS at login (everything else being Splatoon 3's own gRPC
+	// traffic) would never look alive to PresenceService's TTL rules.
+	if err := s.store.TouchPresence(ctx, c.UserID, s.now()); err != nil {
+		// Liveness is a nicety. Failing the call over it would turn a
+		// cosmetic problem into every RPC failing.
+		s.log.Warn("npln: touch presence", "user", c.UserID, "error", err)
+	}
+
 	return context.WithValue(ctx, callerKey{}, c), nil
 }
 

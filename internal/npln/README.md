@@ -32,6 +32,8 @@ keeps them apart and `cmd/switchnetctl`'s generator tests assert it.
 | `auth.go` | the BAAS id-token seam, token issue, and identity resolution |
 | `services.go` | auth and maintenance |
 | `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking`'s queue |
+| `friends.go` | `Friends`, over `internal/db`'s friendship store — the same rows BAAS reads |
+| `presence_service.go` | `PresenceService`, over `internal/presence`'s TTL rules — the same rules BAAS reads |
 | `errors.go` | how a refusal is shaped |
 
 ## Identity is fail-closed, and `uid` is not a credential
@@ -127,3 +129,44 @@ Resource names (`tenants/<t>/matchmakingTickets/<id>` and friends) are
 `TODO(capture-needed)`. `lastSegment` parses whatever the console echoes back
 leniently, including a bare id, so a wrong prefix costs a cosmetic mismatch
 instead of making every `Track` and `Cancel` answer `NotFound`.
+
+## Friends and presence
+
+**One friend graph, not two.** `friends.go` reads `internal/db`'s friendship
+store directly — the same rows `internal/baas/friends.go` reads — rather than
+keeping a second copy. `presence_service.go` resolves presence through
+`internal/presence`, the package `internal/baas`'s own HTTP presence
+endpoints were refactored onto for exactly this reason: a second
+implementation of the TTL rules is how "friends were never online" happens
+again, in a new place. See `docs/ROADMAP.md#2.5`.
+
+Two things ROADMAP §2.5 calls out as easy to miss, both handled here:
+
+- **`FriendUser.Relationship` sets `presence_deliverable` and
+  `presence_receivable`** from `internal/presence.Visible`, in each
+  direction — not left `false`, which would make the client neither show a
+  friend's presence nor publish its own while the friend list itself still
+  looks healthy.
+- **`SubscribeFriendUsers` and `SubscribePresences` both stay warm**: a
+  keep-alive timer resends on its own, and a fresh presence report on
+  `internal/presencebus` (when `redis.url` is set — see `cmd/npln/main.go`)
+  pushes an update immediately rather than waiting for the timer.
+
+`SubscribePresences` only ever serves the caller's own presence and their
+friends'; anything else named in the request is dropped rather than refusing
+the whole call, the same "skip and log" reasoning
+`internal/baas/friends.go`'s `listFriends` uses for a friendship naming a
+deleted user.
+
+Every authenticated call — not just PresenceService's own streams — counts as
+liveness: `enter()` in `server.go` touches presence on every request, the
+same as `internal/baas/router.go`'s `authenticated` middleware does for
+HTTP. Without it, a console that only ever touches BAAS at login would never
+look alive to `PresenceService`'s own TTL rules.
+
+`Presence.Attributes` (a `map<string, nn.npln.common.Value>` in
+`resources.proto`) is left empty: nothing confirms the keys a real client
+reads, and `resources.proto`'s own `State` enum has no `PLAYING` — `PLAYING`
+is read down to `ONLINE` here, on the theory that BAAS's richer detail (title
+id, app field) is what the friends applet reads separately rather than
+through this service. Both are `TODO(capture-needed)`.
