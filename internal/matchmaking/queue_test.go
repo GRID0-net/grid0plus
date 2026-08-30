@@ -312,6 +312,44 @@ func TestAnEmptyUserOrModeIsRefused(t *testing.T) {
 	}
 }
 
+// TestSetHostPortUpdatesTheSessionAndOnlyThatSession is SyncGameSession's
+// underlying data operation: it must land on the right session and not leak
+// into another one formed around the same time.
+func TestSetHostPortUpdatesTheSessionAndOnlyThatSession(t *testing.T) {
+	q, _ := testQueue(t, 2)
+	_, _, _ = q.Enqueue("alice", "turf_war")
+	_, sessions, _ := q.Enqueue("bob", "turf_war")
+	if len(sessions) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(sessions))
+	}
+	id := sessions[0].ID
+
+	before, ok := q.Session(id)
+	if !ok || before.HostPort != 0 {
+		t.Fatalf("a fresh session has HostPort %d, want 0", before.HostPort)
+	}
+
+	updated, ok := q.SetHostPort(id, 12345)
+	if !ok {
+		t.Fatal("SetHostPort reported the session missing")
+	}
+	if updated.HostPort != 12345 {
+		t.Errorf("HostPort = %d, want 12345", updated.HostPort)
+	}
+
+	again, ok := q.Session(id)
+	if !ok || again.HostPort != 12345 {
+		t.Errorf("Session() = %+v, want HostPort 12345", again)
+	}
+}
+
+func TestSetHostPortOnAnUnknownSessionReportsNotFound(t *testing.T) {
+	q, _ := testQueue(t, 2)
+	if _, ok := q.SetHostPort("no-such-session", 1); ok {
+		t.Error("SetHostPort succeeded on a session that does not exist")
+	}
+}
+
 func userName(i int) string {
 	return string(rune('a'+i%26)) + string(rune('0'+i/26))
 }

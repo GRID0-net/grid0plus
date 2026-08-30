@@ -226,6 +226,74 @@ func (g *gameSessionService) JoinGameSession(
 	}, nil
 }
 
+// SyncGameSession is how the host publishes its reachable port, and how any
+// matched player -- host or joiner -- reads the session's current
+// participants back.
+//
+// TODO(capture-needed): whether Splatoon 3 dials GameSession.Port directly at
+// all. Gameplay is peer-to-peer over ICE (see AllocateIceServerSet), and a
+// real client that connects entirely through negotiated ICE candidates may
+// never read this field. Persisting and returning whatever the host sends is
+// the defensible reading either way -- a field the client ignores costs
+// nothing, where refusing to store it risks dropping something a real client
+// does depend on -- but nothing here confirms which. A capture of a match
+// actually connecting would settle it. Change: this function and
+// matchmaking.Session's HostPort field.
+//
+// Only the port moves through here. Everything else GameSession carries
+// (participant counts, state, who the host is) is already authoritative on
+// this server; a client-supplied value for any of those is ignored rather
+// than trusted, the same reasoning AllocateIceServerSet's doc comment gives
+// for ignoring the request's own tenant and user fields. A listening port is
+// different: it is the one piece of session state that genuinely lives on
+// the host's console and nowhere else, so this is the one field this server
+// has no other way to learn.
+//
+// KeepAliveOnly is honoured as a read: any matched player may call this to
+// read the current session back without needing host privileges to do so --
+// useful for a joiner checking whether the host has published a port yet.
+func (g *gameSessionService) SyncGameSession(
+	ctx context.Context, req *mmpb.SyncGameSessionRequest,
+) (*mmpb.SyncGameSessionResponse, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+
+	id := lastSegment(req.GetGameSession().GetName())
+	if !g.s.queue.IsPlayer(id, caller.UserID) {
+		return nil, ErrNotFound
+	}
+
+	sess, found := g.s.queue.Session(id)
+	if !found {
+		return nil, ErrNotFound
+	}
+
+	if !req.GetKeepAliveOnly() {
+		if caller.UserID != sess.Host {
+			// The caller is a real participant -- IsPlayer already confirmed
+			// that -- so refusing this is a permission problem, not a "does
+			// this exist" one, unlike JoinGameSession's stranger case.
+			g.s.log.Warn("npln: SyncGameSession update attempted by a non-host participant",
+				"session", id, "host", sess.Host, "caller", caller.UserID)
+			return nil, ErrPermissionDenied
+		}
+		updated, found := g.s.queue.SetHostPort(id, req.GetGameSession().GetPort())
+		if !found {
+			// The session aged out between the two lookups above.
+			return nil, ErrNotFound
+		}
+		sess = updated
+		g.s.log.Info("npln: host published its game session port",
+			"session", id, "host", sess.Host, "port", sess.HostPort)
+	}
+
+	return &mmpb.SyncGameSessionResponse{
+		UserSessions: g.s.userSessions(sess),
+	}, nil
+}
+
 // AllocateIceServerSet hands the console the STUN/TURN servers to use.
 //
 // Splatoon 3's gameplay is peer-to-peer and it uses ICE rather than the Pia
@@ -363,7 +431,11 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		// address. Gameplay is peer-to-peer and SwitchNet is not in the path
 		// once a match starts -- all this does is say who to reach, and ICE
 		// works out how.
-		Host:         userResourceName(sess.Host),
+		Host: userResourceName(sess.Host),
+		// Port is zero until the host publishes one over SyncGameSession --
+		// see gameSessionService.SyncGameSession. A joiner reading zero knows
+		// to wait rather than dial nothing.
+		Port:         sess.HostPort,
 		CreateTime:   timestamppb.New(sess.CreatedAt),
 		UserSessions: s.userSessions(sess),
 	}

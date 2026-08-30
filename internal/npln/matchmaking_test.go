@@ -277,6 +277,133 @@ func TestAGameSessionIsNotReadableByAPlayerWhoIsNotInIt(t *testing.T) {
 	}
 }
 
+// TestSyncGameSessionPublishesTheHostsPortToOtherPlayers is the property
+// SyncGameSession exists for: the host reports its listening port, and a
+// joiner reading the session back sees it -- without the joiner needing host
+// privileges just to read.
+func TestSyncGameSessionPublishesTheHostsPortToOtherPlayers(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("host0000000000001", "device-host")
+	h.createUser("joiner00000000001", "device-joiner")
+
+	hostCtx := h.ctx(h.sessionFor(t, "host0000000000001", "device-host"), "")
+	joinerCtx := h.ctx(h.sessionFor(t, "joiner00000000001", "device-joiner"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+	if _, err := client.CreateMatchmakingTicket(hostCtx, ticketFor("turf-war")); err != nil {
+		t.Fatalf("CreateMatchmakingTicket (host): %v", err)
+	}
+	matched, err := client.CreateMatchmakingTicket(joinerCtx, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
+	}
+	name := matched.GetGameSession().GetName()
+	if matched.GetGameSession().GetHost() != userResourceName("host0000000000001") {
+		t.Fatalf("host = %q, want host0000000000001 to have hosted (queued first)",
+			matched.GetGameSession().GetHost())
+	}
+	if matched.GetGameSession().GetPort() != 0 {
+		t.Errorf("port = %d before SyncGameSession, want 0", matched.GetGameSession().GetPort())
+	}
+
+	sessions := mmpb.NewGameSessionServiceClient(h.conn)
+
+	// A joiner reading before the host has published anything gets a
+	// well-formed answer, not an error -- host privileges are not required
+	// just to read.
+	if _, err := sessions.SyncGameSession(joinerCtx, &mmpb.SyncGameSessionRequest{
+		GameSession: &mmpb.GameSession{Name: name}, KeepAliveOnly: true,
+	}); err != nil {
+		t.Fatalf("SyncGameSession (joiner, keep-alive): %v", err)
+	}
+
+	if _, err := sessions.SyncGameSession(hostCtx, &mmpb.SyncGameSessionRequest{
+		GameSession: &mmpb.GameSession{Name: name, Port: 45000},
+	}); err != nil {
+		t.Fatalf("SyncGameSession (host): %v", err)
+	}
+
+	got, err := sessions.GetGameSession(joinerCtx, &mmpb.GetGameSessionRequest{Name: name})
+	if err != nil {
+		t.Fatalf("GetGameSession (joiner, after sync): %v", err)
+	}
+	if got.GetPort() != 45000 {
+		t.Errorf("port = %d, want 45000 (published by the host)", got.GetPort())
+	}
+}
+
+// TestSyncGameSessionRefusesAPortUpdateFromANonHostPlayer is the ownership
+// rule: a listening port belongs to whichever console actually opened it,
+// and a non-host participant publishing one would tell joiners to dial the
+// wrong machine.
+func TestSyncGameSessionRefusesAPortUpdateFromANonHostPlayer(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("host0000000000002", "device-host-2")
+	h.createUser("joiner00000000002", "device-joiner-2")
+
+	hostCtx := h.ctx(h.sessionFor(t, "host0000000000002", "device-host-2"), "")
+	joinerCtx := h.ctx(h.sessionFor(t, "joiner00000000002", "device-joiner-2"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+	if _, err := client.CreateMatchmakingTicket(hostCtx, ticketFor("turf-war")); err != nil {
+		t.Fatalf("CreateMatchmakingTicket (host): %v", err)
+	}
+	matched, err := client.CreateMatchmakingTicket(joinerCtx, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
+	}
+	name := matched.GetGameSession().GetName()
+
+	sessions := mmpb.NewGameSessionServiceClient(h.conn)
+	_, err = sessions.SyncGameSession(joinerCtx, &mmpb.SyncGameSessionRequest{
+		GameSession: &mmpb.GameSession{Name: name, Port: 9999},
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("a non-host port update: got %v, want PermissionDenied", err)
+	}
+
+	// The refused update must not have taken effect.
+	got, err := sessions.GetGameSession(hostCtx, &mmpb.GetGameSessionRequest{Name: name})
+	if err != nil {
+		t.Fatalf("GetGameSession: %v", err)
+	}
+	if got.GetPort() != 0 {
+		t.Errorf("port = %d after a refused update, want unchanged at 0", got.GetPort())
+	}
+}
+
+// TestSyncGameSessionRefusesAStrangerTheSameWayGetGameSessionDoes matches
+// GetGameSession/JoinGameSession's own rule: whether a session even exists is
+// not a stranger's to learn.
+func TestSyncGameSessionRefusesAStrangerTheSameWayGetGameSessionDoes(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("host0000000000003", "device-host-3")
+	h.createUser("joiner00000000003", "device-joiner-3")
+	h.createUser("outsider000000003", "device-outsider-3")
+
+	hostCtx := h.ctx(h.sessionFor(t, "host0000000000003", "device-host-3"), "")
+	joinerCtx := h.ctx(h.sessionFor(t, "joiner00000000003", "device-joiner-3"), "")
+	outsiderCtx := h.ctx(h.sessionFor(t, "outsider000000003", "device-outsider-3"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+	if _, err := client.CreateMatchmakingTicket(hostCtx, ticketFor("turf-war")); err != nil {
+		t.Fatalf("CreateMatchmakingTicket (host): %v", err)
+	}
+	matched, err := client.CreateMatchmakingTicket(joinerCtx, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
+	}
+	name := matched.GetGameSession().GetName()
+
+	sessions := mmpb.NewGameSessionServiceClient(h.conn)
+	_, err = sessions.SyncGameSession(outsiderCtx, &mmpb.SyncGameSessionRequest{
+		GameSession: &mmpb.GameSession{Name: name}, KeepAliveOnly: true,
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("SyncGameSession by an outsider: got %v, want NotFound", err)
+	}
+}
+
 // TestAllocateIceServerSetReturnsWhatWasConfigured covers TODO.md §1.2's
 // config-only path, including the empty default.
 //

@@ -81,6 +81,11 @@ type Session struct {
 	// talk to each other and SwitchNet is not in the path. All this does is
 	// tell them who to reach.
 	Host string
+	// HostPort is the port the host published via SyncGameSession, once it has
+	// one. Zero until then: the host does not necessarily have a listening
+	// socket open the instant a match forms, and joiners reading a zero port
+	// know to wait rather than dial nothing.
+	HostPort int32
 
 	CreatedAt time.Time
 }
@@ -266,6 +271,25 @@ func (q *Queue) Session(sessionID string) (Session, bool) {
 	if !ok {
 		return Session{}, false
 	}
+	return *s, true
+}
+
+// SetHostPort records the port the host published for a session.
+//
+// The only piece of a synced GameSession this server has no other way to
+// learn: participant counts, state and the host itself are already
+// authoritative here, but a listening port is the host's own to report.
+// Ownership -- that the caller actually IS the host -- is enforced by
+// internal/npln, the same place JoinGameSession's membership check lives;
+// this package has no notion of a caller at all, only data.
+func (q *Queue) SetHostPort(sessionID string, port int32) (Session, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return Session{}, false
+	}
+	s.HostPort = port
 	return *s, true
 }
 

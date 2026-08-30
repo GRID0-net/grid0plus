@@ -135,10 +135,18 @@ the queue and session formation): a FIFO queue per mode, in memory. On a match,
 form a session naming a host and hand it to every player on their ticket
 stream. `AllocateIceServerSet` is built too.
 
-**Not built:** `SyncGameSession` — the host publishing its reachable address
-and joiners reading it back, needed once a match actually needs to connect
-peer-to-peer rather than just form. Log every match to `npln_matches` for the
-dashboard.
+**Built: `SyncGameSession`.** The host publishes its listening port
+(`internal/matchmaking`'s `Session.HostPort`, set via `Queue.SetHostPort`);
+any matched player, host or joiner, may read the session back with
+`KeepAliveOnly: true`, but only the host may actually change it — a
+non-host attempting to is `PermissionDenied`, and a stranger gets the same
+`NotFound` `GetGameSession`/`JoinGameSession` already give. Everything else
+`GameSession` carries (participant counts, state, who the host is) stays
+server-authoritative; a client-supplied value for those is ignored, the
+same reasoning `AllocateIceServerSet`'s doc comment gives for ignoring the
+request's own tenant and user fields.
+
+**Not built:** logging every match to `npln_matches` for the dashboard.
 
 **NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
 so `natcheck` is not involved in this title, and a STUN/TURN server (coturn) is a

@@ -10,7 +10,7 @@ Status: **in progress.** Written 2026-08-28.
 | gRPC gateway, and the phase-1 auth seam | done — `internal/npln`, `cmd/npln` |
 | Splatfest scheduling | done — `internal/toyohr` |
 | Match queue and formation | done — `internal/matchmaking` |
-| Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go`, incl. `AllocateIceServerSet`; `SyncGameSession` still missing |
+| Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go`, incl. `AllocateIceServerSet` and `SyncGameSession` |
 | BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
 | BCAT serving | not started |
 | The JSON front end (vermillion, penne, frontline) | not started — `internal/nplnrest` |

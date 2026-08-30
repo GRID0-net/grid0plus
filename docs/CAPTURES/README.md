@@ -215,7 +215,7 @@ fields was wrong or missing, as opposed to a generic module-2124 failure.
 ## Phase 2 — Splatoon 3 (NPLN)
 
 In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
-and already has thirteen of its own `TODO(capture-needed)` markers -- this section
+and already has fourteen of its own `TODO(capture-needed)` markers -- this section
 was written when the phase genuinely had none yet and was never updated once
 it did, which is exactly the kind of drift this file exists to prevent.
 
@@ -227,6 +227,14 @@ it did, which is exactly the kind of drift this file exists to prevent.
   supports one console queuing on behalf of a party; if the game uses it for a
   squad, everyone but the leader is currently dropped. A capture of a squad
   entering matchmaking together would settle it.
+- **Whether Splatoon 3 dials `GameSession.Port` at all**
+  (`internal/npln/matchmaking.go:394` area, `SyncGameSession`): gameplay is
+  peer-to-peer over ICE, and a client that connects entirely through
+  negotiated ICE candidates may never read this field. Persisting and
+  returning whatever the host publishes is the defensible reading either
+  way -- a field the client ignores costs nothing -- but nothing confirms a
+  real client actually uses it. A capture of a match connecting would settle
+  it.
 - **Matchmaking/session resource-name shapes**
   (`internal/npln/matchmaking.go:320`, `ticketProto`, and `:448`,
   `lastSegment`): every NPLN resource name is a path, and SwitchNet follows

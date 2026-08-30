@@ -79,6 +79,19 @@ fills and the match never starts, which reads as a matchmaking bug from this
 side. Whether the operator runs coturn at all is recorded in
 [`docs/QUESTIONS.md`](../../docs/QUESTIONS.md).
 
+## The host's port is the one piece of state this server cannot compute
+
+Everything else on a `Session` (its players, its host, when it formed) is
+decided the moment a match forms. `HostPort` is different: it is whatever
+port the host's own console ends up listening on, which only the host's
+console can know, so it starts at zero and is filled in later by
+`SetHostPort` -- called from `internal/npln/matchmaking.go`'s
+`SyncGameSession`, which is also where the rule that only the host may set
+it lives. This package has no notion of who is calling, so it trusts
+whatever caller reaches `SetHostPort`; enforcing that the caller actually
+*is* the host is `internal/npln`'s job, the same place `JoinGameSession`'s
+membership check lives.
+
 ## Sessions outlive their tickets, but not forever
 
 A console reads a session id off its ticket stream and only *then* calls

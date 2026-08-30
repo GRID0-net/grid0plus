@@ -126,6 +126,16 @@ Joining a session you were *not* matched into is backfill or a short alias.
 Neither is implemented and neither shape is documented, so it is refused rather
 than guessed at.
 
+`SyncGameSession` adds a fourth: a matched player may always read a session
+back (`KeepAliveOnly: true` needs no special standing beyond membership,
+already checked above), but only the **host** may actually change it. The
+one thing there is to change is the port the host published --
+`internal/matchmaking`'s `Session.HostPort` -- because it is the one piece
+of session state that genuinely lives on the host's own console and nowhere
+else; everything else the request carries (participant counts, state, who
+the host is) is ignored in favour of what this server already knows, same
+as `AllocateIceServerSet` ignoring the request's tenant and user fields.
+
 Resource names (`tenants/<t>/matchmakingTickets/<id>` and friends) are
 `TODO(capture-needed)`. `lastSegment` parses whatever the console echoes back
 leniently, including a bare id, so a wrong prefix costs a cosmetic mismatch
