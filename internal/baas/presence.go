@@ -10,132 +10,42 @@ import (
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 )
 
-// Presence is the part of the friends system that is easiest to get wrong, and
-// it is what the whole feature is judged on: a friend list where everybody is
-// permanently offline looks broken even though every other endpoint works.
-//
-// Two rules, both learned from a deployment where they were missing:
-//
-//  1. A reported state expires. The console reports PLAYING when a game starts
-//     and does not report again. Without a TTL, a console that was switched off
-//     mid-game shows as playing forever.
-//
-//  2. Request traffic is proof of life. The console does not report anything
-//     while it sits in the Home Menu, which is exactly where players look at
-//     each other's status. But it keeps polling its friend list. Treating that
-//     traffic as an ONLINE heartbeat is what makes an idle console visible.
-//
-// The read path takes the strongest fresh signal and a weak signal never
-// downgrades a strong one.
+// The TTL rules themselves live in internal/presence, shared with NPLN's
+// PresenceService so the two implement exactly one set of rules. See that
+// package's doc comment for why, and for the rules themselves.
+
+// keyAppID, keyPresenceGroupID, keyACDIndex and keyAppField alias
+// internal/presence's exported constants, kept lower-case here only so this
+// file's own JSON-patch parsing below (presencePatchFromOps) and the existing
+// tests that reference them do not need to change.
+const (
+	keyAppID           = presence.KeyAppID
+	keyPresenceGroupID = presence.KeyPresenceGroupID
+	keyACDIndex        = presence.KeyACDIndex
+	keyAppField        = presence.KeyAppField
+)
+
+// resolver builds the TTL resolver from this server's own store and config.
+func (s *Server) resolver() presence.Resolver {
+	return presence.Resolver{
+		Store:      s.store,
+		ReportTTL:  s.cfg.PresenceTTL,
+		ConsoleTTL: s.cfg.ConsolePresenceTTL,
+	}
+}
 
 // effectivePresence resolves a user's presence through the TTL rules.
 func (s *Server) effectivePresence(ctx context.Context, userID string) (db.Presence, error) {
-	p, err := s.store.GetPresence(ctx, userID)
-	if err != nil {
-		return db.Presence{}, err
-	}
-	return s.resolvePresence(p), nil
+	return s.resolver().Effective(ctx, userID, s.now())
 }
 
 // effectivePresences resolves presence for several users at once.
 func (s *Server) effectivePresences(ctx context.Context, userIDs []string) (map[string]db.Presence, error) {
-	raw, err := s.store.GetPresences(ctx, userIDs)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]db.Presence, len(raw))
-	for id, p := range raw {
-		out[id] = s.resolvePresence(p)
-	}
-	return out, nil
-}
-
-// resolvePresence applies the TTL rules to a stored presence row.
-func (s *Server) resolvePresence(p db.Presence) db.Presence {
-	now := s.now()
-
-	reportedFresh := !p.ReportedAt.IsZero() && now.Sub(p.ReportedAt) <= s.cfg.PresenceTTL
-	seenFresh := !p.LastSeenAt.IsZero() && now.Sub(p.LastSeenAt) <= s.cfg.ConsolePresenceTTL
-
-	switch {
-	case reportedFresh:
-		// The console said what it is doing recently enough to believe, and it
-		// knows better than any heuristic here. That includes a fresh OFFLINE: a
-		// console reporting that is signing out, and overriding it with the
-		// liveness heartbeat would show a user who just logged out as online.
-		//
-		// The app fields still have to be cleared for a state that is not
-		// PLAYING, because a console reporting ONLINE after closing a game does
-		// not always clear them itself.
-		if p.State != db.StatePlaying {
-			p.AppID = ""
-			p.PresenceGroupID = ""
-			p.AppField = ""
-			p.Extras = clearPresenceAppFields(p.Extras)
-		}
-		return p
-
-	case seenFresh:
-		// Nothing fresh was reported, but the console is talking to us. It is
-		// online, and it is not in a game as far as we know — so the app fields
-		// are cleared rather than kept, otherwise a friend list would show
-		// "playing X" for a game that was closed an hour ago.
-		//
-		// This branch is the one that matters most: without it, a console idling
-		// in the Home Menu reports nothing and reads as offline to all its
-		// friends, which is exactly where players look at each other's status.
-		p.State = db.StateOnline
-		p.AppID = ""
-		p.PresenceGroupID = ""
-		p.AppField = ""
-		p.Extras = clearPresenceAppFields(p.Extras)
-		return p
-
-	default:
-		p.State = db.StateOffline
-		p.AppID = ""
-		p.PresenceGroupID = ""
-		p.AppField = ""
-		p.Extras = clearPresenceAppFields(p.Extras)
-		return p
-	}
-}
-
-// Presence extras keys, as the console writes them.
-//
-// Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#presence-extras
-const (
-	keyAppID = "appInfo:appId"
-	// keyPresenceGroupID groups related titles. It is usually the same value as
-	// the app id.
-	keyPresenceGroupID = "appInfo:presenceGroupId"
-	// keyACDIndex was added in system version 19.0.0.
-	keyACDIndex = "appInfo:acdIndex"
-	// keyAppField is a JSON-encoded string the game chooses. It is what makes
-	// the friends applet show in-game detail, and it is passed through
-	// untouched: parsing it would mean guessing at each game's private format.
-	keyAppField = "appField"
-)
-
-// clearPresenceAppFields removes the app fields from every extras scope, leaving
-// any other key alone.
-func clearPresenceAppFields(extras db.ExtrasByScope) db.ExtrasByScope {
-	out := make(db.ExtrasByScope, len(db.Scopes))
-	for _, scope := range db.Scopes {
-		kv := map[string]any{}
-		for k, v := range extras[scope] {
-			switch k {
-			case keyAppID, keyPresenceGroupID, keyACDIndex, keyAppField:
-			default:
-				kv[k] = v
-			}
-		}
-		out[scope] = kv
-	}
-	return out
+	return s.resolver().EffectiveMany(ctx, userIDs, s.now())
 }
 
 // ---- PATCH /1.0.0/users/<id>/device_accounts/<id> ------------------------
