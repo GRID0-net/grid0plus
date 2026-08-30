@@ -132,6 +132,20 @@
         <p class="empty" id="mm-sessions-empty" hidden>No matches running.</p>
       </div>
     </div>
+
+    <!-- Independent of the admin API above: this reads the match history
+         straight from the database, so it works even before npln.admin_*
+         is configured. -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Recent matches</h2>
+        <span class="meta" id="matches-summary"></span>
+      </div>
+      <div id="matches-list"></div>
+      <p class="empty" id="matches-empty" hidden>No matches recorded yet. One
+        appears here the moment the queue fills — a session outlives its
+        entry in the live queue above, so this is the record once it does.</p>
+    </div>
   </section>
 
   <!-- Splatfests -->

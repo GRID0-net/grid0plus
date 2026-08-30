@@ -14,7 +14,7 @@ Status: **in progress.** Written 2026-08-28.
 | BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
 | BCAT serving | not started |
 | The JSON front end (vermillion, penne, frontline) | not started — `internal/nplnrest` |
-| Dashboard | done — `internal/dashboard`, `cmd/dashboard`; match history and live matchmaking counts still not wired |
+| Dashboard | done — `internal/dashboard`, `cmd/dashboard`, incl. match history and live matchmaking counts |
 
 Everything done so far is verifiable without a console, which is the ordering
 this plan committed to while the certificate-pinning question is open. The

@@ -31,7 +31,10 @@ Both exist because the silent version of this wastes an afternoon.
 
 ## Presence is resolved here, not read
 
-The dashboard applies **the same rule** `internal/baas` does:
+The dashboard applies **the same rule** `internal/baas` and `internal/npln`'s
+`PresenceService` do, through `internal/presence` — a shared package rather
+than a third copy, after the copy that used to live here directly was found
+to have quietly drifted (see that package's own README):
 
 ```
 fresh report?            use it exactly, including OFFLINE
@@ -47,6 +50,21 @@ friends applet disagree goes hunting for a bug that is only in the dashboard.
 `TestPresenceIsResolvedTheSameWayTheFriendsAppletSeesIt` covers all four cases,
 including the one that is easy to miss — a console reporting `OFFLINE` is
 signing out, and the heartbeat must not override it.
+
+## Match history outlives the live queue
+
+`internal/matchmaking`'s queue is in memory — a formed session ages out
+(`Sweep`) or vanishes on restart, same as an unmatched ticket. `npln_matches`
+is the record that survives it: `internal/npln/matchmaking.go` and
+`admin.go` each call `Server.recordMatch` the moment a match forms, whether
+it filled on its own or an operator force-started it, and the Matchmaking
+tab's "Recent matches" panel reads it back through `/api/matches`.
+
+It is deliberately **not** gated behind `npln.admin_*` the way the live
+queue panels above it are: it reads straight from the database this process
+already has open, so it works even before the admin API is configured — the
+one part of the Matchmaking tab that does not need `cmd/npln` to be
+reachable at all.
 
 ## Fest controls normalise what they safely can
 

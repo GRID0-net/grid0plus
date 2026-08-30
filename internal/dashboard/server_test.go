@@ -153,6 +153,52 @@ func TestPresenceIsResolvedTheSameWayTheFriendsAppletSeesIt(t *testing.T) {
 	}
 }
 
+// TestMatchesReturnsHistoryNewestFirst covers the dashboard's own read of
+// internal/db's match history, independent of who writes to it.
+func TestMatchesReturnsHistoryNewestFirst(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	ctx := context.Background()
+
+	if err := store.CreateMatch(ctx, db.Match{
+		ID: "older", Tenant: "dce9377b", Mode: "turf_war",
+		HostUserID: "alice", PlayerIDs: []string{"alice", "bob"},
+		CreatedAt: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("create match: %v", err)
+	}
+	if err := store.CreateMatch(ctx, db.Match{
+		ID: "newer", Tenant: "dce9377b", Mode: "salmon_run",
+		HostUserID: "carol", PlayerIDs: []string{"carol", "dave", "erin"},
+		Forced: true, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("create match: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/matches", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var rows []matchRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d matches, want 2", len(rows))
+	}
+	if rows[0].ID != "newer" || rows[1].ID != "older" {
+		t.Errorf("order = [%s %s], want the newer match first", rows[0].ID, rows[1].ID)
+	}
+	if !rows[0].Forced {
+		t.Error("forced did not round-trip")
+	}
+	if len(rows[0].PlayerIDs) != 3 {
+		t.Errorf("player_ids = %v, want 3 players", rows[0].PlayerIDs)
+	}
+}
+
 func TestTheOverviewCountsOnlineAndPlaying(t *testing.T) {
 	now := time.Now().UTC()
 	srv, store := newTestServer(t, "", now)
@@ -282,7 +328,7 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 	srv, _ := newTestServer(t, "s3cret", time.Now().UTC())
 	h := srv.Handler()
 
-	for _, path := range []string{"/", "/api/overview", "/api/players", "/api/fests"} {
+	for _, path := range []string{"/", "/api/overview", "/api/players", "/api/fests", "/api/matches"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusUnauthorized {

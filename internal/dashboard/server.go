@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/fests/{id}", s.guard(s.handleDeleteFest))
 	mux.HandleFunc("GET /api/health", s.guard(s.handleHealth))
 	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))
+	mux.HandleFunc("GET /api/matches", s.guard(s.handleMatches))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))
 	mux.HandleFunc("POST /api/matchmaking/tickets/{id}/cancel", s.guard(s.handleCancelTicket))
@@ -324,14 +325,17 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Matchmaking's own "in queue" stat tile is populated separately, from
+	// /api/matchmaking (see handleMatchmaking and dashboard.js's
+	// renderMatchmaking) rather than folded in here: that endpoint already
+	// has to say "not configured" honestly rather than a zero that looks
+	// like "nobody is queuing", and one source for that answer is simpler
+	// than keeping two in sync.
 	writeJSON(w, map[string]any{
 		"players": len(players),
 		"online":  online,
 		"playing": playing,
 		"fest":    live,
-		// Matchmaking is not wired to the gateway yet, so this is honestly
-		// absent rather than a zero that looks like "nobody is queuing".
-		"matchmaking": nil,
 	})
 }
 
@@ -479,6 +483,38 @@ func (s *Server) handleDeleteFest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("dashboard: fest deleted", "fest", id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- match history ----------------------------------------------------------
+
+// matchRow is one row of the match history. Player and host ids are left for
+// the page to resolve against the players list it already has, the same way
+// it already resolves the live matchmaking sessions view -- one lookup table
+// on the client rather than a join on every history row.
+type matchRow struct {
+	ID         string   `json:"id"`
+	Mode       string   `json:"mode"`
+	HostUserID string   `json:"hostUserId"`
+	PlayerIDs  []string `json:"playerIds"`
+	Forced     bool     `json:"forced"`
+	CreatedAt  string   `json:"createdAt"`
+}
+
+func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
+	matches, err := s.store.ListMatches(r.Context(), db.DefaultMatchListLimit)
+	if err != nil {
+		s.fail(w, "list matches", err)
+		return
+	}
+	out := make([]matchRow, 0, len(matches))
+	for _, m := range matches {
+		out = append(out, matchRow{
+			ID: m.ID, Mode: m.Mode, HostUserID: m.HostUserID,
+			PlayerIDs: m.PlayerIDs, Forced: m.Forced,
+			CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, out)
 }
 
 // ---- live events ----------------------------------------------------------

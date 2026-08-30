@@ -146,7 +146,10 @@ server-authoritative; a client-supplied value for those is ignored, the
 same reasoning `AllocateIceServerSet`'s doc comment gives for ignoring the
 request's own tenant and user fields.
 
-**Not built:** logging every match to `npln_matches` for the dashboard.
+**Built: match history.** Every formed session — filled on its own or force-
+started by an operator — is recorded to `npln_matches` (`Server.recordMatch`
+in `matchmaking.go` and `admin.go`), for the dashboard's recent-matches list.
+See §2.6.
 
 **NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
 so `natcheck` is not involved in this title, and a STUN/TURN server (coturn) is a
@@ -256,9 +259,12 @@ dashboard runs as a separate process** — the in-process bus delivers nothing
 across a process boundary, silently.
 
 Built, plus a Splatfest section that schedules, announces, holds and deletes
-fests. Match history and live matchmaking counts are not wired ([`../TODO.md`](../TODO.md)
-§3.1) — and the same cross-process problem applies to them, since the queue lives
-in `cmd/npln`.
+fests, live matchmaking counts (the "in matchmaking" overview tile and the
+Matchmaking tab's queue/live-match panels, both fed from `cmd/npln`'s admin
+API — the same cross-process wiring `redis.url` above is for, just over
+HTTP rather than the presence bus), and a recent match list
+(`npln_matches`, written by `internal/npln/matchmaking.go` and
+`admin.go`'s `recordMatch`, read by `/api/matches`).
 
 ### 2.7 Certificate trust is a SEPARATE problem here
 

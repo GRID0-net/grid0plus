@@ -448,6 +448,41 @@ $("#mm-modes").addEventListener("change", async (e) => {
   }
 });
 
+// ---- match history ----------------------------------------------------------
+
+function renderMatches(matches) {
+  $("#matches-empty").hidden = matches.length > 0;
+  $("#matches-summary").textContent = matches.length
+    ? `${matches.length} recorded`
+    : "";
+
+  $("#matches-list").replaceChildren(
+    ...matches.map((m) => {
+      const card = document.createElement("div");
+      card.className = "mm-session";
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${escape(m.mode)}
+            ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
+          </div>
+          <div class="meta">${m.playerIds.length} player${m.playerIds.length === 1 ? "" : "s"} ·
+            host ${escape(playerName(m.hostUserId))} ·
+            ${ago(m.createdAt)}</div>
+          <div class="meta">${m.playerIds.map((p) => escape(playerName(p))).join(", ")}</div>
+        </div>`;
+      return card;
+    })
+  );
+}
+
+async function loadMatches() {
+  try {
+    renderMatches(await api("/api/matches"));
+  } catch (e) {
+    $("#matches-summary").textContent = "could not read match history";
+  }
+}
+
 // ---- live stream ----------------------------------------------------------
 
 function setLive(state, label) {
@@ -511,8 +546,9 @@ async function refresh() {
     renderOverview(o);
     renderPlayers();
     renderFests(fs);
-    // After players, so a ticket can be shown by nickname rather than by id.
-    await loadMatchmaking();
+    // After players, so a ticket or a match's host/players can be shown by
+    // nickname rather than by id.
+    await Promise.all([loadMatchmaking(), loadMatches()]);
   } catch (e) {
     setLive("down", "server unreachable");
   }
