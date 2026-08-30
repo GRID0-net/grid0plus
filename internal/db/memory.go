@@ -316,6 +316,21 @@ func (m *Memory) ReassignDeviceAccount(_ context.Context, deviceAccountID, newUs
 	return nil
 }
 
+// UndeleteDeviceAccount clears DeletedAt.
+func (m *Memory) UndeleteDeviceAccount(_ context.Context, deviceAccountID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	da, ok := m.deviceAccounts[deviceAccountID]
+	if !ok || da.DeletedAt == nil {
+		return ErrNotFound
+	}
+	da.DeletedAt = nil
+	da.UpdatedAt = time.Now().UTC()
+	m.deviceAccounts[deviceAccountID] = da
+	return nil
+}
+
 // RevokeDeviceAccountTokens invalidates every token minted before `before`.
 func (m *Memory) RevokeDeviceAccountTokens(_ context.Context, deviceAccountID string, before time.Time) error {
 	m.mu.Lock()

@@ -60,6 +60,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"deviceAccounts":            testDeviceAccounts,
 		"reassignDeviceAccount":     testReassignDeviceAccount,
 		"revokeDeviceAccountTokens": testRevokeDeviceAccountTokens,
+		"undeleteDeviceAccount":     testUndeleteDeviceAccount,
 		"friendCodes":               testFriendCodes,
 		"friendships":               testFriendships,
 		"friendRequests":            testFriendRequests,
@@ -472,6 +473,53 @@ func testRevokeDeviceAccountTokens(t *testing.T, s Store) {
 
 	if err := s.RevokeDeviceAccountTokens(ctx, "ffffffffffffffff", cutoff); !errors.Is(err, ErrNotFound) {
 		t.Errorf("revoke a missing device account: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testUndeleteDeviceAccount(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Reinstatable")
+	das, err := s.ListDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	da := das[0]
+
+	// Undeleting one that was never deleted is refused -- there is nothing to
+	// reinstate, and silently succeeding would hide a caller's mistake about
+	// which id it meant.
+	if err := s.UndeleteDeviceAccount(ctx, da.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("undelete a never-deleted device account: err = %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteDeviceAccount(ctx, u.ID, da.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	deleted, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.DeletedAt == nil {
+		t.Fatal("device account was not marked deleted")
+	}
+
+	if err := s.UndeleteDeviceAccount(ctx, da.ID); err != nil {
+		t.Fatalf("undelete: %v", err)
+	}
+	restored, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.DeletedAt != nil {
+		t.Errorf("device account still marked deleted after undelete: %v", restored.DeletedAt)
+	}
+	// Nothing else about the account moved.
+	if restored.PasswordSHA256 != da.PasswordSHA256 || restored.UserID != da.UserID {
+		t.Error("undelete changed the device account's password or owner")
+	}
+
+	if err := s.UndeleteDeviceAccount(ctx, "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("undelete a missing device account: err = %v, want ErrNotFound", err)
 	}
 }
 

@@ -73,7 +73,7 @@ func main() {
 
 	case "account":
 		if flag.NArg() < 2 {
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens> ...\n")
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable> ...\n")
 			os.Exit(2)
 		}
 		switch flag.Arg(1) {
@@ -81,8 +81,12 @@ func main() {
 			accountCreate(cfg, flag.Args()[2:])
 		case "revoke-tokens":
 			accountRevokeTokens(cfg, flag.Args()[2:])
+		case "disable":
+			accountDisable(cfg, flag.Args()[2:])
+		case "enable":
+			accountEnable(cfg, flag.Args()[2:])
 		default:
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens> ...\n")
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable> ...\n")
 			os.Exit(2)
 		}
 
@@ -107,10 +111,11 @@ Commands:
   sans      the hostnames the edge certificate needs, one per line
   check     validate the configuration and report anything risky
   account   create a user from a device account id and password you already
-            have, rather than one the server generates, or revoke a device
-            account's live sessions without deleting it. See
-            'switchnetctl account create -h' and
-            'switchnetctl account revoke-tokens -h'.
+            have, rather than one the server generates; revoke a device
+            account's live sessions; or disable/re-enable a device account
+            entirely, all without touching the database by hand. See
+            'switchnetctl account create -h', '... revoke-tokens -h',
+            '... disable -h' and '... enable -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file

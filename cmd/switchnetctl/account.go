@@ -128,6 +128,118 @@ password is untouched, so its normal next login still works and mints a
 new, valid session.
 `
 
+// accountDisable implements `switchnetctl account disable`.
+func accountDisable(cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("account disable", flag.ExitOnError)
+	deviceAccountID := fs.String("device-account-id", "",
+		"16 hex character device account id to disable")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, accountDisableUsage) }
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if *deviceAccountID == "" {
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.OpenPostgres(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.AutoMigrate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	da, err := store.GetDeviceAccount(ctx, *deviceAccountID)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		fmt.Fprintf(os.Stderr, "switchnetctl: no device account with id %s\n", *deviceAccountID)
+		os.Exit(1)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+	if da.DeletedAt != nil {
+		fmt.Printf("device account %s is already disabled (since %s)\n",
+			*deviceAccountID, da.DeletedAt.Format(time.RFC3339))
+		return
+	}
+
+	if err := store.DeleteDeviceAccount(ctx, da.UserID, *deviceAccountID); err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("disabled device account %s\n", *deviceAccountID)
+	fmt.Println()
+	fmt.Println("The console can no longer log in with this credential -- its next")
+	fmt.Println("POST /1.0.0/login is refused the same way an unknown device account")
+	fmt.Println("would be, and any token it already holds stops working immediately.")
+	fmt.Println("'switchnetctl account enable' reverses this.")
+}
+
+const accountDisableUsage = `switchnetctl account disable -device-account-id <id>
+
+Blocks a single console from logging in at all, without deleting its user,
+its friends, or anything else -- reversible with 'switchnetctl account
+enable'.
+
+Use this for a console you want to lock out entirely, as opposed to
+'account revoke-tokens', which only ends its current sessions and lets it
+log back in immediately after.
+`
+
+// accountEnable implements `switchnetctl account enable`.
+func accountEnable(cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("account enable", flag.ExitOnError)
+	deviceAccountID := fs.String("device-account-id", "",
+		"16 hex character device account id to re-enable")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, accountEnableUsage) }
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if *deviceAccountID == "" {
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.OpenPostgres(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.AutoMigrate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	err = store.UndeleteDeviceAccount(ctx, *deviceAccountID)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		fmt.Fprintf(os.Stderr,
+			"switchnetctl: no disabled device account with id %s "+
+				"(it may not exist, or may already be enabled)\n", *deviceAccountID)
+		os.Exit(1)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("re-enabled device account %s\n", *deviceAccountID)
+	fmt.Println()
+	fmt.Println("The console can log in with its existing password again. Nothing was")
+	fmt.Println("regenerated -- if you also want to be sure any old, leaked token")
+	fmt.Println("cannot be reused, run 'switchnetctl account revoke-tokens' as well.")
+}
+
+const accountEnableUsage = `switchnetctl account enable -device-account-id <id>
+
+Reverses 'switchnetctl account disable': the console can log in again with
+its existing credential.
+`
+
 const accountCreateUsage = `switchnetctl account create -device-account-id <id> -password <password> [-nickname <name>]
 
 Creates a user whose device account id and password are exactly what you

@@ -386,6 +386,11 @@ type Store interface {
 	// the target user does not exist.
 	ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error
 
+	// UndeleteDeviceAccount clears DeletedAt, letting a soft-deleted device
+	// account log in again. ErrNotFound if the device account does not exist
+	// or is not currently deleted.
+	UndeleteDeviceAccount(ctx context.Context, deviceAccountID string) error
+
 	// RevokeDeviceAccountTokens sets TokensRevokedBefore, invalidating every
 	// token minted for this device account before `before`. ErrNotFound if the
 	// device account does not exist.

@@ -442,6 +442,20 @@ func (p *Postgres) ReassignDeviceAccount(ctx context.Context, deviceAccountID, n
 	return nil
 }
 
+// UndeleteDeviceAccount clears deleted_at.
+func (p *Postgres) UndeleteDeviceAccount(ctx context.Context, deviceAccountID string) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE device_accounts SET deleted_at = NULL, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NOT NULL`, deviceAccountID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RevokeDeviceAccountTokens invalidates every token minted before `before`.
 func (p *Postgres) RevokeDeviceAccountTokens(ctx context.Context, deviceAccountID string, before time.Time) error {
 	tag, err := p.pool.Exec(ctx, `
