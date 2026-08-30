@@ -151,6 +151,28 @@ func warn(cfg config.Config) {
 				"turn it off so a lost volume fails loudly instead of silently "+
 				"invalidating every token the consoles hold.")
 	}
+	if cfg.Redis.URL == "" {
+		fmt.Fprintln(os.Stderr,
+			"warning: redis.url is empty. baas, npln and dashboard each get their own "+
+				"in-process presence bus, which delivers nothing across a process "+
+				"boundary -- the dashboard's 'online now' view will silently stay empty "+
+				"and match/presence updates from npln will never reach it. Fine when "+
+				"everything runs as one process; set this before running dashboard or "+
+				"npln separately.")
+	}
+	if (cfg.Dashboard.NPLNAdminToken == "") != (cfg.NPLN.AdminToken == "") {
+		fmt.Fprintln(os.Stderr,
+			"warning: exactly one of dashboard.npln_admin_token and npln.admin_token is "+
+				"set. They must agree -- the dashboard authenticates to npln's matchmaking "+
+				"controls with this token, and a mismatch reaches the operator as a plain "+
+				"401 with nothing connecting it back to these two settings.")
+	} else if cfg.Dashboard.NPLNAdminToken != "" && cfg.NPLN.AdminToken != "" &&
+		cfg.Dashboard.NPLNAdminToken != cfg.NPLN.AdminToken {
+		fmt.Fprintln(os.Stderr,
+			"warning: dashboard.npln_admin_token does not match npln.admin_token. "+
+				"They must be the same value, or the dashboard's matchmaking controls "+
+				"will fail every request with a plain 401.")
+	}
 }
 
 // ---- hosts file ----------------------------------------------------------
