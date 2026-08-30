@@ -778,6 +778,25 @@ func testPresence(t *testing.T, s Store) {
 		t.Errorf("extras did not round-trip: %+v", updated.Extras[ScopeFriends])
 	}
 
+	// LastSeenAt tracks the report's own timestamp, not the moment the write
+	// happened -- a patch carrying a ReportedAt far from wall-clock time must
+	// come back exactly, not merely "close to now". A test that only ever
+	// passes a ReportedAt captured moments before the call cannot tell "value
+	// from the patch" from "value from the database's own clock", which is
+	// exactly the gap that let the two Store implementations disagree here
+	// (Postgres used to always write now()) without either failing.
+	reportedInThePast := now.Add(-30 * 24 * time.Hour)
+	backdated, err := s.UpdatePresence(ctx, u.ID, PresencePatch{
+		State: &state, ReportedAt: &reportedInThePast,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !backdated.LastSeenAt.Equal(reportedInThePast) {
+		t.Errorf("last_seen_at = %v, want it to equal the reported timestamp %v exactly",
+			backdated.LastSeenAt, reportedInThePast)
+	}
+
 	// A patch touches only the fields it names.
 	onlyState := StateOnline
 	updated, err = s.UpdatePresence(ctx, u.ID, PresencePatch{State: &onlyState})

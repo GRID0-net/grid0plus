@@ -822,11 +822,22 @@ func (p *Postgres) UpdatePresence(ctx context.Context, userID string, patch Pres
 		return Presence{}, mapErr(err)
 	}
 
-	sets := []string{"last_seen_at = now()"}
+	var sets []string
 	args := []any{userID}
 	add := func(col string, v any) {
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+
+	// LastSeenAt tracks the reported state's own timestamp when there is one --
+	// consistent with Memory.UpdatePresence, and with what "last seen" ought to
+	// mean: when the console said this happened, not when this write landed.
+	// Falling back to the database's own clock only when nothing was reported
+	// matches TouchPresence, which never sets ReportedAt at all.
+	if patch.ReportedAt != nil {
+		add("last_seen_at", *patch.ReportedAt)
+	} else {
+		sets = append(sets, "last_seen_at = now()")
 	}
 
 	if patch.State != nil {
