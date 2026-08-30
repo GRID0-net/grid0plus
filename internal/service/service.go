@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -138,4 +139,22 @@ func ServeHTTPWithHealth(
 func Fatal(log *slog.Logger, msg string, err error) {
 	log.Error(msg, "error", err)
 	os.Exit(1)
+}
+
+// ClientIP returns the console's address as seen from outside the nginx edge.
+//
+// X-Forwarded-For is only trusted for its last entry, which is the one the
+// immediately preceding proxy wrote. Trusting the first entry would let a
+// console put whatever it liked in the header and have the server repeat it.
+func ClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+			return ip
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
