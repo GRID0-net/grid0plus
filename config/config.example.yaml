@@ -211,6 +211,15 @@ baas:
   # add themselves to it.
   allow_registration: true
 
+  # How many login attempts (POST /1.0.0/login and federation) one client
+  # address gets per login_window_seconds, before further attempts from it are
+  # refused until the window rolls forward. 0 disables the limit. A device
+  # account's password is generated and never user-chosen, so unbounded
+  # guessing is a smaller risk here than for a password a person picked -- but
+  # smaller is not zero, and there was previously no limit at all.
+  login_attempts_per_window: 20
+  login_window_seconds: 300
+
 # ---------------------------------------------------------------------------
 # stubs: endpoints answered but not implemented
 # ---------------------------------------------------------------------------

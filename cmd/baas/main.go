@@ -100,6 +100,9 @@ func main() {
 		ImageBaseURL:       cfg.BAAS.ImageBaseURL,
 		MaxImageBytes:      int64(cfg.BAAS.MaxImageBytes),
 		AllowRegistration:  cfg.BAAS.AllowRegistration,
+
+		LoginAttemptsPerWindow: cfg.BAAS.LoginAttemptsPerWindow,
+		LoginWindow:            time.Duration(cfg.BAAS.LoginWindowSeconds) * time.Second,
 	}, baas.Deps{
 		Store:          store,
 		Bus:            bus,

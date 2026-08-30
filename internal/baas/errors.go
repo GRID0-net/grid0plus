@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // APIError is a BAAS error response.
@@ -106,6 +108,19 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Pragma", "no-cache")
 	w.WriteHeader(status)
 	_, _ = w.Write(buf)
+}
+
+// writeRateLimited answers a throttled login attempt.
+//
+// Deliberately not one of the BAAS-shaped errors above: there is no
+// Nintendo-documented errorCode for this, because a real console never
+// triggers it against real Nintendo servers. Inventing a plausible-looking
+// one would risk it being mistaken for a real Nintendo error code by anyone
+// reading this server's behaviour later. A plain HTTP 429 is what this
+// actually is: this server's own rate limit, not a BAAS error shape.
+func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
+	w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+	http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 }
 
 // writeInternalError logs the cause and returns a generic error.

@@ -227,6 +227,21 @@ type BAAS struct {
 	// once every console in the group is registered, so a stranger who finds
 	// the server cannot add themselves.
 	AllowRegistration bool `yaml:"allow_registration"`
+
+	// LoginAttemptsPerWindow caps how many /1.0.0/login (and federation) login
+	// attempts one client address gets per LoginWindowSeconds. 0 disables the
+	// limit entirely.
+	//
+	// A device account's password is generated, high-entropy and never
+	// user-chosen, so unbounded guessing is a much smaller practical risk here
+	// than for a password a person picked -- but "much smaller" is not "none",
+	// and there was previously no limit of any kind on this endpoint. The
+	// default is generous enough that a household sharing one NAT address
+	// during ordinary, repeated wrong-password mistakes will not be affected.
+	LoginAttemptsPerWindow int `yaml:"login_attempts_per_window"`
+	// LoginWindowSeconds is the sliding window LoginAttemptsPerWindow counts
+	// over.
+	LoginWindowSeconds int `yaml:"login_window_seconds"`
 }
 
 // NPLN configures the Splatoon 3 game server (phase 2).
@@ -436,6 +451,9 @@ func Default() Config {
 			ImageBaseURL:       "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/images",
 			MaxImageBytes:      1 << 20,
 			AllowRegistration:  true,
+
+			LoginAttemptsPerWindow: 20,
+			LoginWindowSeconds:     300,
 		},
 		Stubs: Stubs{
 			Listen: ":8084",
@@ -531,6 +549,8 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_BAAS_CONSOLE_PRESENCE_TTL", &c.BAAS.ConsolePresenceTTL)
 	envInt("SWITCHNET_BAAS_FRIEND_CODE_COOLDOWN", &c.BAAS.FriendCodeCooldown)
 	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
+	envInt("SWITCHNET_BAAS_LOGIN_ATTEMPTS_PER_WINDOW", &c.BAAS.LoginAttemptsPerWindow)
+	envInt("SWITCHNET_BAAS_LOGIN_WINDOW_SECONDS", &c.BAAS.LoginWindowSeconds)
 
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
 

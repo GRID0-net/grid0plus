@@ -67,6 +67,12 @@ type Config struct {
 
 	// AllowRegistration lets an unknown console create an account.
 	AllowRegistration bool
+
+	// LoginAttemptsPerWindow caps login attempts per client address per
+	// LoginWindow. 0 disables the limit.
+	LoginAttemptsPerWindow int
+	// LoginWindow is the sliding window LoginAttemptsPerWindow counts over.
+	LoginWindow time.Duration
 }
 
 // Server is the BAAS HTTP server.
@@ -127,6 +133,10 @@ type Server struct {
 	// same reason authCode is: an opaque value has nothing in it to verify.
 	naRefreshTokens   map[string]authCode
 	naRefreshTokensMu sync.Mutex
+
+	// loginLimiter throttles /1.0.0/login and /1.0.0/federation by client
+	// address. See ratelimit.go.
+	loginLimiter *loginLimiter
 }
 
 // Deps are the collaborators a Server needs.
@@ -160,6 +170,7 @@ func New(cfg Config, d Deps) *Server {
 		now:             func() time.Time { return time.Now().UTC() },
 		naAuthCodes:     map[string]authCode{},
 		naRefreshTokens: map[string]authCode{},
+		loginLimiter:    newLoginLimiter(cfg.LoginAttemptsPerWindow, cfg.LoginWindow),
 	}
 }
 

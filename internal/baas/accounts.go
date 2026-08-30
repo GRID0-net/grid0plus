@@ -10,6 +10,7 @@ import (
 
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/service"
 )
 
 // ---- POST /1.0.0/application/token --------------------------------------
@@ -259,6 +260,15 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 	password := form.Get("password")
 	if deviceAccountID == "" || password == "" {
 		writeError(w, r, errInvalidParams)
+		return
+	}
+
+	// Checked once the request is otherwise well-formed, so a malformed
+	// request does not burn budget on a real attempt; before the store lookup
+	// and password compare, so a throttled caller costs neither.
+	if !s.loginLimiter.Allow(service.ClientIP(r), s.now()) {
+		s.log.Warn("baas: login rate limit exceeded", "client", service.ClientIP(r))
+		writeRateLimited(w, s.cfg.LoginWindow)
 		return
 	}
 
