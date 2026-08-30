@@ -51,6 +51,9 @@ __pycache__/
 .idea/
 .vscode/
 
+# Claude Code local tooling state (session worktrees, etc.) -- never repo content.
+.claude/
+
 # Upstream NPLN protobuf definitions, fetched by scripts/fetch-proto.sh.
 # Only the generated Go in proto/ is tracked.
 .proto-upstream/
