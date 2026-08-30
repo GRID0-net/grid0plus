@@ -163,7 +163,8 @@ not a station address. `AllocateIceServerSet` reads `npln.ice_servers`, which is
 empty by default — consoles on one LAN connect directly, which is the common
 case for a private server.
 
-The match log is still to do ([`../TODO.md`](../TODO.md) §3.1).
+The match log (`npln_matches`) is built — see the "Built: match history" note
+above and §2.6.
 
 ### 2.4 Splatoon 3 services (`nn.npln.toyohr.v1.*`)
 

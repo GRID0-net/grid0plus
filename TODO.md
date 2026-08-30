@@ -59,9 +59,19 @@ settle. Do **not** invent a plausible Nintendo internal.
 
 ### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2**
 
-Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
-`GameRecord`, `CoopScenario` (Salmon Run), then `Locker`, `CloudSave`,
-`Replay`, `Canola`, `UserScreening`.
+`Schedule` is built (`internal/toyohr/schedule.go`): all five RPCs answer
+"nothing scheduled" rather than `Unimplemented`, since the map/mode/weapon
+rotation content itself is Nintendo's own game design data with no dump or
+capture to draw from — see `docs/CAPTURES/README.md`. `CloudSave` is built
+only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
+an account with no cloud save, not a stub); its other five RPCs
+(`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)
+are not attempted — nothing calls them this early, and actually writing save
+state is real player data this server has no legitimate way to have.
+
+Roughly boot-to-match order for what remains: `LobbyMessaging`, `GameRecord`,
+`CoopScenario` (Salmon Run), then `Locker`, `Replay`, `Canola`,
+`UserScreening`.
 
 Treat it as a backlog and let the console drive the order: an unimplemented RPC
 answers `codes.Unimplemented` and logs, and **that log is the to-do list**.
@@ -249,20 +259,6 @@ concludes.
 
 ## 3. Dashboard
 
-### 3.1 Match history — **P2**
-
-The live half is done: the overview's queue tile is wired, and the Matchmaking
-tab shows the queue, per-mode sizes, force-start, and the running matches. It
-reaches the queue through `cmd/npln`'s admin API (`internal/npln/admin.go`),
-because the queue is in that process and the dashboard is a different one.
-
-**What is left is history.** Sessions live in memory for `SessionTTL` only, so
-nothing survives a restart and yesterday's matches are gone. That needs an
-`npln_matches` table and store methods on **both** implementations, with an
-entry in `internal/db/store_test.go`'s contract — that contract has already
-caught two real divergences, so do not skip it. Write the row when the match
-forms (`Queue.formSessionLocked` is the single place one is created).
-
 ### 3.2 Splatfest asset editing — **P2, depends on §2.1**
 
 The Splatfests tab creates, announces, holds and deletes fests. It does not
@@ -332,15 +328,22 @@ documented and the earliest in the sequence.
 
 ### 4.3 Captures still wanted — **P2**
 
-`grep -rn 'TODO(capture-needed)' internal/` for the live list. As of writing:
-the NPLN resource-name prefix in `IssueToken`'s response, whether Splatoon 3
-ever calls `RefreshToken`, the matchmaking resource-name shapes, whether the
-game sends more than one `UserDefinition` when a squad queues together, and
-whether it refuses to start a match with an empty `MatchmakingIdToken`.
+`grep -rn 'TODO(capture-needed)' internal/` for the live list —
+`docs/CAPTURES/README.md` keeps the same list with what each would settle,
+and is the one to trust when this paragraph and the grep disagree. As of
+writing it is fourteen items and growing every time a new phase-2 service
+gets registered against an undocumented shape rather than a real capture.
 
-The last two are the ones that change behaviour rather than cosmetics: a squad
-currently has everyone but the leader dropped, and an absent id token is a gap
-SwitchNet cannot fill without issuing a credential nothing verifies.
+Two from the original five are still the ones that change behaviour rather
+than cosmetics, not just naming: whether the game sends more than one
+`UserDefinition` when a squad queues together (a squad currently has
+everyone but the leader dropped), and whether it refuses to start a match
+with an empty `MatchmakingIdToken` (a gap SwitchNet cannot fill without
+issuing a credential nothing verifies). Newer arrivals worth the same
+weight: `Messaging.RecvMessage`'s empty-resume-token behaviour (get it
+backwards and an invite mailbox either loses invites silently or replays
+stale ones on every reconnect), and whether a real client dials
+`GameSession.Port` at all now that `SyncGameSession` exists to publish it.
 
 Write captures up under `docs/CAPTURES/` using the template, redacted,
 reconcile the implementation, and **delete the `TODO` comment in the same
@@ -379,3 +382,37 @@ What is still missing is knowing what the **faithful** sizes are. They belong in
 the config's `ModeSizes`, driven by what a capture shows the game expects. Until
 there is one, a number that lets two friends start a match beats one that is
 correct and idle.
+
+---
+
+## 6. Accounts (phase 1)
+
+### 6.1 `db.User.Deleted` has no writer — **P2**
+
+`internal/baas/accounts.go`'s federation/login flow and
+`internal/baas/friends.go`'s friend-request target resolution both check
+`user.Deleted` and refuse when it is set — real, load-bearing logic, present
+since early phase 1. But nothing anywhere sets it: no `switchnetctl`
+command, no dashboard control, no HTTP endpoint. A user can never actually
+become `Deleted`, so those checks are currently dead code guarding a state
+that cannot occur, not a working "ban this account" tool.
+
+**Why it matters, and why it is not the same thing as device-account
+disable.** `switchnetctl account disable`/`enable` (`DeleteDeviceAccount`/
+`UndeleteDeviceAccount`) already blocks one console's credential. A
+`user`-level delete is a different, more severe tool: it would block every
+device account under one person at once, and any future Nintendo Account
+link, in a single action — the difference between confiscating one key and
+evicting the tenant.
+
+**Start at** `UserPatch.Deleted *bool` — the column already exists
+(`deleted BOOLEAN NOT NULL DEFAULT FALSE`, migration `0001`), so this is
+wiring, not schema. Add it to `Store.UpdateUser` in both `Memory` and
+`Postgres` (the shared contract test in `internal/db/store_test.go` should
+gain a case), then `switchnetctl account delete-user`/`restore-user`
+mirroring `account disable`/`enable`'s shape and confirmation text exactly.
+
+**Done when** a deleted user cannot log in through any device account, or
+federate a new one, and `restore-user` reverses it — the same acceptance
+shape `TestATokenStopsWorkingAfterItsDeviceAccountsTokensAreRevoked` and its
+sibling tests already use for the device-account case.
