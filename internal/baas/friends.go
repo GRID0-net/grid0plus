@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/presence"
 )
 
 // defaultFriendCount is the page size the console asks for, and the cap applied
@@ -117,33 +118,10 @@ func (s *Server) listFriends(w http.ResponseWriter, r *http.Request, c *caller) 
 	writeJSON(w, http.StatusOK, newCollection(count, out))
 }
 
-// presenceVisibleTo reports whether viewer may see owner's presence.
-//
-// The owner's permissions.presence setting decides:
-//
-//	FRIENDS           any friend (the default)
-//	FAVORITE_FRIENDS  only friends the owner marked as favourites
-//	SELF              nobody
-//
-// The default has to be FRIENDS. SELF as a default is a friend list where
-// everybody is permanently offline and nothing says why.
+// presenceVisibleTo reports whether viewer may see owner's presence. The rule
+// itself lives in internal/presence, shared with NPLN's Friends service.
 func (s *Server) presenceVisibleTo(ctx context.Context, owner db.User, viewerID string) bool {
-	switch owner.Permissions.Presence {
-	case "SELF":
-		return false
-	case "FAVORITE_FRIENDS":
-		// The owner's own favourite flag, on the owner's side of the friendship.
-		f, err := s.store.GetFriendship(ctx, owner.ID, viewerID)
-		if err != nil {
-			return false
-		}
-		return f.Favorite
-	default:
-		// FRIENDS, and anything unrecognised. A setting we do not know must not
-		// silently hide presence.
-		f, err := s.store.GetFriendship(ctx, owner.ID, viewerID)
-		return err == nil && f.UserID != ""
-	}
+	return presence.Visible(ctx, s.store, owner, viewerID)
 }
 
 // ---- PATCH /2.0.0/users/<id>/friends/<id> -------------------------------

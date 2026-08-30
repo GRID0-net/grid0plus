@@ -131,6 +131,39 @@ func Resolve(p db.Presence, now time.Time, reportTTL, consoleTTL time.Duration) 
 	}
 }
 
+// Visible reports whether owner's presence is visible to viewer, per owner's
+// own privacy setting.
+//
+//	FRIENDS           any friend (the default)
+//	FAVORITE_FRIENDS  only friends the owner marked as favourites
+//	SELF              nobody
+//
+// The default has to be FRIENDS. SELF as a default is a friend list where
+// everybody is permanently offline and nothing says why.
+//
+// Shared between BAAS's friend list (internal/baas/friends.go) and NPLN's
+// Friends service, which both need the same answer to "may X see Y online" --
+// the latter to set FriendUser.Relationship's presence_deliverable and
+// presence_receivable, per docs/ROADMAP.md#2.5.
+func Visible(ctx context.Context, store db.Store, owner db.User, viewerID string) bool {
+	switch owner.Permissions.Presence {
+	case "SELF":
+		return false
+	case "FAVORITE_FRIENDS":
+		// The owner's own favourite flag, on the owner's side of the friendship.
+		f, err := store.GetFriendship(ctx, owner.ID, viewerID)
+		if err != nil {
+			return false
+		}
+		return f.Favorite
+	default:
+		// FRIENDS, and anything unrecognised. A setting we do not know must not
+		// silently hide presence.
+		f, err := store.GetFriendship(ctx, owner.ID, viewerID)
+		return err == nil && f.UserID != ""
+	}
+}
+
 // ClearAppFields removes the app fields from every extras scope, leaving any
 // other key alone.
 func ClearAppFields(extras db.ExtrasByScope) db.ExtrasByScope {
