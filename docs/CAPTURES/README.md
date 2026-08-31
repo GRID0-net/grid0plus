@@ -173,7 +173,19 @@ has a `nintendo` block with two fields SwitchNet did not emit:
   per-connection one.
 - `esv` — same 43-character base64url shape, present in *both* the device
   token (dauth) and the app token (aauth)'s `nintendo` blocks. Meaning
-  unknown.
+  unknown. Re-read on 2026-08-31: it is **not** static per console like
+  `x5t#S256` — the device token presented to `accounts.nintendo.com` and the
+  one presented moments later to `/1.0.0/application/token` carry different
+  values despite an identical `kid`, and two separate `/1.0.0/login` calls'
+  app tokens each carry yet another distinct value. Also, every `esv`-bearing
+  token in that capture has `jku`/`kid` naming real Nintendo hosts
+  (`dcert-lp1.ndas.srv.nintendo.net`/`nx-dcert-1`,
+  `acert-lp1.ndas.srv.nintendo.net`/`nx-acert-1`) — but since Nextendo is
+  fully offline from Nintendo just like SwitchNet, that naming can't mean
+  the token is genuinely Nintendo-signed; it just means dauth/aauth-equivalent
+  servers reuse Nintendo's own header shape. So `esv` has to be something a
+  fully offline third-party server can compute — it cannot depend on secret
+  Nintendo key material, whatever it is.
 
 **What SwitchNet does now:** `x5t#S256` is implemented — see
 `jwt.DeviceInfo.X5tS256` and `dauth.Handler.x5tS256` in
@@ -186,11 +198,17 @@ live stack with a real TLS client certificate: the claim matches
 `openssl x509 -fingerprint -sha256` exactly, on both the device token and the
 `application/token` access token it is echoed into.
 
-`esv` is deliberately **not** implemented. Its derivation is unknown, and
-every plausible source (an eTicket, a title key, anything else AES/RSA-derived
-from Nintendo key material) is exactly what CLAUDE.md's first ground rule
-forbids SwitchNet from touching or reproducing. Guessing a value risks being
-worse than omitting the claim.
+`esv` is now implemented as **an experiment, not a confirmed shape** —
+`jwt.NewESV()` fills the claim with 32 bytes of `crypto/rand` on every device
+and app token mint (`internal/dauth/handler.go`'s `sign`,
+`internal/aauth/handler.go`'s app-token issuance). This is not a guess at
+Nintendo-derived meaning: the value's per-mint variance (see above) is
+consistent with a content-meaningless nonce the console only checks for
+presence and shape, not a value it verifies. `TODO(capture-needed)` markers
+are on both call sites — **if hardware testing does not clear `2124-0292`,
+revert this** rather than leaving an unconfirmed guess in place. If a real
+capture ever shows `esv` has actual derived meaning, reconcile against that
+instead.
 
 **What is still open:** whether the console validates either field locally at
 all. JWTs are opaque to the party that did not sign them; there is no direct

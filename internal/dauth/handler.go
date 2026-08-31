@@ -404,6 +404,10 @@ func (h *Handler) sign(dev sjwt.DeviceInfo, clientID string) (string, error) {
 			DeviceType:   dev.DeviceType,
 			IsT:          dev.IsT,
 			X5tS256:      dev.X5tS256,
+			// A fresh value per call, not per console — see DeviceInfo.ESV.
+			// TODO(capture-needed): confirm on hardware this clears 2124-0292;
+			// revert if it does not.
+			ESV: sjwt.NewESV(),
 			// A device token's nintendo block carries no 'di': the device id is
 			// the 'sub'.
 		},

@@ -2,8 +2,10 @@ package jwt
 
 import (
 	"crypto"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"time"
 
@@ -41,22 +43,32 @@ func keyIDFor(pub crypto.PublicKey) KeyID {
 //
 // The wiki does not document two fields a 2026-08-27 capture of a working
 // Nextendo device token showed: 'x5t#S256' and 'esv'. Both are 43-character
-// unpadded base64url strings — the shape of a SHA-256 digest — present on
-// every device token and echoed unchanged into /1.0.0/application/token's
-// access token, so they are static per-console attributes minted once by
-// dauth, not something recomputed per call.
+// unpadded base64url strings — the shape of a SHA-256 digest.
 //
 // 'x5t#S256' is implemented: RFC 7517 §4.9 names this exact key for an X.509
 // SHA-256 certificate thumbprint, and dauth already reads the console's TLS
 // client certificate — untrusted, unverified, exactly as CLAUDE.md requires —
 // so hashing bytes already being read is not new trust placed in Nintendo
-// data, just a real digest of it. See deviceFrom in internal/dauth/handler.go.
+// data, just a real digest of it. It is echoed unchanged into
+// /1.0.0/application/token's access token, so it is a static per-console
+// value. See deviceFrom in internal/dauth/handler.go.
 //
-// 'esv' is not implemented. Its meaning is genuinely unknown, it is not a
-// per-connection value we can safely rehash from the client cert, and every
-// plausible source of it (an eTicket, a title key, anything AES/RSA-derived
-// from Nintendo key material) is exactly what CLAUDE.md's first ground rule
-// forbids SwitchNet from touching. See docs/CAPTURES/README.md.
+// 'esv' is a TODO(capture-needed) experiment, not a confirmed shape. Its
+// meaning is unknown and nothing about it can be derived from Nintendo key
+// material without violating CLAUDE.md's first ground rule — but re-reading
+// the same 2026-08-27 capture on 2026-08-31 showed it is NOT static like
+// 'x5t#S256': the device token presented to accounts.nintendo.com and the one
+// presented moments later to /1.0.0/application/token carry different 'esv'
+// values despite an identical 'kid', and two separate /1.0.0/login calls'
+// application tokens each carry yet another distinct value. That is
+// consistent with a fresh, meaningless-content nonce minted once per token
+// rather than any value derived from the console's identity or key material —
+// which is also consistent with the console only checking that the claim is
+// *present and correctly shaped*, not verifying its content (it has no key to
+// do that with in the first place). NewESV below fills that shape with
+// crypto/rand, claiming no Nintendo-derived meaning for it. See
+// docs/CAPTURES/README.md item 9 and the 2124-0292 investigation notes for
+// why this is worth trying on hardware before treating it as ruled out.
 type DeviceInfo struct {
 	// SerialNumber is the console serial, e.g. "XAW10012345678".
 	SerialNumber string `json:"sn"`
@@ -73,6 +85,9 @@ type DeviceInfo struct {
 	// console's TLS client certificate, DER-encoded, per RFC 7517 §4.9. Empty
 	// when nginx passed no client certificate through.
 	X5tS256 string `json:"x5t#S256,omitempty"`
+	// ESV is a fresh, per-mint opaque value of unknown meaning — see the
+	// package doc comment above. Never derived from console identity.
+	ESV string `json:"esv,omitempty"`
 }
 
 // AppInfo is the 'nintendo' claim of an application token, and the block copied
@@ -104,6 +119,10 @@ type AppInfo struct {
 	ProductCode  string `json:"pc,omitempty"`
 	DeviceType   string `json:"dt,omitempty"`
 	IsT          *bool  `json:"ist,omitempty"`
+
+	// ESV — see DeviceInfo.ESV. A 2026-08-27 capture shows it present on an
+	// application token too, not just a device token.
+	ESV string `json:"esv,omitempty"`
 }
 
 // DeviceTokenClaims is the payload of a device token.
@@ -335,6 +354,20 @@ func (i *Issuer) Sign(claims gojwt.Claims) (string, error) {
 
 // NewTokenID returns a fresh 'jti'.
 func NewTokenID() string { return uuid.NewString() }
+
+// NewESV returns a fresh 32-byte random value, base64url-encoded without
+// padding — 43 characters, the shape a real capture shows for 'esv'. See
+// DeviceInfo.ESV: this claims no Nintendo-derived meaning for the value,
+// only the shape.
+func NewESV() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand.Read only fails if the OS entropy source is broken,
+		// which is not a condition this server can recover from.
+		panic("jwt: read random esv: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
 
 // DeriveHexID returns a deterministic lowercase hex id of n bytes, derived from
 // secret and the given parts.
