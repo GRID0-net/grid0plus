@@ -118,13 +118,22 @@ var Scopes = []string{ScopeSelf, ScopeFavoriteFriends, ScopeFriends, ScopeFOAF, 
 // key would silently break whatever depends on it.
 type ExtrasByScope map[string]map[string]any
 
-// EmptyExtras returns an extras block with all five scopes present and empty,
-// which is what the console gets for a new account.
+// EmptyExtras returns an extras block with all five scopes present, seeded
+// with the default keys a 2026-08-27 capture of a working account showed on
+// every scope of a real user — not actually empty maps. 'friends'/'foaf'
+// were previously sent as literally '{}', unlike every top-level UserResponse
+// field, which models.go's doc comment already says the console's JSON
+// reader has been seen to want present rather than omitted; this extends
+// that same rule down into the extras sub-objects, replaying confirmed
+// capture data rather than guessing new keys.
 func EmptyExtras() ExtrasByScope {
 	e := make(ExtrasByScope, len(Scopes))
 	for _, s := range Scopes {
-		e[s] = map[string]any{}
+		e[s] = map[string]any{"playLog": ""}
 	}
+	e[ScopeSelf]["isMediaUploaded"] = true
+	e[ScopeFriends]["isChatActivated"] = true
+	e[ScopeFriends]["isChatInvitable"] = true
 	return e
 }
 
