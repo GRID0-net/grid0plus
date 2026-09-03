@@ -74,6 +74,34 @@ custom Splatfest possible rather than a rename of one of Nintendo's — both
 inputs to the pack encryption, the key and the resource name, are the server's
 to choose.
 
+## Team choice is permanent, and results are honestly incomplete
+
+`CreateFestEntry` records a caller's team for a fest -- self-scoped, the same
+discipline `internal/baas`'s `requireSelf` applies to every user-scoped HTTP
+endpoint: `GetFestEntry` refuses to read another account's choice
+(`PermissionDenied`), matching real Splatfest rules that a pick cannot be
+seen or changed by anyone else before results are public. A second
+`CreateFestEntry` for the same fest and caller is `AlreadyExists`, not a
+silent overwrite -- Splatfest team choice does not have an "undo" in the
+real game, and letting a retried call quietly replace an earlier pick would
+be inventing a feature Nintendo's own version does not have.
+
+`GetFestResult` is **honestly incomplete, not `Unimplemented`**. Every
+sub-result (`Yobisai`, `HonsaiMidterm`, `HonsaiFinal`, `Overall`) comes back
+with `IsValid: false` rather than a computed ratio or point total, because
+SwitchNet has nothing to compute one from: `npln_fest_entries` records who
+picked which team, not who won a battle, and `GameRecord` -- the RPC that
+would report battle outcomes -- is not implemented (see `TODO.md` §1.4).
+Deriving a ratio from entry counts alone was considered and rejected: a
+lopsided sign-up split is not the same thing as a lopsided battle result,
+and showing one dressed as the other would be actively misleading rather
+than merely incomplete. `IsValid` exists in the proto specifically to say
+"not computed yet," so using it is the defensible reading rather than an
+invented number -- the same principle `Schedule`'s honest emptiness follows,
+just for a per-fest resource instead of a boot-time list. See the
+`TODO(capture-needed)` on `GetFestResult` for what a capture would need to
+settle before this can report anything else.
+
 ## Overlapping fests
 
 Two fests live at once is a state the game has no reading for. The operator can

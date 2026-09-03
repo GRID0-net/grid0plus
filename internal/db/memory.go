@@ -33,6 +33,9 @@ type Memory struct {
 	presence       map[string]Presence
 	images         map[string]Image
 	fests          map[string]Fest
+	// festEntries is keyed by fest id then user id: one entry per account per
+	// fest, the same shape friendships uses for its own per-pair map.
+	festEntries map[string]map[string]FestEntry
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
@@ -46,6 +49,7 @@ func NewMemory() *Memory {
 		deviceAccounts: map[string]DeviceAccount{},
 		friendCodes:    map[string]FriendCode{},
 		fests:          map[string]Fest{},
+		festEntries:    map[string]map[string]FestEntry{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -867,6 +871,46 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	defer m.mu.Unlock()
 	delete(m.fests, id)
 	return nil
+}
+
+// ---- fest entries -----------------------------------------------------------
+
+func (m *Memory) CreateFestEntry(_ context.Context, e FestEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if byUser, ok := m.festEntries[e.FestID]; ok {
+		if _, ok := byUser[e.UserID]; ok {
+			return fmt.Errorf("%w: fest entry %s/%s", ErrConflict, e.FestID, e.UserID)
+		}
+	} else {
+		m.festEntries[e.FestID] = map[string]FestEntry{}
+	}
+	m.festEntries[e.FestID][e.UserID] = e
+	return nil
+}
+
+func (m *Memory) GetFestEntry(_ context.Context, festID, userID string) (FestEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	e, ok := m.festEntries[festID][userID]
+	if !ok {
+		return FestEntry{}, ErrNotFound
+	}
+	return e, nil
+}
+
+func (m *Memory) ListFestEntries(_ context.Context, festID string) ([]FestEntry, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]FestEntry, 0, len(m.festEntries[festID]))
+	for _, e := range m.festEntries[festID] {
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
 }
 
 // ---- match history ---------------------------------------------------------

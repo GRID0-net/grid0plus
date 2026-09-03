@@ -232,16 +232,6 @@ hand over untested C.
 **Start at** `switch/`, and serve the seed over plain HTTPS from the dashboard
 or a small endpoint on `cmd/npln`.
 
-### 2.5 Fest results and voting — **P3**
-
-`FestService` has `CreateFestEntry`, `GetFestEntry` and `GetFestResult`; only
-`SelectFestSchedule` and `GetFestDecryptionKey` are implemented. Team choice
-and the final verdict are unimplemented, so a fest currently runs but never
-concludes.
-
-`proto/toyohr/v1/resources.proto` has the full result shape
-(`YobisaiResult`, `HonsaiMidtermResult`, `HonsaiFinalResult`, `OverallResult`).
-
 ---
 
 ## 3. Dashboard

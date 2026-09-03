@@ -70,6 +70,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"findUsers":                 testFindUsers,
 		"userLogin":                 testUserLogin,
 		"fests":                     testFests,
+		"festEntries":               testFestEntries,
 		"matches":                   testMatches,
 		"ping":                      testPing,
 	}
@@ -1285,6 +1286,82 @@ func testFests(t *testing.T, s Store) {
 	// Idempotent: the dashboard's delete button should not error on a second click.
 	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
 		t.Errorf("deleting a missing fest errored: %v", err)
+	}
+}
+
+func testFestEntries(t *testing.T, s Store) {
+	ctx := t.Context()
+	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+
+	alice := makeUser(t, s, "Alice")
+	bob := makeUser(t, s, "Bob")
+
+	entry := FestEntry{
+		FestID: "NXTD-00042", UserID: alice.ID,
+		FestTeam: "wa", FestRegion: "JP", CreatedAt: now,
+	}
+	if err := s.CreateFestEntry(ctx, entry); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	got, err := s.GetFestEntry(ctx, "NXTD-00042", alice.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.FestTeam != "wa" || got.FestRegion != "JP" {
+		t.Errorf("round-tripped %+v, want team wa / region JP", got)
+	}
+
+	// A team choice is permanent: a second CreateFestEntry for the same
+	// fest/account conflicts rather than overwriting the first, even with a
+	// different team.
+	if err := s.CreateFestEntry(ctx, FestEntry{
+		FestID: "NXTD-00042", UserID: alice.ID, FestTeam: "wb", FestRegion: "JP", CreatedAt: now,
+	}); !errors.Is(err, ErrConflict) {
+		t.Errorf("re-entering the same fest returned %v, want ErrConflict", err)
+	}
+	still, err := s.GetFestEntry(ctx, "NXTD-00042", alice.ID)
+	if err != nil {
+		t.Fatalf("get after conflicting create: %v", err)
+	}
+	if still.FestTeam != "wa" {
+		t.Errorf("team changed to %q after a rejected re-entry, want it to stay wa", still.FestTeam)
+	}
+
+	// A different account entering the same fest is unaffected.
+	if err := s.CreateFestEntry(ctx, FestEntry{
+		FestID: "NXTD-00042", UserID: bob.ID, FestTeam: "wb", FestRegion: "JP", CreatedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("create for a second account: %v", err)
+	}
+
+	list, err := s.ListFestEntries(ctx, "NXTD-00042")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d entries, want 2", len(list))
+	}
+	if list[0].UserID != alice.ID || list[1].UserID != bob.ID {
+		t.Errorf("list order = [%s %s], want alice's earlier entry first", list[0].UserID, list[1].UserID)
+	}
+
+	// The same account entering a DIFFERENT fest is a separate entry.
+	if err := s.CreateFestEntry(ctx, FestEntry{
+		FestID: "NXTD-00043", UserID: alice.ID, FestTeam: "wc", FestRegion: "US", CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("create for a second fest: %v", err)
+	}
+	if list, err = s.ListFestEntries(ctx, "NXTD-00042"); err != nil || len(list) != 2 {
+		t.Errorf("entering a different fest changed NXTD-00042's list: %v, err %v", list, err)
+	}
+
+	if _, err := s.GetFestEntry(ctx, "NXTD-00042", "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing entry returned %v, want ErrNotFound", err)
+	}
+
+	if list, err := s.ListFestEntries(ctx, "NXTD-99999"); err != nil || len(list) != 0 {
+		t.Errorf("a fest with no entries returned %v (err %v), want an empty list", list, err)
 	}
 }
 

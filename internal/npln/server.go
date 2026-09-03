@@ -28,6 +28,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/messaging"
 	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/switchnet/internal/rpcauth"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -298,6 +299,12 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 		s.log.Warn("npln: touch presence", "user", c.UserID, "error", err)
 	}
 
+	// Also stored under rpcauth's key, alongside this package's own private
+	// one: internal/toyohr's FestService is registered on this same
+	// s.grpc but cannot import npln (which already imports toyohr) to read
+	// callerKey directly. See rpcauth's package comment for why this is the
+	// seam rather than a second authentication path.
+	ctx = rpcauth.With(ctx, rpcauth.Caller{UserID: c.UserID, DeviceAccountID: c.DeviceAccountID})
 	return context.WithValue(ctx, callerKey{}, c), nil
 }
 

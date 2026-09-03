@@ -320,6 +320,20 @@ type Fest struct {
 	UpdatedAt time.Time
 }
 
+// FestEntry is one account's declared team for a fest -- what
+// CreateFestEntry records.
+//
+// Permanent once made: Splatoon 3's own Splatfest rules do not let a player
+// switch teams after picking, which is why the store contract has no update
+// path for one, only Create (conflicts on a repeat) and Get/List.
+type FestEntry struct {
+	FestID     string
+	UserID     string
+	FestTeam   string
+	FestRegion string
+	CreatedAt  time.Time
+}
+
 // Match is one game session NPLN's matchmaking queue has formed, recorded
 // for the dashboard's match history.
 //
@@ -404,6 +418,15 @@ type Store interface {
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.
 	DeleteFest(ctx context.Context, id string) error
+
+	// CreateFestEntry records one account's team choice for a fest. Returns
+	// ErrConflict if this account has already entered this fest -- a team
+	// choice is permanent, matching Splatoon 3's own Splatfest rules.
+	CreateFestEntry(ctx context.Context, e FestEntry) error
+	// GetFestEntry returns one account's entry for a fest, or ErrNotFound.
+	GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error)
+	// ListFestEntries returns every entry for a fest, for tallying a result.
+	ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error)
 
 	// ---- match history (phase 2) ----
 

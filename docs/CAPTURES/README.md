@@ -223,9 +223,13 @@ fields was wrong or missing, as opposed to a generic module-2124 failure.
 ## Phase 2 — Splatoon 3 (NPLN)
 
 In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
-and already has fourteen of its own `TODO(capture-needed)` markers -- this section
-was written when the phase genuinely had none yet and was never updated once
-it did, which is exactly the kind of drift this file exists to prevent.
+and already has a growing list of its own `TODO(capture-needed)` markers --
+this section was written when the phase genuinely had none yet and was not
+kept in step as more accumulated (an earlier version of this paragraph
+named a specific count; it had already drifted from `grep -rn
+'TODO(capture-needed)' internal/`'s real total by the time this sentence was
+written, which is exactly the kind of drift this file exists to prevent, so
+this version deliberately names no number to keep stale).
 
 ### What is already guessed
 
@@ -314,6 +318,21 @@ it did, which is exactly the kind of drift this file exists to prevent.
   while the console was off has to still be there -- but nothing confirms it
   against a real client. Getting it backwards either loses an invite
   silently or replays a stale one on every reconnect.
+- **`FestEntry`'s resource-name shape**
+  (`internal/toyohr/fest_entries.go`, `festEntryProto`): follows the same
+  `tenants/<t>/fests/<ID>/...` convention `GetFestDecryptionKey` already
+  uses, extended with an `entries/<userID>` suffix -- but nothing confirms
+  what `CreateFestEntry`'s response actually names a new entry, or whether
+  the console parses this field at all rather than only checking the RPC
+  succeeded.
+- **Whether an all-`is_valid: false` `FestResult` reads as "not concluded"**
+  (`internal/toyohr/fest_entries.go`, `GetFestResult`): SwitchNet has no real
+  battle-outcome data (`npln_fest_entries` records who picked which team,
+  not who won, and `GameRecord` is unimplemented), so every sub-result
+  reports `IsValid: false` rather than a fabricated ratio. Whether the
+  console reads that as "the fest has not concluded yet" (leaving it
+  running, the same as before this RPC existed) or as a valid but empty
+  outcome is unconfirmed either way.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not
@@ -327,6 +346,7 @@ mitmproxy, and it does need the console.
 | the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
 | an invite sent while the receiving console is off, then a boot | `Messaging.RecvMessage`'s empty-resume-token behaviour, and its resource-name shapes |
 | post-match results upload | `GameRecord` |
+| picking a team during a running fest, then the fest concluding | `CreateFestEntry`'s response shape and `GetFestResult`'s real (non-`is_valid:false`) content |
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
 IPS patch generator that disables TLS verification *inside Splatoon 3

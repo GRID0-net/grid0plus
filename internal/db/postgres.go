@@ -1027,6 +1027,51 @@ func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 	return f, nil
 }
 
+// ---- fest entries -----------------------------------------------------------
+
+const festEntryColumns = `fest_id, user_id, fest_team, fest_region, created_at`
+
+func (p *Postgres) CreateFestEntry(ctx context.Context, e FestEntry) error {
+	// No ON CONFLICT clause, unlike CreateMatch: a team choice is permanent,
+	// so a second attempt for the same fest/account must surface as
+	// ErrConflict rather than be silently absorbed.
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_fest_entries (`+festEntryColumns+`) VALUES ($1, $2, $3, $4, $5)`,
+		e.FestID, e.UserID, e.FestTeam, e.FestRegion, e.CreatedAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error) {
+	var e FestEntry
+	err := p.pool.QueryRow(ctx,
+		`SELECT `+festEntryColumns+` FROM npln_fest_entries WHERE fest_id = $1 AND user_id = $2`,
+		festID, userID,
+	).Scan(&e.FestID, &e.UserID, &e.FestTeam, &e.FestRegion, &e.CreatedAt)
+	if err != nil {
+		return FestEntry{}, mapErr(err)
+	}
+	return e, nil
+}
+
+func (p *Postgres) ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+festEntryColumns+` FROM npln_fest_entries WHERE fest_id = $1 ORDER BY created_at`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []FestEntry
+	for rows.Next() {
+		var e FestEntry
+		if err := rows.Scan(&e.FestID, &e.UserID, &e.FestTeam, &e.FestRegion, &e.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, e)
+	}
+	return out, mapErr(rows.Err())
+}
+
 // ---- match history ---------------------------------------------------------
 
 const matchColumns = `id, tenant, mode, host_user_id, player_ids, forced, created_at`

@@ -112,6 +112,50 @@ This would close it completely rather than fix anything.
 
 ---
 
+## Does the console treat an all-`is_valid: false` FestResult as "not concluded"?
+
+`GetFestResult` now answers rather than returning `Unimplemented`, but every
+sub-result (`Yobisai`, `HonsaiMidterm`, `HonsaiFinal`, `Overall`) reports
+`IsValid: false` -- SwitchNet has no real battle-outcome data to compute a
+ratio or point total from (`npln_fest_entries` records team *choice*, not who
+won, and `GameRecord` is unimplemented), and deriving one from entry counts
+alone would be actively misleading rather than merely incomplete.
+
+Two readings are both plausible for what the console does with an
+all-invalid result: treats the fest as still running (the same as before
+`GetFestResult` existed, since it previously errored), or shows an empty/tied
+outcome. Nothing here can tell which without seeing it happen.
+
+**Proceeding on:** `IsValid: false` is what the proto's own field exists to
+say, so it is the defensible reading rather than inventing a plausible ratio.
+
+**Changes if answered:** `internal/toyohr/fest_entries.go`'s `GetFestResult`.
+If the console needs a genuinely valid result, the entry-count-derived ratio
+this pass rejected becomes the next thing to reconsider -- explicitly, in a
+commit that says why it is no longer considered misleading enough to avoid.
+
+---
+
+## What does `CreateFestEntry`'s response actually name a new entry?
+
+`festEntryProto` builds `tenants/<t>/fests/<ID>/entries/<userID>`, extending
+`GetFestDecryptionKey`'s already-confirmed `tenants/<t>/fests/<ID>/...`
+prefix with an `entries/<userID>` suffix that itself is not confirmed by any
+capture. `GetFestEntry`/`GetFestResult`'s own names follow the same pattern
+for the same reason -- consistency with an established convention, not new
+evidence.
+
+**Proceeding on:** the extended prefix, parsed by
+`festEntryIDsFromResourceName` the same lenient way `lastSegment` parses
+NPLN's other resource names (per `docs/CAPTURES/README.md`'s "already
+guessed" list) -- a wrong suffix costs a cosmetic mismatch, not a broken
+`Create`/`Get`.
+
+**Changes if answered:** `internal/toyohr/fest_entries.go`'s `festEntryProto`
+and `festEntryIDsFromResourceName`.
+
+---
+
 ## How should the dashboard authenticate a person, long term?
 
 Today it is a shared token (`dashboard.token`), and unset there is none. That is
