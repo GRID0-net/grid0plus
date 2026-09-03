@@ -362,6 +362,23 @@ type Match struct {
 // forever.
 const DefaultMatchListLimit = 200
 
+// Stats is a set of row counts across the main tables, for the dashboard's
+// Debug tab. Deleted rows (a soft-deleted user, a soft-deleted device
+// account) are counted separately rather than excluded, so the two numbers
+// together tell an operator whether "nobody's here" means "empty database"
+// or "everyone got deleted".
+type Stats struct {
+	Users                 int
+	DeletedUsers          int
+	DeviceAccounts        int
+	DeletedDeviceAccounts int
+	Devices               int
+	Friendships           int
+	Fests                 int
+	Matches               int
+	Images                int
+}
+
 type Store interface {
 	// Ping reports whether the store is reachable.
 	//
@@ -405,6 +422,12 @@ type Store interface {
 	GetDeviceAccount(ctx context.Context, id string) (DeviceAccount, error)
 	// ListDeviceAccounts returns a user's device accounts, excluding deleted ones.
 	ListDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
+	// ListAllDeviceAccounts returns a user's device accounts, deleted ones
+	// included. For the dashboard's Debug tab: undeleting one requires being
+	// able to find it in the first place, which ListDeviceAccounts's
+	// existing exclusion (correct for the console-facing paths it serves)
+	// makes impossible.
+	ListAllDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
 	// DeleteDeviceAccount marks a device account deleted.
 	DeleteDeviceAccount(ctx context.Context, userID, id string) error
 	// ---- splatfests (phase 2) ----
@@ -531,6 +554,14 @@ type Store interface {
 	CreateImage(ctx context.Context, img Image) error
 	// GetImage returns an image by id, or ErrNotFound.
 	GetImage(ctx context.Context, id string) (Image, error)
+
+	// ---- operator debugging ----
+
+	// Stats returns row counts across the main tables, for the dashboard's
+	// Debug tab. A cheap, approximate sanity check ("did `make seed` actually
+	// write anything") rather than a metrics endpoint — nothing here is
+	// expected to be called often enough to need to be fast.
+	Stats(ctx context.Context) (Stats, error)
 
 	// Close releases the store's resources.
 	Close() error

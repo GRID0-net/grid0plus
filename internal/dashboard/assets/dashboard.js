@@ -677,6 +677,184 @@ function renderPlayerDetail(d) {
     </div>`;
 }
 
+// ---- debug ------------------------------------------------------------
+
+// [key in the /api/debug/stats response, label] -- listed rather than
+// iterated over Object.entries so the order on the page is deliberate and a
+// key the server adds later does not silently appear at a random spot.
+const DEBUG_STAT_LABELS = [
+  ["users", "Users"],
+  ["deletedUsers", "Deleted users"],
+  ["deviceAccounts", "Device accounts"],
+  ["deletedDeviceAccounts", "Deleted device accounts"],
+  ["devices", "Devices seen"],
+  ["friendships", "Friendship rows"],
+  ["fests", "Splatfests"],
+  ["matches", "Matches recorded"],
+  ["images", "Images stored"],
+];
+
+function renderDebugStats(stats) {
+  $("#debug-stats").replaceChildren(
+    ...DEBUG_STAT_LABELS.map(([key, label]) => {
+      const div = document.createElement("div");
+      div.className = "debug-stat";
+      div.innerHTML =
+        `<span class="debug-stat-value">${stats[key] ?? 0}</span>` +
+        `<span class="debug-stat-label">${label}</span>`;
+      return div;
+    })
+  );
+}
+
+async function loadDebugStats() {
+  try {
+    renderDebugStats(await api("/api/debug/stats"));
+  } catch (e) {
+    $("#debug-stats").replaceChildren(
+      Object.assign(document.createElement("p"), {
+        className: "empty",
+        textContent: "Could not load database stats: " + e.message,
+      })
+    );
+  }
+}
+
+$("#debug-stats-refresh").addEventListener("click", loadDebugStats);
+
+function presenceRowsHTML(p) {
+  return `<ul class="player-detail-list">
+    <li><span class="badge ${stateClass(p.state)}">${stateWord(p.state)}</span>${
+      p.appId ? ` <span class="meta">${escape(p.appId)}</span>` : ""
+    }</li>
+    <li class="meta">reported ${p.reportedAt ? ago(p.reportedAt) : "never"}</li>
+    <li class="meta">last seen ${p.lastSeenAt ? ago(p.lastSeenAt) : "never"}</li>
+    ${p.logoutAt ? `<li class="meta">signed out ${ago(p.logoutAt)}</li>` : ""}
+  </ul>`;
+}
+
+function renderDebugAccount(d) {
+  $("#debug-lookup-empty").hidden = true;
+
+  const devicesHTML = d.deviceAccounts.length
+    ? d.deviceAccounts
+        .map(
+          (da) => `
+      <li>
+        <code>${escape(da.id)}</code>
+        <span class="meta">linked ${ago(da.createdAt)}</span>
+        ${da.deletedAt ? `<span class="pill warn">deleted ${ago(da.deletedAt)}</span>` : ""}
+        ${
+          da.tokensRevokedBefore
+            ? `<span class="pill" title="Tokens minted before this instant are refused">tokens revoked ${ago(da.tokensRevokedBefore)}</span>`
+            : ""
+        }
+        <span class="actions">
+          <button class="btn btn-ghost btn-tiny" data-revoke="${escape(da.id)}">Revoke tokens</button>
+          ${
+            da.deletedAt
+              ? `<button class="btn btn-ghost btn-tiny" data-undelete-da="${escape(da.id)}">Undelete</button>`
+              : `<button class="btn btn-ghost btn-danger btn-tiny" data-delete-da="${escape(da.id)}">Delete</button>`
+          }
+        </span>
+      </li>`
+        )
+        .join("")
+    : `<li class="empty">No device accounts.</li>`;
+
+  $("#debug-account").innerHTML = `
+    <div class="debug-account-head">
+      <div>
+        <h3>${escape(d.nickname || d.id)} <code class="meta">${escape(d.id)}</code></h3>
+        <p class="meta">account since ${ago(d.createdAt)}</p>
+      </div>
+      <button class="btn btn-ghost${d.deleted ? "" : " btn-danger"}" id="debug-toggle-deleted"
+        data-id="${escape(d.id)}" data-next="${!d.deleted}">
+        ${d.deleted ? "Undelete account" : "Delete account"}
+      </button>
+    </div>
+    <div class="debug-presence-cols">
+      <section>
+        <h4>Raw presence <span class="meta" title="What the console last reported, unresolved">as stored</span></h4>
+        ${presenceRowsHTML(d.rawPresence)}
+      </section>
+      <section>
+        <h4>Effective presence <span class="meta" title="What the friends applet actually sees, resolved the same way everywhere else">resolved</span></h4>
+        ${presenceRowsHTML(d.effectivePresence)}
+      </section>
+    </div>
+    <section>
+      <h4>Device accounts <span class="meta">${d.deviceAccounts.length}</span></h4>
+      <ul class="player-detail-list debug-device-list">${devicesHTML}</ul>
+    </section>`;
+}
+
+async function lookupDebugAccount(id) {
+  const container = $("#debug-account");
+  container.innerHTML = `<p class="empty">Loading…</p>`;
+  try {
+    renderDebugAccount(await api(`/api/debug/accounts/${encodeURIComponent(id)}`));
+  } catch (e) {
+    container.innerHTML = `<p class="empty">Could not load this account: ${escape(e.message)}</p>`;
+  }
+}
+
+$("#debug-lookup-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const id = $("#debug-lookup-id").value.trim();
+  if (id) lookupDebugAccount(id);
+});
+
+$("#debug-account").addEventListener("click", async (e) => {
+  const toggleAccount = e.target.closest("#debug-toggle-deleted");
+  const revoke = e.target.closest("[data-revoke]");
+  const deleteDa = e.target.closest("[data-delete-da]");
+  const undeleteDa = e.target.closest("[data-undelete-da]");
+  if (!toggleAccount && !revoke && !deleteDa && !undeleteDa) return;
+
+  const id = $("#debug-lookup-id").value.trim();
+  try {
+    if (toggleAccount) {
+      const next = toggleAccount.dataset.next === "true";
+      if (
+        next &&
+        !confirm(`Delete account ${toggleAccount.dataset.id}? It will be refused at login until undeleted here.`)
+      ) {
+        return;
+      }
+      await api(`/api/debug/accounts/${encodeURIComponent(toggleAccount.dataset.id)}/deleted`, {
+        method: "POST",
+        body: JSON.stringify({ deleted: next }),
+      });
+    } else if (revoke) {
+      await api(
+        `/api/debug/accounts/${encodeURIComponent(id)}/device-accounts/${encodeURIComponent(revoke.dataset.revoke)}/revoke-tokens`,
+        { method: "POST" }
+      );
+    } else if (deleteDa) {
+      if (
+        !confirm(
+          `Delete device account ${deleteDa.dataset.deleteDa}? The console it belongs to will be refused at login until undeleted here.`
+        )
+      ) {
+        return;
+      }
+      await api(
+        `/api/debug/accounts/${encodeURIComponent(id)}/device-accounts/${encodeURIComponent(deleteDa.dataset.deleteDa)}/deleted`,
+        { method: "POST", body: JSON.stringify({ deleted: true }) }
+      );
+    } else if (undeleteDa) {
+      await api(
+        `/api/debug/accounts/${encodeURIComponent(id)}/device-accounts/${encodeURIComponent(undeleteDa.dataset.undeleteDa)}/deleted`,
+        { method: "POST", body: JSON.stringify({ deleted: false }) }
+      );
+    }
+    await lookupDebugAccount(id);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 // ---- live stream ----------------------------------------------------------
 
 function setLive(state, label) {
@@ -771,6 +949,12 @@ refresh();
 // explain the outage was the one that rendered empty during it.
 loadHealth();
 setInterval(loadHealth, 15000);
+
+// Same reasoning as loadHealth above, and the same-slow cadence as the rest
+// of refresh(): stats are a sanity check, not a live view, and nothing here
+// needs to update between one poll and the next.
+loadDebugStats();
+setInterval(loadDebugStats, 30000);
 
 connect();
 // Presence arrives on the stream; this catches everything else -- a fest

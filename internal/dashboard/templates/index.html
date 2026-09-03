@@ -48,6 +48,7 @@
   <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
   <button role="tab" aria-selected="false" data-view="health">Health</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
+  <button role="tab" aria-selected="false" data-view="debug">Debug</button>
 </nav>
 
 <main>
@@ -232,6 +233,38 @@
         now, produce assets in Switch Toolbox and point
         <code>switchnetctl fest build</code> at them.
       </p>
+    </div>
+  </section>
+
+  <!-- Debug -->
+  <section id="view-debug" class="view">
+    <div class="panel panel-note">
+      <h2>This tab writes to the database</h2>
+      <p>Every control below acts on the same store BAAS and NPLN read from
+        directly, with no confirmation beyond the one dialog a destructive
+        action shows. It exists for an operator who already knows what a
+        device account or a <code>Deleted</code> flag does -- see
+        <code>CLAUDE.md</code> if not.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Database</h2>
+        <button type="button" class="btn btn-ghost btn-tiny" id="debug-stats-refresh">Refresh</button>
+      </div>
+      <div id="debug-stats" class="debug-stats"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Account lookup</h2>
+      <form id="debug-lookup-form" class="debug-lookup">
+        <input type="text" id="debug-lookup-id" placeholder="Account id (16 hex characters)" autocapitalize="off" spellcheck="false">
+        <button type="submit" class="btn btn-primary">Look up</button>
+      </form>
+      <p class="empty" id="debug-lookup-empty">Look up an account by id to see its
+        raw and resolved presence side by side, and to manage its device
+        accounts.</p>
+      <div id="debug-account"></div>
     </div>
   </section>
 </main>

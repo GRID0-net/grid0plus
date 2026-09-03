@@ -678,3 +678,60 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   .player-detail-cols { grid-template-columns: 1fr; }
 }
 .svc-unknown .svc-detail { color: var(--fg-dim); }
+
+/* ---- debug -----------------------------------------------------------
+ *
+ * Deliberately plainer than the rest of the page: no gradient banner, no
+ * avatar colours. This tab edits rows directly, and looking like every
+ * other panel is how a destructive control ends up clicked as casually as
+ * the Hold button on a fest. */
+
+.debug-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.debug-stat {
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.debug-stat-value {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.debug-stat-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--fg-dim); font-weight: 600;
+}
+
+.debug-lookup { display: flex; gap: 8px; margin-bottom: 4px; }
+.debug-lookup input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
+
+.debug-account-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.debug-account-head h3 { margin: 0 0 4px; font-size: 17px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.debug-account-head h3 code {
+  font-size: 12px; font-weight: 600; color: var(--fg-dim);
+  background: var(--bg-sunk); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px;
+}
+
+.debug-presence-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.debug-device-list li { flex-wrap: wrap; }
+.debug-device-list li .meta { margin-left: 0; }
+.debug-device-list li .actions { display: flex; gap: 6px; margin-left: auto; }
+
+@media (max-width: 480px) {
+  .debug-presence-cols { grid-template-columns: 1fr; }
+}

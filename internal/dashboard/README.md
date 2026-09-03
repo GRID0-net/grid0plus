@@ -104,6 +104,27 @@ answer to substitute — it has to come from the pack's `summary.yml`.
 Validation errors are passed through to the page verbatim rather than flattened
 into "invalid", because "not on a two-hour slot boundary" *is* the explanation.
 
+## The Debug tab shows raw state next to resolved state, on purpose
+
+`GET /api/debug/accounts/{id}` (`debug.go`) is the one view on this page that
+does **not** go through `internal/presence.Resolver` alone -- it shows the
+raw `db.Presence` row next to the resolved one. The two are expected to
+disagree: a console idle in the Home Menu reports nothing (`RawPresence`
+stays whatever it last was, `ReportedAt` empty) while still touching
+presence on every poll, so `EffectivePresence` reads `ONLINE`. That gap is
+exactly the shape of both bugs this codebase is built around (see
+CLAUDE.md), so the Debug tab is where an operator goes to see it directly
+instead of inferring it from the Players tab looking wrong.
+
+The account and device-account controls next to it (`Deleted` toggle, token
+revocation, device-account delete/undelete) all wrap existing `db.Store`
+methods with no new state of their own -- see `db.Stats` and
+`db.Store.ListAllDeviceAccounts` (added for this tab; `ListDeviceAccounts`
+excludes deleted rows, which would make undeleting one impossible to find).
+Every write here is exactly as reversible as the underlying store method
+already is: `Deleted` is a flag, not a row removal, and there is no path
+from this tab to `DELETE FROM users`.
+
 ## Authentication is a shared token, and that is deliberate
 
 `dashboard.token` guards every route except the static assets. Unset, there is

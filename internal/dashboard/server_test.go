@@ -328,7 +328,10 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 	srv, _ := newTestServer(t, "s3cret", time.Now().UTC())
 	h := srv.Handler()
 
-	for _, path := range []string{"/", "/api/overview", "/api/players", "/api/players/x", "/api/fests", "/api/matches"} {
+	for _, path := range []string{
+		"/", "/api/overview", "/api/players", "/api/players/x", "/api/fests", "/api/matches",
+		"/api/debug/stats", "/api/debug/accounts/x",
+	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusUnauthorized {

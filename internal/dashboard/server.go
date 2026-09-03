@@ -172,6 +172,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))
 	mux.HandleFunc("POST /api/matchmaking/tickets/{id}/cancel", s.guard(s.handleCancelTicket))
 
+	mux.HandleFunc("GET /api/debug/stats", s.guard(s.handleDebugStats))
+	mux.HandleFunc("GET /api/debug/accounts/{id}", s.guard(s.handleDebugAccount))
+	mux.HandleFunc("POST /api/debug/accounts/{id}/deleted", s.guard(s.handleDebugSetAccountDeleted))
+	mux.HandleFunc("POST /api/debug/accounts/{id}/device-accounts/{deviceAccountId}/revoke-tokens", s.guard(s.handleDebugRevokeDeviceAccountTokens))
+	mux.HandleFunc("POST /api/debug/accounts/{id}/device-accounts/{deviceAccountId}/deleted", s.guard(s.handleDebugSetDeviceAccountDeleted))
+
 	mux.HandleFunc("GET /api/events", s.guard(s.handleEvents))
 
 	return mux

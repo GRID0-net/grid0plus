@@ -292,6 +292,23 @@ func (m *Memory) ListDeviceAccounts(_ context.Context, userID string) ([]DeviceA
 	return out, nil
 }
 
+// ListAllDeviceAccounts returns a user's device accounts, deleted ones
+// included -- see the interface doc for why ListDeviceAccounts's own
+// exclusion does not serve the Debug tab.
+func (m *Memory) ListAllDeviceAccounts(_ context.Context, userID string) ([]DeviceAccount, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []DeviceAccount
+	for _, da := range m.deviceAccounts {
+		if da.UserID == userID {
+			out = append(out, da)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
 // DeleteDeviceAccount marks a device account deleted.
 func (m *Memory) DeleteDeviceAccount(_ context.Context, userID, id string) error {
 	m.mu.Lock()
@@ -765,6 +782,40 @@ func (m *Memory) GetImage(_ context.Context, id string) (Image, error) {
 		return Image{}, ErrNotFound
 	}
 	return img, nil
+}
+
+// ---- operator debugging ----------------------------------------------------
+
+// Stats counts rows directly, holding the read lock for the whole pass — a
+// snapshot at one instant rather than a sum of independent reads, the same
+// consistency PostgreSQL's own single-query Stats gets from running in one
+// statement.
+func (m *Memory) Stats(context.Context) (Stats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	s := Stats{
+		Users:   len(m.users),
+		Devices: len(m.devices),
+		Fests:   len(m.fests),
+		Matches: len(m.matches),
+		Images:  len(m.images),
+	}
+	for _, u := range m.users {
+		if u.Deleted {
+			s.DeletedUsers++
+		}
+	}
+	for _, da := range m.deviceAccounts {
+		s.DeviceAccounts++
+		if da.DeletedAt != nil {
+			s.DeletedDeviceAccounts++
+		}
+	}
+	for _, byFriend := range m.friendships {
+		s.Friendships += len(byFriend)
+	}
+	return s, nil
 }
 
 // ---- helpers -------------------------------------------------------------

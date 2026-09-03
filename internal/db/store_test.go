@@ -73,6 +73,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"festEntries":               testFestEntries,
 		"matches":                   testMatches,
 		"ping":                      testPing,
+		"stats":                     testStats,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -389,6 +390,16 @@ func testDeviceAccounts(t *testing.T, s Store) {
 	}
 	if len(das) != 0 {
 		t.Errorf("a deleted device account is still listed: %+v", das)
+	}
+
+	// ListAllDeviceAccounts still shows it -- the Debug tab's undelete button
+	// has nothing to act on otherwise.
+	all, err := s.ListAllDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].DeletedAt == nil {
+		t.Errorf("ListAllDeviceAccounts = %+v, want the one deleted device account", all)
 	}
 
 	// Deleting twice, or deleting somebody else's, is not found.
@@ -1441,5 +1452,46 @@ func testMatches(t *testing.T, s Store) {
 func testPing(t *testing.T, s Store) {
 	if err := s.Ping(context.Background()); err != nil {
 		t.Errorf("Ping on a live store: %v", err)
+	}
+}
+
+// testStats guards against Stats drifting from what the other contract tests
+// already establish -- a friendship written as two rows (testFriendships),
+// deleted counted alongside total rather than instead of it (testUsers).
+func testStats(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	before, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+
+	a := makeUser(t, s, "Alice")
+	b := makeUser(t, s, "Bob")
+	if err := s.AddFriendship(ctx, a.ID, b.ID, time.Now()); err != nil {
+		t.Fatalf("add friendship: %v", err)
+	}
+	deleted := true
+	if _, err := s.UpdateUser(ctx, b.ID, UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+
+	got, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if got.Users != before.Users+2 {
+		t.Errorf("users = %d, want %d", got.Users, before.Users+2)
+	}
+	if got.DeletedUsers != before.DeletedUsers+1 {
+		t.Errorf("deletedUsers = %d, want %d", got.DeletedUsers, before.DeletedUsers+1)
+	}
+	// makeUser creates one device account per user.
+	if got.DeviceAccounts != before.DeviceAccounts+2 {
+		t.Errorf("deviceAccounts = %d, want %d", got.DeviceAccounts, before.DeviceAccounts+2)
+	}
+	// AddFriendship writes both directions.
+	if got.Friendships != before.Friendships+2 {
+		t.Errorf("friendships = %d, want %d", got.Friendships, before.Friendships+2)
 	}
 }

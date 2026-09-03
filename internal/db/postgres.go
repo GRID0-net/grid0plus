@@ -415,6 +415,29 @@ func (p *Postgres) ListDeviceAccounts(ctx context.Context, userID string) ([]Dev
 	return out, mapErr(rows.Err())
 }
 
+// ListAllDeviceAccounts returns a user's device accounts, deleted ones
+// included -- see the interface doc for why ListDeviceAccounts's own
+// exclusion does not serve the Debug tab.
+func (p *Postgres) ListAllDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+deviceAccountColumns+` FROM device_accounts
+		 WHERE user_id = $1 ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []DeviceAccount
+	for rows.Next() {
+		da, err := scanDeviceAccount(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, da)
+	}
+	return out, mapErr(rows.Err())
+}
+
 // DeleteDeviceAccount marks a device account deleted.
 func (p *Postgres) DeleteDeviceAccount(ctx context.Context, userID, id string) error {
 	tag, err := p.pool.Exec(ctx, `
@@ -1113,4 +1136,26 @@ func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) 
 		out = append(out, m)
 	}
 	return out, mapErr(rows.Err())
+}
+
+// ---- operator debugging ----------------------------------------------------
+
+// Stats counts rows across the main tables in one query, so the numbers are
+// a consistent snapshot rather than drifting between separate round trips
+// under concurrent writes.
+func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
+	var s Stats
+	err := p.pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM users),
+		(SELECT count(*) FROM users WHERE deleted),
+		(SELECT count(*) FROM device_accounts),
+		(SELECT count(*) FROM device_accounts WHERE deleted_at IS NOT NULL),
+		(SELECT count(*) FROM devices),
+		(SELECT count(*) FROM friendships),
+		(SELECT count(*) FROM npln_fests),
+		(SELECT count(*) FROM npln_matches),
+		(SELECT count(*) FROM images)
+	`).Scan(&s.Users, &s.DeletedUsers, &s.DeviceAccounts, &s.DeletedDeviceAccounts,
+		&s.Devices, &s.Friendships, &s.Fests, &s.Matches, &s.Images)
+	return s, mapErr(err)
 }
