@@ -167,6 +167,52 @@ find the right splice point, which was not verified with confidence.
 BFRES *model* authoring and BYAML editing (team names, idol dialogue) remain
 completely untouched either way.
 
+**Also settled 2026-09-03, against
+[`RAMDRAGONS/Splatoon-FesData`](https://github.com/RAMDRAGONS/Splatoon-FesData)
+(37 independent real fest packs, cross-checked against `JUEA-00210` above):
+what compression format each real texture slot actually uses, and that
+img2bntx's uncompressed output is a bigger gap than "larger files."** Every
+happi-coat and signboard slot is `0x1a06`; every icon slot is `0x2006`. That
+looks like it should mean BC7 for the small icons and something lighter for
+the large happi coats -- backwards from what "larger asset, lighter format"
+would suggest, which is exactly the kind of guess CLAUDE.md rule 6 warns
+against making from a plausible-looking pattern. Read against
+[`ScanMountGoat/bntx`](https://github.com/ScanMountGoat/bntx)'s own
+`SurfaceFormat` enum (`src/lib.rs`) instead of guessed: **`0x1a06` is
+`BC1Srgb`, `0x2006` is `BC7Srgb`** -- happi coats and the signboard are BC1,
+the icons are BC7, the reverse of the size-based guess. (Not ASTC anywhere;
+this project has no reason to think Splatfest textures use it.)
+
+Verified end to end, not just read from source: built
+[`ScanMountGoat/ultimate_tex`](https://github.com/ScanMountGoat/ultimate_tex)'s
+`ultimate_tex_cli` from source (`cargo build --release`, needing
+`RUSTFLAGS="-C link-arg=-lstdc++"` -- its ASTC backend links a compiled
+ISPC/C++ object the Rust linker does not pull `libstdc++` in for on its
+own) and ran it against synthetic images matching each real slot's exact
+dimensions:
+
+| slot | real dimensions | real format | real mips | `-f` flag that reproduced both, byte for byte |
+| --- | --- | --- | --- | --- |
+| happi coat | 512×512 | `0x1a06` | 10 | `BC1RgbaUnormSrgb` |
+| signboard | 870×340 | `0x1a06` | 10 | `BC1RgbaUnormSrgb` |
+| icon | 64×64 | `0x2006` | 7 | `BC7RgbaUnormSrgb` |
+
+The mip counts needed no flag at all -- `ultimate_tex_cli`'s default
+(`Mipmaps::GeneratedAutomatic`, full chain down to 1×1) lands on 10 and 7
+respectively for these exact dimensions, matching the real data without
+`--no-mipmaps` or any override.
+
+This does not change what `ConvertTextures` ships: `ultimate_tex_cli`
+takes the output name from the filename rather than an `-n` flag, and
+picking the right `-f` per slot needs code that knows which named slot an
+image is going into (happi/signboard vs. icon) -- and, per the section
+above, an uncompressed standalone `.bntx` from either tool is not what the
+game loads regardless of compression, since the real asset is the one
+embedded in a `.bfres`'s `FRES` container. Recorded here as the exact,
+verified mapping the next pass needs the moment the FRES-wrapper problem
+is solved, so that pass does not have to re-derive it -- or repeat this
+one's first guess, which had the two formats backwards.
+
 ## The lookup table is not in this repository
 
 `nisasyst`'s IV table is lifted from the game binary, so under CLAUDE.md's first
