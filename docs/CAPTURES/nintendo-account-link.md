@@ -254,3 +254,76 @@ of the NA-link flow settles it.
 The raw `.pcap` is not committed (nothing decrypted, but it is still real
 traffic timing/metadata tied to a real account) — see
 `docs/CAPTURES/raw/` and its own redaction notes in `docs/CAPTURES/README.md`.
+
+---
+
+## External research pass (2026-09-03) — no hardware, wiki + repo cross-check
+
+Before this pass, `CalculateNintendoAccountAuthenticationFingerprint` and a
+few related IPC names (`IOAuthProcedureForNintendoAccountLinkage`,
+`IManagerForSystemService::EnsureIdTokenCacheAsync`/`LoadIdTokenCache`) had
+only been checked against this repo's own captures. This pass went wider,
+cloning [kinnay/NintendoClients' wiki](https://github.com/kinnay/NintendoClients/wiki)
+(`.wiki.git`, since search-engine summaries of it kept paraphrasing rather
+than quoting) and reading it in full, then cross-checking every claim against
+`internal/baas` and `internal/jwt`.
+
+**Confirmed against SwitchNet, not just plausible:**
+
+- `/1.0.0/federation`'s and `POST /1.0.0/users/{id}/link`'s parameter shapes
+  match the wiki exactly, including the two being genuinely separate
+  endpoints (login-time link vs. link-onto-an-existing-session) —
+  `router.go`/`accounts.go` already implement both correctly.
+- The real OAuth scope string the console requests (`openid offline napps
+  urn:oauth:init-sso user user.birthday user.email user.links
+  user.links[].id user.loginId user.screenName user.terms`) — `naScopeIDs` in
+  `nalink.go` already has every one of these mapped.
+- The BAAS id_token's real header/payload shape (`alg: RS256`, `jku` →
+  `/1.0.0/certificates`, `sub`/`bs:did` as `%016x`, `aud: ed9e2f05d286f7b8`
+  fixed, `typ: id_token` fixed) — matches `internal/jwt` as built.
+- NPLN access tokens are `ES256`, every other token `RS256` — already the
+  case (`internal/jwt/README.md`'s "ES256, and why it is a separate path").
+- `m-lp1.baas.nintendo.com` (21.0.0+, mTLS-only, `nnAccount` sysmodule)
+  alongside the original host (still used by the friends sysmodule) —
+  already both present in `internal/nintendo/hosts.go`.
+- `extras.self`'s field list is exactly `playLog` and `nxAccount` — nothing
+  else. Confirms the existing `nintendoAccountId`-stripped-from-`extras.self`
+  / `nintendoAccountId`-placed-in-`links.nintendoAccount.id` split in
+  `models.go` is the documented shape, not a guess.
+
+**Confirmed absent, not just unfound:** a full-text search of every page in
+the cloned wiki (not a search-engine summary) turns up nothing for
+`fingerprint` in any casing, anywhere. `CalculateNintendoAccountAuthentication
+Fingerprint` is not a documented Nintendo internal on the largest public
+Switch-server reverse-engineering reference. Its existence, inputs and output
+remain an open HYPOTHESIS — this is a stronger negative result than "not
+found yet," and it should not be treated as a real Nintendo protocol detail
+on the strength of its name alone. The same full-text check found `2124-0292`
+and `2124-3122` in none of the wiki's documented module-2124 sub-ranges
+(DAuth/AAuth/BAAS/NAS/HTTP all listed exhaustively), which is consistent
+with — not proof of — the existing "client-side check" reading above.
+
+**A source that turned out not to be one:** `NextendoNetwork/Prelude-Nro`
+(the homebrew used for the 2026-08-25/26/27 Nextendo captures above) bundles
+a file, `Switch nnAccount Private Server Setup.txt`, that reads like a
+reverse-engineering writeup. It is not one — the inline `[cite: N]` markers
+throughout are the signature of an AI-generated research report, and nearly
+every citation traces back to the same kinnay wiki pages already read
+directly here. Worse, its "Known Client IDs" table (`75fe236362ff5f8b` for
+"Nintendo Account Applet" and five others) does not appear anywhere in the
+wiki page it cites as the source — compare against the real table in
+`Account-Server-(Switch).md#known-client-ids`, which lists a completely
+different five values (`6ffd70c434d303c8` NxAccount, `f4e5f2f3e022208b`
+NxLHub, etc. — the ones already used throughout this document). Treat that
+`.txt` file as unreliable for anything not independently verified elsewhere;
+it added no primary information this pass and its one falsifiable table
+turned out to be fabricated.
+
+**Net effect on this repo's code: none.** Nothing found this pass contradicts
+the current implementation — most of it is independent confirmation of
+choices already made. The `nxAccount` byte format and
+`CalculateNintendoAccountAuthenticationFingerprint` remain exactly as open as
+before: unresolvable without a capture, and per CLAUDE.md's ground rule
+against inventing a plausible-looking Nintendo internal, `accounts.go`'s
+placeholder (`nxAccount = naID`) stays as it is rather than being replaced
+with a guess dressed up by this pass's research.
