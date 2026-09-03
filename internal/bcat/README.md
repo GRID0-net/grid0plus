@@ -127,13 +127,45 @@ Nothing here vendors the Rust source: it stays an external, operator-built
 dependency, the same way this repository treats mitmproxy for packet
 captures rather than embedding a proxy.
 
-**What building and running the tool cannot settle:** whether Splatoon 3's
-Splatfest texture slots actually load a standalone `.bntx` shaped this way
-at all, versus a texture embedded in a `.bfres`, and at what resolution.
-That needs a real dumped pack to check against -- see `docs/QUESTIONS.md`.
-BFRES *model* authoring and BYAML editing (team names, idol dialogue) are
-untouched by this: `ConvertTextures` only ever produces a texture file, one
-of TODO.md §2.1's four listed pieces.
+**Settled 2026-09-03, against a real fest pack (`JUEA-00210`), not
+guessed:** a Splatfest does not load a standalone `.bntx`. Its `base` pack
+carries exactly one visual asset, `Model/Fest_JUEA-DUMPLING.bfres.zs` -- an
+`FRES` container (Switch/NX BFRES, magic `"FRES    "`, not the Wii U-era
+`v3.x` format most public BFRES libraries target) with **one embedded BNTX
+texture archive holding five named textures** (`M_HappiA_Alb`,
+`M_HappiB_Alb`, `M_HappiC_Alb`, `IconA_Uia`, `IconB_Uia` -- three team happi
+recolors and two icons) and no model data of any kind (no `FMDL`/`FVTX`
+section anywhere in the file). `ConvertTextures`'s bare `.bntx` output is
+therefore not, on its own, what a console loads for this.
+
+Two things worth recording precisely, since a future pass will need them:
+the embedded BNTX's own header (revision `0x400c`, the `BNTX`/`NX  ` layout)
+matched jam1garner's `bntx` crate **byte for byte** -- direct, real
+confirmation that this project's earlier verification of img2bntx's output
+shape was correct, not just plausible. What is *not* settled: the outer
+FRES container's own pointer/dictionary structure (the multi-texture
+dictionary the embedded BNTX uses, and roughly 4KB of outer-FRES data this
+pass could not identify) was not fully reverse-engineered, because doing so
+with confidence needs either a public spec this pass did not find or
+hardware to test a wrong guess against, and CLAUDE.md's first ground rule
+means the real file this was checked against cannot be committed here as a
+fixture regardless. **Do not build FRES-authoring code from a partial
+understanding of that structure** -- the failure mode is a texture that
+loads and renders as garbage, per TODO.md §2.1's own warning, with no way
+for this project to test it before an operator does.
+
+The best-founded next step, if this is picked up again: same-dimension
+texture *replacement* inside an existing real template (an operator-local
+file, never committed -- the same pattern as `SWITCHNET_BCAT_KEY_MATERIAL`
+below), splicing new swizzled pixel bytes into an already-valid container
+without changing its size or touching any pointer. That is a materially
+smaller, safer problem than authoring a new container's dictionary and
+relocation table from scratch, and was not attempted this pass for the same
+reason: it still needs the multi-texture dictionary walked correctly to
+find the right splice point, which was not verified with confidence.
+
+BFRES *model* authoring and BYAML editing (team names, idol dialogue) remain
+completely untouched either way.
 
 ## The lookup table is not in this repository
 

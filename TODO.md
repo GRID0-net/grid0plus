@@ -166,27 +166,34 @@ encrypts it. What is wanted is uploading a **PNG of the splashart, the tee
 designs, the banners** and having the server produce a loadable pack. Of the
 four pieces that needs, one is now built:
 
-- **Texture encoding + Tegra swizzling — built, by shelling out, not
-  reimplementing.** `internal/bcat.ConvertTextures` (`texture.go`) and
-  `switchnetctl fest build -source-images -texture-converter` turn a
-  directory of PNGs into `.bntx` files by calling an external tool --
-  verified against a real, built copy of
-  [jam1garner/img2bntx](https://github.com/jam1garner/img2bntx), not assumed
-  from its README. See `internal/bcat/README.md` for exactly what that
-  verified (a structurally valid BNTX, real swizzling) and what it did not
-  (whether Splatoon 3 wants a standalone `.bntx` at all -- see
-  `docs/QUESTIONS.md`). This only produces uncompressed RGBA8 textures, no
-  BC1/BC3/BC7 -- larger files, but nothing to get a compression format wrong
-  about.
-- **BFRES authoring** — the container Nintendo's *model* textures live in,
-  as opposed to a standalone `.bntx`. Still not built, and whether it is
-  even needed for a 2D splashart/banner slot is one of the open questions
-  above.
+- **Texture encoding + Tegra swizzling — the raw pixel piece is built, by
+  shelling out, not reimplementing.** `internal/bcat.ConvertTextures`
+  (`texture.go`) and `switchnetctl fest build -source-images
+  -texture-converter` turn a directory of PNGs into `.bntx` files by
+  calling an external tool -- verified against a real, built copy of
+  [jam1garner/img2bntx](https://github.com/jam1garner/img2bntx), not
+  assumed from its README: its BNTX header layout (revision `0x400c`
+  included) matches a real Splatfest's own embedded texture archive **byte
+  for byte** (checked 2026-09-03 against `JUEA-00210`'s real pack). This
+  only produces uncompressed RGBA8 textures, no BC1/BC3/BC7 -- larger
+  files, but nothing to get a compression format wrong about.
+- **BFRES authoring — confirmed necessary, not yet built.** A real
+  Splatfest's only visual asset is one `FRES` container (Switch/NX BFRES,
+  not the Wii U-era format most public BFRES libraries target) with a
+  single embedded multi-texture BNTX archive and no model data. So
+  `ConvertTextures`'s bare `.bntx` is not, on its own, what a console loads.
+  Building the FRES wrapper from scratch needs the outer container's
+  dictionary/relocation structure fully understood first, which this
+  project could not do with confidence from one sample and no hardware to
+  test a wrong guess against -- see `internal/bcat/README.md`'s texture
+  section for exactly what was and was not verified, and the safer
+  same-dimension-replacement approach recommended there as the next step.
 - **BYAML editing** — team names and idol dialogue live in structured data
   inside the pack, not in the images. Still not built.
 
 **Start at** `internal/bcat/texture.go` (`ConvertTextures`) for the texture
-piece; the dashboard's Assets panel
+piece, and `internal/bcat/README.md`'s texture-conversion section for what
+building the FRES wrapper actually needs; the dashboard's Assets panel
 (`internal/dashboard/templates/index.html`) still explains the remaining
 limitation to the operator and has not been wired to this yet.
 
