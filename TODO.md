@@ -152,19 +152,6 @@ being proceeded on (names are inert). Build §2.1 so that changing that
 assumption later is a contained change rather than a rewrite — keep the naming
 decision in one place.
 
-### 2.3 `switchnetctl fest build` — **P2**
-
-One command that takes an assets directory plus a fest id, builds the packs,
-derives the revision from their bytes, writes the seed folder, and registers
-the matching fest — so the id, resource, revision and keys cannot drift apart.
-
-Everything it needs exists: `bcat.BuildPacks`, `bcat.Revision`,
-`Seed.Write`, `toyohr.Service.SaveFest`.
-
-**Why it matters:** those four values agreeing is the entire contract with the
-console. Any path where a human types one of them twice will eventually produce
-`BcatInvalid`, which reaches the player as a generic communication error.
-
 ### 2.4 Serving BCAT natively — **P1 to TEST, and the tooling is now built**
 
 **The blocker here is smaller than earlier notes in this repository claimed.**

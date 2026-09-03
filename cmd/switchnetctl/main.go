@@ -33,9 +33,10 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
-	// "account create" and "account revoke-tokens" take further arguments of
-	// their own; every other command takes none.
-	if flag.NArg() == 0 || (flag.Arg(0) != "account" && flag.NArg() != 1) {
+	// "account <sub>" and "fest <sub>" take further arguments of their own;
+	// every other command takes none.
+	if flag.NArg() == 0 ||
+		(flag.Arg(0) != "account" && flag.Arg(0) != "fest" && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -94,6 +95,19 @@ func main() {
 			os.Exit(2)
 		}
 
+	case "fest":
+		if flag.NArg() < 2 {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n")
+			os.Exit(2)
+		}
+		switch flag.Arg(1) {
+		case "build":
+			festBuild(cfg, flag.Args()[2:])
+		default:
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n")
+			os.Exit(2)
+		}
+
 	default:
 		usage()
 		os.Exit(2)
@@ -123,6 +137,9 @@ Commands:
             'switchnetctl account create -h', '... revoke-tokens -h',
             '... disable -h', '... enable -h', '... delete-user -h' and
             '... restore-user -h'.
+  fest      build a Splatfest's BCAT packs from game-ready assets and
+            register it, so its id, resource, revision and decryption keys
+            cannot drift apart. See 'switchnetctl fest build -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file
