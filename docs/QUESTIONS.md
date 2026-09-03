@@ -241,6 +241,36 @@ entirely.
 
 ---
 
+## Does Splatoon 3 really reach gamesync through the tenant channel, or on its own port?
+
+TODO.md originally described `gamesync.npln.nintendo.net` as reached "on its
+own port (7575)", and `config.NPLN` briefly carried a matching
+`gamesync_listen` setting. But `internal/nintendo/hosts.go` classifies that
+hostname `ServiceNPLN` -- the same service as the tenant gRPC host, routed by
+SNI to the same nginx upstream -- and nothing in the nginx generator or
+`docker-compose.yml` ever wired the port-7575 setting to an actual listener.
+No source this pass found (the Kinnay wiki's NPLN Servers page included)
+settles which reading is right; `gamesync.npln.nintendo.net` not ending in
+`srv.nintendo.net` (unlike every other NPLN host) is the only thing that
+reads as a deliberate signal, and it's as consistent with "reached
+differently" as with "reached at all differently from how it's classified
+here."
+
+**Proceeding on:** the code evidence. `internal/gamesync.Service` is
+registered on `internal/npln`'s own `*grpc.Server`, the same gRPC server
+already serving Auth, Matchmaker, GameSessionService and
+`internal/toyohr`'s services, at the same address the tenant channel already
+uses. The unwired `gamesync_listen` config key has been removed rather than
+left as a setting that looks configured and silently does nothing.
+
+**Changes if answered:** if a capture shows the console dialing a distinct
+address/port for Gamesync, `internal/gamesync.Service` moves to its own
+listener (`config.NPLN` would need a new listen address back), and
+`gamesync.npln.nintendo.net`'s entry in `internal/nintendo/hosts.go` would
+need a `Service` of its own rather than sharing `ServiceNPLN`.
+
+---
+
 ## How should the dashboard authenticate a person, long term?
 
 Today it is a shared token (`dashboard.token`), and unset there is none. That is

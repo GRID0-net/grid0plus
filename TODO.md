@@ -119,11 +119,38 @@ Treat what remains as a backlog and let the console drive the order: an
 unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
 the to-do list**.
 
-### 1.5 `gamesync` — **P2**
+### 1.5 `gamesync` — **P2, built**
 
-A Firestore-shaped document/watch service on its own port (7575 — the host is
-already listed and `npln.gamesync_listen` already configured). Splatoon 3
-reaches it directly rather than through the tenant host.
+`internal/gamesync` (RPC layer) and `internal/gamesyncstore` (the document
+store) now implement all of `nn.npln.gamesync.v1.Gamesync` except
+`CreateRound` -- `IssueToken`/`RefreshToken`, `GetDocument`/`ReadDocuments`/
+`ListDocuments`/`QueryCollectionIds`, `WriteDocuments`/`LazyWriteDocuments`,
+`BeginTransaction`/`CommitTransaction`/`RollbackTransaction`, and the
+`KeepUserSession` watch stream.
+
+**Where it's reached turned out to differ from this section's original plan.**
+`gamesync.npln.nintendo.net` is classified `ServiceNPLN` in
+`internal/nintendo/hosts.go`, grouped with the tenant gRPC host by SNI --
+not routed to a separate port. Nothing in the nginx generator or
+`docker-compose.yml` ever wired the `npln.gamesync_listen: ":7575"` setting
+this section used to describe to anything, so it has been removed from
+`config/config.go` rather than left as a key that looks configured and does
+nothing (see CLAUDE.md's configuration rules). `internal/gamesync.Service` is
+registered on `internal/npln`'s own `*grpc.Server` instead, the same way
+`internal/toyohr`'s services are -- see `internal/gamesync`'s README for the
+evidence and `docs/QUESTIONS.md` for what would change this if a capture ever
+shows the "own port" reading was right.
+
+**What's simplified, not guessed at** (see `internal/gamesyncstore`'s README
+for the full reasoning): transactions are atomic but not isolated across
+concurrent transactions; `FieldTransform`'s `LoadGlobalValue`/
+`StoreGlobalValue`/`ClearGlobalValue` and `WriteDocuments`/
+`CommitTransaction`'s `DefermentOperation` have no Firestore equivalent and
+no public documentation, so they are accepted (logged, in the deferment
+case) rather than rejecting the whole call over a shape nothing here can
+interpret. `CreateRound` is left `Unimplemented`: its own `Round` message
+has fields named `Unk1` through `Unk4` in this project's own proto
+reversal, so there is nothing defensible to fill in without a capture.
 
 ---
 

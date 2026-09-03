@@ -166,14 +166,16 @@ Flat under `internal/`, matching every existing package — no subpackage trees.
 | `internal/npln` | the gRPC gateway: TLS, HTTP/2, metadata middleware, sessions, auth |
 | `internal/nplnrest` | the JSON front that comes first: vermillion, penne, the frontline stream |
 | `internal/toyohr` | Splatoon 3's own services: schedule, fest, game records, co-op |
-| `internal/gamesync` | the document/watch service, on its own port (7575) |
+| `internal/gamesync` | the document/watch service, registered on the tenant gRPC gateway |
 | `internal/bcat` | pack construction, `nisasyst` encryption, and serving |
 | `internal/dashboard` | the web dashboard, fed by `presencebus` |
 | `proto/` | generated stubs; `scripts/{fetch,gen}-proto.sh` |
 
-New commands: `cmd/npln`, `cmd/dashboard`. `gamesync` runs inside `cmd/npln` as
-a second listener rather than a third process — it shares session state with the
-gateway, and splitting it would mean inventing a protocol between them.
+New commands: `cmd/npln`, `cmd/dashboard`. `gamesync` runs inside `cmd/npln`,
+registered on the same `*grpc.Server` as the tenant gateway's other services
+rather than as a second listener — `gamesync.npln.nintendo.net` turned out to
+be routed there by SNI, not to a separate port; see `internal/gamesync`'s
+README.
 
 Changes to existing packages:
 

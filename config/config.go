@@ -258,9 +258,6 @@ type NPLN struct {
 	// RestListen is the JSON front end: vermillion, penne, and the persistent
 	// frontline connection.
 	RestListen string `yaml:"rest_listen"`
-	// GamesyncListen is the document/watch service. Splatoon 3 reaches it on
-	// its own port rather than through the tenant host.
-	GamesyncListen string `yaml:"gamesync_listen"`
 
 	// Tenant is the NPLN tenant id. Splatoon 3's is dce9377b.
 	Tenant string `yaml:"tenant"`
@@ -464,7 +461,6 @@ func Default() Config {
 		NPLN: NPLN{
 			Listen:         ":8085",
 			RestListen:     ":8086",
-			GamesyncListen: ":7575",
 			Tenant:         "dce9377b",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
@@ -561,7 +557,6 @@ func applyEnv(c *Config) {
 
 	envStr("SWITCHNET_NPLN_LISTEN", &c.NPLN.Listen)
 	envStr("SWITCHNET_NPLN_REST_LISTEN", &c.NPLN.RestListen)
-	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
 	envStr("SWITCHNET_NPLN_TENANT", &c.NPLN.Tenant)
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)

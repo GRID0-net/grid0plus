@@ -353,6 +353,25 @@ this version deliberately names no number to keep stale).
   console reads that as "the fest has not concluded yet" (leaving it
   running, the same as before this RPC existed) or as a valid but empty
   outcome is unconfirmed either way.
+- **Whether Gamesync is reached through the tenant channel or a separate
+  port** (`internal/gamesync/README.md`): `gamesync.npln.nintendo.net` is
+  classified `ServiceNPLN` (grouped with the tenant host) in
+  `internal/nintendo/hosts.go`, but it is the only NPLN hostname that does
+  not end in `srv.nintendo.net` -- the only thing that reads as a
+  deliberate signal, and consistent with more than one explanation. See
+  `docs/QUESTIONS.md`.
+- **`FieldTransform`'s `LoadGlobalValue`/`StoreGlobalValue`/
+  `ClearGlobalValue`** (`internal/gamesyncstore/store.go`, `applyTransform`):
+  no Firestore equivalent and no public documentation of what a gamesync
+  "global value" is scoped to, or what loading one that was never stored
+  should return. Answered as a no-op null result.
+- **`DefermentOperation`** (`internal/gamesync/service.go`,
+  `logDeferments`): accepted on `WriteDocuments` and `CommitTransaction`,
+  logged, and never executed -- nothing found documents what a "deferment"
+  defers, or until when.
+- **`Round`'s fields** (`proto/gamesync/v1/resources.pb.go`): named `Unk1`
+  through `Unk4` in this project's own proto reversal. `CreateRound` is left
+  entirely `Unimplemented` rather than guess at what they hold.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not
@@ -368,6 +387,8 @@ mitmproxy, and it does need the console.
 | an invite sent while the receiving console is off, then a boot | `Messaging.RecvMessage`'s empty-resume-token behaviour, and its resource-name shapes |
 | post-match results upload | `GameRecord` |
 | picking a team during a running fest, then the fest concluding | `CreateFestEntry`'s response shape and `GetFestResult`'s real (non-`is_valid:false`) content |
+| the DNS/TLS handshake for `gamesync.npln.nintendo.net` specifically, or a `netstat`/firewall log from the console while Gamesync is in use | whether it is really reached through the tenant channel (as `internal/gamesync` currently assumes) or dials a separate address/port |
+| any real `WriteDocuments`/`CommitTransaction` call carrying a `DefermentOperation` or a `LoadGlobalValue`/`StoreGlobalValue`/`ClearGlobalValue` transform | what either feature is for, which nothing public documents |
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
 IPS patch generator that disables TLS verification *inside Splatoon 3

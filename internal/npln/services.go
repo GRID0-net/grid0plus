@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/n-popescu/switchnet/internal/gamesync"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
@@ -35,6 +36,12 @@ func (s *Server) register() {
 	// interceptor as everything else -- a fest is announced to a console that
 	// proved who it is, not to anyone who asks.
 	toyohr.NewService(s.store, s.log, s.tenant, s.now).Register(s.grpc)
+
+	// gamesync.npln.nintendo.net is classified ServiceNPLN in
+	// internal/nintendo/hosts.go -- grouped with the tenant host, not a
+	// separate port -- so it is registered here rather than served on its own
+	// listener. See internal/gamesync's README for the evidence.
+	gamesync.NewService(s.gamesync, s.log, s.now).Register(s.grpc)
 }
 
 // ---- nn.npln.auth.v1.Auth -------------------------------------------------

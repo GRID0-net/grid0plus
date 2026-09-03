@@ -286,10 +286,6 @@ npln:
   listen: ":8085"
   rest_listen: ":8086"
 
-  # gamesync is the document/watch service. The game reaches it on its own
-  # port rather than through the tenant host, and 7575 is the port it expects.
-  gamesync_listen: ":7575"
-
   # The NPLN tenant id. Splatoon 3's is dce9377b, which is where the tenant
   # hostname t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net comes from.
   tenant: "dce9377b"

@@ -23,6 +23,7 @@ import (
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/gamesyncstore"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
 	"github.com/n-popescu/switchnet/internal/messaging"
@@ -63,6 +64,11 @@ type Server struct {
 	// messages is every user's mailbox for the Messaging service. In memory,
 	// like queue above -- see internal/messaging's package doc for why.
 	messages *messaging.Queue
+
+	// gamesync is nn.npln.gamesync.v1.Gamesync's document store. In memory,
+	// like queue and messages above -- see internal/gamesyncstore's package
+	// doc for why.
+	gamesync *gamesyncstore.Store
 
 	// presence resolves a user's presence through the exact same TTL rules
 	// BAAS's HTTP endpoints do -- see internal/presence's package doc.
@@ -155,6 +161,7 @@ func New(opts Options) (*Server, error) {
 		iceServers:     iceServersFrom(opts.Config.ICEServers),
 		adminToken:     opts.Config.AdminToken,
 		messages:       messaging.New(opts.Now),
+		gamesync:       gamesyncstore.New(opts.Now),
 		presence: presence.Resolver{
 			Store:      opts.Store,
 			ReportTTL:  opts.PresenceTTL,
