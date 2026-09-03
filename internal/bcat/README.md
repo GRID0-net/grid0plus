@@ -93,6 +93,48 @@ The container is a 4-byte little-endian length followed by block-padded
 ciphertext. The length bounds the real content, so there is no padding scheme to
 strip; trusting the block size instead hands zstd up to fifteen bytes of rubbish.
 
+## Texture conversion: shelling out, not reimplementing
+
+`ConvertTextures` (`texture.go`) turns a directory of PNGs into the `.bntx`
+files `BuildPacks` expects, by shelling out to an external tool rather than
+reimplementing BCn compression and Tegra swizzling in Go -- TODO.md §2.1
+says why: getting swizzling wrong "produces a texture that loads and renders
+as garbage, which is worse than one that fails," and an existing,
+purpose-built tool is a smaller risk than a fresh reimplementation.
+
+**What was actually verified, not assumed:** the tool this was built and
+tested against is
+[jam1garner/img2bntx](https://github.com/jam1garner/img2bntx) (and the
+`bntx` crate it wraps). It was cloned, built from source with `cargo build
+--release`, and run end to end against a real PNG as part of writing this
+package -- not taken on faith from its README. The output was byte-inspected
+and confirmed to carry a real `BNTX`/`NX  ` header and the given name in its
+string table.
+
+Two real properties of that output, read from its source rather than
+guessed: every texture comes out **uncompressed R8G8B8A8_SRGB** (no
+BC1/BC3/BC7 -- larger files, but nothing to get wrong about a compression
+format), and the container holds **exactly one texture, one mip level, no
+array layers**. It has no releases or prebuilt binaries; building it needs a
+Rust toolchain (`cargo build --release` from a clone, or
+`cargo install --git https://github.com/jam1garner/img2bntx`).
+
+`ConvertTextures` calls whatever binary `-texture-converter` names
+(`switchnetctl fest build`'s own flag) using img2bntx's CLI contract
+(`<tool> <in.png> <out.bntx> -n <name>`) -- any tool that speaks the same
+contract works, this package does not hardcode img2bntx specifically.
+Nothing here vendors the Rust source: it stays an external, operator-built
+dependency, the same way this repository treats mitmproxy for packet
+captures rather than embedding a proxy.
+
+**What building and running the tool cannot settle:** whether Splatoon 3's
+Splatfest texture slots actually load a standalone `.bntx` shaped this way
+at all, versus a texture embedded in a `.bfres`, and at what resolution.
+That needs a real dumped pack to check against -- see `docs/QUESTIONS.md`.
+BFRES *model* authoring and BYAML editing (team names, idol dialogue) are
+untouched by this: `ConvertTextures` only ever produces a texture file, one
+of TODO.md §2.1's four listed pieces.
+
 ## The lookup table is not in this repository
 
 `nisasyst`'s IV table is lifted from the game binary, so under CLAUDE.md's first

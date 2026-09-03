@@ -47,6 +47,13 @@ func festBuild(cfg config.Config, args []string) {
 		"directory to write the bcat-seed/ folder into, for installing onto a console's save data")
 	enabled := fs.Bool("enabled", false,
 		"announce the fest immediately, rather than saving it scheduled but hidden")
+	sourceImages := fs.String("source-images", "",
+		"optional: a directory laid out like -assets, but a .png where -assets would want a "+
+			"converted texture -- everything else is copied through unchanged. Converted into "+
+			"-assets before building. See -texture-converter and internal/bcat's README.")
+	textureConverter := fs.String("texture-converter", "",
+		"path to a PNG-to-BNTX converter binary following jam1garner/img2bntx's CLI contract, "+
+			"required only if -source-images contains a .png")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, festBuildUsage) }
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
@@ -75,6 +82,17 @@ func festBuild(cfg config.Config, args []string) {
 	for _, r := range strings.Split(*regionsStr, ",") {
 		if r = strings.TrimSpace(r); r != "" {
 			regions = append(regions, r)
+		}
+	}
+
+	if *sourceImages != "" {
+		converted, err := bcat.ConvertTextures(*textureConverter, *sourceImages, *assetsDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "switchnetctl: convert textures: %v\n", err)
+			os.Exit(1)
+		}
+		if len(converted) > 0 {
+			fmt.Printf("converted %d texture(s) from %s into %s\n", len(converted), *sourceImages, *assetsDir)
 		}
 	}
 
@@ -170,7 +188,7 @@ func packNames(packs bcat.Packs) []string {
 	return out
 }
 
-const festBuildUsage = `switchnetctl fest build -assets <dir> -start <RFC3339 time> -seed-dir <dir> [-fest-id <id>] [-resource <name>] [-regions JP,US,EU,AP] [-enabled]
+const festBuildUsage = `switchnetctl fest build -assets <dir> -start <RFC3339 time> -seed-dir <dir> [-fest-id <id>] [-resource <name>] [-regions JP,US,EU,AP] [-enabled] [-source-images <dir> -texture-converter <path>]
 
 Builds a Splatfest's BCAT packs from game-ready assets, derives the pack
 revision from their own bytes, generates fresh decryption keys, writes the
@@ -180,8 +198,15 @@ for the console to load the fest cannot be typed twice and drift apart.
 
 -assets must contain one subdirectory per pack this fest has (base/bh/wa/wb/wc),
 each holding files already in the game's own formats (.bfres, .byaml,
-.sarc.zs and so on) -- see internal/bcat's package comment for the layout,
-and TODO.md's "Asset conversion" entry for why a PNG cannot go here yet.
+.sarc.zs and so on) -- see internal/bcat's package comment for the layout.
+
+To build -assets FROM a directory of PNGs instead of authoring them by hand,
+pass -source-images (laid out the same way) and -texture-converter (a
+PNG-to-BNTX tool following jam1garner/img2bntx's CLI contract -- see
+internal/bcat's README for exactly what was verified about it and what was
+not). This only ever produces a standalone .bntx per image; it does not
+author a .bfres, and it does not touch team names or dialogue in a .byaml --
+see TODO.md §2.1 for what "asset conversion" still means beyond textures.
 
 -fest-id and -resource default to the same derivation
 'switchnetctl fest build' relies on internally (toyohr.NewFestID/NewResource)

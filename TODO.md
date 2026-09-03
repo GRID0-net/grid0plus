@@ -156,45 +156,45 @@ reversal, so there is nothing defensible to fill in without a capture.
 
 ## 2. Splatfests and BCAT
 
-### 2.1 Asset conversion: images → game-ready textures — **P2, large**
+### 2.1 Asset conversion: images → game-ready textures — **P2, large, texture piece built**
 
 **This is the rewrite the dashboard currently points at.**
 
-Today `internal/bcat` takes assets that are *already* in the game's formats
+`internal/bcat` takes assets that are *already* in the game's formats
 (`.bfres`, `.byaml`, `.sarc.zs`), assembles them into a SARC archive and
-encrypts it. That is the whole of what "custom assets" means right now: the
-operator produces files in Switch Toolbox and points the builder at them.
+encrypts it. What is wanted is uploading a **PNG of the splashart, the tee
+designs, the banners** and having the server produce a loadable pack. Of the
+four pieces that needs, one is now built:
 
-What is wanted is uploading a **PNG of the splashart, the tee designs, the
-banners** and having the server produce a loadable pack.
-
-**Why it is not done:** it is a genuinely large piece of work, not a missing
-function. It needs:
-
-- **BFRES authoring** — the container Nintendo's textures live in.
-- **Texture encoding** — BC1/BC3/BC7 compression, plus the exact format each
-  slot expects.
-- **Tegra swizzling** — the GPU's block-linear memory layout. Getting this
-  wrong produces a texture that loads and renders as garbage, which is worse
-  than one that fails.
+- **Texture encoding + Tegra swizzling — built, by shelling out, not
+  reimplementing.** `internal/bcat.ConvertTextures` (`texture.go`) and
+  `switchnetctl fest build -source-images -texture-converter` turn a
+  directory of PNGs into `.bntx` files by calling an external tool --
+  verified against a real, built copy of
+  [jam1garner/img2bntx](https://github.com/jam1garner/img2bntx), not assumed
+  from its README. See `internal/bcat/README.md` for exactly what that
+  verified (a structurally valid BNTX, real swizzling) and what it did not
+  (whether Splatoon 3 wants a standalone `.bntx` at all -- see
+  `docs/QUESTIONS.md`). This only produces uncompressed RGBA8 textures, no
+  BC1/BC3/BC7 -- larger files, but nothing to get a compression format wrong
+  about.
+- **BFRES authoring** — the container Nintendo's *model* textures live in,
+  as opposed to a standalone `.bntx`. Still not built, and whether it is
+  even needed for a 2D splashart/banner slot is one of the open questions
+  above.
 - **BYAML editing** — team names and idol dialogue live in structured data
-  inside the pack, not in the images.
+  inside the pack, not in the images. Still not built.
 
-**Strongly consider not writing this in Go.** Switch Toolbox and the
-`BinaryTextureLibrary`/`Syroot.NintenTools` family already do it, and they exist
-because it is hard. Shelling out to an existing converter, or vendoring one, is
-likely to beat a reimplementation that is subtly wrong in ways only a console
-reveals.
-
-**Start at** `internal/bcat/build.go` (`BuildPacks`), which is where converted
-files would enter, and the dashboard's Assets panel
-(`internal/dashboard/templates/index.html`), which currently explains the
-limitation to the operator.
+**Start at** `internal/bcat/texture.go` (`ConvertTextures`) for the texture
+piece; the dashboard's Assets panel
+(`internal/dashboard/templates/index.html`) still explains the remaining
+limitation to the operator and has not been wired to this yet.
 
 **Done when** an operator uploads a PNG in the dashboard and a console loads
 the resulting fest with that image visible in-game. Nothing short of the last
 clause counts — a pack that builds, encrypts and decrypts can still contain a
-texture the game renders as noise.
+texture the game renders as noise, and that clause needs the operator's own
+console and a real dumped pack to compare against, not more server code.
 
 ### 2.2 Internal asset names embed the ORIGINAL fest id — **P2, and a trap**
 
@@ -371,9 +371,12 @@ documented and the earliest in the sequence.
 
 `grep -rn 'TODO(capture-needed)' internal/` for the live list —
 `docs/CAPTURES/README.md` keeps the same list with what each would settle,
-and is the one to trust when this paragraph and the grep disagree. As of
-writing it is fourteen items and growing every time a new phase-2 service
-gets registered against an undocumented shape rather than a real capture.
+and is the one to trust when this paragraph and the grep disagree, since it
+grows every time a new phase-2 service gets registered against an
+undocumented shape rather than a real capture (fourteen when this paragraph
+was first written; fifty-two as of the gamesync/nplnrest work). This
+paragraph deliberately names no number of its own from here on, to stop
+repeating the same drift.
 
 Two from the original five are still the ones that change behaviour rather
 than cosmetics, not just naming: whether the game sends more than one

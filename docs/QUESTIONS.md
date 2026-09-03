@@ -271,6 +271,39 @@ need a `Service` of its own rather than sharing `ServiceNPLN`.
 
 ---
 
+## Does a Splatfest texture slot load a standalone `.bntx`, or does it need to be embedded in a `.bfres`?
+
+`internal/bcat.ConvertTextures` (TODO.md §2.1) shells out to
+[jam1garner/img2bntx](https://github.com/jam1garner/img2bntx) to turn a PNG
+into a standalone `.bntx` -- a real, structurally valid texture container,
+verified by building the tool from source and byte-inspecting its output.
+What that verification cannot settle is whether Splatoon 3's Splatfest
+assets (splashart, tee designs, banners) are loaded as bare `.bntx` files at
+all. The real pack sample this project has seen (`juea-lovefes2`) is known
+only by its `Mals/`, `RSDB/` and `Event/` top-level directories -- none of
+which settle this either way, and no `.bntx`/`.bfres` file from inside a
+real pack has been inspected.
+
+Two readings are both plausible: Switch games commonly load small 2D UI
+textures as standalone `.bntx` (no 3D model involved), which is exactly
+img2bntx's output shape; equally plausibly, Splatoon 3's asset pipeline
+could uniformly wrap every texture in a `.bfres` regardless of whether a
+model is attached, for tooling consistency with the rest of its assets.
+
+**Proceeding on:** neither reading -- `ConvertTextures` produces the
+standalone `.bntx` because that is what the chosen tool produces, not
+because this is confirmed correct. `switchnetctl fest build`'s own output is
+never installed onto a console by this project; per TODO.md §2.1, that step
+is the operator's alone.
+
+**Changes if answered:** if a `.bfres` wrapper turns out to be required,
+`internal/bcat.ConvertTextures` needs a second stage -- wrapping the `.bntx`
+img2bntx already produces inside a minimal `.bfres` shell (an `FTEX` section
+pointing at the same texture data), which is a smaller job than authoring a
+`.bfres` from scratch. The place to check first: open the real
+`juea-lovefes2` pack (or any real dumped pack with a Splatfest texture) and
+see what extension its image assets actually have.
+
 ## How should the dashboard authenticate a person, long term?
 
 Today it is a shared token (`dashboard.token`), and unset there is none. That is
