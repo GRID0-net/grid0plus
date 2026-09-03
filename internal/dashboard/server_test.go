@@ -328,7 +328,7 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 	srv, _ := newTestServer(t, "s3cret", time.Now().UTC())
 	h := srv.Handler()
 
-	for _, path := range []string{"/", "/api/overview", "/api/players", "/api/fests", "/api/matches"} {
+	for _, path := range []string{"/", "/api/overview", "/api/players", "/api/players/x", "/api/fests", "/api/matches"} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 		if rec.Code != http.StatusUnauthorized {
@@ -390,6 +390,82 @@ func TestTheFestListReportsItsPhaseAndWhetherItHasKeys(t *testing.T) {
 	}
 	if rows[0].Timetable.Start == "" {
 		t.Error("the timetable is not reported")
+	}
+}
+
+// TestPlayerDetailAssemblesFriendsAndDeviceAccounts covers the Players tab's
+// detail panel: everything it needs is assembled from stores that already
+// exist (friendship, device accounts, presence) rather than a new one.
+func TestPlayerDetailAssemblesFriendsAndDeviceAccounts(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	ctx := context.Background()
+
+	addUser(t, store, "alice", "Alice")
+	addUser(t, store, "bob", "Bob")
+	if err := store.AddFriendship(ctx, "alice", "bob", now.Add(-time.Hour)); err != nil {
+		t.Fatalf("add friendship: %v", err)
+	}
+	if err := store.TouchPresence(ctx, "bob", now); err != nil {
+		t.Fatalf("touch presence: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/players/alice", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+
+	var got playerDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.ID != "alice" || got.Nickname != "Alice" {
+		t.Errorf("player = %+v", got.Player)
+	}
+	if len(got.Friends) != 1 || got.Friends[0].ID != "bob" || got.Friends[0].Nickname != "Bob" {
+		t.Fatalf("friends = %+v, want [bob]", got.Friends)
+	}
+	if got.Friends[0].State != "ONLINE" {
+		t.Errorf("bob's state = %q, want ONLINE (a console that just touched presence "+
+			"is online the same way an idle Home Menu console is)", got.Friends[0].State)
+	}
+	if len(got.DeviceAccounts) != 1 || got.DeviceAccounts[0].ID != "da-alice" {
+		t.Fatalf("device accounts = %+v, want [da-alice]", got.DeviceAccounts)
+	}
+	if got.DeviceAccounts[0].CreatedAt == "" {
+		t.Error("device account has no createdAt")
+	}
+}
+
+// TestPlayerDetailWithNoFriendsIsAnEmptyListNotEveryUser is a regression
+// guard for db.UserQuery's IDs semantics: a nil slice means "no id filter",
+// which for a friendless player would silently return every user on the
+// server as their "friends".
+func TestPlayerDetailWithNoFriendsIsAnEmptyListNotEveryUser(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	addUser(t, store, "loner", "Loner")
+	addUser(t, store, "someoneElse", "Someone Else")
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/players/loner", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	var got playerDetail
+	json.Unmarshal(rec.Body.Bytes(), &got)
+	if len(got.Friends) != 0 {
+		t.Fatalf("friends = %+v, want none", got.Friends)
+	}
+}
+
+func TestPlayerDetailOfAnUnknownPlayerIs404(t *testing.T) {
+	srv, _ := newTestServer(t, "", time.Now().UTC())
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/players/ffffffffffffffff", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status %d, want 404", rec.Code)
 	}
 }
 

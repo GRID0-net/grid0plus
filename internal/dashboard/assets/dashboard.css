@@ -601,4 +601,80 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
 .svc-degraded { border-left-color: var(--warn); }
 .svc-down     { border-left-color: var(--ink-a); }
 .svc-unknown  { border-left-color: var(--line); }
+
+/* ---- player detail --------------------------------------------------------
+ *
+ * Every row in the Players table opens this: friends, device accounts and
+ * recent matches assembled from stores that already exist rather than a new
+ * history log -- see internal/dashboard/server.go's handlePlayerDetail. */
+
+#players-table tbody tr { cursor: pointer; }
+
+.player-detail {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(80vh, 640px);
+  padding: 22px 24px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+}
+.player-detail::backdrop { background: rgba(0, 0, 0, .55); }
+/* The dialog only ever animates open -- <dialog> has no closing transition
+ * without extra JS to delay the close() call, and that complexity buys
+ * nothing an operator would notice on a control panel. */
+.player-detail[open] { animation: rise .18s ease-out; }
+
+.dialog-close {
+  position: absolute; top: 14px; right: 14px;
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  appearance: none; border: 1px solid var(--line); background: var(--bg-sunk);
+  color: var(--fg-dim); border-radius: 50%; font-size: 18px; line-height: 1;
+  cursor: pointer; transition: color .15s, border-color .15s;
+}
+.dialog-close:hover { color: var(--fg); border-color: color-mix(in srgb, var(--fg) 22%, var(--line)); }
+
+.player-detail-head {
+  display: flex; align-items: center; gap: 14px;
+  padding-right: 30px; /* clears the close button */
+  margin-bottom: 18px;
+}
+.player-detail-head .avatar { width: 44px; height: 44px; font-size: 16px; }
+.player-detail-head h3 { margin: 0 0 4px; font-size: 18px; }
+.player-detail-head .meta { color: var(--fg-dim); font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.player-detail-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+.player-detail-cols h4 {
+  margin: 0 0 8px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+  color: var(--fg-faint);
+  display: flex; align-items: center; gap: 6px;
+}
+.player-detail-cols h4 .meta { font-weight: 600; text-transform: none; letter-spacing: normal; }
+
+.player-detail-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 220px; overflow-y: auto;
+}
+.player-detail-list li {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px;
+}
+.player-detail-list li .meta { color: var(--fg-dim); font-size: 12px; margin-left: auto; }
+.player-detail-list li code {
+  background: var(--bg-sunk); border: 1px solid var(--line); border-radius: 5px;
+  padding: 1px 5px; font-size: 12px;
+}
+.player-detail-list .empty { margin: 0; }
+
+@media (max-width: 480px) {
+  .player-detail-cols { grid-template-columns: 1fr; }
+}
 .svc-unknown .svc-detail { color: var(--fg-dim); }

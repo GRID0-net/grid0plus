@@ -160,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.guard(s.handleIndex))
 	mux.HandleFunc("GET /api/overview", s.guard(s.handleOverview))
 	mux.HandleFunc("GET /api/players", s.guard(s.handlePlayers))
+	mux.HandleFunc("GET /api/players/{id}", s.guard(s.handlePlayerDetail))
 	mux.HandleFunc("GET /api/fests", s.guard(s.handleFests))
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
@@ -290,6 +291,146 @@ func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, players)
+}
+
+// ---- player detail ---------------------------------------------------------
+
+// playerFriend is one row of a player's friend list, enriched with the
+// friend's own effective presence -- the same resolution the players list and
+// the friends applet itself use, so a friend shown here as ONLINE is never
+// out of step with what they see of each other.
+type playerFriend struct {
+	ID       string `json:"id"`
+	Nickname string `json:"nickname"`
+	State    string `json:"state"`
+	Activity string `json:"activity,omitempty"`
+	Favorite bool   `json:"favorite"`
+	Since    string `json:"since"`
+}
+
+// playerDeviceAccount is one console linked to a player. The password is
+// never included -- it is a permanent, unrotatable per-console credential,
+// and the dashboard has no legitimate use for it.
+type playerDeviceAccount struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// playerDetail is everything the Players tab's detail panel needs for one
+// player, assembled from stores that already exist rather than a new one:
+// internal/db already has the friendship and device-account stores, and
+// internal/presence already resolves effective state the one way BAAS and
+// the friends applet do.
+type playerDetail struct {
+	Player
+	CreatedAt      string                `json:"createdAt"`
+	LogoutAt       string                `json:"logoutAt,omitempty"`
+	Friends        []playerFriend        `json:"friends"`
+	DeviceAccounts []playerDeviceAccount `json:"deviceAccounts"`
+}
+
+func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	ctx := r.Context()
+
+	u, err := s.store.GetUser(ctx, id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, "no such player", http.StatusNotFound)
+			return
+		}
+		s.fail(w, "load player", err)
+		return
+	}
+
+	now := s.now()
+	pres, err := s.presence.Effective(ctx, id, now)
+	if err != nil {
+		s.fail(w, "resolve presence", err)
+		return
+	}
+
+	name := u.Nickname
+	if name == "" {
+		name = u.ID
+	}
+	detail := playerDetail{
+		Player:    Player{ID: u.ID, Nickname: name, State: pres.State, AppID: pres.AppID},
+		CreatedAt: u.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if pres.AppID != "" {
+		detail.Activity = titleName(pres.AppID)
+	}
+	if !pres.LastSeenAt.IsZero() {
+		detail.LastSeenAt = pres.LastSeenAt.UTC().Format(time.RFC3339)
+	}
+	if pres.LogoutAt != nil {
+		detail.LogoutAt = pres.LogoutAt.UTC().Format(time.RFC3339)
+	}
+
+	friendships, err := s.store.ListFriends(ctx, id, 500)
+	if err != nil {
+		s.fail(w, "list friends", err)
+		return
+	}
+	friendIDs := make([]string, 0, len(friendships))
+	for _, f := range friendships {
+		friendIDs = append(friendIDs, f.FriendID)
+	}
+	friendUsers, err := s.store.FindUsers(ctx, db.UserQuery{IDs: friendIDs})
+	if err != nil {
+		s.fail(w, "load friends", err)
+		return
+	}
+	friendNames := make(map[string]string, len(friendUsers))
+	for _, fu := range friendUsers {
+		friendNames[fu.ID] = fu.Nickname
+	}
+	friendPresences, err := s.presence.EffectiveMany(ctx, friendIDs, now)
+	if err != nil {
+		s.fail(w, "resolve friend presence", err)
+		return
+	}
+	detail.Friends = make([]playerFriend, 0, len(friendships))
+	for _, f := range friendships {
+		fp := friendPresences[f.FriendID]
+		fname := friendNames[f.FriendID]
+		if fname == "" {
+			fname = f.FriendID
+		}
+		row := playerFriend{
+			ID: f.FriendID, Nickname: fname, State: fp.State,
+			Favorite: f.Favorite, Since: f.BecameFriendAt.UTC().Format(time.RFC3339),
+		}
+		if fp.AppID != "" {
+			row.Activity = titleName(fp.AppID)
+		}
+		detail.Friends = append(detail.Friends, row)
+	}
+	// Online friends first, then by name -- the same ordering rationale the
+	// players list itself uses: what the operator is looking for is who is
+	// around, not an alphabetised roster.
+	rank := map[string]int{"PLAYING": 0, "ONLINE": 1, "OFFLINE": 2}
+	sort.SliceStable(detail.Friends, func(i, j int) bool {
+		if ri, rj := rank[detail.Friends[i].State], rank[detail.Friends[j].State]; ri != rj {
+			return ri < rj
+		}
+		return strings.ToLower(detail.Friends[i].Nickname) < strings.ToLower(detail.Friends[j].Nickname)
+	})
+
+	das, err := s.store.ListDeviceAccounts(ctx, id)
+	if err != nil {
+		s.fail(w, "list device accounts", err)
+		return
+	}
+	detail.DeviceAccounts = make([]playerDeviceAccount, 0, len(das))
+	for _, da := range das {
+		detail.DeviceAccounts = append(detail.DeviceAccounts, playerDeviceAccount{
+			ID: da.ID, CreatedAt: da.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	writeJSON(w, detail)
 }
 
 // ---- overview -------------------------------------------------------------

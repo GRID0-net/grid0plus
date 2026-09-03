@@ -269,12 +269,6 @@ A real answer probably arrives with phase 3's Nintendo Account work, which
 introduces the first human-facing login. Until then, do not build a bespoke
 user system for the dashboard alone.
 
-### 3.4 Per-player detail — **P3**
-
-Clicking a player should show their friends, device accounts, presence history
-and match history. `internal/db` has the friendship store; the rest is
-assembly.
-
 ---
 
 ## 4. Verification and hardware

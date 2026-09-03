@@ -80,6 +80,20 @@ already has open, so it works even before the admin API is configured — the
 one part of the Matchmaking tab that does not need `cmd/npln` to be
 reachable at all.
 
+## A player row opens onto stores that already exist
+
+Clicking a row in the Players table opens a detail panel -- friends, device
+accounts, recent matches -- assembled entirely from `GET /api/players/{id}`
+(`handlePlayerDetail` in `server.go`) rather than a new history table.
+Friends are resolved through the same `internal/presence` rule everything
+else on this page uses, so a friend shown here as online is never out of
+step with what they see of each other. There is no stored presence
+*history*, deliberately: SwitchNet keeps one current presence row per user
+(see "Presence is resolved here, not read", above), so what the panel shows
+for "last seen" is that same row, not a log. Matches are filtered
+client-side from the match history the Matchmaking tab already fetches,
+rather than a second server-side query.
+
 ## Fest controls normalise what they safely can
 
 A misaligned start time and a capitalised resource name are **fixed**: there is

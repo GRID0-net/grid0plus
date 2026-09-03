@@ -139,6 +139,7 @@ function ago(iso) {
 }
 
 let players = [];
+let matches = [];
 
 function renderPlayers() {
   const filter = ($("#player-filter").value || "").toLowerCase();
@@ -242,6 +243,19 @@ function escape(s) {
 // ---- actions --------------------------------------------------------------
 
 $("#player-filter").addEventListener("input", renderPlayers);
+
+$("#players-table tbody").addEventListener("click", (e) => {
+  const row = e.target.closest("tr[data-player]");
+  if (row) openPlayerDetail(row.dataset.player);
+});
+
+$("#player-detail-close").addEventListener("click", () => $("#player-detail").close());
+// A click on the ::backdrop lands on the <dialog> element itself, never on
+// anything inside it -- that is what distinguishes "clicked outside" from
+// "clicked the content" without tracking coordinates by hand.
+$("#player-detail").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();
+});
 
 $("#fest-list").addEventListener("click", async (e) => {
   const toggle = e.target.closest("[data-toggle]");
@@ -560,10 +574,107 @@ function renderMatches(matches) {
 
 async function loadMatches() {
   try {
-    renderMatches(await api("/api/matches"));
+    matches = await api("/api/matches");
+    renderMatches(matches);
   } catch (e) {
     $("#matches-summary").textContent = "could not read match history";
   }
+}
+
+// ---- player detail ----------------------------------------------------------
+
+/**
+ * Everything the click-through detail panel needs is already fetched
+ * elsewhere: the player rows for state changes, /api/players/{id} for
+ * friends and device accounts, and the match history already loaded for the
+ * Matchmaking tab, filtered here rather than re-fetched. That last part is
+ * why this waits on loadMatches() at least once before a click can show
+ * anything -- refresh() always runs it before the page is interactive.
+ */
+async function openPlayerDetail(id) {
+  const dialog = $("#player-detail");
+  const body = $("#player-detail-body");
+  body.innerHTML = `<p class="empty">Loading…</p>`;
+  dialog.showModal();
+
+  let d;
+  try {
+    d = await api(`/api/players/${encodeURIComponent(id)}`);
+  } catch (e) {
+    body.innerHTML = `<p class="empty">Could not load this player: ${escape(e.message)}</p>`;
+    return;
+  }
+  renderPlayerDetail(d);
+}
+
+function renderPlayerDetail(d) {
+  const played = matches.filter((m) => m.hostUserId === d.id || m.playerIds.includes(d.id));
+
+  const friendsHTML = d.friends.length
+    ? d.friends
+        .map(
+          (f) => `
+        <li class="player-cell">
+          ${avatarWithStatusHTML(f, "avatar-sm")}
+          <span>${escape(f.nickname)}</span>
+          ${f.favorite ? `<span class="pill on" title="Favourite friend">★</span>` : ""}
+          <span class="meta">${f.activity ? escape(f.activity) : stateWord(f.state)}</span>
+        </li>`
+        )
+        .join("")
+    : `<li class="empty">No friends.</li>`;
+
+  const devicesHTML = d.deviceAccounts.length
+    ? d.deviceAccounts
+        .map(
+          (da) => `
+        <li>
+          <code>${escape(da.id)}</code>
+          <span class="meta">linked ${ago(da.createdAt)}</span>
+        </li>`
+        )
+        .join("")
+    : `<li class="empty">No device accounts.</li>`;
+
+  const matchesHTML = played.length
+    ? played
+        .map(
+          (m) => `
+        <li>
+          <span class="pill">${escape(m.mode)}</span>
+          <span class="meta">${m.hostUserId === d.id ? "hosted" : "played"} · ${ago(m.createdAt)}</span>
+        </li>`
+        )
+        .join("")
+    : `<li class="empty">No recorded matches.</li>`;
+
+  $("#player-detail-body").innerHTML = `
+    <div class="player-detail-head">
+      ${avatarWithStatusHTML(d)}
+      <div>
+        <h3>${escape(d.nickname)}</h3>
+        <p class="meta">
+          <span class="badge ${stateClass(d.state)}">${stateWord(d.state)}</span>
+          ${d.activity ? escape(d.activity) : ""}
+          · account since ${ago(d.createdAt)}
+          · last seen ${ago(d.lastSeenAt)}
+        </p>
+      </div>
+    </div>
+    <div class="player-detail-cols">
+      <section>
+        <h4>Friends <span class="meta">${d.friends.length}</span></h4>
+        <ul class="player-detail-list">${friendsHTML}</ul>
+      </section>
+      <section>
+        <h4>Device accounts <span class="meta">${d.deviceAccounts.length}</span></h4>
+        <ul class="player-detail-list">${devicesHTML}</ul>
+      </section>
+      <section>
+        <h4>Recent matches <span class="meta">${played.length}</span></h4>
+        <ul class="player-detail-list">${matchesHTML}</ul>
+      </section>
+    </div>`;
 }
 
 // ---- live stream ----------------------------------------------------------
