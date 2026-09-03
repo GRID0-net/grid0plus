@@ -19,19 +19,37 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/lobbymessaging"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
 // Service implements the Splatoon 3 services.
+//
+// Canola, CoopScenario, GameRecord, Locker, Replay and UserScreening are
+// deliberately NOT embedded here: CanolaServer and LockerServer declare the
+// identical IkasuDocument/SelectDocuments/RegisterDocument method names (so
+// both Unimplemented types promoted onto one struct would make every one of
+// those an ambiguous selector), and CoopScenarioServer/ReplayServer both
+// declare RegisterDocument with different signatures (which Go cannot
+// satisfy with one method, ambiguous or not -- there is no overloading).
+// Each gets its own small adapter type in backlog.go instead, the same
+// shape internal/npln/services.go already uses for its own several
+// interfaces on one *Server. See backlog.go's package comment for what is
+// and is not implemented there.
 type Service struct {
 	toyohrpb.UnimplementedFestServiceServer
 	toyohrpb.UnimplementedScheduleServer
 	toyohrpb.UnimplementedCloudSaveServer
+	toyohrpb.UnimplementedLobbyMessagingServer
 
 	store  db.Store
 	log    *slog.Logger
 	tenant string
 	now    func() time.Time
+
+	// lobbyMessages is internal/lobbymessaging's broadcast topic, one per
+	// lobby -- see that package's comment for what "lobby" means here.
+	lobbyMessages *lobbymessaging.Queue
 }
 
 // NewService builds the Splatoon 3 service set.
@@ -39,7 +57,10 @@ func NewService(store db.Store, log *slog.Logger, tenant string, now func() time
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{store: store, log: log, tenant: tenant, now: now}
+	return &Service{
+		store: store, log: log, tenant: tenant, now: now,
+		lobbyMessages: lobbymessaging.New(now),
+	}
 }
 
 // Register attaches the services to a gRPC server.
@@ -47,6 +68,13 @@ func (s *Service) Register(srv *grpc.Server) {
 	toyohrpb.RegisterFestServiceServer(srv, s)
 	toyohrpb.RegisterScheduleServer(srv, s)
 	toyohrpb.RegisterCloudSaveServer(srv, s)
+	toyohrpb.RegisterLobbyMessagingServer(srv, s)
+	toyohrpb.RegisterCanolaServer(srv, canolaService{Service: s})
+	toyohrpb.RegisterLockerServer(srv, lockerService{Service: s})
+	toyohrpb.RegisterCoopScenarioServer(srv, coopScenarioService{Service: s})
+	toyohrpb.RegisterReplayServer(srv, replayService{Service: s})
+	toyohrpb.RegisterUserScreeningServer(srv, userScreeningService{Service: s})
+	toyohrpb.RegisterGameRecordServer(srv, gameRecordService{Service: s})
 }
 
 // tenantPath is the resource-name prefix every fest resource hangs off.
@@ -200,6 +228,21 @@ func festIDFromResourceName(name string) string {
 		return strings.ToUpper(name)
 	}
 	return ""
+}
+
+// lastSegment returns the trailing path component of a resource name, or the
+// whole string if it has none -- the same lenient parsing
+// internal/npln's own lastSegment does, for the same reason: a console
+// echoing back whatever name this server minted (or a bare id) should not
+// have to match a prefix nobody has confirmed against a capture. Unlike
+// festIDFromResourceName, this does not uppercase: ids outside the fest
+// family (a user id, a lobby id) are not fest ids.
+func lastSegment(name string) string {
+	name = strings.TrimSuffix(strings.TrimSpace(name), "/")
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 // currentFest returns the fest a region should be showing, if any.
