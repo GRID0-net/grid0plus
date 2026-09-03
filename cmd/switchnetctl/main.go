@@ -377,12 +377,8 @@ func nginxConf(cfg config.Config) string {
 	// cmd/npln implements the gRPC tenant gateway, so its upstream is live.
 	fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 		names[nintendo.ServiceNPLN], upstreamAddr(backends[nintendo.ServiceNPLN]))
-	// npln_rest has no backend yet -- internal/nplnrest does not exist, and
-	// cmd/npln never listens on NPLN.RestListen -- so this upstream stays
-	// commented out. Uncommenting it with nothing to resolve is an nginx that
-	// will not start, which is a worse first experience than the host just not
-	// being routed yet.
-	fmt.Fprintf(&b, "# upstream switchnet_%s { server %s; }\n",
+	// internal/nplnrest, served by cmd/npln on NPLN.RestListen.
+	fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 		names[nintendo.ServiceNPLNRest], upstreamAddr(backends[nintendo.ServiceNPLNRest]))
 	b.WriteString("\n")
 
@@ -437,24 +433,17 @@ func nginxConf(cfg config.Config) string {
 			continue
 		}
 		if svc == nintendo.ServiceNPLNRest {
-			b.WriteString("# Commented out: internal/nplnrest does not exist yet and cmd/npln\n")
-			b.WriteString("# never listens on NPLN.RestListen, so there is no backend for this\n")
-			b.WriteString("# block's upstream to resolve. An nginx that cannot resolve an\n")
-			b.WriteString("# upstream in an active server block refuses to start, which is a\n")
-			b.WriteString("# worse first experience than these hosts falling through to the\n")
-			b.WriteString("# stub server for now.\n")
-			b.WriteString("#\n")
 			b.WriteString("# These are the hosts Splatoon 3 talks to BEFORE it opens its gRPC\n")
-			b.WriteString("# channel: vermillion (device init), penne (login tickets), and the\n")
-			b.WriteString("# fro-N frontline connection. They are ordinary JSON, so proxy_pass\n")
-			b.WriteString("# -- NOT grpc_pass. The frontline connection is held open by the\n")
-			b.WriteString("# console and must not be closed or buffered, hence the long read\n")
-			b.WriteString("# timeout and proxy_buffering off in the block below.\n")
+			b.WriteString("# channel: vermillion, penne (login tickets), and the fro-N frontline\n")
+			b.WriteString("# connection -- served by internal/nplnrest on NPLN.RestListen. They\n")
+			b.WriteString("# are ordinary JSON, so proxy_pass -- NOT grpc_pass. The frontline\n")
+			b.WriteString("# connection is held open by the console and must not be closed or\n")
+			b.WriteString("# buffered, hence the long read timeout and proxy_buffering off below.\n")
 			// One block for the whole service: unlike baas, no host here has a
 			// per-host interop flag, so grouping by variant would only ever
 			// produce one bucket -- and picking the wrong one silently emits a
 			// server block with an empty server_name.
-			b.WriteString(commentOut(frontlineServerBlock(cfg, tlsNamesOf(hosts))))
+			b.WriteString(frontlineServerBlock(cfg, tlsNamesOf(hosts)))
 			b.WriteString("\n")
 			continue
 		}
@@ -665,14 +654,6 @@ func frontlineServerBlock(cfg config.Config, serverNames []string) string {
     }
 }
 `, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
-}
-
-func commentOut(s string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, l := range lines {
-		lines[i] = "# " + l
-	}
-	return strings.Join(lines, "\n") + "\n"
 }
 
 // upstreamAddr turns a Go listen address into one nginx can proxy to.

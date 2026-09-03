@@ -38,26 +38,43 @@ Priority labels are about *unblocking other work*, not importance:
 
 ## 1. NPLN protocol
 
-### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware**
+### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware, built**
 
-Splatoon 3 does **not** open with gRPC. It talks JSON over HTTPS to
-`gw.hac.lp1.vermillion…` (device init) and `val.hac.lp1.penne…` (login tickets,
-and the frontline FQDN), and only then opens the gRPC channel.
+`internal/nplnrest` now serves this, on `npln.rest_listen` (`cmd/npln`, a
+second listener alongside the gRPC gateway). The hosts were already
+classified (`ServiceNPLNRest`) and the nginx generator already emitted
+their block; both now point at a real backend instead of a comment.
 
-The hosts are already classified (`ServiceNPLNRest`) and the nginx generator
-already emits their block; there is no `internal/nplnrest` package behind it.
+Penne's two endpoints (`GET /v1/frontlines`, `POST /v1/login_tickets`) are
+implemented against a real field-level spec
+([kinnay's wiki](https://github.com/kinnay/NintendoClients/wiki/Penne-Servers)),
+including the literal `persistent_connection_params_simple` constants.
+Vermillion's two (`GET /v1/accounts/config`, `GET /v1/accounts/devices`)
+answer honestly-empty JSON — the wiki names the endpoints but gives no
+response field table for either, unlike Penne's. Every other Vermillion
+endpoint (device replace, family, notify, nearness-checks) is left
+unanswered (404) rather than guessed at.
 
-**The frontline connection is a long-lived stream the console holds open.**
-Closing it is an error on the console (`2307-2103` on Splatoon 2, `2321-*` on
-Splatoon 3), not a clean end. The generated nginx block already sets
-`proxy_buffering off` and a long read timeout for this.
+**Still open, each recorded in `docs/QUESTIONS.md`:**
 
-**`TODO(capture-needed)`** on all three request/response shapes. The reference
-implementation this project studied does not ship its captures, so nothing here
-is known — implement the most defensible reading and say what a capture would
-settle. Do **not** invent a plausible Nintendo internal.
+- Whether Splatoon 3's boot actually needs anything from vermillion at
+  all — the wiki describes that host as the *virtual game card* system, a
+  general Switch feature, not anything Splatoon-specific, which sits
+  uneasily with `hosts.go`'s existing "NPLN device initialisation"
+  classification.
+- How a console obtains a Penne id/password in the first place —
+  `god.hac.lp1.penne.srv.nintendo.net`'s provisioning endpoints
+  (`/v1/immigrate`, `/v1/penne_ids`) are undocumented past their path, and
+  `god` itself is not served by `internal/nplnrest` (still `ServiceStubs`).
+- What a frontline connection actually carries once open. `serveFrontline`
+  accepts it and holds it open — confirmed safe from a real error-code
+  capture — but sends nothing further, because no source found this pass
+  documents the wire framing.
 
-### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2**
+Do **not** invent a plausible Nintendo internal for any of the three
+without a capture to check it against.
+
+### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2, mostly done**
 
 `Schedule` is built (`internal/toyohr/schedule.go`): all five RPCs answer
 "nothing scheduled" rather than `Unimplemented`, since the map/mode/weapon
@@ -69,12 +86,38 @@ an account with no cloud save, not a stub); its other five RPCs
 are not attempted — nothing calls them this early, and actually writing save
 state is real player data this server has no legitimate way to have.
 
-Roughly boot-to-match order for what remains: `LobbyMessaging`, `GameRecord`,
-`CoopScenario` (Salmon Run), then `Locker`, `Replay`, `Canola`,
-`UserScreening`.
+The rest is `internal/toyohr/backlog.go` and `lobby_messaging.go` now:
 
-Treat it as a backlog and let the console drive the order: an unimplemented RPC
-answers `codes.Unimplemented` and logs, and **that log is the to-do list**.
+- **`LobbyMessaging`**: `RecvMessage`/`SendLobbyMessage` are real, backed by
+  `internal/lobbymessaging`'s per-lobby broadcast topic (membership =
+  "currently subscribed", the same shape `internal/presencebus` and
+  `internal/matchmaking`'s ticket `Watch` already use, so nothing invents a
+  roster this codebase has no other record of). `SendMessage` stays
+  `Unimplemented`: it addresses specific users but carries no `Lobby`
+  field, and routing it would mean guessing at session-tracking no capture
+  confirms — see the `TODO(capture-needed)` on it.
+- **`Canola`/`Locker`**: `SelectDocuments` answers empty and `IkasuDocument`
+  answers `NotFound` — SwitchNet has no `internal/ugcstore`, so both are
+  honest rather than guessed. `RegisterDocument` (the write) stays
+  `Unimplemented` on both.
+- **`CoopScenario`/`Replay`**: `Resolve*Code` answers `NotFound` (nothing
+  was ever registered, since `RegisterDocument` is unimplemented on both).
+  `Replay.FulfillReservations` answers an empty, valid list rather than an
+  error — the `ListDeviceAccounts`-vs-`GetDeviceAccount` distinction.
+- **`UserScreening`**: `GetViolation`/`SelectSnapshot` answer `NotFound` --
+  no screening exists. `CreateReport` is the one write implemented for
+  real: it is data the caller hands over, not data this server needs to
+  have already had, so there is no undocumented shape to get wrong. It is
+  logged for the operator, not acted on -- SwitchNet has no moderation
+  system to act with.
+- **`GameRecord`**: left entirely `Unimplemented`. `InitializeAttributes`
+  alone carries per-mode X Power seed values -- deeply Nintendo-internal
+  rating data with no defensible default, exactly what CLAUDE.md's first
+  ground rule forbids inventing.
+
+Treat what remains as a backlog and let the console drive the order: an
+unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
+the to-do list**.
 
 ### 1.5 `gamesync` — **P2**
 

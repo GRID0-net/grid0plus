@@ -195,6 +195,7 @@ services:
     environment:
       <<: *env
       SWITCHNET_NPLN_LISTEN: ":8085"
+      SWITCHNET_NPLN_REST_LISTEN: ":8086"
       SWITCHNET_NPLN_ADMIN_LISTEN: ":8088"
       SWITCHNET_NPLN_ADMIN_TOKEN: "${SWITCHNET_NPLN_ADMIN_TOKEN:-}"
       SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
@@ -203,9 +204,11 @@ services:
     volumes:
       - ./dev/keys:/var/lib/switchnet/keys
     ports:
-      # Loopback only. The gRPC port is reached through the nginx edge, and the
-      # admin port starts matches -- neither belongs on the open network.
+      # Loopback only. The gRPC and REST-front-end ports are reached through
+      # the nginx edge, and the admin port starts matches -- none belong on
+      # the open network.
       - "127.0.0.1:8085:8085"
+      - "127.0.0.1:8086:8086"
       - "127.0.0.1:8088:8088"
     depends_on:
       postgres:

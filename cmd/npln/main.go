@@ -15,6 +15,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/npln"
+	"github.com/n-popescu/switchnet/internal/nplnrest"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/service"
 )
@@ -115,6 +116,24 @@ func main() {
 			"matchmaking controls are NOT served. They can start matches and change " +
 			"how many players one takes, so they are not served without a token.")
 	}
+
+	// The JSON front end: vermillion and penne, which Splatoon 3 talks to
+	// BEFORE it opens the gRPC channel above. A separate listener, plain
+	// HTTP/1.1, because nginx reaches it with proxy_pass not grpc_pass --
+	// see internal/nplnrest's package comment and internal/nintendo/hosts.go.
+	if cfg.NPLN.RestListen == "" {
+		service.Fatal(log, "serve npln rest",
+			errors.New("npln.rest_listen is empty, so vermillion/penne/frontline "+
+				"would not be served anywhere -- Splatoon 3 cannot reach the gRPC "+
+				"gateway above without them"))
+	}
+	rest := nplnrest.New(nplnrest.Options{Log: log})
+	go func() {
+		log.Info("npln: rest front end listening", "addr", cfg.NPLN.RestListen)
+		if err := service.ServeHTTP(ctx, log, cfg.NPLN.RestListen, rest.Handler()); err != nil {
+			log.Error("npln: rest front end stopped", "error", err)
+		}
+	}()
 
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)
 	if err != nil {

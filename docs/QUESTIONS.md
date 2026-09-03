@@ -156,6 +156,91 @@ and `festEntryIDsFromResourceName`.
 
 ---
 
+## Does Splatoon 3's boot sequence need anything from vermillion at all?
+
+`internal/nintendo/hosts.go` classifies `gw.hac.lp1.vermillion.srv.nintendo.net`
+as "NPLN device initialisation and account config", contacted before
+penne. But the only public documentation for this host
+([kinnay's wiki](https://github.com/kinnay/NintendoClients/wiki/Vermillion-Server))
+describes it as the **virtual game card** system — device-transfer
+licensing, a general Switch feature with nothing Splatoon-specific about
+it — and gives no field-level schema for either endpoint `internal/nplnrest`
+now answers.
+
+Two readings are both consistent with what is known:
+
+1. Vermillion really is an NPLN prerequisite on real hardware (the reading
+   `hosts.go`'s existing classification asserts, from evidence this pass
+   could not re-derive), and the wiki's "virtual game cards" description is
+   an older or incomplete account of a host that has since grown an
+   NPLN-adjacent purpose.
+2. Vermillion is contacted for unrelated general-account-management
+   reasons on the normal boot path of any title, and has no bearing on
+   whether Splatoon 3's own gRPC channel opens successfully.
+
+**Proceeding on:** `hosts.go`'s existing classification, unchanged — this
+pass did not have grounds to override it either way. `internal/nplnrest`
+answers vermillion's two named endpoints as honestly-empty JSON
+(`internal/nplnrest/README.md` has the detail) rather than leaving the host
+unanswered, since answering costs nothing if the reading is (2) and avoids
+a hang if it is (1).
+
+**Changes if answered:** if (2), `gw.hac.lp1.vermillion.srv.nintendo.net`
+moves out of `ServiceNPLNRest` in `internal/nintendo/hosts.go` (probably to
+`ServiceStubs`, alongside `god`) and `internal/nplnrest` drops its two
+vermillion handlers entirely. If (1), the two handlers gain the real
+response fields a capture would reveal.
+
+---
+
+## How does a console obtain a Penne id and password?
+
+`internal/nplnrest`'s `POST /v1/login_tickets` accepts whatever `id` and
+`password` a console presents, without verifying them (CLAUDE.md's second
+ground rule — this is not a credential SwitchNet issued). What is missing
+is how a fresh console gets one to present in the first place: the wiki
+names two `god`-server endpoints that plausibly create one
+(`POST /v1/immigrate`, `POST /v1/penne_ids`) but marks their HTTP method
+as unconfirmed, and `god.hac.lp1.penne.srv.nintendo.net` is not served by
+`internal/nplnrest` at all — `internal/nintendo/hosts.go` still classifies
+it `ServiceStubs`, answering it generically rather than with anything
+Penne-shaped.
+
+**Proceeding on:** nothing needs to, yet — accepting any presented id
+without a provisioning step means a console can always obtain a login
+ticket even though nothing ever formally issued it a Penne identity. This
+is honest about what is unknown rather than a gap in behaviour: SwitchNet
+does not need to recognise a *returning* Penne id, only to answer the
+request in front of it.
+
+**Changes if answered:** `god.hac.lp1.penne.srv.nintendo.net` would need to
+move from `ServiceStubs` to `ServiceNPLNRest` in
+`internal/nintendo/hosts.go`, and `internal/nplnrest` would gain handlers
+for whichever of `/v1/immigrate`/`/v1/penne_ids` turns out to be the real
+provisioning call.
+
+---
+
+## What does a frontline connection actually carry?
+
+`internal/nplnrest/server.go`'s `serveFrontline` accepts the `fro-N`
+connection and holds it open — confirmed safe, since
+`internal/nintendo/hosts.go` already establishes from a real error-code
+capture that closing it reads as a failure to the console. What happens
+**inside** the open connection (a single long HTTP response body, a
+WebSocket upgrade, framed messages of some kind) is not documented
+anywhere this pass could find, on the wiki or otherwise.
+
+**Proceeding on:** answer nothing further down the connection — silence
+risks a keep-alive timeout the console might not expect, but inventing a
+frame format risks the console rejecting it outright the moment it parses
+the first byte, which seemed the worse failure to court blind.
+
+**Changes if answered:** `internal/nplnrest/server.go`'s `serveFrontline`,
+entirely.
+
+---
+
 ## How should the dashboard authenticate a person, long term?
 
 Today it is a shared token (`dashboard.token`), and unset there is none. That is

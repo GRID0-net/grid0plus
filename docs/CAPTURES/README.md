@@ -318,6 +318,26 @@ this version deliberately names no number to keep stale).
   while the console was off has to still be there -- but nothing confirms it
   against a real client. Getting it backwards either loses an invite
   silently or replays a stale one on every reconnect.
+- **Vermillion's two response bodies**
+  (`internal/nplnrest/server.go`, `getAccountsConfig`/`getAccountsDevices`):
+  the wiki names both endpoints but gives no field table for either, unlike
+  every one of Penne's -- both answer with the most honestly-empty JSON
+  this server can claim (`{}`, `{"devices":[]}`), not a guessed real shape.
+  Whether Splatoon 3's boot needs anything from vermillion at all is a
+  separate, recorded question -- see `docs/QUESTIONS.md`.
+- **How a console obtains a Penne id and password**
+  (`internal/nplnrest/server.go`, `postLoginTickets`): accepted and logged
+  without verification (CLAUDE.md's second ground rule), because nothing
+  documents the provisioning step that would create one --
+  `god.hac.lp1.penne.srv.nintendo.net`'s two plausible endpoints have an
+  unconfirmed HTTP method on the wiki, and `god` is not served by this
+  package at all.
+- **A frontline connection's wire framing**
+  (`internal/nplnrest/server.go`, `serveFrontline`): held open, nothing
+  sent down it -- confirmed safe (closing it reads as a failure, per a real
+  error-code capture already in `internal/nintendo/hosts.go`), but what a
+  real server sends once the connection is open is undocumented anywhere
+  this pass could find.
 - **`FestEntry`'s resource-name shape**
   (`internal/toyohr/fest_entries.go`, `festEntryProto`): follows the same
   `tenants/<t>/fests/<ID>/...` convention `GetFestDecryptionKey` already
@@ -340,7 +360,8 @@ mitmproxy, and it does need the console.
 
 | Capture | Why |
 | --- | --- |
-| game boot through the NPLN auth handshake | confirms the id token is accepted and shows what the tenant expects in `authorization`/`uid` metadata |
+| game boot, from the very first vermillion request through the NPLN auth handshake | confirms whether vermillion is actually contacted (and needed) for Splatoon 3 specifically, penne's real request bodies and this server's guessed response fields, and what the tenant expects in `authorization`/`uid` metadata once the gRPC channel opens |
+| a frontline connection, bytes on the wire after the HTTP response headers | the one thing `internal/nplnrest`'s `serveFrontline` could not implement at all: what, if anything, is sent down an open frontline connection |
 | entering the lobby | `Schedule`'s five RPCs (currently answered empty) and `LobbyMessaging`, the first things the lobby draws |
 | a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
 | the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
