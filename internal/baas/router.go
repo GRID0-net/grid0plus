@@ -401,6 +401,27 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*caller, 
 			return nil, false
 		}
 
+		// A user-level delete (switchnetctl account delete-user) is meant to
+		// evict every device account under that person at once, existing
+		// tokens included -- not just block new logins. The device account's
+		// own DeletedAt, checked above, does not cover this: deleting a user
+		// does not touch its device accounts' rows.
+		user, err := s.store.GetUser(r.Context(), claims.Subject)
+		switch {
+		case errors.Is(err, db.ErrNotFound):
+			writeError(w, r, errInvalidToken)
+			return nil, false
+		case err != nil:
+			writeInternalError(s.log, w, r, "load user", err)
+			return nil, false
+		}
+		if user.Deleted {
+			s.log.Warn("baas: refused token for a deleted user",
+				"subject", claims.Subject, "device_account", claims.DeviceAccountID)
+			writeError(w, r, errInvalidToken)
+			return nil, false
+		}
+
 		return &caller{
 			UserID:          claims.Subject,
 			DeviceAccountID: claims.DeviceAccountID,

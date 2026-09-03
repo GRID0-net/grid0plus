@@ -278,6 +278,9 @@ func (p *Postgres) UpdateUser(ctx context.Context, id string, patch UserPatch) (
 		}
 		add("extras", buf)
 	}
+	if patch.Deleted != nil {
+		add("deleted", *patch.Deleted)
+	}
 
 	q := `UPDATE users SET ` + strings.Join(sets, ", ") +
 		` WHERE id = $1 RETURNING ` + userColumns

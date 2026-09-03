@@ -181,6 +181,38 @@ func testUsers(t *testing.T, s Store) {
 		t.Error("friends extras did not round-trip")
 	}
 
+	// Deleted is a patchable field like any other, and FindUsers/ListUsers
+	// must stop returning the user the moment it is set -- both
+	// implementations filter it themselves rather than the caller doing so,
+	// per Postgres's `NOT u.deleted` and Memory's equivalent skip.
+	deleted := true
+	updated, err = s.UpdateUser(ctx, u.ID, UserPatch{Deleted: &deleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Deleted {
+		t.Error("Deleted did not round-trip")
+	}
+	if found, err := s.FindUsers(ctx, UserQuery{IDs: []string{u.ID}}); err != nil {
+		t.Fatal(err)
+	} else if len(found) != 0 {
+		t.Errorf("FindUsers returned a deleted user: %+v", found)
+	}
+
+	notDeleted := false
+	updated, err = s.UpdateUser(ctx, u.ID, UserPatch{Deleted: &notDeleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Deleted {
+		t.Error("Deleted did not clear")
+	}
+	if found, err := s.FindUsers(ctx, UserQuery{IDs: []string{u.ID}}); err != nil {
+		t.Fatal(err)
+	} else if len(found) != 1 {
+		t.Errorf("FindUsers did not return the restored user: %+v", found)
+	}
+
 	// A duplicate user id must conflict rather than overwrite.
 	dup := u
 	err = s.CreateUser(ctx, dup, DeviceAccount{

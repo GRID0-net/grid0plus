@@ -256,6 +256,7 @@ type UserPatch struct {
 	ThumbnailUploadedAt *time.Time
 	Permissions         *Permissions
 	Extras              *ExtrasByScope
+	Deleted             *bool
 }
 
 // PresencePatch is a set of optional changes to a presence row.

@@ -73,7 +73,7 @@ func main() {
 
 	case "account":
 		if flag.NArg() < 2 {
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable> ...\n")
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable|delete-user|restore-user> ...\n")
 			os.Exit(2)
 		}
 		switch flag.Arg(1) {
@@ -85,8 +85,12 @@ func main() {
 			accountDisable(cfg, flag.Args()[2:])
 		case "enable":
 			accountEnable(cfg, flag.Args()[2:])
+		case "delete-user":
+			accountDeleteUser(cfg, flag.Args()[2:])
+		case "restore-user":
+			accountRestoreUser(cfg, flag.Args()[2:])
 		default:
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable> ...\n")
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable|delete-user|restore-user> ...\n")
 			os.Exit(2)
 		}
 
@@ -112,10 +116,13 @@ Commands:
   check     validate the configuration and report anything risky
   account   create a user from a device account id and password you already
             have, rather than one the server generates; revoke a device
-            account's live sessions; or disable/re-enable a device account
-            entirely, all without touching the database by hand. See
+            account's live sessions; disable/re-enable a single device
+            account; or delete/restore a user entirely -- every device
+            account under them at once, existing sessions included -- all
+            without touching the database by hand. See
             'switchnetctl account create -h', '... revoke-tokens -h',
-            '... disable -h' and '... enable -h'.
+            '... disable -h', '... enable -h', '... delete-user -h' and
+            '... restore-user -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file

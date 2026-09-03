@@ -172,6 +172,9 @@ func (m *Memory) UpdateUser(_ context.Context, id string, p UserPatch) (User, er
 	if p.Extras != nil {
 		u.Extras = cloneExtras(*p.Extras)
 	}
+	if p.Deleted != nil {
+		u.Deleted = *p.Deleted
+	}
 	u.UpdatedAt = time.Now().UTC()
 	m.users[id] = u
 	return cloneUser(u), nil

@@ -732,6 +732,66 @@ func TestAnExistingTokenStopsWorkingWhenItsDeviceAccountIsDeleted(t *testing.T) 
 	requireError(t, resp, 401, "invalid_token")
 }
 
+// TestLoginRefusesADeletedUser covers switchnetctl account delete-user, the
+// user-level counterpart to TestLoginRefusesADeletedDeviceAccount: deleting
+// the user, not just one of its device accounts, must also refuse login.
+func TestLoginRefusesADeletedUser(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+
+	deleted := true
+	if _, err := h.store.UpdateUser(t.Context(), a.UserID, db.UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/login",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"id":        {a.DeviceAccountID},
+			"password":  {a.Password},
+			"naCountry": {"NL"},
+		},
+	})
+	requireError(t, resp, 404, "deleted_user")
+}
+
+// TestATokenStopsWorkingAfterItsUserIsDeleted is the user-level sibling of
+// TestAnExistingTokenStopsWorkingWhenItsDeviceAccountIsDeleted. A user-level
+// delete (switchnetctl account delete-user) is meant to evict every device
+// account under that person at once, existing tokens included -- deleting
+// the user must be enough on its own, without also deleting the device
+// account, which authenticate's earlier check does not touch.
+func TestATokenStopsWorkingAfterItsUserIsDeleted(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+
+	resp := h.do(request{
+		method: "GET", path: "/1.0.0/users/" + a.UserID, token: a.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+
+	deleted := true
+	if _, err := h.store.UpdateUser(t.Context(), a.UserID, db.UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp = h.do(request{
+		method: "GET", path: "/1.0.0/users/" + a.UserID, token: a.AccessToken,
+	})
+	requireError(t, resp, 401, "invalid_token")
+
+	// Restoring the user reverses it -- same token, no fresh login.
+	notDeleted := false
+	if _, err := h.store.UpdateUser(t.Context(), a.UserID, db.UserPatch{Deleted: &notDeleted}); err != nil {
+		t.Fatal(err)
+	}
+	resp = h.do(request{
+		method: "GET", path: "/1.0.0/users/" + a.UserID, token: a.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+}
+
 // TestATokenStopsWorkingAfterItsDeviceAccountsTokensAreRevoked covers
 // switchnetctl account revoke-tokens: the operator's way to react to a
 // leaked-but-unexpired token without rotating the whole server's signing key

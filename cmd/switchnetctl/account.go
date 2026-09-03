@@ -240,6 +240,129 @@ Reverses 'switchnetctl account disable': the console can log in again with
 its existing credential.
 `
 
+// accountDeleteUser implements `switchnetctl account delete-user`.
+func accountDeleteUser(cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("account delete-user", flag.ExitOnError)
+	userID := fs.String("user-id", "", "16 hex character user id to delete")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, accountDeleteUserUsage) }
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if *userID == "" {
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.OpenPostgres(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.AutoMigrate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	user, err := store.GetUser(ctx, *userID)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		fmt.Fprintf(os.Stderr, "switchnetctl: no user with id %s\n", *userID)
+		os.Exit(1)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+	if user.Deleted {
+		fmt.Printf("user %s is already deleted\n", *userID)
+		return
+	}
+
+	deleted := true
+	if _, err := store.UpdateUser(ctx, *userID, db.UserPatch{Deleted: &deleted}); err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("deleted user %s\n", *userID)
+	fmt.Println()
+	fmt.Println("Every device account under this person is refused at login, any of them")
+	fmt.Println("attempting /1.0.0/federation is refused the same way, and every token")
+	fmt.Println("already minted for any of them stops working immediately -- the same")
+	fmt.Println("token check that runs on every authenticated request now also refuses")
+	fmt.Println("once it re-reads this user as deleted, not just once a token expires.")
+	fmt.Println("Nothing about the user, its device accounts, friends or history is")
+	fmt.Println("erased. 'switchnetctl account restore-user' reverses this.")
+}
+
+const accountDeleteUserUsage = `switchnetctl account delete-user -user-id <id>
+
+Blocks every device account belonging to one person at once -- reversible
+with 'switchnetctl account restore-user'.
+
+This is a different, more severe tool than 'account disable', which blocks
+a single console's credential. Use this to evict a person entirely: every
+console they have ever linked to this user, and any future Nintendo
+Account federation naming this user as the link target, stops working in
+one action.
+`
+
+// accountRestoreUser implements `switchnetctl account restore-user`.
+func accountRestoreUser(cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("account restore-user", flag.ExitOnError)
+	userID := fs.String("user-id", "", "16 hex character user id to restore")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, accountRestoreUserUsage) }
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if *userID == "" {
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.OpenPostgres(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.AutoMigrate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	user, err := store.GetUser(ctx, *userID)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		fmt.Fprintf(os.Stderr, "switchnetctl: no user with id %s\n", *userID)
+		os.Exit(1)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+	if !user.Deleted {
+		fmt.Printf("user %s is not deleted\n", *userID)
+		return
+	}
+
+	notDeleted := false
+	if _, err := store.UpdateUser(ctx, *userID, db.UserPatch{Deleted: &notDeleted}); err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("restored user %s\n", *userID)
+	fmt.Println()
+	fmt.Println("Its device accounts can log in and federate again with their existing")
+	fmt.Println("credentials -- nothing was regenerated. Any device account individually")
+	fmt.Println("disabled with 'account disable' before the user was deleted is still")
+	fmt.Println("disabled; this only reverses the user-level delete.")
+}
+
+const accountRestoreUserUsage = `switchnetctl account restore-user -user-id <id>
+
+Reverses 'switchnetctl account delete-user': every device account under
+this person can log in and federate again.
+`
+
 const accountCreateUsage = `switchnetctl account create -device-account-id <id> -password <password> [-nickname <name>]
 
 Creates a user whose device account id and password are exactly what you
