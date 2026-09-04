@@ -2,8 +2,10 @@ package jwt
 
 import (
 	"crypto"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"time"
 
@@ -40,11 +42,11 @@ func keyIDFor(pub crypto.PublicKey) KeyID {
 // Reference: https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#device-information
 //
 // The wiki does not document two fields a 2026-08-27 capture of a working
-// Nextendo device token showed: 'x5t#S256' and 'esv'. Both are 43-character
-// unpadded base64url strings — the shape of a SHA-256 digest — present on
-// every device token and echoed unchanged into /1.0.0/application/token's
-// access token, so they are static per-console attributes minted once by
-// dauth, not something recomputed per call.
+// Nextendo device token showed: 'x5t#S256' and 'esv'. Both are unpadded
+// base64url strings present on every device token, and — in that one
+// captured session — 'esv' also showed up echoed unchanged into
+// /1.0.0/application/token's access token, which first read as "static
+// per-console attribute minted once by dauth."
 //
 // 'x5t#S256' is implemented: RFC 7517 §4.9 names this exact key for an X.509
 // SHA-256 certificate thumbprint, and dauth already reads the console's TLS
@@ -52,11 +54,25 @@ func keyIDFor(pub crypto.PublicKey) KeyID {
 // so hashing bytes already being read is not new trust placed in Nintendo
 // data, just a real digest of it. See deviceFrom in internal/dauth/handler.go.
 //
-// 'esv' is not implemented. Its meaning is genuinely unknown, it is not a
-// per-connection value we can safely rehash from the client cert, and every
-// plausible source of it (an eTicket, a title key, anything AES/RSA-derived
-// from Nintendo key material) is exactly what CLAUDE.md's first ground rule
-// forbids SwitchNet from touching. See docs/CAPTURES/README.md.
+// 'esv' is now also implemented, and the "static per-console" reading above
+// was wrong. 2026-09-04: NextendoNetwork/nx-dauth — the real, running dauth
+// server behind that capture — is source-available (PolyForm Shield 1.0.0),
+// and its device/app token minting is exactly:
+//
+//	"esv": randB64(33)   // base64url(33 random bytes), freshly generated on
+//	                      // every single token, not derived from anything
+//
+// called independently in both its device-token and app-token paths — the
+// "echoed unchanged" observation was SwitchNet's own /1.0.0/application/token
+// copying a device token's nintendo block forward, not evidence dauth caches
+// or derives the value. So 'esv' is not a hash, a MAC, or anything touching
+// Nintendo key material — it never implicated CLAUDE.md's first ground rule
+// to begin with, it is just opaque padding a real server invents per call.
+// NewESV below does the same thing. What was still a real gap: SwitchNet's
+// device tokens omitted the key entirely rather than sending a (harmless)
+// wrong value, and a console's local validation checking only for the key's
+// presence would have read that omission as malformed regardless of what
+// SwitchNet's actual bug turns out to be.
 type DeviceInfo struct {
 	// SerialNumber is the console serial, e.g. "XAW10012345678".
 	SerialNumber string `json:"sn"`
@@ -73,6 +89,25 @@ type DeviceInfo struct {
 	// console's TLS client certificate, DER-encoded, per RFC 7517 §4.9. Empty
 	// when nginx passed no client certificate through.
 	X5tS256 string `json:"x5t#S256,omitempty"`
+	// Esv is opaque, freshly-random padding — see the package comment above
+	// for why. Generate a fresh one per token with NewESV; never reuse one
+	// across tokens, matching what a real server does.
+	Esv string `json:"esv,omitempty"`
+}
+
+// NewESV returns a fresh 'esv' value: base64url (no padding) of 33 random
+// bytes, matching NextendoNetwork/nx-dauth's own randB64(33) — see
+// DeviceInfo's package comment. Call it once per token minted, never once
+// per device: a real server does not cache or derive this value.
+func NewESV() string {
+	b := make([]byte, 33)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand.Read only fails if the OS entropy source is broken, the
+		// same class of practically-impossible failure keyIDFor above already
+		// treats as fatal rather than threading an error through every caller.
+		panic("jwt: generate esv: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // AppInfo is the 'nintendo' claim of an application token, and the block copied
@@ -104,6 +139,11 @@ type AppInfo struct {
 	ProductCode  string `json:"pc,omitempty"`
 	DeviceType   string `json:"dt,omitempty"`
 	IsT          *bool  `json:"ist,omitempty"`
+
+	// Esv is opaque, freshly-random padding, the same as DeviceInfo.Esv —
+	// present unconditionally in nx-dauth's own application_auth_token, not
+	// gated on the device block above. Generate with NewESV.
+	Esv string `json:"esv,omitempty"`
 }
 
 // DeviceTokenClaims is the payload of a device token.

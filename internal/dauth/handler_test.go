@@ -354,6 +354,54 @@ func TestX5tS256IsTheRealThumbprintOfTheClientCertificate(t *testing.T) {
 	}
 }
 
+// TestEsvIsFreshRandomPaddingPerToken exercises the 'esv' claim.
+//
+// 2026-09-04: NextendoNetwork/nx-dauth's real, running source (source-
+// available, PolyForm Shield) shows esv is base64url(33 random bytes),
+// freshly generated on every single token minted -- see DeviceInfo's package
+// comment. Two device tokens minted in the same /v8/device_auth_tokens
+// request must therefore carry different esv values, not the same one
+// reused across both, and each must be well-formed base64url.
+func TestEsvIsFreshRandomPaddingPerToken(t *testing.T) {
+	h := newHarness(t)
+
+	resp := h.postJSON("/v8/device_auth_tokens", `{
+		"system_version": "00140001",
+		"ist": false,
+		"token_requests": [
+			{"client_id": "8f849b5d34778d8e"},
+			{"client_id": "83b72b05dc3278d7"}
+		]
+	}`)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	var body multiTokenResponse
+	decode(t, resp, &body)
+	if len(body.Results) != 2 {
+		t.Fatalf("got %d results, want 2", len(body.Results))
+	}
+
+	var esvs []string
+	for _, res := range body.Results {
+		var claims sjwt.DeviceTokenClaims
+		if err := h.verifier.Verify(res.DeviceAuthToken, &claims); err != nil {
+			t.Fatalf("%s: token does not verify: %v", res.ClientID, err)
+		}
+		if _, err := base64.RawURLEncoding.DecodeString(claims.Nintendo.Esv); err != nil {
+			t.Errorf("%s: esv = %q is not valid unpadded base64url: %v", res.ClientID, claims.Nintendo.Esv, err)
+		}
+		esvs = append(esvs, claims.Nintendo.Esv)
+	}
+	if esvs[0] == "" || esvs[1] == "" {
+		t.Fatalf("esv values = %q, %q, want both non-empty", esvs[0], esvs[1])
+	}
+	if esvs[0] == esvs[1] {
+		t.Error("both tokens from the same request carry the same esv, want each freshly random")
+	}
+}
+
 // selfSignedCertPEM returns a throwaway self-signed certificate's raw DER and
 // its PEM encoding, standing in for the console's own TLS client certificate.
 func selfSignedCertPEM(t *testing.T) (der []byte, pemBytes []byte) {

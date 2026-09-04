@@ -332,6 +332,47 @@ func TestApplicationTokenForADigitalTitle(t *testing.T) {
 	if claims.Nintendo.DeviceID != "" || claims.Nintendo.SerialNumber != "" {
 		t.Errorf("a non-system title's token carries a device block: %+v", claims.Nintendo)
 	}
+	// esv: present unconditionally (unlike the device block above), matching
+	// nx-dauth's own application_auth_token minting -- see DeviceInfo's
+	// package comment.
+	if _, err := base64.RawURLEncoding.DecodeString(claims.Nintendo.Esv); err != nil {
+		t.Errorf("esv = %q is not valid unpadded base64url: %v", claims.Nintendo.Esv, err)
+	}
+}
+
+// TestEsvIsFreshPerApplicationToken mints two application tokens for the same
+// device and title and requires different esv values -- a real server does
+// not cache or derive this value, see NewESV's own comment.
+func TestEsvIsFreshPerApplicationToken(t *testing.T) {
+	h := newHarness(t, "FREE", "GAME_SERVER", nil)
+	deviceToken := h.deviceToken()
+
+	mint := func() string {
+		resp := h.postForm("/v3/application_auth_token", url.Values{
+			"application_id":      {splatoon3TitleID},
+			"application_version": {"00070000"},
+			"device_auth_token":   {deviceToken},
+			"media_type":          {"DIGITAL"},
+		})
+		if resp.StatusCode != 200 {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var body appTokenResponse
+		decode(t, resp, &body)
+		var claims sjwt.AppTokenClaims
+		if err := h.appVerifier.Verify(body.ApplicationAuthToken, &claims); err != nil {
+			t.Fatalf("token does not verify: %v", err)
+		}
+		return claims.Nintendo.Esv
+	}
+
+	a, b := mint(), mint()
+	if a == "" || b == "" {
+		t.Fatalf("esv values = %q, %q, want both non-empty", a, b)
+	}
+	if a == b {
+		t.Error("two application tokens for the same device and title carry the same esv, want each freshly random")
+	}
 }
 
 func TestEDIIsStablePerDeviceAndTitle(t *testing.T) {

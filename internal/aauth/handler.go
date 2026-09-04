@@ -253,6 +253,7 @@ func (h *Handler) applicationToken(w http.ResponseWriter, r *http.Request) {
 		// reboots, which is what a game server keying on it would expect.
 		EDI:              sjwt.DeriveHexID(h.cfg.DeviceIDSecret, 16, "edi", claims.Subject, titleID),
 		OnlinePlayPolicy: policy,
+		Esv:              sjwt.NewESV(),
 	}
 	if policy == "MEMBERSHIP_REQUIRED" {
 		info.PolicyHandler = policyHandler
