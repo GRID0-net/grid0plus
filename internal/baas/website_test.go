@@ -1,11 +1,14 @@
 package baas
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/n-popescu/switchnet/internal/db"
 )
 
 func TestRegisterPageRenders(t *testing.T) {
@@ -19,6 +22,42 @@ func TestRegisterPageRenders(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), `name="username"`) {
 		t.Error("page has no username field")
+	}
+}
+
+// TestWebsiteRegistrationRespectsAllowRegistration covers the gap fixed
+// alongside this test: registerPage/registerSubmit did not check
+// AllowRegistration at all, while the console-facing POST /1.0.0/users
+// (registerUser, TestRegistrationCanBeDisabled) did. An operator who turned
+// registration off "so that somebody who finds the server cannot add
+// themselves to it" (AllowRegistration's own doc comment) was still exposing
+// a fully working, unauthenticated account-creation form on this path.
+func TestWebsiteRegistrationRespectsAllowRegistration(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.AllowRegistration = false })
+
+	page, err := http.Get(h.server.URL + "/register")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer page.Body.Close()
+	requireStatus(t, page, http.StatusForbidden)
+	body, _ := io.ReadAll(page.Body)
+	if strings.Contains(string(body), `name="username"`) {
+		t.Error("registration page still renders the form while registration is disabled")
+	}
+
+	resp, err := http.PostForm(h.server.URL+"/register", url.Values{
+		"username": {"eve"},
+		"password": {"hunter2222"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusForbidden)
+
+	if _, err := h.store.GetUserByLoginUsername(t.Context(), "eve"); !errors.Is(err, db.ErrNotFound) {
+		t.Errorf("GetUserByLoginUsername(%q) = %v, want db.ErrNotFound -- no account should have been created", "eve", err)
 	}
 }
 
