@@ -19,7 +19,7 @@ Three phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | accounts + the stock friends list | code complete, **not yet verified on hardware** |
-| 2 | NPLN game server for Splatoon 3, and a dashboard | not started |
+| 2 | NPLN game server for Splatoon 3, and a dashboard | code complete, **not yet verified on hardware** — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
 | 3 | eShop, served from local NSP dumps | not started |
 
 **Phase 1 has not been confirmed working on a real console.** Until it has, treat
