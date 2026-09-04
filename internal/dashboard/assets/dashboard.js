@@ -1007,6 +1007,223 @@ $("#debug-account").addEventListener("click", async (e) => {
   }
 });
 
+// ---- live table browser ----------------------------------------------------
+//
+// A generic, spreadsheet-shaped view over internal/dashboard/tables.go's
+// registry: every column that registry marks editable becomes an input
+// here, every PK/reference column renders read-only. Nothing about which
+// columns are which is decided in this file -- it all comes from
+// /api/debug/tables, so this stays correct if that registry ever changes.
+
+let debugTableDefs = [];
+let debugCurrentTable = null;
+let debugTableEditingCell = null; // set while a cell has focus, so a live
+// poll never overwrites input the operator has not finished typing.
+let debugTablePreviousByKey = new Map();
+let debugTablesTimer = null;
+
+function debugTableDef(name) {
+  return debugTableDefs.find((t) => t.table === name);
+}
+
+function debugRowPK(def, row) {
+  const pk = {};
+  def.columns.forEach((c, i) => {
+    if (c.pk) pk[c.name] = row[i];
+  });
+  return pk;
+}
+
+function debugRowKey(def, row) {
+  return JSON.stringify(debugRowPK(def, row));
+}
+
+function debugCellKey(pk, colName) {
+  return JSON.stringify(pk) + "|" + colName;
+}
+
+async function loadDebugTableList() {
+  try {
+    const { available, tables } = await api("/api/debug/tables");
+    debugTableDefs = tables;
+    $("#debug-tables-unavailable").hidden = available;
+    $("#debug-table-select").disabled = !available;
+    if (!available) return;
+
+    $("#debug-table-select").replaceChildren(
+      ...tables.map((t) => {
+        const opt = document.createElement("option");
+        opt.value = t.table;
+        opt.textContent = t.table;
+        return opt;
+      })
+    );
+    debugCurrentTable = tables[0]?.table ?? null;
+    if (debugCurrentTable) await loadDebugTableRows();
+  } catch (e) {
+    $("#debug-tables-unavailable").hidden = false;
+    $("#debug-tables-unavailable").textContent = "Could not load the table list: " + e.message;
+  }
+}
+
+async function saveDebugCell(def, col, pk, value, td, input) {
+  const fields = { [col.name]: col.nullable && value === "" ? null : value };
+  try {
+    await api(`/api/debug/tables/${encodeURIComponent(def.table)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pk, fields }),
+    });
+    if (input) {
+      input.dataset.original = value;
+      input.classList.remove("dirty", "save-error");
+    }
+    td.closest("tr")?.classList.remove("just-changed");
+  } catch (e) {
+    if (input) input.classList.add("save-error");
+    alert(`Could not save ${col.name}: ${e.message}`);
+  }
+}
+
+function makeDebugCell(def, col, row, pk) {
+  const td = document.createElement("td");
+  const value = row[def.columns.indexOf(col)];
+
+  if (!col.editable) {
+    const span = document.createElement("span");
+    span.className = "debug-cell readonly";
+    span.textContent = value ?? "";
+    if (value) span.title = value;
+    td.appendChild(span);
+    return td;
+  }
+
+  if (col.kind === "boolean") {
+    const wrap = document.createElement("span");
+    wrap.className = "debug-cell-bool";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = value === "true";
+    input.addEventListener("change", () =>
+      saveDebugCell(def, col, pk, input.checked ? "true" : "false", td)
+    );
+    wrap.appendChild(input);
+    td.appendChild(wrap);
+    return td;
+  }
+
+  // A single-line input for everything except JSON: a textarea's own line
+  // wrapping fights the grid's fixed row height, and every other kind here
+  // (text, numbers, timestamps, Postgres's own '{a,b,c}' array literal) is
+  // naturally one line. JSON is the one kind worth more room to read and edit.
+  const input = document.createElement(col.kind === "jsonb" ? "textarea" : "input");
+  if (input.tagName === "TEXTAREA") input.rows = 1;
+  else input.type = "text";
+  input.className = "debug-cell";
+  input.value = value ?? "";
+  input.dataset.original = value ?? "";
+  const key = debugCellKey(pk, col.name);
+
+  input.addEventListener("focus", () => (debugTableEditingCell = key));
+  input.addEventListener("blur", () => {
+    if (debugTableEditingCell === key) debugTableEditingCell = null;
+    if (input.value !== input.dataset.original) saveDebugCell(def, col, pk, input.value, td, input);
+  });
+  input.addEventListener("input", () => {
+    input.classList.toggle("dirty", input.value !== input.dataset.original);
+    input.classList.remove("save-error");
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === "Escape") {
+      input.value = input.dataset.original;
+      input.classList.remove("dirty");
+      input.blur();
+    }
+  });
+
+  td.appendChild(input);
+  return td;
+}
+
+function renderDebugTableHead(def) {
+  const tr = document.createElement("tr");
+  tr.append(
+    ...def.columns.map((c) => {
+      const th = document.createElement("th");
+      th.textContent = c.name;
+      if (c.pk) th.title = "primary key";
+      return th;
+    })
+  );
+  $("#debug-table-grid thead").replaceChildren(tr);
+}
+
+function renderDebugTableBody(def, rows) {
+  const tbody = $("#debug-table-grid tbody");
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="${def.columns.length}" class="empty">No rows.</td>`;
+    tbody.replaceChildren(tr);
+    return;
+  }
+
+  tbody.replaceChildren(
+    ...rows.map((row) => {
+      const pk = debugRowPK(def, row);
+      const key = debugRowKey(def, row);
+      const tr = document.createElement("tr");
+      tr.append(...def.columns.map((c) => makeDebugCell(def, c, row, pk)));
+
+      const prev = debugTablePreviousByKey.get(key);
+      if (prev !== undefined && prev !== JSON.stringify(row)) {
+        tr.classList.add("just-changed");
+      }
+      return tr;
+    })
+  );
+}
+
+async function loadDebugTableRows() {
+  if (!debugCurrentTable || debugTableEditingCell) return;
+  const def = debugTableDef(debugCurrentTable);
+  if (!def) return;
+
+  try {
+    const { rows } = await api(`/api/debug/tables/${encodeURIComponent(debugCurrentTable)}`);
+    renderDebugTableHead(def);
+    renderDebugTableBody(def, rows);
+    debugTablePreviousByKey = new Map(rows.map((row) => [debugRowKey(def, row), JSON.stringify(row)]));
+  } catch (e) {
+    $("#debug-table-grid tbody").innerHTML =
+      `<tr><td colspan="99" class="empty">Could not load ${escape(debugCurrentTable)}: ${escape(e.message)}</td></tr>`;
+  }
+}
+
+function startDebugTablesLive() {
+  stopDebugTablesLive();
+  debugTablesTimer = setInterval(loadDebugTableRows, 4000);
+}
+function stopDebugTablesLive() {
+  if (debugTablesTimer) clearInterval(debugTablesTimer);
+  debugTablesTimer = null;
+}
+
+$("#debug-table-select").addEventListener("change", (e) => {
+  debugCurrentTable = e.target.value;
+  debugTablePreviousByKey = new Map();
+  loadDebugTableRows();
+});
+$("#debug-tables-refresh").addEventListener("click", loadDebugTableRows);
+$("#debug-tables-live").addEventListener("change", (e) => {
+  if (e.target.checked) startDebugTablesLive();
+  else stopDebugTablesLive();
+});
+
+loadDebugTableList();
+if ($("#debug-tables-live").checked) startDebugTablesLive();
+
 // ---- live stream ----------------------------------------------------------
 
 function setLive(state, label) {

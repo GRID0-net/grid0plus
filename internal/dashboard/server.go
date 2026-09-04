@@ -182,6 +182,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/debug/accounts/{id}/deleted", s.guard(s.handleDebugSetAccountDeleted))
 	mux.HandleFunc("POST /api/debug/accounts/{id}/device-accounts/{deviceAccountId}/revoke-tokens", s.guard(s.handleDebugRevokeDeviceAccountTokens))
 	mux.HandleFunc("POST /api/debug/accounts/{id}/device-accounts/{deviceAccountId}/deleted", s.guard(s.handleDebugSetDeviceAccountDeleted))
+	mux.HandleFunc("GET /api/debug/tables", s.guard(s.handleDebugTables))
+	mux.HandleFunc("GET /api/debug/tables/{table}", s.guard(s.handleDebugTableRows))
+	mux.HandleFunc("PATCH /api/debug/tables/{table}", s.guard(s.handleDebugUpdateRow))
 
 	mux.HandleFunc("GET /api/events", s.guard(s.handleEvents))
 

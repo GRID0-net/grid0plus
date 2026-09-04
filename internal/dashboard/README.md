@@ -157,6 +157,38 @@ Every write here is exactly as reversible as the underlying store method
 already is: `Deleted` is a flag, not a row removal, and there is no path
 from this tab to `DELETE FROM users`.
 
+## The live table browser (`tables.go`) is a different kind of control
+
+Below the account lookup, an Excel-shaped view over every table BAAS and
+NPLN read from, driven entirely by `tables.go`'s own registry rather than
+`db.Store`: real cells, editable in place, polling every few seconds while
+"live" is on. It does **not** go through a `db.Store` method at all --
+deliberately, and Postgres-only, for the same reason `db.Memory` exists
+purely for the fast handler-test suite rather than as a deployment target
+(see `tables.go`'s package comment for the full reasoning). `s.postgres()`
+type-asserts the configured store down to `*db.Postgres` and reaches its raw
+pool; against `db.Memory` the endpoints answer 503 rather than pretending to
+work.
+
+Every value crosses the wire as text, both ways: a `SELECT` casts every
+column with `::text`, and an edit is cast back with the column's own
+Postgres type (`$1::jsonb`, `$1::text[]`, ...). That is what lets this stay
+one generic handler instead of one per column type, and it is also the
+safety net -- a value that is not valid syntax for the column's type, or
+that a `CHECK` constraint refuses, answers with Postgres's own error message
+rather than something this file would have to duplicate. The registry is
+the actual access-control surface: no primary key, foreign-key-shaped
+column (`host_user_id`, `player_ids`, ...), or password-hash column is ever
+selected or editable, no matter what a request asks for -- see the
+column-by-column reasoning in `tables.go`'s own comment.
+
+`tables_test.go` needs a real database and is skipped without
+`SWITCHNET_TEST_DATABASE_URL`, same as `internal/db`'s own PostgreSQL
+contract test -- and deliberately exercises `npln_matches`, not `users`, so
+it cannot be caught mid-test by that contract test's own `TRUNCATE ...
+CASCADE` when `go test` runs the two packages concurrently against the same
+database.
+
 ## Authentication is a shared token, and that is deliberate
 
 `dashboard.token` guards every route except the static assets. Unset, there is

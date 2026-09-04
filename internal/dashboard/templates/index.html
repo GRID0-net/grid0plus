@@ -379,6 +379,35 @@
         accounts.</p>
       <div id="debug-account"></div>
     </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Live tables</h2>
+        <div class="debug-tables-controls">
+          <select id="debug-table-select"></select>
+          <label class="debug-live-toggle">
+            <input type="checkbox" id="debug-tables-live" checked>
+            live
+          </label>
+          <button type="button" class="btn btn-ghost btn-tiny" id="debug-tables-refresh">Refresh</button>
+        </div>
+      </div>
+      <p class="meta">Every row of the selected table, straight from the
+        database. Read-only cells (keys, and anything another system depends
+        on byte-for-byte) are dimmed; everything else is an Excel-style cell
+        -- click in, edit, and it saves on blur or Enter. While "live" is on,
+        the table re-polls every few seconds and any row a console or another
+        tab changed flashes; a cell you are actively editing is never
+        overwritten mid-edit.</p>
+      <p class="empty" id="debug-tables-unavailable" hidden>Not available:
+        this instance is running the in-memory store, not Postgres.</p>
+      <div class="debug-table-scroll">
+        <table class="grid debug-table-grid" id="debug-table-grid">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 </main>
 
