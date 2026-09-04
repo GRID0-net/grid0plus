@@ -129,6 +129,29 @@ in two places each and any path where a human types one of them twice eventually
 produces `BcatInvalid`, which the player sees as a generic communication error
 naming nothing.
 
+## Redeploying an existing install
+
+Once the stack is up (the Quickstart above), day-to-day operation is usually
+"pull and restart", not the full `make up` bring-up:
+
+```sh
+scripts/start.sh                 # (re)start everything -- same checks as make up,
+                                  # plus the cert/nginx-config generation and a
+                                  # config validation pass before anything starts
+scripts/update.sh                # pull, then restart only what the change reaches
+scripts/update.sh --dry-run      # say what would restart, change nothing
+```
+
+`update.sh` reads each service's own Go package graph (`go list -deps`), not
+directory names, so a change to `internal/db` restarts every service that
+imports it and a change to `internal/baas` restarts only `baas` — one rebuilt
+image, only the affected containers recreated. Neither script polls a health
+endpoint: none of the Go services expose one (only Postgres and Redis have a
+`docker-compose healthcheck:`), so "started"/"restarted" here means the
+containers are up, not that each one has confirmed it can serve a request —
+`docker compose ps` and `docker compose logs --tail=50 <service>` are how you
+check that.
+
 ## Contributing, or picking this up as an agent
 
 [`CLAUDE.md`](CLAUDE.md) is the orientation document: the two real hardware bugs
