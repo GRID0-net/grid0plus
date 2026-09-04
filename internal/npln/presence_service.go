@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
 )
@@ -197,25 +198,45 @@ func (p *presenceService) SubscribePresences(
 }
 
 // watchablePresenceIDs resolves the requested presence resource names to user
-// ids, dropping anything the caller may not watch: itself and its friends
-// only, capped at maxSubscribedPresences.
+// ids, dropping anything the caller may not watch: itself, always, and a
+// friend only when the friend's own presence.Permissions setting allows this
+// caller to see it -- the same check internal/npln/friends.go's
+// FriendUser.Relationship.PresenceReceivable already makes for the friends
+// list stream (see presence.Visible's own doc comment). Without it here, a
+// console could subscribe directly to a friend's presence resource and see
+// real ONLINE/PLAYING state and title regardless of that friend having set
+// their presence to SELF or FAVORITE_FRIENDS-while-not-favourited -- exactly
+// what PresenceReceivable tells the client it should not be shown.
+//
+// Capped at maxSubscribedPresences.
 func (s *Server) watchablePresenceIDs(ctx context.Context, callerID string, names []string) ([]string, error) {
 	friendships, err := s.store.ListFriends(ctx, callerID, maxSubscribedPresences)
 	if err != nil {
 		return nil, err
 	}
-	allowed := make(map[string]bool, len(friendships)+1)
-	allowed[callerID] = true
+	friend := make(map[string]bool, len(friendships))
 	for _, fr := range friendships {
-		allowed[fr.FriendID] = true
+		friend[fr.FriendID] = true
 	}
 
 	out := make([]string, 0, min(len(names), maxSubscribedPresences))
 	seen := make(map[string]bool, len(names))
 	for _, name := range names {
 		id := presenceUserID(name)
-		if id == "" || !allowed[id] || seen[id] {
+		if id == "" || seen[id] {
 			continue
+		}
+		if id != callerID {
+			if !friend[id] {
+				continue
+			}
+			owner, err := s.store.GetUser(ctx, id)
+			// Fails closed, the same as presence.Visible's own unrecognised-
+			// setting branch: a lookup error is not evidence the friend
+			// wants their presence shown.
+			if err != nil || !presence.Visible(ctx, s.store, owner, callerID) {
+				continue
+			}
 		}
 		seen[id] = true
 		out = append(out, id)

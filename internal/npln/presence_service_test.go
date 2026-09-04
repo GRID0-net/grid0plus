@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/n-popescu/switchnet/internal/db"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
 )
 
@@ -63,6 +64,57 @@ func TestSubscribePresencesOnlyServesSelfAndFriends(t *testing.T) {
 	}
 	if second.GetEnumerationDone() == nil {
 		t.Errorf("second message is not enumeration_done: %v", second)
+	}
+}
+
+// TestSubscribePresencesRespectsAFriendsPresencePrivacySetting covers the gap
+// fixed alongside this test: watchablePresenceIDs used to allow any friend
+// through regardless of the friend's own presence.Permissions setting, unlike
+// internal/npln/friends.go's FriendUser.Relationship.PresenceReceivable (and
+// BAAS's own friends.go presenceVisibleTo), which both correctly hide a
+// friend's presence when it is set to SELF. A console subscribing directly to
+// the friend's presence resource -- rather than reading it off the friends
+// list -- bypassed that entirely.
+func TestSubscribePresencesRespectsAFriendsPresencePrivacySetting(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("watcher0000000003", "device-watcher-3")
+	h.createUser("friend0000000003", "device-friend-3")
+	ctx := context.Background()
+	if err := h.store.AddFriendship(ctx, "watcher0000000003", "friend0000000003", h.now); err != nil {
+		t.Fatalf("add friendship: %v", err)
+	}
+	perms := db.DefaultPermissions(h.now)
+	perms.Presence = "SELF"
+	if _, err := h.store.UpdateUser(ctx, "friend0000000003", db.UserPatch{Permissions: &perms}); err != nil {
+		t.Fatalf("set presence permission: %v", err)
+	}
+
+	rpcCtx := h.ctx(h.sessionFor(t, "watcher0000000003", "device-watcher-3"), "")
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).SubscribePresences(rpcCtx,
+		&friendspb.SubscribePresencesRequest{
+			User: "users/watcher0000000003",
+			Presences: []string{
+				"tenants/" + testTenant + "/users/watcher0000000003/presence",
+				"tenants/" + testTenant + "/users/friend0000000003/presence",
+			},
+		})
+	if err != nil {
+		t.Fatalf("SubscribePresences: %v", err)
+	}
+
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv: %v", err)
+	}
+	got := map[string]bool{}
+	for _, p := range first.GetPresences().GetPresences() {
+		got[p.GetName()] = true
+	}
+	if got["tenants/"+testTenant+"/users/friend0000000003/presence"] {
+		t.Error("a friend's presence was served despite that friend's Presence permission being SELF")
+	}
+	if !got["tenants/"+testTenant+"/users/watcher0000000003/presence"] {
+		t.Error("the caller's own presence was not served")
 	}
 }
 
