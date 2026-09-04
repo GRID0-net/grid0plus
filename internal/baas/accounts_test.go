@@ -1,6 +1,7 @@
 package baas
 
 import (
+	"encoding/base64"
 	"net/url"
 	"strings"
 	"testing"
@@ -1117,4 +1118,70 @@ func TestUnroutedPathReturnsABAASShapedError(t *testing.T) {
 		method: "GET", path: "/9.9.9/nonexistent", token: a.AccessToken,
 	})
 	requireError(t, resp, 404, "resource_is_not_found")
+}
+
+// TestNxAccountBlobMatchesTheRealCapturedShape pins the one thing a
+// 2026-09-04 real capture actually settled about extras.self.nxAccount:
+// length (174 bytes) and encoding (base64, so 232 characters with no
+// padding) -- not its interior content, which nxAccountBlob's own comment
+// is explicit about not attempting to reproduce.
+func TestNxAccountBlobMatchesTheRealCapturedShape(t *testing.T) {
+	got := nxAccountBlob("d63e6ad0809131f2")
+	if len(got) != 232 {
+		t.Errorf("len(nxAccountBlob(...)) = %d, want 232 (base64 of the real 174-byte shape)", len(got))
+	}
+	decoded, err := base64.StdEncoding.DecodeString(got)
+	if err != nil {
+		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
+	}
+	if len(decoded) != 174 {
+		t.Errorf("decoded length = %d, want 174", len(decoded))
+	}
+}
+
+func TestNxAccountBlobIsStablePerAccountAndDistinctAcrossAccounts(t *testing.T) {
+	a1 := nxAccountBlob("d63e6ad0809131f2")
+	a2 := nxAccountBlob("d63e6ad0809131f2")
+	if a1 != a2 {
+		t.Error("nxAccountBlob is not stable for the same account id")
+	}
+	b := nxAccountBlob("0000000000000001")
+	if a1 == b {
+		t.Error("nxAccountBlob gave two different accounts the same value")
+	}
+}
+
+// TestFederationNxAccountHasTheRealShapeNotTheOldPlaceholder guards against
+// regressing to the previous placeholder (the bare Nintendo Account id,
+// ~16 characters) now that a real capture has settled the actual length.
+func TestFederationNxAccountHasTheRealShapeNotTheOldPlaceholder(t *testing.T) {
+	h := newHarness(t)
+	a := h.register()
+
+	now := h.clock()
+	idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject: "some-nintendo-account-id", Audience: "test",
+		IssuedAt: now.Unix(), Expires: now.Add(time.Minute).Unix(),
+		Issuer: "https://accounts.nintendo.com", TokenID: sjwt.NewTokenID(), Type: "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp": {"nintendoAccount"}, "id": {a.DeviceAccountID},
+			"password": {a.Password}, "idToken": {idToken},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	nxAccount, _ := body.User.Extras[db.ScopeSelf]["nxAccount"].(string)
+	if len(nxAccount) != 232 {
+		t.Errorf("federation's own embedded extras.self.nxAccount has length %d, want 232", len(nxAccount))
+	}
 }

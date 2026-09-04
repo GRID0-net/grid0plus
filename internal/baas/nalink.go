@@ -44,12 +44,18 @@ func oidcHash(value string) string {
 // (website.go), not a shared passphrase — this is meant to attach the link
 // to one persistent identity, not mint an anonymous one per attempt.
 //
-// What is NOT yet confirmed by that capture, and is deliberately not guessed
-// at here: whether POST /1.0.0/users fires automatically after the redirect,
-// and how the resulting device account is meant to attach to the existing
-// person rather than becoming a new one. See the plan this was built from
-// and docs/CAPTURES for the open item. This file only issues the token; nothing
-// in accounts.go has been changed to consume it specially.
+// Both questions this paragraph used to leave open are now settled, by a
+// 2026-08-27 capture of a genuinely successful Nextendo link
+// (docs/CAPTURES/nintendo-account-link.md): yes, POST /1.0.0/users fires
+// automatically right after the redirect, driven by the nnAccount SDK, no
+// console-local confirmation step in between; and accounts.go's federation
+// handler DOES consume the token this file issues specially -- a successful
+// verification against naIDIssuer's own key (only ever true for a token
+// this file signed) is what tells completeLogin to reassign the fresh
+// device account to the existing person, rather than leaving it attached to
+// the disposable identity registerUser had to invent before any id token
+// existed. See federation's own doc comment in accounts.go for the real-
+// hardware failure that fix was found against.
 
 // authCode is a short-lived, single-use authorization code minted by
 // naAuthorize and redeemed by naToken. In-memory and TTL'd: this is

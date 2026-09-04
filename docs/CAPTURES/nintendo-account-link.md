@@ -251,6 +251,30 @@ validates either field locally — as opposed to their being server-side-only
 bookkeeping the console never reads — is unconfirmed. Only a hardware retest
 of the NA-link flow settles it.
 
+**`extras.self.nxAccount`'s real shape, settled 2026-09-04** — a genuine,
+decrypted, working Nextendo federation response, captured and supplied
+directly by the operator (a mitmproxy `.flow`, read with the real
+`mitmproxy` library rather than eyeballed): a fixed **174-byte binary
+structure, base64-encoded to exactly 232 characters** (174 divides evenly by
+3, so no padding). That corrects an earlier, unverified guess elsewhere in
+this codebase calling it "a non-base64 alphabet" — decoded, it is ordinary
+base64 of opaque bytes. `internal/baas/accounts.go`'s `nxAccountBlob` now
+matches this length and encoding; the interior byte layout is still unknown
+and is not guessed at (see that function's own comment).
+
+Also tested on real hardware, and directly relevant to whether `nxAccount`
+is what is driving `2124-0292`: the operator tried both another real
+account's literal captured bytes and unformatted random data in this field,
+in separate live federation attempts. **Both still produced 2124-0292** —
+the same error already shown above to survive several unrelated, capture-
+verified fixes. That is consistent with the console never checking this
+field's content at all, but it does not settle the question: a content
+check keyed to per-request context (so that even genuine bytes copied from
+a *different* request would also read as wrong) predicts the exact same
+outcome. Recorded here as a real data point either way, not a conclusion —
+see `nxAccountBlob`'s `TODO(capture-needed)` for what would actually settle
+it.
+
 The raw `.pcap` is not committed (nothing decrypted, but it is still real
 traffic timing/metadata tied to a real account) — see
 `docs/CAPTURES/raw/` and its own redaction notes in `docs/CAPTURES/README.md`.
