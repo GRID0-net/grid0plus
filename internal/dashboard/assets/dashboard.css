@@ -116,6 +116,46 @@ body {
 
 header, nav, main { position: relative; z-index: 1; }
 
+/* ---- login --------------------------------------------------------------
+ * The one page that is not part of the tabbed dashboard -- a centred card
+ * rather than the header/tabs/main shell, since there is nothing to show
+ * until the token is accepted. */
+
+.login-body { display: flex; min-height: 100vh; }
+.login-main {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; padding: var(--pad);
+}
+.login-card {
+  width: 100%; max-width: 360px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; gap: 6px;
+  padding: 32px 28px;
+}
+.login-mark { width: 44px; height: 44px; margin-bottom: 6px; }
+.login-card h1 { font-size: 24px; }
+.login-error {
+  margin: 10px 0 0; padding: 8px 12px; border-radius: 9px;
+  background: color-mix(in srgb, var(--ink-a) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink-a) 34%, transparent);
+  color: var(--ink-a); font-size: 13px; font-weight: 600;
+}
+.login-field {
+  width: 100%; display: flex; flex-direction: column; gap: 6px;
+  text-align: left; margin-top: 18px; font-size: 13px; font-weight: 600;
+}
+.login-field input {
+  width: 100%; padding: 10px 12px; font-size: 15px;
+  background: var(--bg-sunk); border: 1px solid var(--line);
+  border-radius: 9px; color: var(--fg); font: inherit;
+}
+.login-field input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
+.login-submit { width: 100%; margin-top: 16px; }
+.login-note { margin: 18px 0 0; color: var(--fg-faint); font-size: 12px; line-height: 1.5; }
+
+.logout-form { display: contents; }
+
 /* ---- header ------------------------------------------------------------ */
 
 .top {

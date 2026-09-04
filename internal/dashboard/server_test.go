@@ -329,7 +329,7 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 	h := srv.Handler()
 
 	for _, path := range []string{
-		"/", "/api/overview", "/api/players", "/api/players/x", "/api/fests", "/api/matches",
+		"/api/overview", "/api/players", "/api/players/x", "/api/fests", "/api/matches",
 		"/api/coop-shifts", "/api/coop-reference",
 		"/api/debug/stats", "/api/debug/accounts/x",
 	} {
@@ -340,8 +340,16 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 		}
 	}
 
-	// Creating a fest, specifically.
+	// The one page a browser navigates to directly sends the operator to the
+	// login form instead of a bare "unauthorised" -- see guardPage's comment.
 	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login" {
+		t.Errorf("/ without a token: %d %q, want 302 to /login", rec.Code, rec.Header().Get("Location"))
+	}
+
+	// Creating a fest, specifically.
+	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests", strings.NewReader(`{}`)))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("fest creation without a token: %d, want 401", rec.Code)
@@ -367,6 +375,96 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/overview?token=s3cre7", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("a wrong token was accepted: %d", rec.Code)
+	}
+}
+
+// TestLoginSetsACookieThatThenAuthenticatesEveryRoute covers the point of
+// the login page: submitting the right token once should mean the operator
+// never has to carry ?token= in the URL again. The cookie /login sets has to
+// be accepted by guard() (API routes) and guardPage() (the index page)
+// alike, or the login only half-works.
+func TestLoginSetsACookieThatThenAuthenticatesEveryRoute(t *testing.T) {
+	srv, _ := newTestServer(t, "s3cret", time.Now().UTC())
+	h := srv.Handler()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=s3cret"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
+		t.Fatalf("login: %d %q, want 302 to /", rec.Code, rec.Header().Get("Location"))
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != authCookieName || cookies[0].Value != "s3cret" {
+		t.Fatalf("login cookies: %+v, want one %s=s3cret", cookies, authCookieName)
+	}
+	cookie := cookies[0]
+	if !cookie.HttpOnly {
+		t.Error("the session cookie is not HttpOnly -- it would be readable from a script that has no business touching it")
+	}
+
+	for _, path := range []string{"/", "/api/overview"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", path, nil)
+		req.AddCookie(cookie)
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Errorf("%s with the login cookie: %d, want 200", path, rec.Code)
+		}
+	}
+}
+
+// TestLoginRefusesTheWrongToken covers the failure path: a wrong token must
+// not set the cookie, and must send the operator back to the form rather
+// than through to the dashboard.
+func TestLoginRefusesTheWrongToken(t *testing.T) {
+	srv, _ := newTestServer(t, "s3cret", time.Now().UTC())
+	h := srv.Handler()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/login", strings.NewReader("token=wrong"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login?failed=1" {
+		t.Fatalf("wrong token: %d %q, want 302 to /login?failed=1", rec.Code, rec.Header().Get("Location"))
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Error("a wrong token must not set the session cookie")
+	}
+}
+
+// TestLoginPageStepsAsideWhenNoTokenIsConfigured mirrors guard()'s own
+// rule: with no token configured there is nothing to authenticate, so the
+// login form -- which could never succeed or fail meaningfully -- must not
+// be shown, and it must not become a second, weaker way in were a token
+// added later.
+func TestLoginPageStepsAsideWhenNoTokenIsConfigured(t *testing.T) {
+	srv, _ := newTestServer(t, "", time.Now().UTC())
+	h := srv.Handler()
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/login", nil))
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
+		t.Errorf("/login with no token configured: %d %q, want 302 to /", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+// TestLogoutClearsTheCookie covers the other direction: the cookie /login
+// set has to actually go away, not just expire from the browser's point of
+// view eventually -- a MaxAge in the past, not merely an empty value the
+// browser would otherwise keep sending.
+func TestLogoutClearsTheCookie(t *testing.T) {
+	srv, _ := newTestServer(t, "s3cret", time.Now().UTC())
+	h := srv.Handler()
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/logout", nil))
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login" {
+		t.Fatalf("logout: %d %q, want 302 to /login", rec.Code, rec.Header().Get("Location"))
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != authCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("logout cookies: %+v, want one %s with a negative MaxAge", cookies, authCookieName)
 	}
 }
 

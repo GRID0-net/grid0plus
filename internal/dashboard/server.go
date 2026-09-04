@@ -157,7 +157,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /assets/", http.FileServer(http.FS(assets)))
 
-	mux.HandleFunc("GET /{$}", s.guard(s.handleIndex))
+	mux.HandleFunc("GET /{$}", s.guardPage(s.handleIndex))
+	mux.HandleFunc("GET /login", s.handleLoginPage)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /api/overview", s.guard(s.handleOverview))
 	mux.HandleFunc("GET /api/players", s.guard(s.handlePlayers))
 	mux.HandleFunc("GET /api/players/{id}", s.guard(s.handlePlayerDetail))
@@ -191,23 +194,51 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// guard applies the shared token, when one is configured.
+// authCookieName holds the shared token once a browser has presented it
+// once, either via /login's form or a bookmarked ?token= link. It carries
+// the same secret the query string and Authorization header already
+// accept -- there is no separate session store, on purpose: phase 1 has no
+// person to attach a session to (see TODO.md §3.3), so a cookie here is
+// just a fourth, browser-friendly place to say the one shared secret,
+// never a stand-in for an account.
+const authCookieName = "switchnet_dashboard_session"
+
+// presentedToken returns whatever credential the request offers: the query
+// string, the Authorization header, or the login cookie, in that order.
+// Checking the query and header first keeps a script using ?token= or
+// Authorization working exactly as before a cookie ever entered the
+// picture.
+func (s *Server) presentedToken(r *http.Request) string {
+	if t := r.URL.Query().Get("token"); t != "" {
+		return t
+	}
+	if h := r.Header.Get("Authorization"); h != "" {
+		if scheme, tok, ok := strings.Cut(h, " "); ok && strings.EqualFold(scheme, "Bearer") {
+			return tok
+		}
+	}
+	if c, err := r.Cookie(authCookieName); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// authorized reports whether the request carries the configured token, or
+// whether no token is configured at all.
+//
+// Constant-time compare, for the same reason internal/baas compares a
+// device-account password that way: a token is a secret, and a
+// length-dependent comparison leaks it a byte at a time.
+func (s *Server) authorized(r *http.Request) bool {
+	return s.token == "" || constantTimeEqual(s.presentedToken(r), s.token)
+}
+
+// guard applies the shared token, when one is configured. Used for every
+// API route: on failure it answers 401, which is the right shape for a
+// fetch() call, not a redirect.
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.token == "" {
-			next(w, r)
-			return
-		}
-		presented := r.URL.Query().Get("token")
-		if h := r.Header.Get("Authorization"); presented == "" && h != "" {
-			if scheme, tok, ok := strings.Cut(h, " "); ok && strings.EqualFold(scheme, "Bearer") {
-				presented = tok
-			}
-		}
-		// Constant-time compare, for the same reason internal/baas compares a
-		// device-account password that way: a token is a secret, and a
-		// length-dependent comparison leaks it a byte at a time.
-		if !constantTimeEqual(presented, s.token) {
+		if !s.authorized(r) {
 			http.Error(w, "unauthorised", http.StatusUnauthorized)
 			return
 		}
@@ -215,13 +246,101 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// guardPage is guard's counterpart for the one page a browser navigates to
+// directly: on failure it sends the operator to the login form instead of
+// a bare "unauthorised" response, which is meaningless outside a fetch
+// call.
+func (s *Server) guardPage(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorized(r) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+	})
+}
+
+func (s *Server) clearAuthCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	// A bookmarked ?token= link still works (guardPage already accepted it
+	// above); set the cookie too, so the *next* visit no longer needs the
+	// query string. This is the same upgrade /login itself performs, just
+	// reached by the older path.
+	if t := r.URL.Query().Get("token"); t != "" && s.token != "" && constantTimeEqual(t, s.token) {
+		s.setAuthCookie(w, r, t)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "index.html", map[string]any{
-		"Token": r.URL.Query().Get("token"),
+		"Token":           r.URL.Query().Get("token"),
+		"TokenConfigured": s.token != "",
 	}); err != nil {
 		s.log.Error("dashboard: render", "error", err)
 	}
+}
+
+// handleLoginPage serves the login form. With no token configured there is
+// nothing to log in with, so it redirects straight to the dashboard rather
+// than showing a form that can never fail or succeed meaningfully.
+func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	if s.token == "" || s.authorized(r) {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "login.html", map[string]any{
+		"Failed": r.URL.Query().Get("failed") == "1",
+	}); err != nil {
+		s.log.Error("dashboard: render login", "error", err)
+	}
+}
+
+// handleLogin checks the submitted token against the configured one and, on
+// a match, sets the cookie guard/guardPage both accept. There is no session
+// to create beyond that cookie -- see authCookieName's comment.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.token == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/login?failed=1", http.StatusFound)
+		return
+	}
+	submitted := r.PostFormValue("token")
+	if !constantTimeEqual(submitted, s.token) {
+		http.Redirect(w, r, "/login?failed=1", http.StatusFound)
+		return
+	}
+	s.setAuthCookie(w, r, submitted)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	s.clearAuthCookie(w, r)
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 // ---- players and presence -------------------------------------------------

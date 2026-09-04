@@ -199,6 +199,25 @@ belongs to a console — so there is no account to check against. A shared token
 is the honest minimum rather than a pretend identity system. See
 [`TODO.md`](../../TODO.md) §3.3.
 
+**`/login` is a friendlier door onto the same token, not a second credential.**
+Before it existed, using the dashboard meant either bookmarking a URL with
+`?token=...` in it or hand-configuring an `Authorization: Bearer` header —
+workable for a script, awkward for a person. `/login`'s form takes the same
+`dashboard.token` and, on a match, sets an `HttpOnly` cookie
+(`switchnet_dashboard_session`) that `guard()`/`guardPage()` accept exactly
+like the query string or the header — see `presentedToken` in `server.go`.
+There is no session store behind it: the cookie just carries the one shared
+secret a fourth way, so it stays exactly as strong (or as absent, with the
+token unset) as the token already was, and logging out
+(`POST /logout`) is nothing more than clearing that cookie. A bookmarked
+`?token=` link still works on its own and, as a courtesy, upgrades itself to
+a cookie the first time it loads (`handleIndex`), so switching to `/login`
+is never required for an existing setup to keep working.
+
+`guardPage` exists only because `guard`'s plain 401 is the right answer for a
+failed `fetch()` and the wrong one for a browser navigating to `/` by hand —
+the operator needs `/login`, not an error page.
+
 ## No build step
 
 Plain HTML, CSS and JavaScript, served from `embed.FS`. This repository ships Go

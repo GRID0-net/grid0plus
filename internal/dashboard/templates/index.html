@@ -35,6 +35,11 @@
     <div class="live" id="live-pill" data-state="connecting">
       <span class="dot"></span><span class="label">connecting</span>
     </div>
+    {{ if .TokenConfigured }}
+    <form class="logout-form" method="post" action="/logout">
+      <button type="submit" class="btn btn-ghost" title="Log out of the dashboard">Log out</button>
+    </form>
+    {{ end }}
     <button type="button" class="theme-toggle" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
       <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g stroke-linecap="round"><path d="M12 2.5v3"/><path d="M12 18.5v3"/><path d="M2.5 12h3"/><path d="M18.5 12h3"/><path d="M5 5l2 2"/><path d="M17 17l2 2"/><path d="M19 5l-2 2"/><path d="M7 17l-2 2"/></g></svg>
       <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
