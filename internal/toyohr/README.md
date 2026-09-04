@@ -165,11 +165,27 @@ exist:
   tables `switchnetctl coop weapons`/`bosses` print, and the scheduled list
   shows each shift's live/upcoming/ended status. See
   `internal/dashboard/coop.go`.
+- `coop_generate.go`'s `GenerateCoopShifts` — fills a stretch of the normal
+  rotation with randomly-picked real ids rather than requiring every shift
+  to be hand-typed, for an operator who wants Salmon Run to keep changing
+  without babysitting it. **Not a recovered Nintendo algorithm** -- no
+  public source documents how the real server actually picks a rotation,
+  only that it does, on a real, cited cadence (`DefaultCoopShiftDuration`'s
+  comment: 40 hours, confirmed against two independent public sources,
+  distinct from Big Run's own 48-hour window). The one thing this generator
+  guarantees beyond "pick something real" -- avoiding an immediate stage
+  repeat between consecutive shifts -- is this project's own design choice,
+  not a discovered rule. `Service.GenerateAndSaveCoopShifts` is additive: it
+  never touches a slot that already holds a shift, hand-scheduled or
+  previously generated, which is what makes "mostly automatic, but a
+  specific slot can always be corrected by hand" true rather than aspirational
+  -- `switchnetctl coop generate` and the dashboard's "Auto-fill" panel are
+  both thin wrappers over it.
 
-TeamContest (Eggstra Work) has no authoring path yet; adding one is the same
-shape of work Big Run was. Three fields on the wire message are an
-operator-local assumption rather than a confirmed shape — `coopScheduleProto`
-documents which, and `docs/QUESTIONS.md` has the entry.
+TeamContest (Eggstra Work) has no authoring OR generation path yet; adding
+one is the same shape of work Big Run was. Three fields on the wire message
+are an operator-local assumption rather than a confirmed shape —
+`coopScheduleProto` documents which, and `docs/QUESTIONS.md` has the entry.
 
 ## `CloudSave.GetSaveRecord`: `NotFound` is the correct answer, not a stub
 

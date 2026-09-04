@@ -121,6 +121,21 @@ A scheduled shift's status (`upcoming`/`live`/`ended`) is computed the same
 way `festRow`'s `Phase` is: from the server's clock against the shift's own
 `Start`/`End`, not tracked as separate state that could drift from them.
 
+## "Auto-fill" is additive, not authoritative
+
+The Salmon Run tab's "Auto-fill" panel (`POST /api/coop-shifts/generate`,
+`handleGenerateCoopShifts`) is a thin wrapper over
+`toyohr.Service.GenerateAndSaveCoopShifts` -- the same generator
+`switchnetctl coop generate` uses, picking real stage/weapon/boss ids at
+random rather than a discovered Nintendo algorithm (see
+`internal/toyohr/README.md`'s note on `coop_generate.go` for why that
+distinction matters). The one property worth knowing before clicking it
+twice: it never overwrites a slot that already has a shift, whichever form
+put it there. Schedule one slot by hand in the panel above first, generate
+around it, and that hand-scheduled shift is never at risk from a later
+generate call over the same range -- there is no "regenerate everything"
+button, on purpose.
+
 ## The Debug tab shows raw state next to resolved state, on purpose
 
 `GET /api/debug/accounts/{id}` (`debug.go`) is the one view on this page that

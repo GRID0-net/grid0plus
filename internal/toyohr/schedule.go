@@ -2,6 +2,9 @@ package toyohr
 
 import (
 	"context"
+	"errors"
+	"math/rand/v2"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -127,6 +130,42 @@ func (s *Service) ListCoopShiftsForOperator(ctx context.Context) ([]CoopShift, e
 // does not exist, matching the store's own idempotent-delete contract.
 func (s *Service) DeleteCoopShift(ctx context.Context, id string) error {
 	return s.store.DeleteCoopShift(ctx, id)
+}
+
+// GenerateAndSaveCoopShifts fills count Normal rotation slots starting at
+// from with GenerateCoopShifts (coop_generate.go)'s own generator, storing
+// every one that does not already occupy that slot.
+//
+// "Already occupy" is deliberately whole -- a slot with ANY existing shift is
+// left alone, whether that shift was hand-scheduled or produced by an
+// earlier call to this same method. That is what makes generation additive
+// rather than destructive: an operator who manually corrects one slot in a
+// generated run, then generates again over a wider range, never has that
+// correction silently overwritten. Re-run with a fresh seed to actually
+// replace a stretch of generated shifts -- delete them first.
+func (s *Service) GenerateAndSaveCoopShifts(
+	ctx context.Context, from time.Time, count int, duration time.Duration, rng *rand.Rand,
+) (created, skipped []CoopShift, err error) {
+	for _, c := range GenerateCoopShifts(rng, from, count, duration) {
+		_, err := s.store.GetCoopShift(ctx, c.ID())
+		switch {
+		case err == nil:
+			skipped = append(skipped, c)
+			continue
+		case errors.Is(err, db.ErrNotFound):
+			// falls through to save below
+		default:
+			return created, skipped, err
+		}
+		if err := s.SaveCoopShift(ctx, c); err != nil {
+			// Validate should never actually reject a generator's own
+			// output -- every id it uses comes from coop_ids.go -- so this
+			// is defensive, not an expected path.
+			return created, skipped, err
+		}
+		created = append(created, c)
+	}
+	return created, skipped, nil
 }
 
 // RowFromCoopShift converts a shift into a storable row.

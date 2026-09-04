@@ -12,6 +12,68 @@ import (
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
+// TestCoopShiftsCanBeGeneratedAndNeverOverwriteAManualOne exercises the
+// dashboard's own front end for toyohr.GenerateAndSaveCoopShifts -- the
+// server-side property (never overwriting an existing slot) is already
+// covered in internal/toyohr/schedule_test.go; this checks the HTTP layer
+// wires request/response correctly and does not lose that guarantee.
+func TestCoopShiftsCanBeGeneratedAndNeverOverwriteAManualOne(t *testing.T) {
+	now := time.Now().UTC()
+	svc, store := newTestServer(t, "", now)
+	h := svc.Handler()
+	ctx := context.Background()
+
+	from := toyohr.AlignToSlot(now.Add(2 * time.Hour))
+	manual := toyohr.CoopShift{
+		Kind: toyohr.CoopShiftNormal, StageID: 1, KumaWeaponID: 20900,
+		Weapons: [4]int64{20000, 20010, 20020, 20030},
+		Start:   from, End: from.Add(toyohr.DefaultCoopShiftDuration),
+	}
+	store.UpsertCoopShift(ctx, toyohr.RowFromCoopShift(manual))
+
+	body := `{"fromAt":"` + from.Format(time.RFC3339) + `","count":3}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/coop-shifts/generate", strings.NewReader(body)))
+	if rec.Code != 200 {
+		t.Fatalf("generate: %d %s", rec.Code, rec.Body)
+	}
+	var resp struct{ Created, Skipped int }
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Created != 2 || resp.Skipped != 1 {
+		t.Fatalf("created=%d skipped=%d, want created=2 skipped=1 (the pre-filled slot)", resp.Created, resp.Skipped)
+	}
+
+	still, err := store.GetCoopShift(ctx, manual.ID())
+	if err != nil {
+		t.Fatalf("GetCoopShift: %v", err)
+	}
+	if still.StageID != 1 {
+		t.Errorf("manual slot's stage changed to %d, want it left at 1", still.StageID)
+	}
+
+	rows, err := svc.coopShiftRows(ctx)
+	if err != nil {
+		t.Fatalf("coopShiftRows: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("got %d shifts stored total, want 3", len(rows))
+	}
+}
+
+func TestGenerateCoopShiftsRejectsAZeroCount(t *testing.T) {
+	srv, _ := newTestServer(t, "", time.Now().UTC())
+	h := srv.Handler()
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/coop-shifts/generate",
+		strings.NewReader(`{"fromAt":"2026-09-05T00:00:00Z","count":0}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("count=0: %d %s, want 400", rec.Code, rec.Body)
+	}
+}
+
 func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 	now := time.Now().UTC()
 	srv, store := newTestServer(t, "", now)

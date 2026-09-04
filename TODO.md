@@ -90,8 +90,14 @@ is the `Fest`/`SaveFest`-equivalent authoring/validation path, and
 `bosses`) is the CLI surface, and `internal/dashboard`'s "Salmon Run" tab is
 the operator-facing one — see `internal/toyohr/README.md`'s "honest emptiness
 for Vs, a real rotation for Coop" section for why Coop's wire shape was
-never actually the blocker Vs's still is. TeamContest (Eggstra Work) has no
-authoring path yet, CLI or dashboard. `CloudSave` is built
+never actually the blocker Vs's still is. On top of hand-scheduling,
+`coop_generate.go`'s `GenerateCoopShifts` auto-fills a stretch of the normal
+rotation with real, randomly-picked ids (`switchnetctl coop generate`, or
+the dashboard's "Auto-fill" panel) — SwitchNet's own generator, not a
+recovered Nintendo algorithm, and additive: it never overwrites a slot a
+hand-scheduled shift or an earlier generate call already filled, so manual
+correction of any one slot always sticks. TeamContest (Eggstra Work) has no
+authoring OR generation path yet, CLI or dashboard. `CloudSave` is built
 only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
 an account with no cloud save, not a stub); its other five RPCs
 (`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)

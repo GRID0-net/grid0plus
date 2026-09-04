@@ -357,6 +357,34 @@ $("#coop-form").addEventListener("submit", async (e) => {
   }
 });
 
+$("#coop-generate-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("#coop-gen-error");
+  const result = $("#coop-gen-result");
+  err.hidden = true;
+  result.hidden = true;
+
+  const fromLocal = $("#coop-gen-from").value;
+  const durationHours = Number($("#coop-gen-duration").value || 0);
+
+  try {
+    const res = await api("/api/coop-shifts/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        fromAt: fromLocal ? new Date(fromLocal).toISOString() : "",
+        count: Number($("#coop-gen-count").value || 0),
+        durationHours,
+      }),
+    });
+    result.textContent = `Generated ${res.created} shift(s)` + (res.skipped ? `, ${res.skipped} slot(s) already had one and were left alone.` : ".");
+    result.hidden = false;
+    await refresh();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.hidden = false;
+  }
+});
+
 function escape(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
@@ -1077,6 +1105,7 @@ async function refresh() {
   const end = new Date(start.getTime() + 8 * 60 * 60 * 1000);
   $("#coop-start").value = toLocal(start);
   $("#coop-end").value = toLocal(end);
+  $("#coop-gen-from").value = toLocal(start);
 })();
 
 loadCoopReference();

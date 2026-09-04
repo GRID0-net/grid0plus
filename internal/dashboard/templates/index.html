@@ -299,6 +299,38 @@
     </div>
 
     <div class="panel">
+      <h2>Auto-fill the normal rotation</h2>
+      <form id="coop-generate-form" class="fest-form">
+        <label>
+          <span>Starting</span>
+          <input type="datetime-local" name="fromAt" id="coop-gen-from">
+        </label>
+        <label>
+          <span>Shifts to generate</span>
+          <input type="number" name="count" id="coop-gen-count" min="1" value="4">
+        </label>
+        <label>
+          <span>Shift length, hours <em>optional</em></span>
+          <input type="number" name="durationHours" id="coop-gen-duration" min="1" placeholder="40">
+          <small>Defaults to 40h -- Salmon Run's real rotation length.</small>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Generate</button>
+        </div>
+        <p class="note" id="coop-gen-result" hidden></p>
+        <p class="form-error" id="coop-gen-error" hidden></p>
+      </form>
+      <p class="note">
+        Picks real stages/weapons from <code>internal/toyohr/coop_ids.go</code>
+        at random -- SwitchNet's own generator, not a recovered Nintendo
+        algorithm (nobody outside Nintendo has published how the real server
+        actually chooses one). Never touches a slot that already has a
+        shift, so schedule one by hand above first and generating around it
+        is safe.
+      </p>
+    </div>
+
+    <div class="panel">
       <h2>Scheduled</h2>
       <div id="coop-list" class="fest-list"></div>
       <p class="empty" id="coop-empty" hidden>Nothing scheduled.</p>

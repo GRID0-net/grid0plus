@@ -126,6 +126,58 @@ func TestSelectCoopSchedulesDropsShiftsThatHaveAlreadyEnded(t *testing.T) {
 	}
 }
 
+// TestGenerateAndSaveCoopShiftsNeverOverwritesAnExistingSlot is the property
+// the whole "can be set manually" half of generation depends on: a slot the
+// operator already filled -- by hand, or by an earlier generate call -- is
+// left untouched by a later one, even when that later call's own random
+// draw would have picked something different for it.
+func TestGenerateAndSaveCoopShiftsNeverOverwritesAnExistingSlot(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	ctx := context.Background()
+	from := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+
+	// Hand-schedule the first slot before generating anything.
+	manual := validNormalShift()
+	manual.Start = AlignToSlot(from)
+	manual.End = manual.Start.Add(DefaultCoopShiftDuration)
+	manual.StageID = 1 // Spawning Grounds, deliberately
+	if err := svc.SaveCoopShift(ctx, manual); err != nil {
+		t.Fatalf("SaveCoopShift: %v", err)
+	}
+
+	created, skipped, err := svc.GenerateAndSaveCoopShifts(ctx, from, 5, DefaultCoopShiftDuration, nil)
+	if err != nil {
+		t.Fatalf("GenerateAndSaveCoopShifts: %v", err)
+	}
+	if len(skipped) != 1 || skipped[0].ID() != manual.ID() {
+		t.Fatalf("skipped = %v, want exactly the manually-scheduled slot", skipped)
+	}
+	if len(created) != 4 {
+		t.Fatalf("created %d shifts, want 4 (5 requested minus the 1 pre-filled slot)", len(created))
+	}
+
+	// The manual entry itself must be byte-for-byte unchanged.
+	still, err := svc.store.GetCoopShift(ctx, manual.ID())
+	if err != nil {
+		t.Fatalf("GetCoopShift: %v", err)
+	}
+	if still.StageID != 1 {
+		t.Errorf("manual slot's stage changed to %d, want it left at 1 (Spawning Grounds)", still.StageID)
+	}
+
+	// A second generate call over the same range creates nothing new.
+	created2, skipped2, err := svc.GenerateAndSaveCoopShifts(ctx, from, 5, DefaultCoopShiftDuration, nil)
+	if err != nil {
+		t.Fatalf("GenerateAndSaveCoopShifts (second call): %v", err)
+	}
+	if len(created2) != 0 {
+		t.Errorf("second call over the same range created %d shifts, want 0", len(created2))
+	}
+	if len(skipped2) != 5 {
+		t.Errorf("second call skipped %d, want all 5 (every slot is now filled)", len(skipped2))
+	}
+}
+
 // TestSaveCoopShiftRejectsAnInvalidShift checks that SaveCoopShift actually
 // calls Validate rather than storing whatever it is given -- coop_schedule_test.go
 // already covers Validate's own rules in detail, so this only needs one.

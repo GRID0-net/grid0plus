@@ -110,12 +110,14 @@ func main() {
 
 	case "coop":
 		if flag.NArg() < 2 {
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|list|delete|stages|weapons|bosses> ...\n")
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|generate|list|delete|stages|weapons|bosses> ...\n")
 			os.Exit(2)
 		}
 		switch flag.Arg(1) {
 		case "schedule":
 			coopSchedule(cfg, flag.Args()[2:])
+		case "generate":
+			coopGenerate(cfg, flag.Args()[2:])
 		case "list":
 			coopList(cfg, flag.Args()[2:])
 		case "delete":
@@ -127,7 +129,7 @@ func main() {
 		case "bosses":
 			coopBosses()
 		default:
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|list|delete|stages|weapons|bosses> ...\n")
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|generate|list|delete|stages|weapons|bosses> ...\n")
 			os.Exit(2)
 		}
 
@@ -163,9 +165,11 @@ Commands:
   fest      build a Splatfest's BCAT packs from game-ready assets and
             register it, so its id, resource, revision and decryption keys
             cannot drift apart. See 'switchnetctl fest build -h'.
-  coop      schedule a Salmon Run or Big Run rotation shift, list or delete
-            scheduled shifts, or print the real stage/weapon/boss id tables
-            a shift is built from. See 'switchnetctl coop schedule -h'.
+  coop      schedule a Salmon Run or Big Run rotation shift by hand, or
+            auto-fill a stretch of the normal rotation with 'coop generate';
+            list or delete scheduled shifts, or print the real
+            stage/weapon/boss id tables a shift is built from. See
+            'switchnetctl coop schedule -h' and '... generate -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file

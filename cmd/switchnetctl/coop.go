@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
@@ -96,6 +97,66 @@ func coopSchedule(cfg config.Config, args []string) {
 	fmt.Printf("  stage:  %d\n", shift.StageID)
 	fmt.Printf("  start:  %s\n", shift.Start.Format(time.RFC3339))
 	fmt.Printf("  end:    %s\n", shift.End.Format(time.RFC3339))
+}
+
+// coopGenerate implements `switchnetctl coop generate`.
+//
+// Fills a stretch of the normal rotation automatically rather than typing
+// every shift by hand -- see toyohr.GenerateCoopShifts's doc comment for
+// what the generator does and, just as importantly, what it is not: a
+// discovered Nintendo algorithm, only SwitchNet's own way of picking real
+// ids nobody has hand-picked yet. Never touches a slot that already has a
+// shift, hand-scheduled or previously generated, so running `coop schedule`
+// on any slot afterward always wins.
+func coopGenerate(cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("coop generate", flag.ExitOnError)
+	fromStr := fs.String("from", "", "start of the range to fill, RFC3339 -- rounded down to the nearest two-hour slot")
+	count := fs.Int("count", 0, "how many shifts to generate")
+	duration := fs.Duration("duration", toyohr.DefaultCoopShiftDuration,
+		"length of each shift -- defaults to 40h, Salmon Run's real rotation length")
+	seed := fs.Int64("seed", 0, "random seed; 0 picks one from the current time, so two runs differ unless you fix this")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, coopGenerateUsage) }
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if *fromStr == "" || *count <= 0 {
+		fs.Usage()
+		os.Exit(2)
+	}
+
+	from, err := time.Parse(time.RFC3339, *fromStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: -from %q: %v (want RFC3339)\n", *fromStr, err)
+		os.Exit(2)
+	}
+	s := *seed
+	if s == 0 {
+		s = time.Now().UnixNano()
+	}
+	rng := rand.New(rand.NewPCG(uint64(s), uint64(s)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.OpenPostgres(ctx, cfg.Database.URL, cfg.Database.MaxConns, cfg.Database.AutoMigrate)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = store.Close() }()
+
+	svc := toyohr.NewService(store, slog.Default(), cfg.NPLN.Tenant, time.Now)
+	created, skipped, err := svc.GenerateAndSaveCoopShifts(ctx, from, *count, *duration, rng)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("generated %d shift(s), %d slot(s) already had one and were left alone\n", len(created), len(skipped))
+	for _, s := range created {
+		stage, _ := toyohr.CoopStageByID(s.StageID)
+		fmt.Printf("  %s  %-24s  %s -> %s\n", s.ID(), stage.Name, s.Start.Format(time.RFC3339), s.End.Format(time.RFC3339))
+	}
 }
 
 // coopList implements `switchnetctl coop list`.
@@ -240,6 +301,24 @@ than sent to a console that cannot resolve it against its own assets.
 normal refuses one. Running this again with the same -kind and -start
 replaces the shift rather than creating a second one -- the id is derived
 from those two values, never typed.
+
+Requires a reachable database -- see 'switchnetctl account create -h'.
+`
+
+const coopGenerateUsage = `switchnetctl coop generate -from <RFC3339> -count <N> [-duration 40h] [-seed <N>]
+
+Fills count back-to-back normal-rotation slots starting at -from with real,
+randomly-picked stage/weapon/boss ids -- SwitchNet's own generator, not a
+recovered Nintendo algorithm (see toyohr.GenerateCoopShifts). Never
+overwrites a slot that already has a shift, whether it was hand-scheduled
+with 'coop schedule' or produced by an earlier 'coop generate' -- run
+'coop schedule' on any specific slot afterward to correct it by hand, and a
+later 'coop generate' over the same range will leave that correction alone.
+
+-duration defaults to 40h, Salmon Run's real rotation length (confirmed
+against public sources, not this project's own data -- see
+toyohr.DefaultCoopShiftDuration's comment). -seed fixes the randomness for a
+reproducible run; omit it and every run differs.
 
 Requires a reachable database -- see 'switchnetctl account create -h'.
 `

@@ -157,6 +157,46 @@ func (s *Server) handleCreateCoopShift(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": shift.ID()})
 }
 
+// handleGenerateCoopShifts auto-fills a stretch of the normal rotation --
+// the dashboard's own front end for toyohr.GenerateAndSaveCoopShifts, the
+// same algorithm switchnetctl coop generate uses. See that method's doc
+// comment: it never overwrites a slot that already has a shift, hand-
+// scheduled or previously generated, which is what makes the manual form
+// above and this button safe to use on overlapping ranges.
+func (s *Server) handleGenerateCoopShifts(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		FromAt      string `json:"fromAt"`
+		Count       int    `json:"count"`
+		DurationHrs int    `json:"durationHours"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	from, err := time.Parse(time.RFC3339, body.FromAt)
+	if err != nil {
+		http.Error(w, "fromAt must be RFC3339", http.StatusBadRequest)
+		return
+	}
+	if body.Count <= 0 {
+		http.Error(w, "count must be positive", http.StatusBadRequest)
+		return
+	}
+	duration := toyohr.DefaultCoopShiftDuration
+	if body.DurationHrs > 0 {
+		duration = time.Duration(body.DurationHrs) * time.Hour
+	}
+
+	created, skipped, err := s.fests.GenerateAndSaveCoopShifts(r.Context(), from, body.Count, duration, nil)
+	if err != nil {
+		s.fail(w, "generate coop shifts", err)
+		return
+	}
+	s.log.Info("dashboard: coop shifts generated", "created", len(created), "skipped", len(skipped))
+	writeJSON(w, map[string]any{"created": len(created), "skipped": len(skipped)})
+}
+
 func (s *Server) handleDeleteCoopShift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.fests.DeleteCoopShift(r.Context(), id); err != nil {
