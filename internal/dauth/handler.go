@@ -389,6 +389,13 @@ func (h *Handler) report(dev sjwt.DeviceInfo, params params) {
 	h.seen(dev.DeviceID, dev.SerialNumber, params.Get("system_version"), dev.IsT)
 }
 
+// sign mints one device token for one client id.
+//
+// Called once per requested client_id (deviceTokens loops over several for
+// one console in one request), each call minting a separate token — so Esv
+// is generated fresh here, per token, not once in deviceFrom and shared:
+// see NewESV's own comment for why reusing one across tokens would not match
+// what a real server does.
 func (h *Handler) sign(dev sjwt.DeviceInfo, clientID string) (string, error) {
 	now := time.Now()
 	return h.issuer.Sign(sjwt.DeviceTokenClaims{
@@ -404,6 +411,7 @@ func (h *Handler) sign(dev sjwt.DeviceInfo, clientID string) (string, error) {
 			DeviceType:   dev.DeviceType,
 			IsT:          dev.IsT,
 			X5tS256:      dev.X5tS256,
+			Esv:          sjwt.NewESV(),
 			// A device token's nintendo block carries no 'di': the device id is
 			// the 'sub'.
 		},

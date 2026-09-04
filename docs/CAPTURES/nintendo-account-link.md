@@ -243,12 +243,17 @@ capture's device token carries two fields undocumented anywhere and absent
 from SwitchNet — `nintendo.x5t#S256` and `nintendo.esv`. See item 9 in
 [`README.md`](README.md) for the full writeup. `x5t#S256` (a real SHA-256
 thumbprint of the console's own TLS client certificate) is now implemented
-and verified end-to-end
-against the live stack; `esv`'s derivation is unknown and, per CLAUDE.md's
-first ground rule, has deliberately not been guessed at. Whether the console
-validates either field locally — as opposed to their being server-side-only
-bookkeeping the console never reads — is unconfirmed. Only a hardware retest
-of the NA-link flow settles it.
+and verified end-to-end against the live stack. `esv` is now implemented
+too — **settled 2026-09-04** by reading `NextendoNetwork/nx-dauth`'s own
+source (source-available; the real, running server behind this capture): it
+is `base64url(33 random bytes)`, freshly generated per token, never derived
+from anything, so it never actually implicated CLAUDE.md's first ground
+rule. Whether the console validates either field locally — as opposed to
+their being server-side-only bookkeeping the console never reads — is still
+unconfirmed; that question doesn't depend on `esv`'s derivation, only on
+whether the *key being present* mattered, which SwitchNet's tokens were
+previously failing to do at all. Only a hardware retest of the NA-link flow
+settles it.
 
 **`extras.self.nxAccount`'s real shape, settled 2026-09-04** — a genuine,
 decrypted, working Nextendo federation response, captured and supplied

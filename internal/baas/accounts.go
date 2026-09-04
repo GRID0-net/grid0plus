@@ -76,6 +76,11 @@ func (s *Server) applicationToken(w http.ResponseWriter, r *http.Request) {
 			// capture of a working Nextendo application/token response. See
 			// DeviceInfo.X5tS256.
 			X5tS256: device.Nintendo.X5tS256,
+			// Esv likewise: this endpoint copies the device token's block
+			// forward rather than minting a fresh value — see DeviceInfo's
+			// package comment for why that is the copy semantics observed,
+			// not evidence esv is a per-device constant.
+			Esv: device.Nintendo.Esv,
 		},
 	})
 	if err != nil {

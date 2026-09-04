@@ -162,9 +162,9 @@ has a `nintendo` block with two fields SwitchNet did not emit:
   (dauth) and echoed unchanged into `/1.0.0/application/token`'s access token
   — never recomputed per call, so it is a static per-console value, not a
   per-connection one.
-- `esv` — same 43-character base64url shape, present in *both* the device
-  token (dauth) and the app token (aauth)'s `nintendo` blocks. Meaning
-  unknown.
+- `esv` — same base64url shape, present in *both* the device token (dauth)
+  and the app token (aauth)'s `nintendo` blocks. Meaning originally unknown —
+  **settled 2026-09-04, see below.**
 
 **What SwitchNet does now:** `x5t#S256` is implemented — see
 `jwt.DeviceInfo.X5tS256` and `dauth.Handler.x5tS256` in
@@ -177,29 +177,49 @@ live stack with a real TLS client certificate: the claim matches
 `openssl x509 -fingerprint -sha256` exactly, on both the device token and the
 `application/token` access token it is echoed into.
 
-`esv` is deliberately **not** implemented. Its derivation is unknown, and
-every plausible source (an eTicket, a title key, anything else AES/RSA-derived
-from Nintendo key material) is exactly what CLAUDE.md's first ground rule
-forbids SwitchNet from touching or reproducing. Guessing a value risks being
-worse than omitting the claim.
+`esv` is now implemented too. **Settled 2026-09-04**, without a new capture:
+`NextendoNetwork/nx-dauth` — the real, running dauth/aauth server behind the
+2026-08-27 capture — is source-available (PolyForm Shield 1.0.0), and its
+token minting is exactly `"esv": randB64(33)`, i.e.
+`base64.RawURLEncoding.EncodeToString(33 random bytes)`, generated fresh on
+every single token and never derived from the certificate, serial, device
+id, or anything else. It never touched CLAUDE.md's first ground rule to
+begin with — it is opaque padding a real server invents per call, not a hash
+or MAC of Nintendo key material. The "echoed unchanged" observation above was
+SwitchNet's own `/1.0.0/application/token` copying a device token's
+`nintendo` block forward (which it still correctly does), not evidence that
+`esv` is cached or device-static at the minting layer. Implemented as
+`jwt.NewESV`, called once per token minted (see its own comment for why not
+once per device) in `dauth.Handler.sign`, `aauth`'s application-token path,
+and echoed forward in `/1.0.0/application/token` alongside `x5t#S256`.
 
 **What is still open:** whether the console validates either field locally at
-all. JWTs are opaque to the party that did not sign them; there is no direct
-evidence the Switch OS parses its own device token's `nintendo` block and
-compares it against something it independently knows, as opposed to these
-being Nintendo/Nextendo server-side bookkeeping fields the console never
-reads. This was investigated because `2124-0292` (see
-[nintendo-account-link.md](nintendo-account-link.md)) happens with zero
+all — that question is unaffected by `esv`'s derivation being settled, since
+a real server can emit arbitrary opaque bytes for it regardless of whether
+the console reads them back. JWTs are opaque to the party that did not sign
+them; there is no direct evidence the Switch OS parses its own device
+token's `nintendo` block and compares it against something it independently
+knows, as opposed to these being Nintendo/Nextendo server-side bookkeeping
+fields the console never reads. This was investigated because `2124-0292`
+(see [nintendo-account-link.md](nintendo-account-link.md)) happens with zero
 network activity after `federation` returns a fully-correct 200, which is
 consistent with — but not proof of — a client-side check on data the console
-already has by that point. Only a real hardware retest of the NA-link flow
-can confirm or rule this out.
+already has by that point. What was a real, actionable gap regardless of
+that open question: SwitchNet's tokens omitted the `esv` key entirely rather
+than sending a (harmless) present value, and a console checking only for the
+key's presence would have read that omission as malformed. Only a real
+hardware retest of the NA-link flow settles whether that omission was
+contributing to `2124-0292`.
 
 **What a capture would settle:** a decrypted capture of the *real Nintendo*
 NA-link flow (not Nextendo's) showing whether `x5t#S256`/`esv` are present
 there too, and — more usefully — any evidence in the Switch's own applet
 logs or behavior of it rejecting a token specifically because one of these
 fields was wrong or missing, as opposed to a generic module-2124 failure.
+Neither field needs a *new* capture just to keep matching a working private
+server, though: reading `nx-dauth`'s own source, as above, already settles
+that question whenever a private server (Nextendo's own, or one like it)
+publishes its implementation.
 
 ---
 
