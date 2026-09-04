@@ -176,6 +176,23 @@ func (s *Server) naAuthorizePage(w http.ResponseWriter, r *http.Request) {
 // back from a real, working private server. Reverted to unconditional.
 // through the code exchange at POST /connect/1.0.0/api/token either way.
 //
+// A SECOND shape reaches this same endpoint, found in the same capture and
+// not previously handled at all: a silent, credential-less re-authorization
+// for a DIFFERENT client_id (in the capture, one whose redirect_uri was
+// nintendo://e-license.nx.sys -- e-license, not the account-link client this
+// file was originally built around), carrying no username/password form
+// fields at all, only an `Authorization: Bearer <access_token>` header
+// (the same access_token naToken's authorization_code grant just minted)
+// and prompt=none, the OIDC standard value meaning "do not show any UI; if
+// the caller is not already authenticated, fail rather than prompt." Before
+// this pass, an empty username here reached GetUserByLoginUsername("") and
+// answered "Wrong username or password" -- a login PAGE's error, wrong for a
+// request whose whole point was never showing one. Branches on the
+// Authorization header's presence rather than on the literal string
+// "none" in prompt, since that is the one signal this project has actually
+// seen on the wire; a request bearing neither credentials nor a bearer
+// token still gets the credential path below, and correctly fails it.
+//
 // POST /connect/1.0.0/authorize.
 func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	form, err := parseForm(r)
@@ -197,17 +214,34 @@ func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.store.GetUserByLoginUsername(r.Context(), username)
-	if err != nil {
-		s.log.Warn("nalink: login for unknown username", "username", username)
-		writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Wrong username or password."))
-		return
-	}
-	if subtle.ConstantTimeCompare(
-		[]byte(bcryptOK(user.LoginPasswordHash, password)), []byte("1")) != 1 {
-		s.log.Warn("nalink: login with wrong password", "username", username)
-		writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Wrong username or password."))
-		return
+	var userID string
+	if bearer := r.Header.Get("Authorization"); username == "" && password == "" && bearer != "" {
+		// The silent, already-authenticated path: an existing na access_token
+		// stands in for fresh credentials, exactly as naUsersMe and
+		// naQRCodeParam already accept one in place of a session cookie.
+		scheme, token, found := strings.Cut(bearer, " ")
+		var claims sjwt.BAASTokenClaims
+		if !found || !strings.EqualFold(scheme, "Bearer") ||
+			s.idVerifier.Verify(token, &claims) != nil || claims.Type != "token" {
+			s.log.Warn("nalink: silent re-authorization with an invalid or expired access token", "client_id", clientID)
+			s.redirectNAOAuthError(w, redirectURI, state, "login_required")
+			return
+		}
+		userID = claims.Subject
+	} else {
+		user, err := s.store.GetUserByLoginUsername(r.Context(), username)
+		if err != nil {
+			s.log.Warn("nalink: login for unknown username", "username", username)
+			writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Wrong username or password."))
+			return
+		}
+		if subtle.ConstantTimeCompare(
+			[]byte(bcryptOK(user.LoginPasswordHash, password)), []byte("1")) != 1 {
+			s.log.Warn("nalink: login with wrong password", "username", username)
+			writeHTML(w, http.StatusUnauthorized, naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, "Wrong username or password."))
+			return
+		}
+		userID = user.ID
 	}
 
 	now := s.now()
@@ -216,10 +250,10 @@ func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(s.log, w, r, "generate authorization code", err)
 		return
 	}
-	s.storeAuthCode(code, user.ID, now)
+	s.storeAuthCode(code, userID, now)
 
 	idToken, err := s.naIDIssuer.Sign(sjwt.BAASTokenClaims{
-		Subject:  user.ID,
+		Subject:  userID,
 		Audience: clientID,
 		IssuedAt: now.Unix(),
 		Expires:  now.Add(5 * time.Minute).Unix(),
@@ -247,7 +281,7 @@ func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	frag.Set("id_token", idToken)
 
 	location := redirectURI + "#" + frag.Encode()
-	s.log.Info("nalink: login succeeded, redirecting", "user", user.ID, "redirect_uri", redirectURI, "response_type", responseType)
+	s.log.Info("nalink: login succeeded, redirecting", "user", userID, "redirect_uri", redirectURI, "response_type", responseType)
 	// This redirect carries the code and id_token, so it gets the same
 	// no-cache headers writeJSON gives every other response in this package
 	// -- a real capture showed them present here too, and this is the one
@@ -591,10 +625,98 @@ func naPermissionBlock(updatedAt int64, permitted bool) map[string]any {
 	}
 }
 
+// naQRCodeParam answers GET /api/1.0.0/users/{id}/qrcode_param -- note the
+// path: /api/1.0.0/, not /1.0.0/, confirmed real by a 2026-08-27 capture of
+// a genuinely successful Nextendo link, not a typo carried over from
+// elsewhere in this file. nnAccount calls this right after naUsersMe,
+// exactly the "further call" this file's own naUsersMe comment predicted
+// once that handler's response matched the real shape -- this pass is what
+// confirms the prediction and closes it.
+//
+// Real response shape, from that same capture: {"exp", "param", "userId"}.
+// exp is a real Unix timestamp 604800 seconds (exactly 7 days) after the
+// response's own issue time -- an exact duration, safe to reuse; "param" is
+// NOT an opaque blob the way nxAccount is. It decoded as plain text: a URL,
+// https://accounts.nintendo.com/qr_verify?sig=...&iat=...&aud=...&sub=...
+// &exp=..., evidently meant to become a QR code a second console scans to
+// add the same account without retyping credentials. The shape (which query
+// parameters, in what order) is real; "sig" is not -- it is presumably an
+// HMAC keyed with a secret only the account server holds, and CLAUDE.md's
+// second ground rule (never forge a Nintendo-issued credential) applies
+// exactly as much to Nextendo's own private signing key as to Nintendo's:
+// this project does not have it and does not invent a plausible-looking
+// stand-in for it. sig is left an honest opaque placeholder.
+//
+// TODO(capture-needed): whether anything ever calls qr_verify with this
+// value -- unconfirmed, since a single console's own capture cannot show a
+// SECOND console scanning its QR code. No qr_verify route exists here for
+// exactly that reason: building one to accept a signature this project can
+// never produce correctly would be answering a question with an invented
+// fact, not a real capability.
+func (s *Server) naQRCodeParam(w http.ResponseWriter, r *http.Request) {
+	header := r.Header.Get("Authorization")
+	scheme, token, found := strings.Cut(header, " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
+		writeNAOAuthError(w, http.StatusUnauthorized, "invalid_token")
+		return
+	}
+	var claims sjwt.BAASTokenClaims
+	if err := s.idVerifier.Verify(token, &claims); err != nil || claims.Type != "token" {
+		writeNAOAuthError(w, http.StatusUnauthorized, "invalid_token")
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" || !strings.EqualFold(id, claims.Subject) {
+		writeNAOAuthError(w, http.StatusForbidden, "access_denied")
+		return
+	}
+
+	sig, err := newHexID(32)
+	if err != nil {
+		writeInternalError(s.log, w, r, "generate qrcode_param signature placeholder", err)
+		return
+	}
+	now := s.now()
+	exp := now.Add(7 * 24 * time.Hour)
+	param := fmt.Sprintf(
+		"https://accounts.nintendo.com/qr_verify?sig=%s&iat=%d&aud=%s&sub=%s&exp=%d",
+		sig, now.Unix(), claims.Audience, id, exp.Unix(),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"exp":    exp.Unix(),
+		"param":  param,
+		"userId": id,
+	})
+}
+
 func writeNAOAuthError(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	fmt.Fprintf(w, `{"error":%q}`, code)
+}
+
+// redirectNAOAuthError answers a failed silent (prompt=none) re-
+// authorization the OIDC-standard way: the error goes into the SAME
+// fragment position a success would have used state/code/id_token, per the
+// spec's own "Authentication Error Response" -- not this project's own
+// invention, unlike the fields nxAccountBlob and naQRCodeParam's "param"
+// leave as honest placeholders. No real capture shows this exact failure
+// (the one capture this file is built from only shows the success path),
+// so this is the one piece of naAuthorizeSubmit's new branch that rests on
+// a public specification rather than a byte-for-byte real response.
+func (s *Server) redirectNAOAuthError(w http.ResponseWriter, redirectURI, state, code string) {
+	frag := url.Values{}
+	if state != "" {
+		frag.Set("state", state)
+	}
+	frag.Set("error", code)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store, no-cache")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Location", redirectURI+"#"+frag.Encode())
+	w.WriteHeader(http.StatusFound)
 }
 
 func naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, problem string) string {

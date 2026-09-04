@@ -476,6 +476,151 @@ func naLogin(t *testing.T, h *harness, username, password string) (accessToken, 
 	return body.AccessToken, body.RefreshToken
 }
 
+// TestNAAuthorizeSilentReauthorizationWithABearerTokenSucceeds guards the
+// second authorize shape a real capture showed and this project had never
+// handled: a credential-less, prompt=none re-authorization for a DIFFERENT
+// client_id than the one that first signed the person in, carrying only an
+// Authorization: Bearer <access_token> header. Before this, an empty
+// username reached GetUserByLoginUsername("") and answered "Wrong username
+// or password" -- a login page's error, for a request that must never show
+// one.
+func TestNAAuthorizeSilentReauthorizationWithABearerTokenSucceeds(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "carol", "hunter2222")
+	accessToken, _ := naLogin(t, h, "carol", "hunter2222")
+
+	client := noRedirectClient()
+	req, err := http.NewRequest("POST", h.server.URL+"/connect/1.0.0/authorize", strings.NewReader(url.Values{
+		"response_type": {"code id_token"},
+		"prompt":        {"none"},
+		"client_id":     {"48d6d1f020427ad7"}, // a different client than naLogin's own
+		"redirect_uri":  {"nintendo://e-license.nx.sys"},
+		"scope":         {"openid user"},
+		"state":         {"a-second-state"},
+		"nonce":         {"a-second-nonce"},
+	}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusFound)
+
+	loc := resp.Header.Get("Location")
+	if !strings.HasPrefix(loc, "nintendo://e-license.nx.sys#") {
+		t.Fatalf("Location = %q, want the requested redirect_uri's own scheme", loc)
+	}
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://e-license.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frag.Get("state") != "a-second-state" {
+		t.Errorf("state = %q, want it echoed back", frag.Get("state"))
+	}
+	if frag.Get("code") == "" || frag.Get("id_token") == "" {
+		t.Fatal("silent re-authorization did not mint a code and id_token")
+	}
+	if frag.Get("error") != "" {
+		t.Errorf("got error=%q on what should be a success", frag.Get("error"))
+	}
+}
+
+// TestNAAuthorizeSilentReauthorizationWithABadBearerTokenFailsWithoutAPage
+// checks the failure side: prompt=none forbids showing any UI, so an
+// invalid or expired access token here must redirect with an OIDC-standard
+// error in the fragment, not the HTML login form a credential mismatch
+// gets.
+func TestNAAuthorizeSilentReauthorizationWithABadBearerTokenFailsWithoutAPage(t *testing.T) {
+	h := newHarness(t)
+
+	client := noRedirectClient()
+	req, err := http.NewRequest("POST", h.server.URL+"/connect/1.0.0/authorize", strings.NewReader(url.Values{
+		"prompt":       {"none"},
+		"client_id":    {"48d6d1f020427ad7"},
+		"redirect_uri": {"nintendo://e-license.nx.sys"},
+		"state":        {"still-echoed"},
+	}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer garbage-not-a-real-token")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusFound)
+
+	loc := resp.Header.Get("Location")
+	if !strings.HasPrefix(loc, "nintendo://e-license.nx.sys#") {
+		t.Fatalf("Location = %q, want a redirect to the requested redirect_uri, not an HTML page", loc)
+	}
+	frag, err := url.ParseQuery(strings.TrimPrefix(loc, "nintendo://e-license.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frag.Get("error") != "login_required" {
+		t.Errorf("error = %q, want login_required", frag.Get("error"))
+	}
+	if frag.Get("state") != "still-echoed" {
+		t.Errorf("state = %q, want it echoed back even on failure", frag.Get("state"))
+	}
+}
+
+func TestNAQRCodeParamReturnsTheRealShape(t *testing.T) {
+	h := newHarness(t)
+	user := registerLoginUser(t, h, "dana", "hunter2222")
+	accessToken, _ := naLogin(t, h, "dana", "hunter2222")
+
+	resp, err := doAuthorized(h, "GET", "/api/1.0.0/users/"+user.ID+"/qrcode_param", accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+
+	var body struct {
+		Exp    int64  `json:"exp"`
+		Param  string `json:"param"`
+		UserID string `json:"userId"`
+	}
+	decode(t, resp, &body)
+	if body.UserID != user.ID {
+		t.Errorf("userId = %q, want %q", body.UserID, user.ID)
+	}
+	if !strings.HasPrefix(body.Param, "https://accounts.nintendo.com/qr_verify?") {
+		t.Errorf("param = %q, want a qr_verify URL", body.Param)
+	}
+	for _, key := range []string{"sig=", "iat=", "aud=", "sub=" + user.ID, "exp="} {
+		if !strings.Contains(body.Param, key) {
+			t.Errorf("param %q is missing %q", body.Param, key)
+		}
+	}
+}
+
+// TestNAQRCodeParamRefusesAnotherAccounts checks the fail-closed identity
+// property this project treats as load-bearing everywhere else: a token
+// authenticated as one person must not read another's qrcode_param by
+// naming them in the path.
+func TestNAQRCodeParamRefusesAnotherAccount(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "erin", "hunter2222")
+	accessToken, _ := naLogin(t, h, "erin", "hunter2222")
+
+	resp, err := doAuthorized(h, "GET", "/api/1.0.0/users/0000000000000000/qrcode_param", accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusForbidden)
+}
+
 func TestNATokenRefreshGrantSucceedsWithARealRefreshToken(t *testing.T) {
 	h := newHarness(t)
 	user := registerLoginUser(t, h, "bob", "hunter2222")

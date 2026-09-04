@@ -142,9 +142,8 @@ specifically for the `lhub` (linking hub) redirect flow.
   22.2.0.0)` — confirms these calls come from the `nnAccount` system module
   directly (`libcurl`), not the browser applet rendering a page.
 - `GET /2.0.0/users/me` and `GET /api/1.0.0/users/<id>/qrcode_param` were also
-  observed (both matching the documented wiki shapes) but are not needed by
-  SwitchNet's current implementation, so they are not written up in detail
-  here.
+  observed. `qrcode_param` was not implemented at the time this note was
+  first written; it is now — see "Full call-by-call verification" below.
 - Redacted: the Bearer token, all JWT signatures, `state`/`nonce`/`c_hash`,
   and the device UUID in the User-Agent.
 
@@ -351,3 +350,86 @@ before: unresolvable without a capture, and per CLAUDE.md's ground rule
 against inventing a plausible-looking Nintendo internal, `accounts.go`'s
 placeholder (`nxAccount = naID`) stays as it is rather than being replaced
 with a guess dressed up by this pass's research.
+
+---
+
+## Full call-by-call verification against the working capture (2026-09-04)
+
+Following the `nxAccount` fix above (same capture,
+`53eb8af0-nextendoworkingnalink20260827.flow`, read with the real `mitmproxy`
+library), every one of the 61 HTTP exchanges in that flow was walked
+individually and compared against SwitchNet's implementation — not just the
+`federation` call already covered.
+
+**57 of 61 already matched.** 36 of those 61 are `GET
+/connect/1.0.0/qr/etat?s=...` polls with `User-Agent: NintendoBrowser` — the
+same UA as the login page itself, i.e. the page's own JavaScript polling for
+a QR-login-on-another-device state change, not a call the `nnAccount`/`libcurl`
+system module makes. SwitchNet's own login page never triggers this family of
+call, so it is not a gap. The rest (`/connect/1.0.0/authorize` classic
+submit, `/connect/1.0.0/api/token` both grant types across 7 repeated calls,
+`/2.0.0/users/me`, `/1.0.0/application/token`, `/1.0.0/users`, `/1.0.0/login`,
+`/1.0.0/users/{id}`, `/2.0.0/users/{id}/friends`) were checked field-by-field
+and already matched the existing implementation.
+
+**Four real gaps were found and fixed, all in this commit:**
+
+1. **`PUT /1.0.0/push_channels/{uid}/{daid}`.** Previously answered a bare
+   204 via the generic `acknowledge` handler. The capture shows a real
+   server answers 200 with a JSON body echoing every field the console PUT
+   (`service`, `deviceToken`, `deviceAttributes`) plus
+   `createdAt`/`updatedAt`/`userId`/`deviceAccountId` and one key never in
+   the request, always empty in the capture: `userAttributes: {}`. Called
+   with the authenticated user's own access token (`bs:grt:2`, confirmed by
+   decoding the JWT), matching `s.authenticated()`. Implemented in
+   `internal/baas/devices.go`'s `updatePushChannel` — no persistence added,
+   since nothing in SwitchNet sends push notifications yet; only the
+   response shape changed.
+
+2. **`POST /1.0.0/devices/snapshot`.** Same issue: previously a bare 204.
+   The capture shows `{"deletedUserIds": [...], "persistentUserIds": [...]}`
+   — the requested `userIds` split by whether each still names a real,
+   non-deleted user. Called with the anonymous application-level token
+   (`bs:grt:1`, confirmed by decoding the JWT), matching `s.anonymous()`.
+   Implemented in `internal/baas/devices.go`'s `devicesSnapshot`, using
+   `db.User.Deleted` — data the store already has, not a guess.
+
+3. **`GET /api/1.0.0/users/{id}/qrcode_param`** (note the `/api/1.0.0/`
+   prefix, distinct from `/1.0.0/` — not a typo in the capture). Previously
+   unimplemented; no route existed at all. Response:
+   `{"exp": <unix>, "param": "<url>", "userId": "<id>"}`. Decoded, `param` is
+   a plaintext URL: `https://accounts.nintendo.com/qr_verify?sig=...
+   &iat=...&aud=...&sub=...&exp=...` — `exp - iat` is exactly `604800`
+   seconds (7 days) in the capture. Implemented in
+   `internal/baas/nalink.go`'s `naQRCodeParam`, matching that shape and
+   duration; `sig` is an honest random placeholder rather than a forged
+   signature — SwitchNet does not hold Nextendo's (or Nintendo's) private
+   signing key and per CLAUDE.md's ground rule 2 does not pretend to.
+   Whether anything ever calls `qr_verify` back is unconfirmed — see the
+   `TODO(capture-needed)` on `naQRCodeParam`.
+
+4. **A second, previously undocumented `POST /connect/1.0.0/authorize`
+   sub-flow.** Every other capture of this endpoint uses a
+   username/password submit; this one instead carries
+   `Authorization: Bearer <access_token>` with no username/password fields
+   at all, `prompt=none`, and a *different* `client_id`
+   (`48d6d1f020427ad7`, `redirect_uri=nintendo://e-license.nx.sys` —
+   e-license/eShop related) than the `lhub` linking flow documented above.
+   It silently re-authorizes the existing NA session for a new client
+   rather than starting a new login. SwitchNet's `naAuthorizeSubmit` had no
+   handling for this shape at all: a request with neither field would have
+   fallen through to "Wrong username or password", which is wrong for a
+   request that was never trying to supply either. Implemented as a branch
+   in `naAuthorizeSubmit` that, when both fields are empty and a `Bearer`
+   token is present, verifies that token via the existing `s.idVerifier`
+   (the same verifier `federation` already trusts) and re-issues the
+   redirect for the new `client_id` using its subject; an invalid or
+   expired token now fails with a `prompt=none`-appropriate redirect
+   fragment (`redirectNAOAuthError`, per the OAuth spec's own rule that
+   `prompt=none` must fail through the same redirect mechanism a success
+   would use, never a login page) rather than a page a console making this
+   call would never render.
+
+All four are additive: nothing about the existing username/password
+authorize path, the federation handler, or any other already-verified call
+changed.
