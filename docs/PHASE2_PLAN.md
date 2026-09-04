@@ -1,6 +1,10 @@
 # Phase 2 implementation plan — NPLN, Splatoon 3, and the dashboard
 
-Status: **in progress.** Written 2026-08-28.
+Status: **in progress.** Written 2026-08-28, status table last refreshed
+2026-09-04 — **for the current state of any row below, `TODO.md` is the one
+to trust**, not this table; this document's own job is the four corrections
+in [What the roadmap gets wrong](#what-the-roadmap-gets-wrong), not day-to-day
+status.
 
 | Step | State |
 | --- | --- |
@@ -8,13 +12,18 @@ Status: **in progress.** Written 2026-08-28.
 | ES256 in `internal/jwt` | done |
 | Host reclassification + nginx generator | done |
 | gRPC gateway, and the phase-1 auth seam | done — `internal/npln`, `cmd/npln` |
+| Friends, presence, messaging (`Friends`, `PresenceService`, `Messaging`) | done — `internal/npln/friends.go`, `presence_service.go`, `messaging.go` |
+| The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, `cmd/npln`'s second listener; see `TODO.md` §1.3 for what within it is still honestly-empty rather than real |
+| `gamesync` (`nn.npln.gamesync.v1.Gamesync`) | done except `CreateRound` — `internal/gamesync`, `internal/gamesyncstore`; see `TODO.md` §1.5 |
 | Splatfest scheduling | done — `internal/toyohr` |
+| `Schedule` (map/mode + Salmon Run rotation) | done — Vs answers "nothing scheduled" (undocumented game data), Coop is a real operator-schedulable/auto-fillable rotation; see `TODO.md` §1.4 |
+| The rest of `toyohr` (`LobbyMessaging`, `Canola`/`Locker`, `CoopScenario`/`Replay`, `UserScreening`) | mostly done, `GameRecord` and `LobbyMessaging.SendMessage` left `Unimplemented`; see `TODO.md` §1.4 |
 | Match queue and formation | done — `internal/matchmaking` |
 | Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go`, incl. `AllocateIceServerSet` and `SyncGameSession` |
+| Match history (`npln_matches`) | done — recorded by `matchmaking.go`/`admin.go`, read by the dashboard |
 | BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
-| BCAT serving | not started |
-| The JSON front end (vermillion, penne, frontline) | not started — `internal/nplnrest` |
-| Dashboard | done — `internal/dashboard`, `cmd/dashboard`, incl. match history and live matchmaking counts |
+| BCAT serving | stage 1 (does the console reach us) built and needs an operator to run it; stage 2 (does it check the signature) not built — see `TODO.md` §2.4 |
+| Dashboard | done — `internal/dashboard`, `cmd/dashboard`, incl. match history, live matchmaking counts, per-player detail and a Debug tab for database controls |
 
 Everything done so far is verifiable without a console, which is the ordering
 this plan committed to while the certificate-pinning question is open. The

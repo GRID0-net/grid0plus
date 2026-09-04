@@ -19,7 +19,7 @@ Three phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | accounts + the stock friends list | code complete, **not yet verified on hardware** |
-| 2 | NPLN game server for Splatoon 3, and a dashboard | not started |
+| 2 | NPLN game server for Splatoon 3, and a dashboard | in progress — gateway, matchmaking, dashboard, `gamesync`, the JSON front end and most `toyohr` services are built; see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) and [`TODO.md`](TODO.md) for what's left |
 | 3 | eShop, served from local NSP dumps | not started |
 
 **Phase 1 has not been confirmed working on a real console.** Until it has, treat
@@ -192,8 +192,9 @@ the running process is actually using — see
 ## The guesses, and how to treat them
 
 The BAAS `2.0.0` friends endpoints are **not documented anywhere** and no public
-implementation exists to compare against. Ten shapes are reasoned rather than
-known:
+implementation exists to compare against. Nine shapes are reasoned rather than
+known, two of them (items 1 and 8) now partly settled by a real capture but
+with a residual open sub-question each:
 
 ```sh
 grep -rn 'TODO(capture-needed)' internal/

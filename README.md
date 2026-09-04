@@ -202,6 +202,24 @@ Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
 | Stubs | ctest, frs, five, op2, dragons, penne, npns, znc, service-status |
 | DNS redirection | UDP/TCP 53, with AAAA NODATA for redirected names |
 
+## What phase 2 implements
+
+Not code complete, and not yet touched by a real console — see
+[`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) and
+[`TODO.md`](TODO.md) for exactly what within each row below is real versus
+honestly-empty.
+
+| Feature | Where |
+| --- | --- |
+| The JSON front end (device init, login tickets, frontline) | `cmd/npln`'s second listener, `internal/nplnrest` |
+| NPLN auth, friends, presence, messaging | `internal/npln` |
+| Matchmaking, sessions, ICE server allocation | `internal/matchmaking`, `internal/npln/matchmaking.go` |
+| Match history | `npln_matches`, read by the dashboard |
+| `gamesync` (Firestore-shaped document/watch service) | `internal/gamesync`, `internal/gamesyncstore` |
+| Splatfests, map/mode + Salmon Run schedules, cloud save lookups, the rest of `toyohr` | `internal/toyohr` |
+| BCAT pack building (not yet serving to a console) | `internal/bcat` |
+| Dashboard: players, matchmaking, Splatfests, match history, Debug tab | `internal/dashboard`, `cmd/dashboard` |
+
 ## Repository layout
 
 ```
@@ -215,11 +233,30 @@ internal/
   db/            schema, the Store contract, PostgreSQL and in-memory stores
   dauth/         device authentication
   aauth/         application authentication
-  baas/          accounts, friends, presence, blocks, images
+  baas/          accounts, friends, presence, blocks, images (phase 1)
   presencebus/   presence pub/sub, in-process or Redis
+  presence/      the shared TTL/visibility rules BAAS and NPLN presence both read
   stubs/         the catch-all
   natcheck/      the NAT-check UDP responder
   service/       shared startup: logging, signals, graceful shutdown
+
+  # phase 2 — Splatoon 3 (NPLN); see docs/ROADMAP.md#phase-2
+  npln/          the NPLN gRPC gateway: auth, friends, presence, messaging,
+                 matchmaking
+  nplnrest/      the JSON front end (vermillion, penne, frontline) the game
+                 talks to before it opens the gRPC channel
+  matchmaking/   the match queue and session formation behind npln's gRPC
+  gamesync/      nn.npln.gamesync.v1.Gamesync, a Firestore-shaped document/
+                 watch service
+  gamesyncstore/ the document store behind gamesync
+  toyohr/        Splatoon 3's own services: Splatfests, Schedule (incl. a
+                 real Salmon Run rotation), CloudSave, and the rest
+  lobbymessaging/ per-lobby broadcast, behind toyohr's LobbyMessaging
+  messaging/     per-user mailbox, behind npln's Messaging
+  bcat/          builds and encrypts the BCAT packs custom Splatfest content
+                 ships in
+  dashboard/     the operator's web UI: players, matchmaking, Splatfests,
+                 match history, a Debug tab
 switch/          console-side setup and the generated hosts file
 scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py,
                  build-certstore.py

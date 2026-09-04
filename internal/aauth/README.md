@@ -51,3 +51,13 @@ that behaves differently when the policy does not match what it saw on retail
 servers — Splatoon 3 is one. That combination is what makes the BAAS id token
 carry the `hm` claim a game server reads to decide whether online play is
 allowed. Per-title overrides are in `aauth.title_overrides`.
+
+## `esv`
+
+Every application token's `nintendo` block also carries `esv`, present
+unconditionally (unlike the `di`/`sn`/`pc`/`dt`/`ist` device block above,
+which only appears for a system title). It is opaque, freshly-random
+padding — `sjwt.NewESV()`, called fresh per token — not a value derived from
+the device or the title. See `DeviceInfo`'s package comment in `internal/jwt`
+and [`docs/CAPTURES/README.md`](../../docs/CAPTURES/README.md) item 9 for how
+that was settled by reading `NextendoNetwork/nx-dauth`'s own source.

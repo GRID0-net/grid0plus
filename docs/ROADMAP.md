@@ -7,7 +7,7 @@ causes and no way to tell them apart.
 | Phase | Scope | State |
 | --- | --- | --- |
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
-| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | in progress: gateway, matchmaking+ICE, dashboard and BCAT pack-building are built and tested; the JSON front end, most `toyohr` services and BCAT serving are not |
+| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | in progress: gateway, matchmaking+ICE, dashboard, `gamesync`, the JSON front end, BCAT pack-building and most `toyohr` services are built and tested; BCAT serving (getting a pack onto the console) and hardware verification are not |
 | [3](#phase-3--the-eshop) | eShop, served from local NSP dumps | not started |
 
 ---
@@ -28,8 +28,9 @@ Nintendo friends applet. That cannot be verified without two consoles.
 endpoint shapes, which are undocumented and reasoned rather than known. The friend
 list response is the one to watch — if it is an envelope rather than a bare array,
 the applet comes up empty with nothing in the log.
-[`CAPTURES/README.md`](CAPTURES/README.md) lists all ten guesses in priority
-order.
+[`CAPTURES/README.md`](CAPTURES/README.md) lists all nine guesses in priority
+order — two (items 1 and 8) now partly settled by a real capture, each with a
+residual open sub-question.
 
 **Console-side work still open.** Redirection is solved off the console with DNS
 (`internal/dns`, or the generated dnsmasq/unbound configuration), so nothing goes
@@ -105,8 +106,14 @@ TLS handshake and then fails with nothing in either log.
 The frontline connection is a long-lived stream the console holds open; closing
 it is an error on the console, not a clean end.
 
-Nothing implements these yet, and all three request/response shapes are
-`TODO(capture-needed)` — see [`../TODO.md`](../TODO.md) §1.3.
+**Built** (`internal/nplnrest`, on `npln.rest_listen`, a second listener
+alongside the gRPC gateway in `cmd/npln`). Penne's two endpoints answer
+against a real field-level spec; Vermillion's two answer honestly-empty JSON,
+since the wiki names them but gives no response field table. Every other
+Vermillion endpoint, and `god` (Penne provisioning), are still unanswered.
+Three real open questions remain, each in `docs/QUESTIONS.md` — see
+[`../TODO.md`](../TODO.md) §1.3 for what they are and the assumption each was
+built on.
 
 ### 2.2 Gateway and core services
 
@@ -123,6 +130,7 @@ Then, in order of what a session needs:
 | `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
 | `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | yes — `internal/npln/friends.go`, `presence_service.go` |
 | `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | yes — `internal/npln/messaging.go`, over `internal/messaging`'s in-memory mailbox |
+| `nn.npln.gamesync.v1.Gamesync` | the Firestore-shaped document/watch service for lobby and match state | yes, except `CreateRound` — `internal/gamesync`, `internal/gamesyncstore`; see `../TODO.md` §1.5 for where it turned out to actually be reached from |
 | `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
 
 **NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that
@@ -193,11 +201,21 @@ the boot query that would otherwise hang, on top of being real player data
 this server has no legitimate way to have — see CLAUDE.md's "anything
 needing a game dump" boundary.
 
-Everything else listed above (`LobbyMessaging`, `GameRecord`,
-`CoopScenario`, `Locker`, `Replay`, `Canola`, `UserScreening`) has a
-generated proto binding under `proto/toyohr/v1` and no implementation.
+Most of the rest is built too, honestly-empty rather than guessed at where
+there is nothing legitimate to answer with: `LobbyMessaging` (real, backed
+by `internal/lobbymessaging`'s per-lobby broadcast, `SendMessage` still
+`Unimplemented`), `Canola`/`Locker` (empty/`NotFound` reads, the writes
+unimplemented — no `internal/ugcstore` exists to write into),
+`CoopScenario`/`Replay` (`NotFound` reads, `FulfillReservations` answers an
+empty valid list), and `UserScreening` (`NotFound` reads, `CreateReport`
+implemented for real since it is data the caller hands over rather than
+data this server would need to already have). Left entirely
+`Unimplemented`: `GameRecord`, whose `InitializeAttributes` alone carries
+per-mode X Power seed values with no defensible default. See
+[`../TODO.md`](../TODO.md) §1.4 for the file-by-file detail and what each
+`TODO(capture-needed)` on the remaining gaps would settle.
 
-Treat this list as a backlog and let capture data drive the order. Log every
+Treat what is not yet real as a backlog and let capture data drive the order. Log every
 unimplemented RPC with a hexdump — that log is the to-do list.
 
 `FestService` turned out to be the one with a dependency outside NPLN entirely,

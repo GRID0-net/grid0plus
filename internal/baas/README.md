@@ -19,6 +19,7 @@ to**, and the only place in SwitchNet where identity is decided.
 | --- | --- |
 | `router.go` | routing, the authentication middleware, the access log |
 | `accounts.go` | `application/token`, `users`, `login`, `federation`, lookups |
+| `devices.go` | `push_channels`, `devices/snapshot` — real response shapes, not `acknowledge` |
 | `friends.go` | friend requests, friend list, favourites, relationships |
 | `friendcodes.go` | code generation with the cooldown, and blocks |
 | `presence.go` | the presence report, the TTL rules, profile patches |
@@ -26,6 +27,11 @@ to**, and the only place in SwitchNet where identity is decided.
 | `certificates.go` | the two JWK set endpoints |
 | `errors.go` | Nintendo's error response shape |
 | `models.go` | the wire objects, and visibility scoping |
+| `nalink.go` | the Nintendo Account link flow (`accounts.nintendo.com`) — SwitchNet's own login page, not a copy of anyone's real OAuth |
+| `website.go` | self-service person registration, independent of any console |
+| `provision.go` | device account id/password shape and validation, shared by registration and login |
+| `ratelimit.go` | the sliding-window limiter over login attempts |
+| `wire.go` | form/JSON body decoding shared by every handler |
 
 ## Two things to read before changing anything here
 
