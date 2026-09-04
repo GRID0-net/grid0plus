@@ -142,6 +142,47 @@ func TestMergeRecursesIntoNestedMaps(t *testing.T) {
 	}
 }
 
+// TestNestedFieldUpdateDoesNotMutateAPreviouslyReturnedSnapshot covers the
+// bug setPath/deletePath used to have: a masked Update on a nested path
+// mutated the existing nested MapValue's Fields map in place, rather than
+// copying it. Get/Read only shallow-clone (cloneDocument -> cloneMapValue ->
+// cloneFields copies one level, sharing nested *commonpb.Value pointers with
+// whatever is stored), and applyUpdate's own clone of the existing document
+// is the same shallow depth -- so a document fetched before this update and
+// one mutated by it could share the exact same nested Go map, which a
+// concurrent reader (e.g. a KeepUserSession stream still proto-marshaling an
+// earlier snapshot) racing this write could observe mid-mutation, or crash
+// the process outright ("fatal error: concurrent map read and map write").
+// This test only needs one goroutine to prove the aliasing existed: if the
+// nested map were shared, the snapshot taken before the update would show
+// the update's value afterwards too.
+func TestNestedFieldUpdateDoesNotMutateAPreviouslyReturnedSnapshot(t *testing.T) {
+	s := New(fixedNow())
+	name := "tenants/t/games/g1"
+	nested := func(fields map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: fields}}}
+	}
+
+	if _, err := s.Update(&v1.Document{Name: name, Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"state": nested(map[string]*commonpb.Value{"slot": strVal("a")}),
+	}}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	before := s.Get(name)
+
+	if _, err := s.Update(&v1.Document{Name: name, Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"state": nested(map[string]*commonpb.Value{"slot": strVal("b")}),
+	}}}, &fieldmaskpb.FieldMask{Paths: []string{"state.slot"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := before.GetFields().GetFields()["state"].GetMapValue().GetFields()["slot"].GetStringValue(); got != "a" {
+		t.Errorf(`a document fetched before the update changed after it: state.slot = %q, want "a" -- `+
+			"the update mutated a map shared with an earlier snapshot instead of copying it", got)
+	}
+}
+
 func TestTransformIncrementAddsToTheExistingValue(t *testing.T) {
 	s := New(fixedNow())
 	name := "tenants/t/games/g1"

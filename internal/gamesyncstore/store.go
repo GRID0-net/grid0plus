@@ -517,19 +517,30 @@ func getPath(v *commonpb.MapValue, segments []string) *commonpb.Value {
 	return getPath(cur.GetMapValue(), segments[1:])
 }
 
+// setPath and deletePath always build a fresh map at every level they
+// descend into, rather than mutating whatever nested MapValue is already
+// there -- the same "never mutate, always produce a new map" rule
+// mergeFields below already follows. Callers such as applyUpdate only
+// shallow-clone the top level of an existing document (cloneFields), so a
+// nested MapValue reached from here can be the exact same Go map object
+// already handed out to a caller by an earlier Get()/Read() (also only
+// shallow-cloned, by cloneDocument). Mutating that map in place -- as an
+// earlier version of both functions did -- raced a concurrent reader of
+// that same shared map (a stream proto-marshaling a document it fetched
+// earlier) against this write, under nothing but Store's own mutex, which
+// protects the top-level docs map, not structure that has already escaped
+// through a returned *v1.Document.
 func setPath(fields map[string]*commonpb.Value, segments []string, val *commonpb.Value) {
 	if len(segments) == 1 {
 		fields[segments[0]] = val
 		return
 	}
-	child, ok := fields[segments[0]]
-	var childMap *commonpb.MapValue
-	if ok && child.GetMapValue() != nil {
-		childMap = child.GetMapValue()
-	} else {
-		childMap = &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
-		fields[segments[0]] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: childMap}}
+	childFields := map[string]*commonpb.Value{}
+	if child, ok := fields[segments[0]]; ok && child.GetMapValue() != nil {
+		childFields = cloneFields(child.GetMapValue().Fields)
 	}
+	childMap := &commonpb.MapValue{Fields: childFields}
+	fields[segments[0]] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: childMap}}
 	setPath(childMap.Fields, segments[1:], val)
 }
 
@@ -546,7 +557,9 @@ func deletePath(fields map[string]*commonpb.Value, segments []string) {
 	if cm == nil {
 		return
 	}
-	deletePath(cm.Fields, segments[1:])
+	childMap := &commonpb.MapValue{Fields: cloneFields(cm.Fields)}
+	fields[segments[0]] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: childMap}}
+	deletePath(childMap.Fields, segments[1:])
 }
 
 func mergeFields(dst, src map[string]*commonpb.Value) map[string]*commonpb.Value {
