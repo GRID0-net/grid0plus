@@ -163,6 +163,30 @@ network:
 	}
 }
 
+// TestNATCheckSecondaryIPMustDifferByAddressNotByText covers the gap fixed
+// alongside this test: the same check above compared the two settings as
+// plain strings, so two different textual spellings of the identical address
+// (here, an IPv4-mapped IPv6 form) passed validation -- the exact
+// misconfiguration TestNATCheckSecondaryIPMustDiffer exists to catch, only
+// caught later at `make up` when internal/dns.Listen's own net.IP.Equal
+// check refuses to start instead.
+func TestNATCheckSecondaryIPMustDifferByAddressNotByText(t *testing.T) {
+	clearEnv(t)
+
+	path := writeConfig(t, `
+network:
+  public_ip: 192.168.1.50
+  natcheck_secondary_ip: ::ffff:192.168.1.50
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("an IPv4-mapped-IPv6 spelling of the same address was accepted for nncs1 and nncs2")
+	}
+	if !strings.Contains(err.Error(), "de-duplicate") {
+		t.Errorf("the error does not explain the consequence: %v", err)
+	}
+}
+
 func TestInvalidAddressesAreRejected(t *testing.T) {
 	clearEnv(t)
 

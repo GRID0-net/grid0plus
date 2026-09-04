@@ -582,9 +582,17 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("network.public_ip: %q is not an IP address", c.Network.PublicIP))
 	}
 	if ip := c.Network.NATCheckSecondaryIP; ip != "" {
-		if net.ParseIP(ip) == nil {
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
 			errs = append(errs, fmt.Errorf("network.natcheck_secondary_ip: %q is not an IP address", ip))
-		} else if ip == c.Network.PublicIP {
+		} else if parsed.Equal(net.ParseIP(c.Network.PublicIP)) {
+			// Parsed IP equality, not a string compare: two different textual
+			// forms of the same address (an IPv4-mapped IPv6 form, non-canonical
+			// zero-padding, and so on) are the SAME mistake this check exists to
+			// catch. internal/dns.Listen enforces the identical invariant with
+			// net.IP.Equal for the same reason -- string equality here would give
+			// this a false pass that only surfaces later, at `make up`, when dns
+			// refuses to start.
 			errs = append(errs, errors.New(
 				"network.natcheck_secondary_ip is the same as network.public_ip: "+
 					"Pia will de-duplicate the second NAT probe and NAT detection will never "+
