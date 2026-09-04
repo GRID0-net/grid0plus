@@ -2,7 +2,9 @@ package baas
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -483,17 +485,13 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 		extras[db.ScopeSelf]["nintendoAccountId"] = naID
 		patch.Extras = &extras
 	}
-	// TODO(capture-needed): a working account's federation/login response
-	// (2026-08-27 capture) carries a ~200-character opaque value here,
-	// structured like a fixed-format binary blob in a non-base64 alphabet --
-	// not documented anywhere, and not something SwitchNet can derive or
-	// verify. What's confirmed is that the *field* is non-empty on every
-	// working account; what a capture would settle is whether its exact
-	// content matters to the console at all, or only its presence. Using
-	// naID rather than fabricating a Nintendo-shaped blob: CLAUDE.md's rule
-	// against inventing plausible-looking Nintendo internals.
-	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != naID {
-		extras[db.ScopeSelf]["nxAccount"] = naID
+	// TODO(capture-needed): the interior byte layout of nxAccountBlob's
+	// output -- what a real one encodes, and whether the console checks any
+	// of it. See that function's own comment for what a 2026-09-04 capture
+	// settled (length and encoding) versus what it did not (content).
+	nxAccount := nxAccountBlob(naID)
+	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != nxAccount {
+		extras[db.ScopeSelf]["nxAccount"] = nxAccount
 		patch.Extras = &extras
 	}
 
@@ -519,6 +517,62 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 	}
 	*user = updated
 	return nil
+}
+
+// nxAccountBlob derives extras.self.nxAccount's value: a fixed-length,
+// correctly-shaped placeholder, not a copy or a forgery of a real one.
+//
+// Real shape confirmed 2026-09-04, from a genuine, decrypted, working
+// Nextendo federation response the operator captured and supplied directly
+// (a mitmproxy `.flow`, read with the real `mitmproxy` library rather than
+// eyeballed): a fixed 174-byte binary structure, base64-encoded to exactly
+// 232 characters with no padding (174 is exactly divisible by 3, so base64
+// needs none). That corrects this comment's own earlier, unverified guess
+// -- "a non-base64 alphabet" -- written before any real sample existed to
+// check it against; decoded, it is ordinary base64 of opaque bytes.
+//
+// The interior byte layout remains unknown. One real account's value is not
+// enough to separate fixed structure from per-account content, and
+// CLAUDE.md's rule against inventing a plausible-looking Nintendo internal
+// means this does not attempt to reproduce either. What changed from the
+// previous placeholder (the bare Nintendo Account id, ~16 characters) is
+// only the parts now confirmed real: length and encoding. A 16-character
+// hex string sitting where a console has only ever seen a 232-character
+// value was a mismatch nothing about "content unconfirmed" excused --
+// matching a confirmed length costs nothing and is never a worse guess than
+// visibly not even trying to.
+//
+// Deliberately not derived from anything Nintendo-secret and not the
+// captured value itself (that value belongs to one specific real Nintendo
+// Account and is not this project's to redistribute, even reshaped): just
+// naID, which is SwitchNet's own data, stretched to the confirmed length
+// with repeated SHA-256. Stable per account, so it does not change on every
+// login, but it is a placeholder shape, never a claim about what the real
+// bytes encode.
+//
+// TODO(capture-needed): whether the interior bytes matter to the console at
+// all. One data point exists and is suggestive but not conclusive: on real
+// hardware, the operator tried both another real account's literal captured
+// bytes and unformatted random data in place of this field, in separate
+// live federation attempts -- both still produced error 2124-0292, the same
+// error this whole flow has shown through several previous, independently
+// capture-verified fixes (see docs/CAPTURES/nintendo-account-link.md's
+// "What is still open"). That is consistent with the console never checking
+// this field's content at all, but a content check keyed to per-request
+// context (so that even genuine bytes from a different request would also
+// read as wrong) predicts the identical result -- so it does not settle the
+// question either way. Change: this function, if a capture or a hardware
+// test ever ties specific interior bytes to specific console behaviour.
+func nxAccountBlob(naID string) string {
+	const blobLen = 174
+	out := make([]byte, 0, blobLen)
+	seed := []byte(naID)
+	for len(out) < blobLen {
+		sum := sha256.Sum256(seed)
+		out = append(out, sum[:]...)
+		seed = sum[:]
+	}
+	return base64.StdEncoding.EncodeToString(out[:blobLen])
 }
 
 // ---- GET /1.0.0/users/<id> ----------------------------------------------

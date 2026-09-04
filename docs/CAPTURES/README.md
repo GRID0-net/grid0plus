@@ -118,7 +118,27 @@ flow differs from what SwitchNet (modeled on the Nextendo capture) currently
 sends — undecryptable without either a working private server that redirects
 real Nintendo Account holders, or CFW-level cert trust on a console signed in
 with a real account, neither of which was available for the 2026-08-27
-real-hardware capture.
+real-hardware capture. Two narrower sub-details within the same flow:
+`ac:grt` (`jwt.Claims.ACGrantType`, `TODO(capture-needed)` at
+`internal/jwt/issue.go:206` and `internal/baas/nalink.go:368`) has only ever
+been observed as `4`, for this exact grant — what other values map to is
+unknown; and `accounts.go`'s `nxAccountBlob` produces the `nxAccount` opaque
+blob, now shape-correct (174 bytes, base64-encoded — settled 2026-09-04 from
+a real captured federation response the operator supplied directly) but
+still not a claim about its interior content, which two real-hardware tests
+(another account's literal captured bytes; unformatted random data) suggest
+but do not prove the console never checks — see
+[nintendo-account-link.md](nintendo-account-link.md)'s "What is still open"
+for the detail and why that test does not fully settle it. A 2026-09-03 pass
+cross-checked this whole flow against a full clone of the
+kinnay/NintendoClients wiki (not just search-engine summaries of it) and
+against `NextendoNetwork/Prelude-Nro`'s bundled write-up — see
+[nintendo-account-link.md](nintendo-account-link.md)'s "External research
+pass" section: it independently confirms most of SwitchNet's existing
+choices, confirms `CalculateNintendoAccountAuthenticationFingerprint` is
+undocumented anywhere public (not merely unfound), and flags that
+Prelude-Nro's write-up is an AI-generated secondary summary with at least
+one fabricated detail — not a source to trust on its own.
 
 **What SwitchNet does now:** `internal/baas/nalink.go` implements
 `GET/POST /connect/1.0.0/authorize` and `POST /connect/1.0.0/api/token` as a
