@@ -36,6 +36,7 @@ type Memory struct {
 	// festEntries is keyed by fest id then user id: one entry per account per
 	// fest, the same shape friendships uses for its own per-pair map.
 	festEntries map[string]map[string]FestEntry
+	coopShifts  map[string]CoopShift
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
@@ -50,6 +51,7 @@ func NewMemory() *Memory {
 		friendCodes:    map[string]FriendCode{},
 		fests:          map[string]Fest{},
 		festEntries:    map[string]map[string]FestEntry{},
+		coopShifts:     map[string]CoopShift{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -962,6 +964,68 @@ func (m *Memory) ListFestEntries(_ context.Context, festID string) ([]FestEntry,
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
+}
+
+// ---- Salmon Run / Big Run schedule ---------------------------------------
+
+func (m *Memory) UpsertCoopShift(_ context.Context, c CoopShift) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, ok := m.coopShifts[c.ID]; ok {
+		c.CreatedAt = existing.CreatedAt
+	} else if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now().UTC()
+	}
+	c.UpdatedAt = time.Now().UTC()
+	// Copy the slices, the same reason UpsertFest copies Regions/PackKeys: the
+	// caller keeps its own reference, and handing out the backing array lets
+	// it mutate stored state by accident in a way PostgreSQL cannot.
+	c.Weapons = append([]int64(nil), c.Weapons...)
+	c.Rewards = append([]int64(nil), c.Rewards...)
+	m.coopShifts[c.ID] = c
+	return nil
+}
+
+func (m *Memory) GetCoopShift(_ context.Context, id string) (CoopShift, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	c, ok := m.coopShifts[id]
+	if !ok {
+		return CoopShift{}, ErrNotFound
+	}
+	c.Weapons = append([]int64(nil), c.Weapons...)
+	c.Rewards = append([]int64(nil), c.Rewards...)
+	return c, nil
+}
+
+func (m *Memory) ListCoopShifts(_ context.Context) ([]CoopShift, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]CoopShift, 0, len(m.coopShifts))
+	for _, c := range m.coopShifts {
+		c.Weapons = append([]int64(nil), c.Weapons...)
+		c.Rewards = append([]int64(nil), c.Rewards...)
+		out = append(out, c)
+	}
+	// Soonest first, id as the tiebreak, the same total-order reasoning as
+	// ListFests: a map range is random and the contract test compares order.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartAt.Equal(out[j].StartAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].StartAt.Before(out[j].StartAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) DeleteCoopShift(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.coopShifts, id)
+	return nil
 }
 
 // ---- match history ---------------------------------------------------------

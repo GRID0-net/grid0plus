@@ -300,17 +300,19 @@ this version deliberately names no number to keep stale).
   but no capture shows what keys a real client reads, and a guessed key that
   silently never matches is worse than an empty map that visibly does
   nothing.
-- **`Schedule`'s map/mode/weapon rotation content**
-  (`internal/toyohr/schedule.go`, all five `Select*` RPCs): answered as
-  "nothing scheduled" rather than invented. This is Nintendo's own game
-  design data (which stages, which mode, Salmon Run's weapon pool), not a
-  shape SwitchNet can reason its way to the way a resource-name convention
-  can -- there is genuinely no source for it short of a capture or a dump. A
-  capture of a real server's response for each of the five RPCs would settle
-  what a populated one looks like; alternatively, an operator-authored
-  rotation table in the spirit of `fest.go`'s `SaveFest`, if the operator
-  decides fidelity to Nintendo's actual rotations does not matter for a
-  private network.
+- **`Schedule`'s Vs map/mode rotation content**
+  (`internal/toyohr/schedule.go`, `SelectVsParams`/`SelectVsSchedules`/
+  `SelectSeasonSchedules`/`SelectLeagueSchedules`): answered as "nothing
+  scheduled" rather than invented. This is Nintendo's own game design data
+  (which stages, which mode), not a shape SwitchNet can reason its way to the
+  way a resource-name convention can -- there is genuinely no source for it
+  short of a capture or a dump. A capture of a real server's response for
+  each of the four RPCs would settle what a populated one looks like.
+  `SelectCoopSchedules`, the fifth `Schedule` RPC, is no longer on this list:
+  its wire shape was never the actual blocker (the proto already carries it,
+  independently corroborated -- see `internal/toyohr/README.md`), so
+  `coop_ids.go` and `coop_schedule.go` give it the operator-authored table
+  this entry used to only suggest as a hypothetical for Vs.
 - **Whether `Messaging.RecvMessage`'s empty resume token replays the whole
   retained mailbox**
   (`internal/npln/messaging.go`, `RecvMessage`): the defensible reading, since

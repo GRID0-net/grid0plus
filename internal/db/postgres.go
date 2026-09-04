@@ -1095,6 +1095,80 @@ func (p *Postgres) ListFestEntries(ctx context.Context, festID string) ([]FestEn
 	return out, mapErr(rows.Err())
 }
 
+// ---- Salmon Run / Big Run schedule ---------------------------------------
+
+const coopShiftColumns = `id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, start_at, end_at, created_at, updated_at`
+
+func (p *Postgres) UpsertCoopShift(ctx context.Context, c CoopShift) error {
+	// Same normalisation UpsertFest applies to Regions/PackKeys: a nil slice
+	// becomes SQL NULL, which the NOT NULL columns reject while the in-memory
+	// store accepts it happily. Normalised here so both implementations agree.
+	if c.Weapons == nil {
+		c.Weapons = []int64{}
+	}
+	if c.Rewards == nil {
+		c.Rewards = []int64{}
+	}
+
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_coop_shifts (id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, start_at, end_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 ON CONFLICT (id) DO UPDATE SET
+		     kind           = EXCLUDED.kind,
+		     stage_id       = EXCLUDED.stage_id,
+		     boss           = EXCLUDED.boss,
+		     weapons        = EXCLUDED.weapons,
+		     kuma_weapon_id = EXCLUDED.kuma_weapon_id,
+		     reward_gear_id = EXCLUDED.reward_gear_id,
+		     rewards        = EXCLUDED.rewards,
+		     start_at       = EXCLUDED.start_at,
+		     end_at         = EXCLUDED.end_at,
+		     updated_at     = now()`,
+		c.ID, c.Kind, c.StageID, c.Boss, c.Weapons, c.KumaWeaponID, c.RewardGearID, c.Rewards, c.StartAt, c.EndAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetCoopShift(ctx context.Context, id string) (CoopShift, error) {
+	return scanCoopShift(p.pool.QueryRow(ctx,
+		`SELECT `+coopShiftColumns+` FROM npln_coop_shifts WHERE id = $1`, id))
+}
+
+func (p *Postgres) ListCoopShifts(ctx context.Context) ([]CoopShift, error) {
+	// Soonest first, id as the tiebreak: the in-memory store orders the same
+	// way, and the contract test compares them.
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+coopShiftColumns+` FROM npln_coop_shifts ORDER BY start_at, id`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []CoopShift
+	for rows.Next() {
+		c, err := scanCoopShift(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) DeleteCoopShift(ctx context.Context, id string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM npln_coop_shifts WHERE id = $1`, id)
+	return mapErr(err)
+}
+
+func scanCoopShift(row interface{ Scan(...any) error }) (CoopShift, error) {
+	var c CoopShift
+	err := row.Scan(&c.ID, &c.Kind, &c.StageID, &c.Boss, &c.Weapons, &c.KumaWeaponID,
+		&c.RewardGearID, &c.Rewards, &c.StartAt, &c.EndAt, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return CoopShift{}, mapErr(err)
+	}
+	return c, nil
+}
+
 // ---- match history ---------------------------------------------------------
 
 const matchColumns = `id, tenant, mode, host_user_id, player_ids, forced, created_at`

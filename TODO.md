@@ -76,10 +76,21 @@ without a capture to check it against.
 
 ### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2, mostly done**
 
-`Schedule` is built (`internal/toyohr/schedule.go`): all five RPCs answer
-"nothing scheduled" rather than `Unimplemented`, since the map/mode/weapon
-rotation content itself is Nintendo's own game design data with no dump or
-capture to draw from — see `docs/CAPTURES/README.md`. `CloudSave` is built
+`Schedule` is built (`internal/toyohr/schedule.go`). Four of its five RPCs
+(`SelectVsParams`, `SelectVsSchedules`, `SelectSeasonSchedules`,
+`SelectLeagueSchedules`) answer "nothing scheduled" rather than
+`Unimplemented`, since the map/mode rotation content itself is Nintendo's own
+game design data with no dump or capture to draw from — see
+`docs/CAPTURES/README.md`. `SelectCoopSchedules`, the fifth, is a real,
+operator-schedulable Salmon Run/Big Run rotation now: `coop_ids.go` carries
+real stage/weapon/boss ids (read from the game's own shipped parameter
+tables, cross-checked two ways — see that file's comment), `coop_schedule.go`
+is the `Fest`/`SaveFest`-equivalent authoring/validation path, and
+`switchnetctl coop schedule` (plus `list`/`delete`/`stages`/`weapons`/
+`bosses`) is the CLI surface — see `internal/toyohr/README.md`'s "honest
+emptiness for Vs, a real rotation for Coop" section for why Coop's wire shape
+was never actually the blocker Vs's still is. TeamContest (Eggstra Work) has
+no authoring path yet. `CloudSave` is built
 only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
 an account with no cloud save, not a stub); its other five RPCs
 (`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)

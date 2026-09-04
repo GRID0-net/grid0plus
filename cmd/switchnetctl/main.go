@@ -33,10 +33,10 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 
-	// "account <sub>" and "fest <sub>" take further arguments of their own;
-	// every other command takes none.
+	// "account <sub>", "fest <sub>" and "coop <sub>" take further arguments
+	// of their own; every other command takes none.
 	if flag.NArg() == 0 ||
-		(flag.Arg(0) != "account" && flag.Arg(0) != "fest" && flag.NArg() != 1) {
+		(flag.Arg(0) != "account" && flag.Arg(0) != "fest" && flag.Arg(0) != "coop" && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -108,6 +108,29 @@ func main() {
 			os.Exit(2)
 		}
 
+	case "coop":
+		if flag.NArg() < 2 {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|list|delete|stages|weapons|bosses> ...\n")
+			os.Exit(2)
+		}
+		switch flag.Arg(1) {
+		case "schedule":
+			coopSchedule(cfg, flag.Args()[2:])
+		case "list":
+			coopList(cfg, flag.Args()[2:])
+		case "delete":
+			coopDelete(cfg, flag.Args()[2:])
+		case "stages":
+			coopStages()
+		case "weapons":
+			coopWeapons(flag.Args()[2:])
+		case "bosses":
+			coopBosses()
+		default:
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|list|delete|stages|weapons|bosses> ...\n")
+			os.Exit(2)
+		}
+
 	default:
 		usage()
 		os.Exit(2)
@@ -140,6 +163,9 @@ Commands:
   fest      build a Splatfest's BCAT packs from game-ready assets and
             register it, so its id, resource, revision and decryption keys
             cannot drift apart. See 'switchnetctl fest build -h'.
+  coop      schedule a Salmon Run or Big Run rotation shift, list or delete
+            scheduled shifts, or print the real stage/weapon/boss id tables
+            a shift is built from. See 'switchnetctl coop schedule -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file

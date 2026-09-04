@@ -47,7 +47,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images, npln_fests RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -71,6 +71,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"userLogin":                 testUserLogin,
 		"fests":                     testFests,
 		"festEntries":               testFestEntries,
+		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
 		"ping":                      testPing,
 		"stats":                     testStats,
@@ -1297,6 +1298,133 @@ func testFests(t *testing.T, s Store) {
 	// Idempotent: the dashboard's delete button should not error on a second click.
 	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
 		t.Errorf("deleting a missing fest errored: %v", err)
+	}
+}
+
+// testCoopShifts exercises the coop shift store the same way testFests
+// exercises fests -- same ordering reasoning: ListCoopShifts backs
+// SelectCoopSchedules, and a map range in the in-memory store is random.
+func testCoopShifts(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	sept := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
+
+	first := CoopShift{
+		ID: "normal-1", Kind: "normal", StageID: 1, Boss: "SakeJaw",
+		Weapons:      []int64{20000, 20010, 20020, 20030},
+		KumaWeaponID: 20900, RewardGearID: 0,
+		StartAt: sept, EndAt: sept.Add(8 * time.Hour),
+	}
+	second := CoopShift{
+		ID: "big_run-1", Kind: "big_run", StageID: 100, Boss: "SakeRope",
+		Weapons:      []int64{21000, 21010, 21020, 21030},
+		KumaWeaponID: 21900, RewardGearID: 7,
+		Rewards: []int64{100, 200, 300},
+		StartAt: oct, EndAt: oct.Add(48 * time.Hour),
+	}
+
+	if err := s.UpsertCoopShift(ctx, first); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := s.UpsertCoopShift(ctx, second); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	got, err := s.GetCoopShift(ctx, "normal-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.StageID != 1 || got.Boss != "SakeJaw" {
+		t.Errorf("round-tripped %+v, want stage/boss to match", got)
+	}
+	if !got.StartAt.UTC().Equal(sept) {
+		t.Errorf("start_at = %s, want %s", got.StartAt.UTC(), sept)
+	}
+	if len(got.Weapons) != 4 || got.Weapons[0] != 20000 {
+		// Positional order matters: main_weapons is sent to the console in
+		// this order, so a reordering here would be silently wrong on the
+		// wire even though nothing about the store contract would catch it
+		// as a missing value.
+		t.Errorf("weapons = %v, want [20000 20010 20020 20030] in order", got.Weapons)
+	}
+
+	gotBigRun, err := s.GetCoopShift(ctx, "big_run-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(gotBigRun.Rewards) != 3 || gotBigRun.Rewards[0] != 100 {
+		t.Errorf("rewards = %v, want [100 200 300] in order", gotBigRun.Rewards)
+	}
+
+	// Soonest first.
+	list, err := s.ListCoopShifts(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("listed %d coop shifts, want 2", len(list))
+	}
+	if list[0].ID != "normal-1" || list[1].ID != "big_run-1" {
+		t.Errorf("list order = [%s %s], want the sooner shift first", list[0].ID, list[1].ID)
+	}
+
+	// Upsert replaces rather than duplicating, and preserves created_at.
+	updated := first
+	updated.Boss = "SakelienGiant"
+	if err := s.UpsertCoopShift(ctx, updated); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	list, err = s.ListCoopShifts(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("re-upserting created a duplicate: %d coop shifts", len(list))
+	}
+	again, err := s.GetCoopShift(ctx, "normal-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if again.Boss != "SakelienGiant" {
+		t.Error("boss was not updated")
+	}
+	if !again.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at changed on update: %s -> %s", got.CreatedAt, again.CreatedAt)
+	}
+
+	// A stored shift's weapons must not alias the caller's slice.
+	mutable := []int64{22000, 22010, 22030, 22050}
+	third := CoopShift{
+		ID: "normal-2", Kind: "normal", StageID: 2, Weapons: mutable,
+		KumaWeaponID: 22900,
+		StartAt:      oct.Add(24 * time.Hour), EndAt: oct.Add(32 * time.Hour),
+	}
+	if err := s.UpsertCoopShift(ctx, third); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	mutable[0] = 99999
+	stored, err := s.GetCoopShift(ctx, "normal-2")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Weapons[0] != 22000 {
+		t.Error("mutating the caller's slice changed stored state")
+	}
+
+	if _, err := s.GetCoopShift(ctx, "normal-99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing coop shift returned %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteCoopShift(ctx, "normal-2"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetCoopShift(ctx, "normal-2"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted coop shift returned %v, want ErrNotFound", err)
+	}
+	// Idempotent, the same as DeleteFest.
+	if err := s.DeleteCoopShift(ctx, "normal-2"); err != nil {
+		t.Errorf("deleting a missing coop shift errored: %v", err)
 	}
 }
 

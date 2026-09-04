@@ -334,6 +334,43 @@ type FestEntry struct {
 	CreatedAt  time.Time
 }
 
+// CoopShift is one Salmon Run rotation slot, as the operator scheduled it.
+//
+// Only the mechanics, the same split Fest makes: when it runs and what real
+// Nintendo stage/weapon/boss ids it carries. Unlike a fest there is no
+// separate content pack -- internal/toyohr's CoopShift (the domain type this
+// row round-trips to) is what decides what these values mean and validates
+// them; this type just carries them. See internal/toyohr/coop_ids.go for
+// where the real ids come from.
+type CoopShift struct {
+	// ID is "<kind>-<start unix seconds>", derived rather than typed --
+	// internal/toyohr.CoopShift.ID.
+	ID string
+	// Kind is "normal" or "big_run".
+	Kind string
+	// StageID is a real Salmon Run stage id.
+	StageID int32
+	// Boss is the king salmonid's codename for this shift's Xtrawave, or ""
+	// if none is scheduled.
+	Boss string
+	// Weapons are exactly four real main-weapon ids.
+	Weapons []int64
+	// KumaWeaponID is the real Grizzco weapon id this shift's boss wave uses.
+	KumaWeaponID int64
+	// RewardGearID is a gear reward id, or 0 for none.
+	RewardGearID int32
+	// Rewards are a Big Run's scale-tier reward values; empty for "normal".
+	Rewards []int64
+	// StartAt is when the shift opens; EndAt is when it closes. Both must
+	// land on Splatoon 3's two-hour slot boundary -- enforced in
+	// internal/toyohr, where the reason can be explained.
+	StartAt time.Time
+	EndAt   time.Time
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // Match is one game session NPLN's matchmaking queue has formed, recorded
 // for the dashboard's match history.
 //
@@ -450,6 +487,18 @@ type Store interface {
 	GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error)
 	// ListFestEntries returns every entry for a fest, for tallying a result.
 	ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error)
+
+	// ---- Salmon Run / Big Run schedule (phase 2) ----
+
+	// UpsertCoopShift creates or replaces a coop shift by id.
+	UpsertCoopShift(ctx context.Context, c CoopShift) error
+	// GetCoopShift returns a coop shift by id, or ErrNotFound.
+	GetCoopShift(ctx context.Context, id string) (CoopShift, error)
+	// ListCoopShifts returns every coop shift, soonest first.
+	ListCoopShifts(ctx context.Context) ([]CoopShift, error)
+	// DeleteCoopShift removes a coop shift. Not an error if it does not
+	// exist: the same idempotent-delete reasoning as DeleteFest.
+	DeleteCoopShift(ctx context.Context, id string) error
 
 	// ---- match history (phase 2) ----
 

@@ -8,7 +8,7 @@ because custom Splatfests are what phase 2 exists for.
 | Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `CloudSave.GetSaveRecord` |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
 | Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/{fest,schedule,cloud_save}.proto` |
-| Needs a database | yes, for fests -- `Schedule` and `GetSaveRecord` need none |
+| Needs a database | yes, for fests and coop shifts -- the rest of `Schedule` and `GetSaveRecord` need none |
 
 ## A Splatfest lives in two places, and they must agree
 
@@ -108,21 +108,61 @@ Two fests live at once is a state the game has no reading for. The operator can
 create it by mistake, so `currentFest` picks the most recently started and logs
 a warning rather than picking arbitrarily.
 
-## `Schedule`: honest emptiness, not an invented rotation
+## `Schedule`: honest emptiness for Vs, a real rotation for Coop
 
-`schedule.go` answers all five `Schedule` RPCs with an empty schedule list
-rather than `Unimplemented`, because the console calls these early in boot
-and the alternative is a to-do-list log line where a working boot query
+`schedule.go` answers `SelectVsParams`, `SelectVsSchedules`,
+`SelectSeasonSchedules` and `SelectLeagueSchedules` with an empty schedule
+list rather than `Unimplemented`, because the console calls these early in
+boot and the alternative is a to-do-list log line where a working boot query
 should be.
 
-The content those RPCs would normally carry — which stages, which mode,
-which weapons are in Salmon Run's rotation — is Nintendo's own game design
-data. Unlike a fest, which the operator authors and `SaveFest` validates,
-there is no equivalent authoring path for a normal Vs/Coop rotation and no
-dump of one. CLAUDE.md is explicit that a genuinely undocumented shape must
-not be filled with an invented-but-plausible Nintendo internal, so this
-stays honestly empty (`TODO(capture-needed)`, in `schedule.go`) rather than
-serving a fabricated rotation nothing here would ever catch as wrong.
+The content those four RPCs would normally carry — which stages, which mode
+— is Nintendo's own game design data. Unlike a fest, which the operator
+authors and `SaveFest` validates, there is no equivalent authoring path for a
+normal Vs rotation and no dump of one. CLAUDE.md is explicit that a genuinely
+undocumented shape must not be filled with an invented-but-plausible
+Nintendo internal, so these four stay honestly empty (`TODO(capture-needed)`,
+in `schedule.go`) rather than serving a fabricated rotation nothing here
+would ever catch as wrong.
+
+**`SelectCoopSchedules` is the fifth RPC, and it is different**, because the
+usual blocker for a Vs/Coop rotation — no known wire shape — did not actually
+apply here: `nn.npln.toyohr.v1.CoopSchedule`'s own decompiled proto
+(`proto/toyohr/v1/resources.pb.go`) already carries `Normal`, `BigRun` and
+`TeamContest` as three parallel sub-messages, each with real fields
+(`stage`, `boss`, `main_weapons`, `kuma_weapon`, `reward_gear_id`, and
+`BigRun`'s own `rewards`). Independently corroborated, not just read once:
+[`nintendoapis/splatnet3-types`](https://github.com/nintendoapis/splatnet3-types),
+a public typed schema of SplatNet 3's own GraphQL API, has the identical
+three-way split (`CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
+teamContestSchedules}`, each entry's `setting.__typename` naming
+`CoopNormalSetting` or `CoopBigRunSetting`). Two independently maintained
+sources agreeing on the same shape is as much confidence as this project
+gets without a console of its own.
+
+What was actually missing was **content and an authoring path** — real
+stage/weapon/boss ids, and something to play `SaveFest`'s role. Both now
+exist:
+
+- `coop_ids.go` — every real Salmon Run and Big Run stage id, every real
+  weapon id (including the Grizzco/kuma pool), and the three real king
+  salmonid boss codenames, all read directly out of the game's own shipped
+  parameter tables (see that file's package comment for exactly which ones
+  and how they were cross-checked against each other and against Inkipedia's
+  independently maintained Big Run stage list).
+- `coop_schedule.go`'s `CoopShift` + `Validate` — the `SaveFest`-equivalent:
+  an operator describes a shift (kind, stage, weapons, boss, timing) and it
+  is checked against `coop_ids.go`'s real tables before being stored, the
+  same "explain the constraint in Go, not in a column" split `Fest.Validate`
+  uses.
+- `switchnetctl coop schedule` (and `list`/`delete`/`stages`/`weapons`/
+  `bosses` to print the reference tables) — the CLI surface, mirroring
+  `switchnetctl fest build`.
+
+TeamContest (Eggstra Work) has no authoring path yet; adding one is the same
+shape of work Big Run was. Three fields on the wire message are an
+operator-local assumption rather than a confirmed shape — `coopScheduleProto`
+documents which, and `docs/QUESTIONS.md` has the entry.
 
 ## `CloudSave.GetSaveRecord`: `NotFound` is the correct answer, not a stub
 
