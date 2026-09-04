@@ -490,6 +490,7 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
 }
 
 .fest-list { display: flex; flex-direction: column; gap: 10px; }
+.coop-weapon-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
 .fest-card {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   background: var(--bg-sunk);

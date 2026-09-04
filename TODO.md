@@ -87,10 +87,11 @@ real stage/weapon/boss ids (read from the game's own shipped parameter
 tables, cross-checked two ways — see that file's comment), `coop_schedule.go`
 is the `Fest`/`SaveFest`-equivalent authoring/validation path, and
 `switchnetctl coop schedule` (plus `list`/`delete`/`stages`/`weapons`/
-`bosses`) is the CLI surface — see `internal/toyohr/README.md`'s "honest
-emptiness for Vs, a real rotation for Coop" section for why Coop's wire shape
-was never actually the blocker Vs's still is. TeamContest (Eggstra Work) has
-no authoring path yet. `CloudSave` is built
+`bosses`) is the CLI surface, and `internal/dashboard`'s "Salmon Run" tab is
+the operator-facing one — see `internal/toyohr/README.md`'s "honest emptiness
+for Vs, a real rotation for Coop" section for why Coop's wire shape was
+never actually the blocker Vs's still is. TeamContest (Eggstra Work) has no
+authoring path yet, CLI or dashboard. `CloudSave` is built
 only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
 an account with no cloud save, not a stub); its other five RPCs
 (`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)

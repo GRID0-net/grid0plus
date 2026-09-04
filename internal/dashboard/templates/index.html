@@ -48,6 +48,7 @@
   <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
   <button role="tab" aria-selected="false" data-view="health">Health</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
+  <button role="tab" aria-selected="false" data-view="coop">Salmon Run</button>
   <button role="tab" aria-selected="false" data-view="debug">Debug</button>
 </nav>
 
@@ -232,6 +233,86 @@
         It is planned in <code>TODO.md</code> rather than half-built here — for
         now, produce assets in Switch Toolbox and point
         <code>switchnetctl fest build</code> at them.
+      </p>
+    </div>
+  </section>
+
+  <!-- Salmon Run / Big Run -->
+  <section id="view-coop" class="view">
+    <div class="panel">
+      <h2>Schedule a shift</h2>
+      <form id="coop-form" class="fest-form">
+        <label>
+          <span>Kind</span>
+          <div class="chips" id="coop-kind-chips">
+            <label><input type="radio" name="coop-kind" value="normal" checked> Normal</label>
+            <label><input type="radio" name="coop-kind" value="big_run"> Big Run</label>
+          </div>
+        </label>
+        <label>
+          <span>Stage</span>
+          <select name="stageId" id="coop-stage"></select>
+          <small>The list is filtered to Big Run stages, or normal-rotation stages, to match Kind above -- a real console never sees Big Run running on an ordinary stage.</small>
+        </label>
+        <label>
+          <span>Main weapons <em>four, in order</em></span>
+          <div class="coop-weapon-row">
+            <select name="weapon0" class="coop-weapon"></select>
+            <select name="weapon1" class="coop-weapon"></select>
+            <select name="weapon2" class="coop-weapon"></select>
+            <select name="weapon3" class="coop-weapon"></select>
+          </div>
+        </label>
+        <label>
+          <span>Kuma (Grizzco) weapon</span>
+          <select name="kumaWeaponId" id="coop-kuma"></select>
+        </label>
+        <label>
+          <span>Xtrawave boss <em>optional</em></span>
+          <select name="boss" id="coop-boss">
+            <option value="">None scheduled</option>
+          </select>
+        </label>
+        <label>
+          <span>Starts</span>
+          <input type="datetime-local" name="startAt" id="coop-start">
+          <small>Snapped to a two-hour slot, the same as a Splatfest.</small>
+        </label>
+        <label>
+          <span>Ends</span>
+          <input type="datetime-local" name="endAt" id="coop-end">
+        </label>
+        <label>
+          <span>Reward gear id <em>optional</em></span>
+          <input type="number" name="rewardGearId" id="coop-reward-gear" min="0" placeholder="0">
+          <small>Not checked against a real gear table -- see internal/toyohr/coop_ids.go.</small>
+        </label>
+        <label id="coop-rewards-field" hidden>
+          <span>Big Run scale-tier rewards <em>optional</em></span>
+          <input type="text" name="rewards" id="coop-rewards" placeholder="100, 200, 300" autocapitalize="off" spellcheck="false">
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Schedule shift</button>
+        </div>
+        <p class="form-error" id="coop-error" hidden></p>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Scheduled</h2>
+      <div id="coop-list" class="fest-list"></div>
+      <p class="empty" id="coop-empty" hidden>Nothing scheduled.</p>
+    </div>
+
+    <div class="panel panel-note">
+      <h2>Real ids only</h2>
+      <p>
+        Every stage, weapon and boss above comes straight from the game's own
+        shipped data (<code>internal/toyohr/coop_ids.go</code>), not a guess --
+        a shift the operator schedules is checked against the exact same
+        tables <code>switchnetctl coop schedule</code> uses before it is
+        stored, so nothing reaches a console that its own asset tables cannot
+        resolve.
       </p>
     </div>
   </section>

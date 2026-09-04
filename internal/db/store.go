@@ -412,6 +412,7 @@ type Stats struct {
 	Devices               int
 	Friendships           int
 	Fests                 int
+	CoopShifts            int
 	Matches               int
 	Images                int
 }

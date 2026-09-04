@@ -25,6 +25,7 @@ type debugStats struct {
 	Devices               int `json:"devices"`
 	Friendships           int `json:"friendships"`
 	Fests                 int `json:"fests"`
+	CoopShifts            int `json:"coopShifts"`
 	Matches               int `json:"matches"`
 	Images                int `json:"images"`
 }
@@ -39,7 +40,8 @@ func (s *Server) handleDebugStats(w http.ResponseWriter, r *http.Request) {
 		Users: stats.Users, DeletedUsers: stats.DeletedUsers,
 		DeviceAccounts: stats.DeviceAccounts, DeletedDeviceAccounts: stats.DeletedDeviceAccounts,
 		Devices: stats.Devices, Friendships: stats.Friendships,
-		Fests: stats.Fests, Matches: stats.Matches, Images: stats.Images,
+		Fests: stats.Fests, CoopShifts: stats.CoopShifts,
+		Matches: stats.Matches, Images: stats.Images,
 	})
 }
 

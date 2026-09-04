@@ -234,6 +234,129 @@ function renderFests(fests) {
   );
 }
 
+// ---- Salmon Run / Big Run --------------------------------------------------
+
+// coopReference holds the real stage/weapon/boss tables from
+// /api/coop-reference, fetched once: they are the game's own static data
+// (internal/toyohr/coop_ids.go), not something that changes while the page
+// is open, unlike the shifts themselves.
+let coopReference = null;
+
+async function loadCoopReference() {
+  coopReference = await api("/api/coop-reference");
+  populateCoopStageSelect();
+  const weaponOptions = coopReference.weapons
+    .map((w) => `<option value="${w.id}">${escape(w.name)}</option>`)
+    .join("");
+  $$(".coop-weapon").forEach((sel) => (sel.innerHTML = weaponOptions));
+  $("#coop-kuma").innerHTML = coopReference.kumaWeapons
+    .map((w) => `<option value="${w.id}">${escape(w.name)}</option>`)
+    .join("");
+  const bossSelect = $("#coop-boss");
+  coopReference.bosses.forEach((b) => {
+    const opt = document.createElement("option");
+    opt.value = b;
+    opt.textContent = b;
+    bossSelect.appendChild(opt);
+  });
+}
+
+// populateCoopStageSelect fills the stage dropdown with only the stages that
+// match the currently-selected Kind -- a real console never sees Big Run
+// scheduled on an ordinary stage, so the form does not offer the combination.
+function populateCoopStageSelect() {
+  if (!coopReference) return;
+  const bigRun = $('input[name="coop-kind"]:checked').value === "big_run";
+  $("#coop-stage").innerHTML = coopReference.stages
+    .filter((s) => s.bigRun === bigRun)
+    .map((s) => `<option value="${s.id}">${escape(s.name)}</option>`)
+    .join("");
+}
+
+$$('input[name="coop-kind"]').forEach((radio) =>
+  radio.addEventListener("change", () => {
+    populateCoopStageSelect();
+    $("#coop-rewards-field").hidden = $('input[name="coop-kind"]:checked').value !== "big_run";
+  })
+);
+
+const COOP_STATUS_LABEL = { upcoming: "upcoming", live: "live", ended: "ended" };
+
+function renderCoopShifts(shifts) {
+  $("#coop-empty").hidden = shifts.length > 0;
+  $("#coop-list").replaceChildren(
+    ...shifts.map((c) => {
+      const card = document.createElement("div");
+      card.className = "fest-card" + (c.status === "live" ? " live" : "");
+      const statusPill =
+        c.status === "live" ? "on" : c.status === "ended" ? "warn" : "";
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${escape(c.stageName)}
+            <span class="pill">${c.kind === "big_run" ? "Big Run" : "Normal"}</span>
+            <span class="pill ${statusPill}">${COOP_STATUS_LABEL[c.status] || c.status}</span>
+          </div>
+          <div class="meta">${c.weaponNames.map(escape).join(" · ")}${
+            c.kumaWeaponName ? " · kuma: " + escape(c.kumaWeaponName) : ""
+          }</div>
+          <div class="meta">${c.boss ? "boss: " + escape(c.boss) + " · " : ""}${new Date(c.startAt).toLocaleString()} &rarr; ${new Date(c.endAt).toLocaleString()}</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-ghost btn-danger" data-delete-coop="${escape(c.id)}">Delete</button>
+        </div>`;
+      return card;
+    })
+  );
+}
+
+$("#coop-list").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-delete-coop]");
+  if (!del) return;
+  try {
+    if (!confirm(`Delete this shift? This cannot be undone.`)) return;
+    await api(`/api/coop-shifts/${encodeURIComponent(del.dataset.deleteCoop)}`, { method: "DELETE" });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("#coop-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("#coop-error");
+  err.hidden = true;
+
+  const startLocal = $("#coop-start").value;
+  const endLocal = $("#coop-end").value;
+  const kind = $('input[name="coop-kind"]:checked').value;
+  const rewardsRaw = $("#coop-rewards").value.trim();
+
+  try {
+    await api("/api/coop-shifts", {
+      method: "POST",
+      body: JSON.stringify({
+        kind,
+        stageId: Number($("#coop-stage").value),
+        boss: $("#coop-boss").value,
+        weapons: $$(".coop-weapon").map((sel) => Number(sel.value)),
+        kumaWeaponId: Number($("#coop-kuma").value),
+        rewardGearId: Number($("#coop-reward-gear").value || 0),
+        rewards: rewardsRaw
+          ? rewardsRaw.split(",").map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n))
+          : [],
+        startAt: startLocal ? new Date(startLocal).toISOString() : "",
+        endAt: endLocal ? new Date(endLocal).toISOString() : "",
+      }),
+    });
+    $("#coop-reward-gear").value = "";
+    $("#coop-rewards").value = "";
+    await refresh();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.hidden = false;
+  }
+});
+
 function escape(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
@@ -690,6 +813,7 @@ const DEBUG_STAT_LABELS = [
   ["devices", "Devices seen"],
   ["friendships", "Friendship rows"],
   ["fests", "Splatfests"],
+  ["coopShifts", "Coop shifts"],
   ["matches", "Matches recorded"],
   ["images", "Images stored"],
 ];
@@ -909,15 +1033,17 @@ function connect() {
 
 async function refresh() {
   try {
-    const [o, ps, fs] = await Promise.all([
+    const [o, ps, fs, cs] = await Promise.all([
       api("/api/overview"),
       api("/api/players"),
       api("/api/fests"),
+      api("/api/coop-shifts"),
     ]);
     players = ps;
     renderOverview(o);
     renderPlayers();
     renderFests(fs);
+    renderCoopShifts(cs);
     // After players, so a ticket or a match's host/players can be shown by
     // nickname rather than by id.
     await Promise.all([loadMatchmaking(), loadMatches()]);
@@ -939,6 +1065,21 @@ async function refresh() {
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 })();
 
+// A default shift window: starting two hours from now (the next slot),
+// running eight hours -- a real rotation's typical length -- rather than
+// leaving the operator to work out two aligned timestamps from empty fields.
+(function seedCoopWindow() {
+  const pad = (n) => String(n).padStart(2, "0");
+  const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const start = new Date();
+  start.setMinutes(0, 0, 0);
+  start.setHours(start.getHours() - (start.getHours() % 2) + 2);
+  const end = new Date(start.getTime() + 8 * 60 * 60 * 1000);
+  $("#coop-start").value = toLocal(start);
+  $("#coop-end").value = toLocal(end);
+})();
+
+loadCoopReference();
 refresh();
 
 // Health is loaded SEPARATELY from refresh(), and never inside its try.

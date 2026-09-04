@@ -1,7 +1,7 @@
 # internal/dashboard
 
 The operator's view of SwitchNet: who is online, what they are playing, and the
-Splatfest controls.
+Splatfest and Salmon Run controls.
 
 | | |
 | --- | --- |
@@ -103,6 +103,23 @@ answer to substitute — it has to come from the pack's `summary.yml`.
 
 Validation errors are passed through to the page verbatim rather than flattened
 into "invalid", because "not on a two-hour slot boundary" *is* the explanation.
+
+## Salmon Run controls offer only real ids, rather than validating them after the fact
+
+The "Salmon Run" tab's dropdowns (`GET /api/coop-reference`, `coop.go`) are
+populated from `internal/toyohr/coop_ids.go`'s own tables -- the same ones
+`switchnetctl coop stages`/`weapons`/`bosses` print -- so the operator picks
+from what a console can actually resolve rather than typing an id and
+finding out it was wrong from a validation error. The one thing the page
+still enforces client-side is filtering the stage list to match the Kind
+toggle (Big Run stages only for Big Run, normal-rotation stages otherwise):
+that mirrors `CoopShift.Validate`'s own check, not a replacement for it --
+`POST /api/coop-shifts` still runs the real `Validate` before storing
+anything, the same as fest creation does.
+
+A scheduled shift's status (`upcoming`/`live`/`ended`) is computed the same
+way `festRow`'s `Phase` is: from the server's clock against the shift's own
+`Start`/`End`, not tracked as separate state that could drift from them.
 
 ## The Debug tab shows raw state next to resolved state, on purpose
 

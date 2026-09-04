@@ -158,6 +158,13 @@ exist:
 - `switchnetctl coop schedule` (and `list`/`delete`/`stages`/`weapons`/
   `bosses` to print the reference tables) — the CLI surface, mirroring
   `switchnetctl fest build`.
+- `internal/dashboard`'s "Salmon Run" tab — the same `CoopShift`/`Validate`
+  path behind a form, mirroring the "Splatfests" tab: a Kind toggle filters
+  the stage dropdown to Big Run or normal-rotation stages (a real console
+  never sees the two combined), the weapon/kuma/boss dropdowns are the exact
+  tables `switchnetctl coop weapons`/`bosses` print, and the scheduled list
+  shows each shift's live/upcoming/ended status. See
+  `internal/dashboard/coop.go`.
 
 TeamContest (Eggstra Work) has no authoring path yet; adding one is the same
 shape of work Big Run was. Three fields on the wire message are an

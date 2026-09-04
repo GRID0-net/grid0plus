@@ -330,6 +330,7 @@ func TestTheTokenGuardsEveryRouteThatIsNotAnAsset(t *testing.T) {
 
 	for _, path := range []string{
 		"/", "/api/overview", "/api/players", "/api/players/x", "/api/fests", "/api/matches",
+		"/api/coop-shifts", "/api/coop-reference",
 		"/api/debug/stats", "/api/debug/accounts/x",
 	} {
 		rec := httptest.NewRecorder()

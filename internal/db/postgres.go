@@ -1227,9 +1227,10 @@ func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
 		(SELECT count(*) FROM devices),
 		(SELECT count(*) FROM friendships),
 		(SELECT count(*) FROM npln_fests),
+		(SELECT count(*) FROM npln_coop_shifts),
 		(SELECT count(*) FROM npln_matches),
 		(SELECT count(*) FROM images)
 	`).Scan(&s.Users, &s.DeletedUsers, &s.DeviceAccounts, &s.DeletedDeviceAccounts,
-		&s.Devices, &s.Friendships, &s.Fests, &s.Matches, &s.Images)
+		&s.Devices, &s.Friendships, &s.Fests, &s.CoopShifts, &s.Matches, &s.Images)
 	return s, mapErr(err)
 }

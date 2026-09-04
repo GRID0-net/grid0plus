@@ -797,11 +797,12 @@ func (m *Memory) Stats(context.Context) (Stats, error) {
 	defer m.mu.RUnlock()
 
 	s := Stats{
-		Users:   len(m.users),
-		Devices: len(m.devices),
-		Fests:   len(m.fests),
-		Matches: len(m.matches),
-		Images:  len(m.images),
+		Users:      len(m.users),
+		Devices:    len(m.devices),
+		Fests:      len(m.fests),
+		CoopShifts: len(m.coopShifts),
+		Matches:    len(m.matches),
+		Images:     len(m.images),
 	}
 	for _, u := range m.users {
 		if u.Deleted {
