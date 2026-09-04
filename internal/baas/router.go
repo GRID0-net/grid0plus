@@ -188,6 +188,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /connect/1.0.0/authorize", s.naAuthorizeSubmit)
 	mux.HandleFunc("POST /connect/1.0.0/api/token", s.naToken)
 	mux.HandleFunc("GET /2.0.0/users/me", s.naUsersMe)
+	// /api/1.0.0/, not /1.0.0/ -- a real capture confirms this is the exact
+	// path nnAccount calls next, not a typo. See naQRCodeParam.
+	mux.HandleFunc("GET /api/1.0.0/users/{id}/qrcode_param", s.naQRCodeParam)
 
 	// ---- anonymous token required ----
 	mux.Handle("POST /1.0.0/users", s.anonymous(s.registerUser))
@@ -226,8 +229,18 @@ func (s *Server) Handler() http.Handler {
 	// The console calls these and treats a failure as a fault. None of them
 	// affects accounts or friends, so an empty success is the correct answer —
 	// but it is logged, so an operator can see what is being asked for.
-	mux.Handle("PUT /1.0.0/push_channels/{a}/{b}", s.authenticated(s.acknowledge))
+	//
+	// push_channels and devices/snapshot used to be routed here too, both
+	// answering a bare 204 on the same "no real content, so empty success is
+	// correct" reasoning as the two below -- reconciled against a real,
+	// working Nextendo capture (2026-08-27) into devices.go's own handlers
+	// instead, once that capture showed a real server answers 200 with an
+	// actual JSON body for both, not empty. See devices.go for what changed
+	// and why "no real content" undersold what these needed.
 	mux.Handle("POST /1.0.0/devices/me/delete", s.authenticated(s.acknowledge))
+	mux.Handle("GET /1.0.0/users/{uid}/device_histories", s.authenticated(s.acknowledge))
+
+	mux.Handle("PUT /1.0.0/push_channels/{uid}/{daid}", s.authenticated(s.updatePushChannel))
 	// devices/snapshot has no {uid} in its path, unlike every genuinely
 	// user-scoped endpoint above, and a real capture confirms why: the
 	// console calls it with the anonymous device-level token straight from
@@ -236,8 +249,7 @@ func (s *Server) Handler() http.Handler {
 	// got a hard 403 on this periodic check instead of the no-op success
 	// the comment above intends — surfacing as a "needs to be verified
 	// online" error on the console, found 2026-08-28.
-	mux.Handle("POST /1.0.0/devices/snapshot", s.anonymous(s.acknowledge))
-	mux.Handle("GET /1.0.0/users/{uid}/device_histories", s.authenticated(s.acknowledge))
+	mux.Handle("POST /1.0.0/devices/snapshot", s.anonymous(s.devicesSnapshot))
 
 	// An unrouted path must still answer in BAAS's error shape.
 	mux.HandleFunc("/", s.notFound)

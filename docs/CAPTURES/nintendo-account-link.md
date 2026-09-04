@@ -142,9 +142,8 @@ specifically for the `lhub` (linking hub) redirect flow.
   22.2.0.0)` — confirms these calls come from the `nnAccount` system module
   directly (`libcurl`), not the browser applet rendering a page.
 - `GET /2.0.0/users/me` and `GET /api/1.0.0/users/<id>/qrcode_param` were also
-  observed (both matching the documented wiki shapes) but are not needed by
-  SwitchNet's current implementation, so they are not written up in detail
-  here.
+  observed. `qrcode_param` was not implemented at the time this note was
+  first written; it is now — see "Full call-by-call verification" below.
 - Redacted: the Bearer token, all JWT signatures, `state`/`nonce`/`c_hash`,
   and the device UUID in the User-Agent.
 
@@ -278,3 +277,159 @@ it.
 The raw `.pcap` is not committed (nothing decrypted, but it is still real
 traffic timing/metadata tied to a real account) — see
 `docs/CAPTURES/raw/` and its own redaction notes in `docs/CAPTURES/README.md`.
+
+---
+
+## External research pass (2026-09-03) — no hardware, wiki + repo cross-check
+
+Before this pass, `CalculateNintendoAccountAuthenticationFingerprint` and a
+few related IPC names (`IOAuthProcedureForNintendoAccountLinkage`,
+`IManagerForSystemService::EnsureIdTokenCacheAsync`/`LoadIdTokenCache`) had
+only been checked against this repo's own captures. This pass went wider,
+cloning [kinnay/NintendoClients' wiki](https://github.com/kinnay/NintendoClients/wiki)
+(`.wiki.git`, since search-engine summaries of it kept paraphrasing rather
+than quoting) and reading it in full, then cross-checking every claim against
+`internal/baas` and `internal/jwt`.
+
+**Confirmed against SwitchNet, not just plausible:**
+
+- `/1.0.0/federation`'s and `POST /1.0.0/users/{id}/link`'s parameter shapes
+  match the wiki exactly, including the two being genuinely separate
+  endpoints (login-time link vs. link-onto-an-existing-session) —
+  `router.go`/`accounts.go` already implement both correctly.
+- The real OAuth scope string the console requests (`openid offline napps
+  urn:oauth:init-sso user user.birthday user.email user.links
+  user.links[].id user.loginId user.screenName user.terms`) — `naScopeIDs` in
+  `nalink.go` already has every one of these mapped.
+- The BAAS id_token's real header/payload shape (`alg: RS256`, `jku` →
+  `/1.0.0/certificates`, `sub`/`bs:did` as `%016x`, `aud: ed9e2f05d286f7b8`
+  fixed, `typ: id_token` fixed) — matches `internal/jwt` as built.
+- NPLN access tokens are `ES256`, every other token `RS256` — already the
+  case (`internal/jwt/README.md`'s "ES256, and why it is a separate path").
+- `m-lp1.baas.nintendo.com` (21.0.0+, mTLS-only, `nnAccount` sysmodule)
+  alongside the original host (still used by the friends sysmodule) —
+  already both present in `internal/nintendo/hosts.go`.
+- `extras.self`'s field list is exactly `playLog` and `nxAccount` — nothing
+  else. Confirms the existing `nintendoAccountId`-stripped-from-`extras.self`
+  / `nintendoAccountId`-placed-in-`links.nintendoAccount.id` split in
+  `models.go` is the documented shape, not a guess.
+
+**Confirmed absent, not just unfound:** a full-text search of every page in
+the cloned wiki (not a search-engine summary) turns up nothing for
+`fingerprint` in any casing, anywhere. `CalculateNintendoAccountAuthentication
+Fingerprint` is not a documented Nintendo internal on the largest public
+Switch-server reverse-engineering reference. Its existence, inputs and output
+remain an open HYPOTHESIS — this is a stronger negative result than "not
+found yet," and it should not be treated as a real Nintendo protocol detail
+on the strength of its name alone. The same full-text check found `2124-0292`
+and `2124-3122` in none of the wiki's documented module-2124 sub-ranges
+(DAuth/AAuth/BAAS/NAS/HTTP all listed exhaustively), which is consistent
+with — not proof of — the existing "client-side check" reading above.
+
+**A source that turned out not to be one:** `NextendoNetwork/Prelude-Nro`
+(the homebrew used for the 2026-08-25/26/27 Nextendo captures above) bundles
+a file, `Switch nnAccount Private Server Setup.txt`, that reads like a
+reverse-engineering writeup. It is not one — the inline `[cite: N]` markers
+throughout are the signature of an AI-generated research report, and nearly
+every citation traces back to the same kinnay wiki pages already read
+directly here. Worse, its "Known Client IDs" table (`75fe236362ff5f8b` for
+"Nintendo Account Applet" and five others) does not appear anywhere in the
+wiki page it cites as the source — compare against the real table in
+`Account-Server-(Switch).md#known-client-ids`, which lists a completely
+different five values (`6ffd70c434d303c8` NxAccount, `f4e5f2f3e022208b`
+NxLHub, etc. — the ones already used throughout this document). Treat that
+`.txt` file as unreliable for anything not independently verified elsewhere;
+it added no primary information this pass and its one falsifiable table
+turned out to be fabricated.
+
+**Net effect on this repo's code: none.** Nothing found this pass contradicts
+the current implementation — most of it is independent confirmation of
+choices already made. The `nxAccount` byte format and
+`CalculateNintendoAccountAuthenticationFingerprint` remain exactly as open as
+before: unresolvable without a capture, and per CLAUDE.md's ground rule
+against inventing a plausible-looking Nintendo internal, `accounts.go`'s
+placeholder (`nxAccount = naID`) stays as it is rather than being replaced
+with a guess dressed up by this pass's research.
+
+---
+
+## Full call-by-call verification against the working capture (2026-09-04)
+
+Following the `nxAccount` fix above (same capture,
+`53eb8af0-nextendoworkingnalink20260827.flow`, read with the real `mitmproxy`
+library), every one of the 61 HTTP exchanges in that flow was walked
+individually and compared against SwitchNet's implementation — not just the
+`federation` call already covered.
+
+**57 of 61 already matched.** 36 of those 61 are `GET
+/connect/1.0.0/qr/etat?s=...` polls with `User-Agent: NintendoBrowser` — the
+same UA as the login page itself, i.e. the page's own JavaScript polling for
+a QR-login-on-another-device state change, not a call the `nnAccount`/`libcurl`
+system module makes. SwitchNet's own login page never triggers this family of
+call, so it is not a gap. The rest (`/connect/1.0.0/authorize` classic
+submit, `/connect/1.0.0/api/token` both grant types across 7 repeated calls,
+`/2.0.0/users/me`, `/1.0.0/application/token`, `/1.0.0/users`, `/1.0.0/login`,
+`/1.0.0/users/{id}`, `/2.0.0/users/{id}/friends`) were checked field-by-field
+and already matched the existing implementation.
+
+**Four real gaps were found and fixed, all in this commit:**
+
+1. **`PUT /1.0.0/push_channels/{uid}/{daid}`.** Previously answered a bare
+   204 via the generic `acknowledge` handler. The capture shows a real
+   server answers 200 with a JSON body echoing every field the console PUT
+   (`service`, `deviceToken`, `deviceAttributes`) plus
+   `createdAt`/`updatedAt`/`userId`/`deviceAccountId` and one key never in
+   the request, always empty in the capture: `userAttributes: {}`. Called
+   with the authenticated user's own access token (`bs:grt:2`, confirmed by
+   decoding the JWT), matching `s.authenticated()`. Implemented in
+   `internal/baas/devices.go`'s `updatePushChannel` — no persistence added,
+   since nothing in SwitchNet sends push notifications yet; only the
+   response shape changed.
+
+2. **`POST /1.0.0/devices/snapshot`.** Same issue: previously a bare 204.
+   The capture shows `{"deletedUserIds": [...], "persistentUserIds": [...]}`
+   — the requested `userIds` split by whether each still names a real,
+   non-deleted user. Called with the anonymous application-level token
+   (`bs:grt:1`, confirmed by decoding the JWT), matching `s.anonymous()`.
+   Implemented in `internal/baas/devices.go`'s `devicesSnapshot`, using
+   `db.User.Deleted` — data the store already has, not a guess.
+
+3. **`GET /api/1.0.0/users/{id}/qrcode_param`** (note the `/api/1.0.0/`
+   prefix, distinct from `/1.0.0/` — not a typo in the capture). Previously
+   unimplemented; no route existed at all. Response:
+   `{"exp": <unix>, "param": "<url>", "userId": "<id>"}`. Decoded, `param` is
+   a plaintext URL: `https://accounts.nintendo.com/qr_verify?sig=...
+   &iat=...&aud=...&sub=...&exp=...` — `exp - iat` is exactly `604800`
+   seconds (7 days) in the capture. Implemented in
+   `internal/baas/nalink.go`'s `naQRCodeParam`, matching that shape and
+   duration; `sig` is an honest random placeholder rather than a forged
+   signature — SwitchNet does not hold Nextendo's (or Nintendo's) private
+   signing key and per CLAUDE.md's ground rule 2 does not pretend to.
+   Whether anything ever calls `qr_verify` back is unconfirmed — see the
+   `TODO(capture-needed)` on `naQRCodeParam`.
+
+4. **A second, previously undocumented `POST /connect/1.0.0/authorize`
+   sub-flow.** Every other capture of this endpoint uses a
+   username/password submit; this one instead carries
+   `Authorization: Bearer <access_token>` with no username/password fields
+   at all, `prompt=none`, and a *different* `client_id`
+   (`48d6d1f020427ad7`, `redirect_uri=nintendo://e-license.nx.sys` —
+   e-license/eShop related) than the `lhub` linking flow documented above.
+   It silently re-authorizes the existing NA session for a new client
+   rather than starting a new login. SwitchNet's `naAuthorizeSubmit` had no
+   handling for this shape at all: a request with neither field would have
+   fallen through to "Wrong username or password", which is wrong for a
+   request that was never trying to supply either. Implemented as a branch
+   in `naAuthorizeSubmit` that, when both fields are empty and a `Bearer`
+   token is present, verifies that token via the existing `s.idVerifier`
+   (the same verifier `federation` already trusts) and re-issues the
+   redirect for the new `client_id` using its subject; an invalid or
+   expired token now fails with a `prompt=none`-appropriate redirect
+   fragment (`redirectNAOAuthError`, per the OAuth spec's own rule that
+   `prompt=none` must fail through the same redirect mechanism a success
+   would use, never a login page) rather than a page a console making this
+   call would never render.
+
+All four are additive: nothing about the existing username/password
+authorize path, the federation handler, or any other already-verified call
+changed.
