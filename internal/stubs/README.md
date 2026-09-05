@@ -28,10 +28,33 @@ things that are genuinely not part of this stack.
 | `.five.` | `[]` | online play invitations — phase 2 |
 | `.op2.` | `{"active": true, …}` | membership verification; every registered user may play |
 | `service-status` | everything up | if it were not, the console learning it here would not help |
-| `.dragons.` | `{}` | eLicense; `aauth` accepts the token without looking at it |
+| `.dragons.` | mostly `{}`, one path is not — see below | eLicense; `aauth` accepts the token without looking at it |
 | anything else | `{}` | well-formed JSON beats a 404 for a client whose expectations are unknown |
 
 Empty **lists**, not `null`: a console decoding `null` into a list type fails.
+
+### One `dragons` path is not a safe `{}`: `/v2/elicenses/exercise`
+
+"Exercising" a licence is the online-play eligibility check. Answering it
+with anything but 200 and a genuinely empty body — including `{}`, which is
+still two bytes a truly empty response does not have — 404s the path, and the
+console concludes it has no right to play online at all: the actual mechanism
+behind a console reporting it "cannot use online features," not a cosmetic
+mismatch. `h.dragons` (`handler.go`) answers this one path with a bare
+`200` and nothing else; every other `dragons` path keeps the blanket `{}`,
+since `aauth` never looks at their content either way.
+
+Source: `NextendoNetwork/nx-dauth`, a from-scratch dauth/aauth
+reimplementation tested against real hardware (PolyForm Shield 1.0.0 —
+source-available, not open-source; only this fact is taken here, never its
+code, same rule already applied to it elsewhere in this repository — see
+`docs/CAPTURES/README.md`). Two more `dragons` paths
+(`/v2/elicenses/migration_state`, `/v2/elicense_archives/publish` and
+`/v2/rights/publish_device_linked_elicenses`) are answered with the specific
+fields nx-dauth's own server uses rather than a bare `{}`, marked
+`TODO(capture-needed)` since — unlike `elicenses/exercise` — nothing
+independently confirms those exact field names against a real Nintendo
+capture.
 
 ## The log is the to-do list
 

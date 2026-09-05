@@ -107,11 +107,9 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.serviceStatus(w)
 
 	case strings.Contains(host, ".dragons.nintendo.net"):
-		// eLicenses. From system version 15.0.0 the console asks dragons for a
-		// contents authorization token instead of sending a ticket to aauth.
-		// SwitchNet's aauth accepts whatever is in that field without looking at
-		// it, so an empty success is enough to get past this step.
-		h.emptyObject(w)
+		// eLicenses. Most paths here are a fine empty object; one is not.
+		// See h.dragons.
+		h.dragons(w, path)
 
 	default:
 		h.emptyObject(w)
@@ -143,6 +141,52 @@ func (h *Handler) emptyList(w http.ResponseWriter) {
 
 func (h *Handler) emptyObject(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+// dragons answers the eLicense host by path, rather than one blanket empty
+// object: NextendoNetwork/nx-dauth (a from-scratch dauth/aauth reimplementation
+// tested against real hardware; PolyForm Shield-licensed, so only these facts
+// are taken, never its code) documents that most of dragons' paths tolerate an
+// empty object, but the eligibility check specifically does not.
+func (h *Handler) dragons(w http.ResponseWriter, path string) {
+	switch {
+	case strings.HasSuffix(path, "/elicenses/exercise"):
+		// "Exercising" a licence is the online-play eligibility check. A real
+		// server answers 200 with a genuinely EMPTY body -- zero bytes, not an
+		// empty JSON object. nx-dauth's own operational note is explicit about
+		// what getting this wrong looks like: answered any other way (their
+		// prior behaviour, and SwitchNet's before this), the path 404s and the
+		// console concludes it has no right to play online -- the actual
+		// blocker behind an "cannot use online features" message, not a
+		// cosmetic mismatch.
+		w.WriteHeader(http.StatusOK)
+
+	case strings.HasSuffix(path, "/elicenses/migration_state"):
+		// TODO(capture-needed): field names match nx-dauth's; not independently
+		// confirmed against a Nintendo capture. Answered with the specific
+		// fields this path looks for rather than an empty object with neither,
+		// since "nothing to migrate" is a real, known answer and a safer
+		// default than an absent field the console has to guess a zero value
+		// for.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"state": "COMPLETED", "migration_state": "NONE",
+		})
+
+	case strings.HasSuffix(path, "/elicense_archives/publish"),
+		strings.HasSuffix(path, "/rights/publish_device_linked_elicenses"):
+		// TODO(capture-needed): field name matches nx-dauth's for both paths;
+		// not independently confirmed. An empty list of archives to publish,
+		// under the key an archives-shaped response would actually carry,
+		// rather than an object with no such key at all.
+		writeJSON(w, http.StatusOK, map[string]any{"elicense_archives": []any{}})
+
+	default:
+		// Includes contents_authorization_token_for_aauth/issue and the
+		// elicense_archives/<id>/report paths: SwitchNet's aauth accepts
+		// whatever is in that field without looking at it, so an empty
+		// success is enough to get past those specifically.
+		h.emptyObject(w)
+	}
 }
 
 // membership reports an active Nintendo Switch Online membership.
