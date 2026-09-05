@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
@@ -256,7 +257,38 @@ func (s *Server) unaryInterceptor(
 	if err != nil {
 		return nil, err
 	}
+	sendNPLNHeader(ctx, s.log, info.FullMethod)
 	return handler(ctx, req)
+}
+
+// sendNPLNHeader forces this call's HTTP/2 response headers out before the
+// handler below returns, so a handler that answers with no message or with a
+// bare error (NotFound, Unimplemented -- most of internal/toyohr's backlog)
+// never collapses into a single "Trailers-Only" frame.
+//
+// grpc-go's default, when a unary handler returns without ever having sent
+// anything, IS Trailers-Only: headers and the grpc-status trailer folded into
+// one HEADERS frame, an optimisation for the common "failed before doing
+// anything" case. Nintendo's own NPLN gateway never does this -- every
+// response, empty or not, arrives as two frames: ordinary headers
+// (content-type, npln-grpc-type: Unary), then a separate trailers frame
+// carrying grpc-status. NextendoNetwork/splatoon-3 (a from-scratch NPLN
+// reimplementation tested against real hardware; PolyForm Shield-licensed,
+// so only this fact is taken, never its code) measured a real console
+// crashing specifically on the single-frame shape for an otherwise-correct
+// NotFound: nn.npln.Worker aborting with 2162-0001, immediately, the same
+// abort this repository's own ground rules exist to avoid shipping blind.
+// Calling SendHeader up front -- before the handler has a chance to return
+// -- is what keeps grpc-go from folding the two frames together, for every
+// RPC this gateway serves, not only the ones already known to answer empty.
+//
+// A no-op outside a real call (grpc.SendHeader errors when the context
+// carries no live stream, e.g. a test invoking a handler directly): that
+// failure is expected and not this call's to report.
+func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string) {
+	if err := grpc.SendHeader(ctx, metadata.Pairs("npln-grpc-type", "Unary")); err != nil {
+		log.Debug("npln: send header", "method", method, "error", err)
+	}
 }
 
 func (s *Server) streamInterceptor(

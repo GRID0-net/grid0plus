@@ -140,8 +140,8 @@ the to-do list**.
 ### 1.5 `gamesync` — **P2, built**
 
 `internal/gamesync` (RPC layer) and `internal/gamesyncstore` (the document
-store) now implement all of `nn.npln.gamesync.v1.Gamesync` except
-`CreateRound` -- `IssueToken`/`RefreshToken`, `GetDocument`/`ReadDocuments`/
+store) now implement all of `nn.npln.gamesync.v1.Gamesync`, `CreateRound`
+included -- `IssueToken`/`RefreshToken`, `GetDocument`/`ReadDocuments`/
 `ListDocuments`/`QueryCollectionIds`, `WriteDocuments`/`LazyWriteDocuments`,
 `BeginTransaction`/`CommitTransaction`/`RollbackTransaction`, and the
 `KeepUserSession` watch stream.
@@ -166,9 +166,12 @@ concurrent transactions; `FieldTransform`'s `LoadGlobalValue`/
 `CommitTransaction`'s `DefermentOperation` have no Firestore equivalent and
 no public documentation, so they are accepted (logged, in the deferment
 case) rather than rejecting the whole call over a shape nothing here can
-interpret. `CreateRound` is left `Unimplemented`: its own `Round` message
-has fields named `Unk1` through `Unk4` in this project's own proto
-reversal, so there is nothing defensible to fill in without a capture.
+interpret. `CreateRound`'s own `Round` message has fields named `Unk1`
+through `Unk4` in this project's own proto reversal, with nothing
+defensible to fill in server-side -- so it echoes back exactly the `Round`
+the caller submitted, confirmed safe by `NextendoNetwork/splatoon-3` (a
+real, hardware-tested NPLN reimplementation) doing the same; see
+`internal/gamesync/README.md`.
 
 ---
 
