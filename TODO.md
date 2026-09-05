@@ -239,16 +239,26 @@ That pack's `summary.yml` announces `JUEA-00210` / `juea-lovefes2`. So the
 *container* is named for the custom fest while its *contents* are named for
 Nintendo's `JUEA-DUMPLING` — because it was made by editing that fest.
 
-**Nobody has established what the game actually keys on.** If it resolves
-assets by the announced fest id, a genuinely from-scratch fest needs every
-internal path renamed consistently *and* the RSDB/rstbl tables that reference
-them rebuilt. If it only reads the pack it was handed, the names are inert.
+**Nobody has established what the game actually keys on, against SwitchNet's
+own hardware.** If it resolves assets by the announced fest id, a genuinely
+from-scratch fest needs every internal path renamed consistently *and* the
+RSDB/rstbl tables that reference them rebuilt. If it only reads the pack it
+was handed, the names are inert.
 
-**This needs a console, so an autonomous agent cannot settle it.** It is
-already recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption
-being proceeded on (names are inert). Build §2.1 so that changing that
-assumption later is a contained change rather than a rewrite — keep the naming
-decision in one place.
+**This needs a console, so an autonomous agent cannot settle it outright** —
+but it now has independent corroboration rather than just a guess.
+`NextendoNetwork/splatoon-3`, a from-scratch NPLN server the operator
+supplied and that repository says was tested against real hardware
+(PolyForm Shield-licensed — this design fact only, never its code), depends
+on exactly "names are inert" in production: unable to synthesise Nintendo's
+encrypted packs either, it announces whatever fest identity a console's
+*existing* BCAT cache already holds (a hot-reloadable id/resource/revision
+rewrite over its served schedule) rather than ever renaming a pack's
+internal files to match. See
+[`docs/QUESTIONS.md`](docs/QUESTIONS.md) for the full citation. Build §2.1
+so that changing the assumption later, if SwitchNet's own hardware disagrees,
+is a contained change rather than a rewrite — keep the naming decision in one
+place.
 
 ### 2.4 Serving BCAT natively — **P1 to TEST, and the tooling is now built**
 
@@ -317,6 +327,19 @@ BCAT save data — what JKSV does by hand, automatically.
 This exists because §2.4 is unresolved, **not** because serving BCAT is
 forbidden. If §2.4 comes back positive this may become unnecessary; if it comes
 back negative, this is the answer.
+
+**Independent corroboration, 2026-09-05:** `NextendoNetwork/nextendo-account`
+and `NextendoNetwork/splatoon-3` (real, source-available reimplementations
+the operator supplied; PolyForm Shield-licensed, so only this design fact is
+taken, never their code) do not serve native BCAT over the wire either, for
+either of their two titles that use it (Splatoon 2's NEX BCAT and Splatoon
+3's Splatfest packs). Both instead relay a pre-dumped delivery-cache
+directly into the console's save data via their own homebrew installer,
+verbatim, and never attempt to answer the live `bcat-*` protocol at all.
+That is exactly this section's approach, arrived at independently -- it is
+not just "the path that works today" for lack of a better one, it appears to
+be what a real production service settled on too, which raises this
+section's priority relative to §2.4's still-open signature question.
 
 Note that the delivery cache is *downstream* of the wire protocol, so dumping a
 console's BCAT save reveals the seed layout (already known) and **not** the

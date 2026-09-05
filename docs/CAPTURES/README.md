@@ -396,8 +396,93 @@ this version deliberately names no number to keep stale).
   logged, and never executed -- nothing found documents what a "deferment"
   defers, or until when.
 - **`Round`'s fields** (`proto/gamesync/v1/resources.pb.go`): named `Unk1`
-  through `Unk4` in this project's own proto reversal. `CreateRound` is left
-  entirely `Unimplemented` rather than guess at what they hold.
+  through `Unk4` in this project's own proto reversal, still uninterpreted.
+  `CreateRound` no longer needs a capture to be safe, though: it echoes back
+  the caller's own `Round` rather than guessing at them server-side, the same
+  answer a real, hardware-tested NPLN reimplementation
+  (`NextendoNetwork/splatoon-3`) gives. A capture would only matter if
+  something here ever needed to construct a `Round` itself.
+
+### What `NextendoNetwork`'s source settled, 2026-09-05
+
+`NextendoNetwork/nextendo-account` and `NextendoNetwork/splatoon-3` (real
+NPLN/account server reimplementations the operator supplied, tested against
+real hardware per their own README; PolyForm Shield 1.0.0-licensed, so
+everything below is a fact taken from reading them, never any of their code
+-- same rule already applied to `nx-dauth` above) settled or bore on several
+items above and elsewhere in this repository:
+
+- **The two-frame gRPC response shape — settled, and now implemented**
+  (`internal/npln/server.go`, `sendNPLNHeader`). Real Nintendo NPLN gateways
+  answer every unary call as two separate HTTP/2 HEADERS frames (headers,
+  then trailers), never grpc-go's default "Trailers-Only" single frame for a
+  handler that returns with nothing already sent. Their commit history
+  documents a real console crashing (`2162-0001`, `nn.npln.Worker` aborting)
+  specifically on the single-frame shape for an otherwise-correct empty or
+  `NotFound` response -- which is what essentially every `Unimplemented`/
+  `NotFound` answer in `internal/toyohr`'s backlog (§1.4) and
+  `internal/gamesync` was almost certainly sending before this fix, untested
+  against hardware. `TestSendNPLNHeaderSplitsHeadersFromTrailers` locks the
+  wire shape down at the frame level.
+- **`CreateRound` — settled, and now implemented** (`internal/gamesync`):
+  see the `Round` entry above.
+- **The Splatfest asset-naming question — corroborated, not yet certain**:
+  see `docs/QUESTIONS.md`'s "Does the game key Splatfest assets on the
+  announced fest id" entry.
+- **Never echo `tenants/current/users/current` (or any `current` alias) back
+  in a response** -- checked against SwitchNet, not an issue found: their
+  matchmaking notes measured a real client failing to find its own session
+  when a response echoed the unresolved `current` alias instead of a
+  concrete `tenants/<t>/users/<uid>`. `grep -rn 'tenants/current\|users/
+  current' internal/` finds nothing in this repository; every resource name
+  SwitchNet returns is already built from a resolved caller/user id.
+- **A `Document`-shaped response must never carry an empty `name` field --
+  checked against SwitchNet, not an issue found**: their measurement (twice,
+  on two different documents) is that a client SDK receiving a message-less
+  success constructs a default object whose name is empty, and the
+  resource-name parser then aborts the game. `internal/gamesync.Service`'s
+  own `GetDocument` (service.go:149) already answers a missing document with
+  a `codes.NotFound` error rather than an empty-named `Document`, so this
+  does not apply here -- recorded so it stays checked if that method ever
+  changes shape.
+- **`GameRecord`'s document-naming and empty-response rules -- recorded for
+  whenever CLAUDE.md's "no defensible default" reasoning against
+  implementing `GameRecord` (see `internal/toyohr/backlog.go`) is revisited,
+  not acted on now**, because none of it supplies the one thing still
+  missing (defensible X Power/rating seed *values*):
+  - A create-shaped RPC's response document name is load-bearing: the client
+    immediately re-reads exactly that document afterward, so an empty or
+    guessed name (their own first attempt used the request's `parent`
+    field, `tenants/current/users/current` -- not a valid document name)
+    causes an infinite create-read loop rather than a graceful miss. A
+    pure existence-check RPC (plain `GetDocument`) does not have this
+    problem -- the same "no message" answer that breaks a create's
+    read-back is exactly what a real hall capture shows Nintendo doing for
+    an ordinary absent document.
+  - An account's `CoopUserAttribute`/`VsUserAttribute`-equivalent documents
+    must answer consistently with whether that account has ever played
+    (correlated with save-record state), never independently defaulted --
+    answering both as absent for an account that also has a non-empty saved
+    game is a state that does not exist on real Nintendo and was measured
+    crashing the client.
+  - A per-period record (their `PointCardRegular`) is legitimately absent
+    until that period has actually been played; that is real game-state
+    semantics; a real client was measured never calling the equivalent of
+    `InitializeAttributes` at all once an account has a save.
+  - The real captured `NotFound` for an absent ugcstore-family document
+    (`Canola`/`Locker`/`CoopScenario`/`Replay` in this repository's own
+    terms) carries a `grpc-status-details-bin` detail of type
+    `nn.npln.errdetails.NError` with three fields: 1 (16 random bytes,
+    hex-encoded), 19 (8 random bytes, hex-encoded), 6 (varint `0`). Both
+    hex fields are per-request markers regenerated on every response, not
+    values to persist. Not added to this repository's own `IkasuDocument`/
+    `ResolveCoopScenarioCode`/`ResolveReplayCode` NotFound answers here: all
+    of those are one-shot code lookups against codes nothing ever
+    registers, not the specific create-then-immediately-reread loop the
+    detail was measured fixing, so there is no evidence yet that it matters
+    for them specifically -- recorded rather than spent speculatively,
+    per CLAUDE.md's rule against inventing a plausible-looking Nintendo
+    internal.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not

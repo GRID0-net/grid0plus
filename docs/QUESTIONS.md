@@ -64,9 +64,29 @@ it on a console, see whether the fest loads.
 
 **Proceeding on:** names are inert — packs are built with whatever names the
 source assets carry. This is the cheaper assumption and it is what existing
-custom fests do, but it is unverified.
+custom fests do, but it is unverified against SwitchNet's own hardware.
 
-**Changes if answered:** `internal/bcat/build.go`, and TODO §2.1's scope.
+**Independent corroboration, 2026-09-05:** `NextendoNetwork/splatoon-3` — a
+from-scratch NPLN reimplementation the operator supplied and that repository
+says was tested against real hardware (PolyForm Shield-licensed, so only
+this design fact is taken here, never its code) — resolves this exact
+question the same way in production. It cannot synthesise Nintendo's own
+encrypted packs either, so instead of building one it announces whatever
+fest identity the console's *existing* BCAT cache already holds, rewriting
+its served schedule's fest id/resource/revision to match a cache the
+operator supplies out of band (`fest_align.go`'s `festalias`). That only
+works if the console resolves fest resources by the *announced* id against
+the cache's own top-level metadata, not by names baked into the pack's
+internal files — i.e. exactly "names are inert." SwitchNet does not need
+the same rewrite mechanism (`SelectFestSchedule` builds its response from a
+database row rather than replaying a captured one, so an operator can
+already set any `resource`/`revision` directly via `switchnetctl fest
+build`/the dashboard's create-fest form), but the underlying assumption this
+question is about is the same one their production server depends on
+working.
+
+**Changes if answered against this:** `internal/bcat/build.go`, and TODO
+§2.1's scope.
 
 ---
 
