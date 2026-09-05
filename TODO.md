@@ -66,6 +66,11 @@ unanswered (404) rather than guessed at.
   `god.hac.lp1.penne.srv.nintendo.net`'s provisioning endpoints
   (`/v1/immigrate`, `/v1/penne_ids`) are undocumented past their path, and
   `god` itself is not served by `internal/nplnrest` (still `ServiceStubs`).
+  A weaker, unconfirmed lead worth checking before spending a capture here:
+  `NextendoNetwork/nx-dauth` serves this from
+  `dragons.hac.lp1.dragons.nintendo.net`'s `POST /v2/penne_id` instead,
+  which would mean the host and path guessed at are wrong, not just the
+  shape — see `docs/CAPTURES/README.md`'s item 10.
 - What a frontline connection actually carries once open. `serveFrontline`
   accepts it and holds it open — confirmed safe from a real error-code
   capture — but sends nothing further, because no source found this pass

@@ -264,6 +264,19 @@ move from `ServiceStubs` to `ServiceNPLNRest` in
 for whichever of `/v1/immigrate`/`/v1/penne_ids` turns out to be the real
 provisioning call.
 
+**A weaker, unconfirmed lead, 2026-09-05:** `NextendoNetwork/nx-dauth` (a
+from-scratch dauth/aauth reimplementation tested against real hardware;
+PolyForm Shield-licensed, so only this fact is taken, never its code)
+serves `POST /v2/penne_id` from `dragons.hac.lp1.dragons.nintendo.net` —
+not `god` at all — answering `{"id": "nxd<uuid>", "password": "<24 random
+bytes>"}`. Its own source carries no comment tying this to an observed
+console request, unlike the `elicenses/exercise` finding recorded in
+`docs/CAPTURES/README.md`'s item 10, so this is a lead to check before
+spending a capture on `god`, not a settled answer. If it holds up, `god`
+may be the wrong host entirely and this question's "changes if answered"
+above would target `internal/stubs`'s `dragons` handling instead of
+`internal/nplnrest`.
+
 ---
 
 ## What does a frontline connection actually carry?

@@ -244,6 +244,69 @@ publishes its implementation.
 
 ---
 
+### 10. `dragons.*` — the eLicense/online-eligibility flow — ~~answered blindly~~ **one path settled, two more informed**
+
+`internal/stubs`, the catch-all for hosts SwitchNet redirects but does not
+implement for real, answered every path under
+`dragons.hac.lp1.dragons.nintendo.net` with the same bare `{}`. Reading the
+whole of `NextendoNetwork/nx-dauth`'s `main.go` (single file, 353 lines;
+PolyForm Shield 1.0.0, so only the facts below are taken, never its code —
+same rule already applied to it in item 9) rather than only the two claims
+it had already settled there turned up a service SwitchNet had never looked
+at closely: `dragons` is not just an eLicense token endpoint, it is where a
+console checks whether it has the *right* to play online at all.
+
+**Settled, 2026-09-05, and now implemented** (`internal/stubs/handler.go`,
+`Handler.dragons`): `POST /v2/elicenses/exercise` — "exercising" a licence,
+i.e. the online-play eligibility check — must answer `200` with a genuinely
+**empty body**, not `{}`. nx-dauth's own operational comment is explicit
+about the failure mode: answered any other way, the path 404s, and the
+console concludes it has no right to play online — described there as *the*
+blocker behind a console reporting it cannot use online features, not a
+cosmetic mismatch. This was not previously distinguished from every other
+`dragons` path in this repository at all.
+
+**Informed but not independently confirmed, implemented with
+`TODO(capture-needed)`:** `/v2/elicenses/migration_state` (answers
+`{"state": "COMPLETED", "migration_state": "NONE"}`) and
+`/v2/elicense_archives/publish` /
+`/v2/rights/publish_device_linked_elicenses` (both answer
+`{"elicense_archives": []}`). nx-dauth answers all three with exactly these
+field names, but — unlike `elicenses/exercise` — its own source carries no
+comment tying a specific one to an observed console failure, so this is a
+better-shaped guess (the field the console is presumably looking for,
+rather than an object with none of them) and not evidence at the same
+strength.
+
+**A new lead, not acted on:** nx-dauth serves `POST /v2/penne_id` from
+`dragons.hac.lp1.dragons.nintendo.net`, answering
+`{"id": "nxd<uuid>", "password": "<24 random bytes, base64url>"}` — with
+no comment claiming this was measured against a real console either. Item
+1.3 in `TODO.md` and `docs/QUESTIONS.md` record "how a console obtains a
+Penne id and password" as unresolved, tied to
+`god.hac.lp1.penne.srv.nintendo.net`'s `/v1/immigrate`/`/v1/penne_ids` (the
+wiki's own guess at where it lives, unconfirmed past the path). If this
+lead is right, the host and path guessed at were wrong, not just the
+shape — worth checking before spending a capture on `god`. Not implemented
+here: weaker evidence than `elicenses/exercise`, and CLAUDE.md's rule against
+inventing a plausible-looking Nintendo internal cuts harder for an endpoint
+this repository does not yet reach at all than for one it already answers
+badly.
+
+**Also observed, recorded rather than acted on:** the same file's
+`application_auth_token` minting includes two more fields SwitchNet's own
+`aauth` does not emit — `tbn` (16 random bytes) and `tbh` (32 random
+bytes) — with no comment anywhere in nx-dauth explaining what they mean;
+even its own author appears to be filling an observed-but-not-understood
+field with random bytes, the same treatment `esv` originally got before
+item 9 above settled its derivation. Weaker evidence than item 9's `esv`/
+`x5t#S256` (those were cross-checked against a real captured Nintendo
+token; these are not shown to be), so left unimplemented rather than
+copied blind — a real capture of an `application_auth_token` would settle
+whether they are present at all.
+
+---
+
 ## Phase 2 — Splatoon 3 (NPLN)
 
 In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
