@@ -53,11 +53,7 @@ const (
 	refreshTokenTTL = 30 * 24 * time.Hour
 )
 
-// Service implements v1.GamesyncServer. CreateRound is left to
-// UnimplementedGamesyncServer: proto/gamesync/v1/resources.pb.go's own
-// Round message names its fields Unk1 through Unk4, so even this project's
-// own proto reversal has nothing defensible to fill in. See
-// docs/CAPTURES/README.md.
+// Service implements v1.GamesyncServer.
 type Service struct {
 	v1.UnimplementedGamesyncServer
 
@@ -327,6 +323,28 @@ func (s *Service) RollbackTransaction(ctx context.Context, req *v1.RollbackTrans
 	}
 	s.store.RollbackTransaction(req.GetTransaction())
 	return &emptypb.Empty{}, nil
+}
+
+// CreateRound echoes back the Round the caller submitted, unchanged.
+//
+// proto/gamesync/v1/resources.pb.go's own Round message names its fields
+// Unk1 through Unk4 in this project's proto reversal, so there was never
+// anything defensible to fill in server-side (see docs/CAPTURES/README.md).
+// NextendoNetwork/splatoon-3 (a from-scratch NPLN reimplementation tested
+// against real hardware; PolyForm Shield-licensed, so only this fact is
+// taken, never its code) settles what a real server actually does: its
+// CreateRound does not interpret or seed Unk1-4 either -- it returns the
+// client-submitted Round exactly as given, or an empty Round if none was
+// sent. A Round the caller invented and immediately gets back cannot be
+// wrong the way a guessed server-generated one could be.
+func (s *Service) CreateRound(ctx context.Context, req *v1.CreateRoundRequest) (*v1.Round, error) {
+	if _, ok := rpcauth.From(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	if r := req.GetRound(); r != nil {
+		return r, nil
+	}
+	return &v1.Round{}, nil
 }
 
 func (s *Service) logDeferments(n int) {

@@ -256,11 +256,37 @@ func TestRollbackTransactionThenCommitFails(t *testing.T) {
 	}
 }
 
-func TestCreateRoundIsUnimplemented(t *testing.T) {
+// TestCreateRoundEchoesTheSubmittedRound covers the one thing this RPC is
+// known to be safe doing without a capture: handing back exactly what the
+// caller sent, never inventing a value for Unk1-4.
+func TestCreateRoundEchoesTheSubmittedRound(t *testing.T) {
 	svc, _ := newTestService()
-	_, err := svc.CreateRound(authedContext("alice"), &v1.CreateRoundRequest{})
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("got %v, want Unimplemented", err)
+	in := &v1.Round{Unk1: "a", Unk2: "b", Unk3: "c", Unk4: []string{"d", "e"}}
+	got, err := svc.CreateRound(authedContext("alice"), &v1.CreateRoundRequest{Round: in})
+	if err != nil {
+		t.Fatalf("CreateRound: %v", err)
+	}
+	if got != in {
+		t.Fatalf("got %+v, want the exact submitted Round echoed back", got)
+	}
+}
+
+func TestCreateRoundWithNoRoundGivenReturnsAnEmptyOne(t *testing.T) {
+	svc, _ := newTestService()
+	got, err := svc.CreateRound(authedContext("alice"), &v1.CreateRoundRequest{})
+	if err != nil {
+		t.Fatalf("CreateRound: %v", err)
+	}
+	if got.GetUnk1() != "" || got.GetUnk2() != "" || got.GetUnk3() != "" || len(got.GetUnk4()) != 0 {
+		t.Fatalf("got %+v, want an empty Round", got)
+	}
+}
+
+func TestCreateRoundRequiresAuthentication(t *testing.T) {
+	svc, _ := newTestService()
+	_, err := svc.CreateRound(context.Background(), &v1.CreateRoundRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("got %v, want Unauthenticated", err)
 	}
 }
 

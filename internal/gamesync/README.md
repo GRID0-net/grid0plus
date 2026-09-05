@@ -61,7 +61,11 @@ isolated) and `FieldTransform`'s undocumented global-value operations
   this store has no notion of a document existing independently of having
   been written.
 
-`CreateRound` is left entirely `Unimplemented`. Its own request carries a
-`Round` message whose fields are named `Unk1` through `Unk4` in this
-project's own proto reversal (`proto/gamesync/v1/resources.pb.go`) -- there
-is nothing here to implement a defensible reading of.
+`CreateRound`'s own request carries a `Round` message whose fields are named
+`Unk1` through `Unk4` in this project's own proto reversal
+(`proto/gamesync/v1/resources.pb.go`) -- there was never a defensible
+server-side reading to invent for them. `NextendoNetwork/splatoon-3` (a
+from-scratch NPLN reimplementation tested against real hardware; PolyForm
+Shield-licensed, so only this fact is taken, never its code) settles it: its
+`CreateRound` does not interpret `Unk1`-4 either, it just returns the
+client-submitted `Round` unchanged. This package does the same.
