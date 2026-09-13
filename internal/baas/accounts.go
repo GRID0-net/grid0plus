@@ -502,8 +502,11 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 	}
 	// TODO(capture-needed): the interior byte layout of nxAccountBlob's
 	// output -- what a real one encodes, and whether the console checks any
-	// of it. See that function's own comment for what a 2026-09-04 capture
-	// settled (length and encoding) versus what it did not (content).
+	// of it. See that function's own comment for what 2026-09-04 and
+	// 2026-09-13 captures settled (length, encoding, and which byte ranges
+	// are fixed vs. per-call) versus what remains open (whether any of it is
+	// checked, and which of the fixed ranges are per-account rather than
+	// protocol-wide).
 	nxAccount := nxAccountBlob(naID)
 	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != nxAccount {
 		extras[db.ScopeSelf]["nxAccount"] = nxAccount
@@ -546,16 +549,33 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // -- "a non-base64 alphabet" -- written before any real sample existed to
 // check it against; decoded, it is ordinary base64 of opaque bytes.
 //
-// The interior byte layout remains unknown. One real account's value is not
-// enough to separate fixed structure from per-account content, and
-// CLAUDE.md's rule against inventing a plausible-looking Nintendo internal
-// means this does not attempt to reproduce either. What changed from the
-// previous placeholder (the bare Nintendo Account id, ~16 characters) is
-// only the parts now confirmed real: length and encoding. A 16-character
-// hex string sitting where a console has only ever seen a 232-character
-// value was a mismatch nothing about "content unconfirmed" excused --
-// matching a confirmed length costs nothing and is never a worse guess than
-// visibly not even trying to.
+// The interior byte layout was reanalyzed 2026-09-13, from the same capture
+// re-read start to finish rather than just the one federation response: the
+// field turns out to appear five times in that single file, for the same
+// account, across `federation`/`login`(x2)/`GET users/{id}`(x2) -- three
+// login-shaped calls share one 174-byte value, both profile reads share a
+// different one. Diffing those two values (see
+// docs/CAPTURES/nintendo-account-link.md, "nxAccount's interior bytes --
+// partial structure recovered") gives real within-account structure without
+// a second account's capture:
+//   - fixed in both:      offsets 0-5, 12, 22-25, 30-61 (includes a
+//     `01 00 01 01` marker at 46-49), 66-71, and a
+//     96-byte zero tail at 78-173
+//   - varies with call:   offsets 6-11 and 13-21 (split around the fixed
+//     byte at 12), and offsets 26-29
+//   - login-only, zero on a plain profile read: offsets 62-65 and 72-77
+//
+// None of that is confirmed protocol-wide yet -- one account's captures can
+// only show what's fixed *within* that account, not what's fixed *across*
+// accounts, and CLAUDE.md's rule against inventing a plausible-looking
+// Nintendo internal still means the varying, call-context-keyed regions are
+// not reproduced here (nothing visible to SwitchNet explains what selects
+// them). What changed from the original placeholder (the bare Nintendo
+// Account id, ~16 characters) remains only the parts confirmed real: length
+// and encoding. A 16-character hex string sitting where a console has only
+// ever seen a 232-character value was a mismatch nothing about "content
+// unconfirmed" excused -- matching a confirmed length costs nothing and is
+// never a worse guess than visibly not even trying to.
 //
 // Deliberately not derived from anything Nintendo-secret and not the
 // captured value itself (that value belongs to one specific real Nintendo

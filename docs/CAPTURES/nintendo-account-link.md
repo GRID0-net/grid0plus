@@ -438,3 +438,128 @@ and already matched the existing implementation.
 All four are additive: nothing about the existing username/password
 authorize path, the federation handler, or any other already-verified call
 changed.
+
+---
+
+## `nxAccount`'s interior bytes — partial structure recovered (2026-09-13)
+
+Same capture as above (`nextendo-working-nalink-2026-08-27.flow`), reanalyzed
+from scratch: every flow's raw body (not just the ones already known to carry
+JSON worth parsing), including the one non-JSON, non-error body in the whole
+file — flow 0, the 13,569-byte WebView login page — checked for anything
+bearing on `nxAccount`.
+
+**Correction to the working assumption up to this point:** it had been said,
+here and to the operator, that a second capture from a different account was
+the only way to get comparative data on this field. That was wrong. The field
+appears **five times in this one capture**, not once — the earlier pass only
+ever opened the `federation` response (flow 42) and stopped. Rereading every
+flow's raw bytes for the literal string `"nxAccount"` (regex over the body,
+not JSON-path walking, so it can't miss an occurrence in a differently-shaped
+response) finds it in:
+
+| flow | call | value |
+| --- | --- | --- |
+| 42 | `POST /1.0.0/federation` | A |
+| 45 | `POST /1.0.0/login` | A |
+| 55 | `POST /1.0.0/login` | A |
+| 47 | `GET /1.0.0/users/{self id}` | B |
+| 58 | `GET /1.0.0/users/{self id}` | B |
+
+All five are the same account, all within the same ~7-second window of the
+capture. Decoded, there are exactly **two distinct 174-byte values**, not
+five — the three login-shaped calls (`federation`, `login` × 2) share one
+value byte-for-byte; the two profile-read calls (`GET /users/{id}`) share a
+different one. That is real differential data for a single account, obtained
+without a second capture, and it settles more than the earlier brute-force
+search could:
+
+**Stable across both values** (so: not per-account content, and not
+login-vs-profile context either — same in both):
+- offsets `0–5` (6 bytes)
+- offset `12` alone (1 byte), sitting inside an otherwise-varying span —
+  checked explicitly since it looked like it might be noise; it is not, it
+  reads `0x10` in both values
+- offsets `22–25` (4 bytes, all zero in both)
+- offsets `30–61` (32 bytes), which includes a 4-byte marker at `46–49`:
+  `01 00 01 01`, identical in both values
+- offsets `66–71` (6 bytes, all zero in both)
+- offsets `78–173` (96 bytes, all zero in both) — the zero tail already
+  known from the single-sample pass, confirmed to be genuinely fixed and not
+  an artifact of the one account sampled before
+
+**Varies between login-shaped and profile-read responses, same account:**
+- offsets `6–11` and `13–21` (6 + 9 = 15 bytes, split around the stable byte
+  at 12)
+- offsets `26–29` (4 bytes) — this is where an earlier pass floated a
+  timestamp hypothesis (a big-endian read landing ~512s from
+  `nicknameUpdatedAt`). **That hypothesis is retracted.** A field that moves
+  between two responses issued seconds apart, for the same account, in the
+  same session, cannot be a slowly-changing timestamp; whatever it is, it is
+  keyed to something that differs between a login call and a profile read,
+  which a last-modified time is not.
+- offsets `62–65` and `72–77` (4 + 6 = 10 bytes) — populated
+  (`01 28 28 28` / `01 9f 27 d3 15 1e`) only on the three login-shaped
+  responses; zero on both profile-read responses. This is the cleanest
+  signal in the whole blob: whatever these ten bytes encode, the server only
+  computes them when issuing a login/federation result, not when just
+  reading a profile back.
+
+Put together, the blob looks like: a ~6-byte fixed header, ~24 bytes of
+opaque content that changes with request context rather than time, a fixed
+`01 00 01 01`-anchored structural region, a login-only ~10-byte suffix, and a
+96-byte zero pad — not a hash of anything, and not the near-uniform noise
+SwitchNet's current placeholder produces (see below).
+
+**This also explains, rather than merely extends, the earlier negative
+result.** The prior pass tried every scalar value visible anywhere in the
+capture (identifiers, timestamps, every raw secret and JWT claim once the
+account's deletion made that safe to include, ~340,000 value/transform and
+HMAC combinations total) against the blob and found nothing. That search
+could only ever have found the varying region if it happened to equal
+something else already present in plaintext. Now that the region is known to
+change between two calls carrying *no new client-supplied data* (same
+Authorization token, same account, same session), it is server-side state —
+something like a per-issuance nonce, a request-context tag, or a
+server-held counter — not a deterministic function of anything the client
+sends or the operator's capture could show. The negative result was correct;
+it was answering a question ("is this derivable from visible inputs?") whose
+answer is now known to be no, rather than just unproven.
+
+**Flow 0 — the only actual "code" in the capture — is a dead end for this
+question, and worth saying so explicitly** per the instruction to check it.
+It is the WebView login page: French-commented HTML/CSS plus one inline
+`<script>` block implementing the QR-login state machine (poll
+`/connect/1.0.0/qr/etat`, animate between "show QR" / "scanned, enter these
+four digits" / "confirm on console" states, `/connect/1.0.0/qr/nouveau` on
+expiry). It contains no reference to `nxAccount`, no hashing, no encoding
+logic of any kind — it is UI code for an entirely different part of the
+login flow (device-to-device QR pairing) and has nothing to do with how the
+BAAS response field is built server-side, which happens after this page has
+already done its job. The only other non-JSON body in the capture (flow 10,
+a 30-byte plaintext `502` error) was already known and is unrelated. There is
+no other "code" in this capture to check.
+
+**Net effect on `internal/baas/accounts.go`'s `nxAccountBlob`:** the length,
+encoding, fixed header, `01 00 01 01` marker, and 96-byte zero tail are now
+confirmed structure, not guesses, across two independent samples of the same
+account. The two varying regions (client-context-independent but
+call-context-dependent, and login-only) are not reproducible from anything
+SwitchNet has available when building this field — there is no
+"per-issuance nonce" SwitchNet is tracking, and inventing one would be
+exactly the "plausible-looking Nintendo internal" CLAUDE.md's ground rule 6
+says not to do. Whether to update the placeholder to reproduce the *now-known*
+fixed structure (header/marker/zero-tail) while still leaving the varying
+regions as opaque per-account filler, as it does today, is a decision left to
+the operator rather than made here — see `nxAccountBlob`'s own comment and
+`TODO(capture-needed)`.
+
+A capture from a **second, different account** is still valuable and not
+superseded by this — it would separate what's fixed *per account* (this pass
+already shows offsets `0–5`/`22–25`/`30–61`/`66–71`/`78–173` are fixed
+*within* one account across five calls) from what's fixed *across all
+accounts* (unknown; every byte checked so far could still be per-account
+constant rather than protocol-constant, since only one account has been
+observed). It is a refinement of the picture above, not the only way to make
+further progress on it, which is what was said to the operator before this
+pass — that was inaccurate and is corrected here.
