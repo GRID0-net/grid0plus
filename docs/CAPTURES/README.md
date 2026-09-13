@@ -41,6 +41,12 @@ items}` envelope (not a bare array). Each item is a relationship object with
 **What SwitchNet does now:** returns `CollectionEnvelope[FriendResponse]` with
 `FriendResponse` as the confirmed relationship object.
 
+**Still open within this item:** `models.go`'s `Channels` field
+(`TODO(capture-needed)` at `internal/baas/models.go:175`) — the envelope shape
+is settled, but what triggers a `FRIEND_CODE` entry inside it and what its
+`authorizedAt` timestamp represents are not. SwitchNet always sends an empty
+map, which is a defensible default rather than a confirmed one.
+
 ### 2. `POST /2.0.0/friend_requests` — the request body
 
 **What is known:** nothing documented. The applet can add a friend two ways —
@@ -54,6 +60,21 @@ refused request during bring-up is a dead end with nothing to go on.
 can be dropped.
 
 **How to capture:** type a friend code into Add Friend on a real console.
+
+**Related, separately guessed:** the block-request body
+(`TODO(capture-needed)` at `internal/baas/friendcodes.go:185`) accepts the
+same form/JSON, `userId`/`nsaId` ambiguity, for the same undocumented reason —
+blocking a user on a real console would settle this one independently of the
+friend-request body above, since nothing confirms the friends sysmodule uses
+the same encoding for both actions.
+
+**Also open:** the per-item shape of the inbox/outbox this request populates
+(`TODO(capture-needed)` at `internal/baas/models.go:187`, `FriendRequestResponse`)
+— captures 04 and 05 both returned empty item lists, so `id`/`from`/`to` are
+SwitchNet's best guess at the minimum a console needs to draw the "friend
+requests" screen, not a confirmed shape. A capture with a real pending request
+in the list (send one from a second console and capture the first one's inbox
+before accepting) would settle it.
 
 ### 3. `PATCH /2.0.0/friend_requests/<id>` — the body
 
@@ -223,57 +244,320 @@ publishes its implementation.
 
 ---
 
+### 10. `dragons.*` — the eLicense/online-eligibility flow — ~~answered blindly~~ **one path settled, two more informed**
+
+`internal/stubs`, the catch-all for hosts SwitchNet redirects but does not
+implement for real, answered every path under
+`dragons.hac.lp1.dragons.nintendo.net` with the same bare `{}`. Reading the
+whole of `NextendoNetwork/nx-dauth`'s `main.go` (single file, 353 lines;
+PolyForm Shield 1.0.0, so only the facts below are taken, never its code —
+same rule already applied to it in item 9) rather than only the two claims
+it had already settled there turned up a service SwitchNet had never looked
+at closely: `dragons` is not just an eLicense token endpoint, it is where a
+console checks whether it has the *right* to play online at all.
+
+**Settled, 2026-09-05, and now implemented** (`internal/stubs/handler.go`,
+`Handler.dragons`): `POST /v2/elicenses/exercise` — "exercising" a licence,
+i.e. the online-play eligibility check — must answer `200` with a genuinely
+**empty body**, not `{}`. nx-dauth's own operational comment is explicit
+about the failure mode: answered any other way, the path 404s, and the
+console concludes it has no right to play online — described there as *the*
+blocker behind a console reporting it cannot use online features, not a
+cosmetic mismatch. This was not previously distinguished from every other
+`dragons` path in this repository at all.
+
+**Informed but not independently confirmed, implemented with
+`TODO(capture-needed)`:** `/v2/elicenses/migration_state` (answers
+`{"state": "COMPLETED", "migration_state": "NONE"}`) and
+`/v2/elicense_archives/publish` /
+`/v2/rights/publish_device_linked_elicenses` (both answer
+`{"elicense_archives": []}`). nx-dauth answers all three with exactly these
+field names, but — unlike `elicenses/exercise` — its own source carries no
+comment tying a specific one to an observed console failure, so this is a
+better-shaped guess (the field the console is presumably looking for,
+rather than an object with none of them) and not evidence at the same
+strength.
+
+**A new lead, not acted on:** nx-dauth serves `POST /v2/penne_id` from
+`dragons.hac.lp1.dragons.nintendo.net`, answering
+`{"id": "nxd<uuid>", "password": "<24 random bytes, base64url>"}` — with
+no comment claiming this was measured against a real console either. Item
+1.3 in `TODO.md` and `docs/QUESTIONS.md` record "how a console obtains a
+Penne id and password" as unresolved, tied to
+`god.hac.lp1.penne.srv.nintendo.net`'s `/v1/immigrate`/`/v1/penne_ids` (the
+wiki's own guess at where it lives, unconfirmed past the path). If this
+lead is right, the host and path guessed at were wrong, not just the
+shape — worth checking before spending a capture on `god`. Not implemented
+here: weaker evidence than `elicenses/exercise`, and CLAUDE.md's rule against
+inventing a plausible-looking Nintendo internal cuts harder for an endpoint
+this repository does not yet reach at all than for one it already answers
+badly.
+
+**Also observed, recorded rather than acted on:** the same file's
+`application_auth_token` minting includes two more fields SwitchNet's own
+`aauth` does not emit — `tbn` (16 random bytes) and `tbh` (32 random
+bytes) — with no comment anywhere in nx-dauth explaining what they mean;
+even its own author appears to be filling an observed-but-not-understood
+field with random bytes, the same treatment `esv` originally got before
+item 9 above settled its derivation. Weaker evidence than item 9's `esv`/
+`x5t#S256` (those were cross-checked against a real captured Nintendo
+token; these are not shown to be), so left unimplemented rather than
+copied blind — a real capture of an `application_auth_token` would settle
+whether they are present at all.
+
+---
+
 ## Phase 2 — Splatoon 3 (NPLN)
 
-**Implemented, and nothing in it has touched a console.** Every phase-2 test runs
-against a Go client, which was deliberate — it let the work proceed while the
-certificate-pinning question was open — but it means no shape here is confirmed
-against hardware.
+In progress (see [`../ROADMAP.md`](../ROADMAP.md#phase-2--splatoon-3-npln--dashboard)),
+and already has a growing list of its own `TODO(capture-needed)` markers --
+this section was written when the phase genuinely had none yet and was not
+kept in step as more accumulated (an earlier version of this paragraph
+named a specific count; it had already drifted from `grep -rn
+'TODO(capture-needed)' internal/`'s real total by the time this sentence was
+written, which is exactly the kind of drift this file exists to prevent, so
+this version deliberately names no number to keep stale).
 
-NPLN is gRPC over HTTP/2, so the gRPC half needs `grpc-dump` or `proxide` rather
-than mitmproxy, and it does need the console. The JSON half needs neither: see
-the first row below.
+### What is already guessed
 
-`switch/README.md`'s
-[Verify Splatoon 3, in order](../../switch/README.md#verify-splatoon-3-in-order)
-is the console-side sequence, and its first step is the cheapest capture in this
-whole document.
+- **Squad/delegated matchmaking tickets**
+  (`internal/npln/matchmaking.go:42`, `CreateMatchmakingTicket`): whether
+  Splatoon 3 ever sends more than one `UserDefinition` in a ticket. NPLN
+  supports one console queuing on behalf of a party; if the game uses it for a
+  squad, everyone but the leader is currently dropped. A capture of a squad
+  entering matchmaking together would settle it.
+- **Whether Splatoon 3 dials `GameSession.Port` at all**
+  (`internal/npln/matchmaking.go:394` area, `SyncGameSession`): gameplay is
+  peer-to-peer over ICE, and a client that connects entirely through
+  negotiated ICE candidates may never read this field. Persisting and
+  returning whatever the host publishes is the defensible reading either
+  way -- a field the client ignores costs nothing -- but nothing confirms a
+  real client actually uses it. A capture of a match connecting would settle
+  it.
+- **Matchmaking/session resource-name shapes**
+  (`internal/npln/matchmaking.go:320`, `ticketProto`, and `:448`,
+  `lastSegment`): every NPLN resource name is a path, and SwitchNet follows
+  the same AIP-style convention the rest of the definitions do, but nothing
+  confirms what Splatoon 3 actually receives or how strictly it parses it.
+  `lastSegment` deliberately parses leniently so a wrong prefix costs a
+  cosmetic mismatch rather than a broken `Track`/`Cancel`.
+- **The matched-session security token**
+  (`internal/npln/matchmaking.go:394`, `matchedUserSessions`): whether
+  Splatoon 3 refuses to start a match when this is absent. If it does, it
+  needs to become a real token signed with the same key `IssueToken` uses.
+- **`Auth.RefreshToken`**
+  (`internal/npln/services.go:72`, `IssueToken`): whether Splatoon 3 ever
+  calls it at all, and what it expects back. SwitchNet issues no refresh
+  token and relies on the game re-authenticating from its BAAS id token on
+  reconnect instead -- a path already served, so this is a defensible
+  default rather than a fabricated response, but unconfirmed.
+- **The NPLN user resource-name prefix**
+  (`internal/npln/services.go:96`, `userResourceName`): follows the
+  `tenants/<t>/users/<u>`-shaped convention every other NPLN name uses, but
+  no capture confirms Splatoon 3 receives or parses this specific one.
+- **What `Friends.ActivateUser` actually changes server-side**
+  (`internal/npln/friends.go:51`): SwitchNet has no separate activation state
+  to flip -- presence already resolves fresh on every read -- so this
+  acknowledges the call and does nothing else. If a capture shows the console
+  waiting on some effect this does not produce, that effect is what is
+  missing here.
+- **`FriendUser`/`BlockingUser` resource-name shapes**
+  (`internal/npln/friends.go:287`, `friendUserProto`): same AIP-style
+  `.../friendUsers/<id>` and `.../blockingUsers/<id>` convention as
+  matchmaking's resource names, and the same caveat -- `lastSegment` parses
+  leniently, so a wrong prefix costs a cosmetic mismatch rather than breaking
+  a call.
+- **`PresenceService.KeepAlive`'s `UpdatePresence` field**
+  (`internal/npln/presence_service.go:43`): whether Splatoon 3 ever reports
+  richer, game-specific presence over this RPC rather than only through
+  BAAS's `PATCH .../device_accounts/<id>`. SwitchNet does not persist it --
+  giving the one presence store a second writer is the same class of bug as
+  the second friend graph ROADMAP §2.5 warns against -- but every message on
+  the stream still counts as liveness.
+- **Presence resource-name shape**
+  (`internal/npln/presence_service.go:231`, `presenceUserID`): follows the
+  same `.../users/<u>/presence` singleton convention `resources.proto`'s
+  `Presence.name` field implies, parsed leniently for the same reason as the
+  matchmaking and friends names above.
+- **`Presence.Attributes`' keys**
+  (`internal/npln/presence_service.go:245`, `presenceProto`): left empty.
+  `resources.proto` carries a `map<string, nn.npln.common.Value>` here, and
+  its own `State` enum has no `PLAYING`, which suggests title-specific detail
+  (SwitchNet's BAAS-side `AppField`, in spirit) belongs here instead --
+  but no capture shows what keys a real client reads, and a guessed key that
+  silently never matches is worse than an empty map that visibly does
+  nothing.
+- **`Schedule`'s Vs map/mode rotation content**
+  (`internal/toyohr/schedule.go`, `SelectVsParams`/`SelectVsSchedules`/
+  `SelectSeasonSchedules`/`SelectLeagueSchedules`): answered as "nothing
+  scheduled" rather than invented. This is Nintendo's own game design data
+  (which stages, which mode), not a shape SwitchNet can reason its way to the
+  way a resource-name convention can -- there is genuinely no source for it
+  short of a capture or a dump. A capture of a real server's response for
+  each of the four RPCs would settle what a populated one looks like.
+  `SelectCoopSchedules`, the fifth `Schedule` RPC, is no longer on this list:
+  its wire shape was never the actual blocker (the proto already carries it,
+  independently corroborated -- see `internal/toyohr/README.md`), so
+  `coop_ids.go` and `coop_schedule.go` give it the operator-authored table
+  this entry used to only suggest as a hypothetical for Vs.
+- **Whether `Messaging.RecvMessage`'s empty resume token replays the whole
+  retained mailbox**
+  (`internal/npln/messaging.go`, `RecvMessage`): the defensible reading, since
+  this is the invite mailbox opened early in boot and a pending invite sent
+  while the console was off has to still be there -- but nothing confirms it
+  against a real client. Getting it backwards either loses an invite
+  silently or replays a stale one on every reconnect.
+- **Vermillion's two response bodies**
+  (`internal/nplnrest/nplnrest.go`, `vermillion`):
+  the wiki names both endpoints but gives no field table for either, unlike
+  every one of Penne's -- both answer with the most honestly-empty JSON
+  this server can claim (`{}`, `{"devices":[]}`), not a guessed real shape.
+  Whether Splatoon 3's boot needs anything from vermillion at all is a
+  separate, recorded question -- see `docs/QUESTIONS.md`.
+- **How a console obtains a Penne id and password**
+  (`internal/nplnrest/nplnrest.go`, `penne`): accepted and logged
+  without verification (CLAUDE.md's second ground rule), because nothing
+  documents the provisioning step that would create one --
+  `god.hac.lp1.penne.srv.nintendo.net`'s two plausible endpoints have an
+  unconfirmed HTTP method on the wiki, and `god` is not served by this
+  package at all.
+- **A frontline connection's wire framing**
+  (`internal/nplnrest/nplnrest.go`, `frontline`): held open, nothing
+  sent down it -- confirmed safe (closing it reads as a failure, per a real
+  error-code capture already in `internal/nintendo/hosts.go`), but what a
+  real server sends once the connection is open is undocumented anywhere
+  this pass could find.
+- **`FestEntry`'s resource-name shape**
+  (`internal/toyohr/entries.go`, `festEntryProto`): follows the same
+  `tenants/<t>/fests/<ID>/...` convention `GetFestDecryptionKey` already
+  uses, extended with an `entries/<userID>` suffix -- but nothing confirms
+  what `CreateFestEntry`'s response actually names a new entry, or whether
+  the console parses this field at all rather than only checking the RPC
+  succeeded.
+- **Whether an all-`is_valid: false` `FestResult` reads as "not concluded"**
+  (`internal/toyohr/entries.go`, `GetFestResult`): SwitchNet has no real
+  battle-outcome data (`npln_fest_entries` records who picked which team,
+  not who won, and `GameRecord` is unimplemented), so every sub-result
+  reports `IsValid: false` rather than a fabricated ratio. Whether the
+  console reads that as "the fest has not concluded yet" (leaving it
+  running, the same as before this RPC existed) or as a valid but empty
+  outcome is unconfirmed either way.
+- ~~**Whether Gamesync is reached through the tenant channel or a separate
+  port**~~ — resolved: its own port. `gamesync.npln.nintendo.net` not ending
+  in `srv.nintendo.net`, unlike every other NPLN host, turned out to be
+  exactly the deliberate signal it looked like: `internal/nintendo/hosts.go`
+  classifies it `ServiceGamesync`, a distinct service on its own port (7575),
+  and `internal/gamesync` is a complete, self-contained gRPC service rather
+  than one registered on `internal/npln`'s gateway. See `docs/QUESTIONS.md`.
+- **`FieldTransform`'s `LoadGlobalValue`/`StoreGlobalValue`/
+  `ClearGlobalValue`, and `DefermentOperation`** (`internal/gamesync/
+  gamesync.go`): no Firestore equivalent and no public documentation of what
+  a gamesync "global value" is scoped to, what loading one that was never
+  stored should return, or what a "deferment" defers or until when.
+- **`Round`'s fields** (`proto/gamesync/v1/resources.pb.go`): named `Unk1`
+  through `Unk4` in this project's own proto reversal, still uninterpreted.
+  `CreateRound` no longer needs a capture to be safe, though: it echoes back
+  the caller's own `Round` rather than guessing at them server-side, the same
+  answer a real, hardware-tested NPLN reimplementation
+  (`NextendoNetwork/splatoon-3`) gives. A capture would only matter if
+  something here ever needed to construct a `Round` itself.
 
-### The JSON front end — settle it with one config line, not a proxy
+### What `NextendoNetwork`'s source settled, 2026-09-05
 
-`internal/nplnrest` writes its own transcript. Set `npln.rest_record_dir`, put a
-console through one boot, and every request and response lands on disk hexdumped,
-in order, with credentials redacted. **No MITM, no patched proxy, no risk.**
+`NextendoNetwork/nextendo-account` and `NextendoNetwork/splatoon-3` (real
+NPLN/account server reimplementations the operator supplied, tested against
+real hardware per their own README; PolyForm Shield 1.0.0-licensed, so
+everything below is a fact taken from reading them, never any of their code
+-- same rule already applied to `nx-dauth` above) settled or bore on several
+items above and elsewhere in this repository:
 
-That one boot settles three of the four items below at once. It is worth doing
-before anything else on hardware.
+- **The two-frame gRPC response shape — settled, and now implemented**
+  (`internal/npln/server.go`, `sendNPLNHeader`). Real Nintendo NPLN gateways
+  answer every unary call as two separate HTTP/2 HEADERS frames (headers,
+  then trailers), never grpc-go's default "Trailers-Only" single frame for a
+  handler that returns with nothing already sent. Their commit history
+  documents a real console crashing (`2162-0001`, `nn.npln.Worker` aborting)
+  specifically on the single-frame shape for an otherwise-correct empty or
+  `NotFound` response -- which is what essentially every `Unimplemented`/
+  `NotFound` answer in `internal/toyohr`'s backlog (§1.4) and
+  `internal/gamesync` was almost certainly sending before this fix, untested
+  against hardware. `TestSendNPLNHeaderSplitsHeadersFromTrailers` locks the
+  wire shape down at the frame level.
+- **`CreateRound` — settled, and now implemented** (`internal/gamesync`):
+  see the `Round` entry above.
+- **The Splatfest asset-naming question — corroborated, not yet certain**:
+  see `docs/QUESTIONS.md`'s "Does the game key Splatfest assets on the
+  announced fest id" entry.
+- **Never echo `tenants/current/users/current` (or any `current` alias) back
+  in a response** -- checked against SwitchNet, not an issue found: their
+  matchmaking notes measured a real client failing to find its own session
+  when a response echoed the unresolved `current` alias instead of a
+  concrete `tenants/<t>/users/<uid>`. `grep -rn 'tenants/current\|users/
+  current' internal/` finds nothing in this repository; every resource name
+  SwitchNet returns is already built from a resolved caller/user id.
+- **A `Document`-shaped response must never carry an empty `name` field --
+  checked against SwitchNet, not an issue found**: their measurement (twice,
+  on two different documents) is that a client SDK receiving a message-less
+  success constructs a default object whose name is empty, and the
+  resource-name parser then aborts the game. `internal/gamesync.Service`'s
+  own `GetDocument` (service.go:149) already answers a missing document with
+  a `codes.NotFound` error rather than an empty-named `Document`, so this
+  does not apply here -- recorded so it stays checked if that method ever
+  changes shape.
+- **`GameRecord`'s document-naming and empty-response rules -- recorded for
+  whenever CLAUDE.md's "no defensible default" reasoning against
+  implementing `GameRecord` (see `internal/toyohr/backlog.go`) is revisited,
+  not acted on now**, because none of it supplies the one thing still
+  missing (defensible X Power/rating seed *values*):
+  - A create-shaped RPC's response document name is load-bearing: the client
+    immediately re-reads exactly that document afterward, so an empty or
+    guessed name (their own first attempt used the request's `parent`
+    field, `tenants/current/users/current` -- not a valid document name)
+    causes an infinite create-read loop rather than a graceful miss. A
+    pure existence-check RPC (plain `GetDocument`) does not have this
+    problem -- the same "no message" answer that breaks a create's
+    read-back is exactly what a real hall capture shows Nintendo doing for
+    an ordinary absent document.
+  - An account's `CoopUserAttribute`/`VsUserAttribute`-equivalent documents
+    must answer consistently with whether that account has ever played
+    (correlated with save-record state), never independently defaulted --
+    answering both as absent for an account that also has a non-empty saved
+    game is a state that does not exist on real Nintendo and was measured
+    crashing the client.
+  - A per-period record (their `PointCardRegular`) is legitimately absent
+    until that period has actually been played; that is real game-state
+    semantics; a real client was measured never calling the equivalent of
+    `InitializeAttributes` at all once an account has a save.
+  - The real captured `NotFound` for an absent ugcstore-family document
+    (`Canola`/`Locker`/`CoopScenario`/`Replay` in this repository's own
+    terms) carries a `grpc-status-details-bin` detail of type
+    `nn.npln.errdetails.NError` with three fields: 1 (16 random bytes,
+    hex-encoded), 19 (8 random bytes, hex-encoded), 6 (varint `0`). Both
+    hex fields are per-request markers regenerated on every response, not
+    values to persist. Not added to this repository's own `IkasuDocument`/
+    `ResolveCoopScenarioCode`/`ResolveReplayCode` NotFound answers here: all
+    of those are one-shot code lookups against codes nothing ever
+    registers, not the specific create-then-immediately-reread loop the
+    detail was measured fixing, so there is no evidence yet that it matters
+    for them specifically -- recorded rather than spent speculatively,
+    per CLAUDE.md's rule against inventing a plausible-looking Nintendo
+    internal.
 
-| Unknown | What the transcript settles | Where it changes |
-| --- | --- | --- |
-| `gw.hac.lp1.vermillion…` bodies | the device-initialisation exchange. A 2026-08-27 tcpdump showed 16.5 KB exchanged here mid-flow, so it expects real answers | `internal/nplnrest`, `vermillion` |
-| `val.hac.lp1.penne…` bodies | the login ticket, and **the field name the frontline FQDN comes back under** — the one value that must be right, because a name the console cannot find leaves it with no frontline at all. SwitchNet currently sends it under four plausible spellings; a capture collapses that to one | `internal/nplnrest`, `penne` |
-| `fro-N…` frame format | what the console sends and expects on the persistent connection. SwitchNet holds it open and sends **nothing**, because writing invented bytes into unknown framing is worse than silence | `internal/nplnrest`, `frontline` |
+When it is further along, these are the captures that will unblock the rest.
+NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not
+mitmproxy, and it does need the console.
 
-### The gRPC half — needs a proxy and the console
-
-| Capture | What it settles | Where it changes |
-| --- | --- | --- |
-| `IssueToken`'s response, or any resource name | **the resource-name shape, all of it at once.** Every NPLN resource name is built in one file for exactly this reason: one capture retires the whole set | `internal/npln/names.go` |
-| a session outliving its access token | whether Splatoon 3 ever calls `RefreshToken`. SwitchNet returns no refresh token, because the game re-authenticates from its BAAS id token on reconnect — a path that is already served | `internal/npln/services.go` |
-| a matchmaking request through to a session | the mode names the game puts in `matchmaking_config`, and the station info each client needs for its ICE handshake. **The mode names are also produced by a log line** — see `npln.mode_players` | `npln.mode_players`, and `AllocateIceServerSet` |
-| entering the lobby | `Schedule`'s stage and rule identifiers, and the co-op shift fields — stage, boss, four weapons, reward. All Splatoon 3 internal numbers, which is why they are operator config rather than a table in the source | `npln.rotation`, and `SelectCoopSchedules` |
-| the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set. If they are false the client shows no presence and publishes none — a friend list that looks healthy while everybody is permanently offline | not yet implemented |
-| a `gamesync` `CreateRound` call | what a `Round` is. Four of its five fields are `Unk1`..`Unk4` in the decompiled definitions, so it is left unimplemented rather than guessed | `internal/gamesync`, `CreateRound` |
-| post-match results upload | `GameRecord` — **and with it the battle ratios a Splatfest verdict needs.** Until then `GetFestResult` reports the vote (measured) and marks the battle ratios not valid (not measured) | `internal/toyohr` |
-
-### Splatfests and BCAT
-
-| Capture | What it settles | Where it changes |
-| --- | --- | --- |
-| `GetFestDecryptionKey`'s response for a fest whose packs are known | **which key field opens which pack.** A seed folder has five packs and the message has six key fields, so at least one field has no pack; the three team fields are certain and `notice`/`start`/`result` are not | `internal/bcat`, `PackForKeyField` |
-| the console's requests to the three `bcat-*` hosts | whether serving BCAT is possible at all, and what `/api/nx/v1/list/<name>` is asked for. **The server for this is written and waiting** — flip the hosts to `ServiceStubs` and set `stubs.bcat_record_dir` | `internal/bcat`, `Probe` |
-| a from-scratch fest whose internal asset names match its own id | whether the game keys assets on the announced fest id or only on the pack it is handed. `bcat.substitute_fest_id` makes both readings reachable without a code change | `internal/bcat`, `Naming.Apply` |
-| the tricolour stage numbering | which stages are valid, and what an invalid one does | `internal/toyohr` |
+| Capture | Why |
+| --- | --- |
+| game boot, from the very first vermillion request through the NPLN auth handshake | confirms whether vermillion is actually contacted (and needed) for Splatoon 3 specifically, penne's real request bodies and this server's guessed response fields, and what the tenant expects in `authorization`/`uid` metadata once the gRPC channel opens |
+| a frontline connection, bytes on the wire after the HTTP response headers | the one thing `internal/nplnrest`'s `frontline` could not implement at all: what, if anything, is sent down an open frontline connection |
+| entering the lobby | `Schedule`'s four Vs/season RPCs (currently answered empty; `SelectCoopSchedules` is no longer on this list -- see above), the first things the lobby draws |
+| a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
+| the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
+| an invite sent while the receiving console is off, then a boot | `Messaging.RecvMessage`'s empty-resume-token behaviour, and its resource-name shapes |
+| post-match results upload | `GameRecord` |
+| picking a team during a running fest, then the fest concluding | `CreateFestEntry`'s response shape and `GetFestResult`'s real (non-`is_valid:false`) content |
+| any real `WriteDocuments`/`CommitTransaction` call carrying a `DefermentOperation` or a `LoadGlobalValue`/`StoreGlobalValue`/`ClearGlobalValue` transform | what either feature is for, which nothing public documents |
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
 IPS patch generator that disables TLS verification *inside Splatoon 3

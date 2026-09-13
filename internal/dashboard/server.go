@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
@@ -50,11 +51,18 @@ type Options struct {
 	// seed.go and switch/bcat-installer/.
 	SeedDir string
 
-	// PresenceTTL is how long a reported state stays current. The dashboard
-	// applies the same rule BAAS does, so the two never disagree about who is
-	// online — a dashboard that says somebody is playing while their friends
-	// see them offline is worse than no dashboard.
+	// PresenceTTL and ConsolePresenceTTL apply the exact same rule BAAS does
+	// (internal/presence), so the two never disagree about who is online — a
+	// dashboard that says somebody is playing while their friends see them
+	// offline is worse than no dashboard. Pass the same values as BAAS's own
+	// config: cfg.BAAS.PresenceTTL and cfg.BAAS.ConsolePresenceTTL.
 	PresenceTTL time.Duration
+	// ConsolePresenceTTL is how long a console counts as ONLINE after its last
+	// authenticated request. Left zero, it defaults to PresenceTTL's default
+	// rather than to PresenceTTL's own value, because the two are configured
+	// independently and defaulting one from the other would silently reproduce
+	// the exact single-TTL bug this field exists to fix.
+	ConsolePresenceTTL time.Duration
 
 	// Token, when set, is required as a bearer token or ?token= on every
 	// request.
@@ -64,6 +72,19 @@ type Options struct {
 	// against. A shared token is the honest minimum: it keeps the fest controls
 	// off the open network without pretending to be an identity system.
 	Token string
+
+	// NPLNAdminURL and NPLNAdminToken reach cmd/npln's matchmaking controls.
+	//
+	// The queue is in that process, not this one. Leave either empty and the
+	// matchmaking panel says it is not configured rather than showing an empty
+	// queue, which would read as "nobody is playing".
+	NPLNAdminURL   string
+	NPLNAdminToken string
+
+	// Addresses is where each service listens, for the health view. Taken from
+	// the same config the services themselves read, so a changed port cannot
+	// leave the page probing the old one.
+	Addresses ServiceAddresses
 
 	Now func() time.Time
 }
@@ -75,11 +96,20 @@ type Server struct {
 	log   *slog.Logger
 	fests *toyohr.Service
 
-	tenant      string
-	seedDir     string
-	presenceTTL time.Duration
-	token       string
-	now         func() time.Time
+	tenant   string
+	seedDir  string
+	presence presence.Resolver
+	token    string
+	now      func() time.Time
+
+	// matchmaking is nil when the controls are not configured.
+	matchmaking *matchmakingClient
+
+	addresses ServiceAddresses
+	// probeClient is separate from the matchmaking client: health probes must
+	// not be queued behind a slow control call, or a service looks down because
+	// a different one is busy.
+	probeClient *http.Client
 
 	tmpl *template.Template
 }
@@ -98,6 +128,9 @@ func New(opts Options) (*Server, error) {
 	if opts.PresenceTTL <= 0 {
 		opts.PresenceTTL = 5 * time.Minute
 	}
+	if opts.ConsolePresenceTTL <= 0 {
+		opts.ConsolePresenceTTL = 5 * time.Minute
+	}
 
 	tmpl, err := template.ParseFS(templates, "templates/*.html")
 	if err != nil {
@@ -113,11 +146,18 @@ func New(opts Options) (*Server, error) {
 		fests: toyohr.NewService(toyohr.Options{
 			Store: opts.Store, Log: opts.Log, Tenant: opts.Tenant, Now: opts.Now,
 		}),
-		tenant:      opts.Tenant,
-		seedDir:     opts.SeedDir,
-		presenceTTL: opts.PresenceTTL,
+		tenant:  opts.Tenant,
+		seedDir: opts.SeedDir,
+		presence: presence.Resolver{
+			Store:      opts.Store,
+			ReportTTL:  opts.PresenceTTL,
+			ConsoleTTL: opts.ConsolePresenceTTL,
+		},
 		token:       opts.Token,
 		now:         opts.Now,
+		matchmaking: newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
+		addresses:   opts.Addresses,
+		probeClient: &http.Client{Timeout: probeTimeout},
 		tmpl:        tmpl,
 	}, nil
 }
@@ -128,15 +168,38 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /assets/", http.FileServer(http.FS(assets)))
 
-	mux.HandleFunc("GET /{$}", s.guard(s.handleIndex))
+	mux.HandleFunc("GET /{$}", s.guardPage(s.handleIndex))
+	mux.HandleFunc("GET /login", s.handleLoginPage)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /api/overview", s.guard(s.handleOverview))
 	mux.HandleFunc("GET /api/players", s.guard(s.handlePlayers))
-	mux.HandleFunc("GET /api/players/{id}", s.guard(s.handlePlayer))
+	mux.HandleFunc("GET /api/players/{id}", s.guard(s.handlePlayerDetail))
 	mux.HandleFunc("GET /api/matches", s.guard(s.handleMatches))
 	mux.HandleFunc("GET /api/fests", s.guard(s.handleFests))
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
 	mux.HandleFunc("DELETE /api/fests/{id}", s.guard(s.handleDeleteFest))
+	mux.HandleFunc("GET /api/coop-shifts", s.guard(s.handleCoopShifts))
+	mux.HandleFunc("POST /api/coop-shifts", s.guard(s.handleCreateCoopShift))
+	mux.HandleFunc("POST /api/coop-shifts/generate", s.guard(s.handleGenerateCoopShifts))
+	mux.HandleFunc("DELETE /api/coop-shifts/{id}", s.guard(s.handleDeleteCoopShift))
+	mux.HandleFunc("GET /api/coop-reference", s.guard(s.handleCoopReference))
+	mux.HandleFunc("GET /api/health", s.guard(s.handleHealth))
+	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))
+	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))
+	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))
+	mux.HandleFunc("POST /api/matchmaking/tickets/{id}/cancel", s.guard(s.handleCancelTicket))
+
+	mux.HandleFunc("GET /api/debug/stats", s.guard(s.handleDebugStats))
+	mux.HandleFunc("GET /api/debug/accounts/{id}", s.guard(s.handleDebugAccount))
+	mux.HandleFunc("POST /api/debug/accounts/{id}/deleted", s.guard(s.handleDebugSetAccountDeleted))
+	mux.HandleFunc("POST /api/debug/accounts/{id}/device-accounts/{deviceAccountId}/revoke-tokens", s.guard(s.handleDebugRevokeDeviceAccountTokens))
+	mux.HandleFunc("POST /api/debug/accounts/{id}/device-accounts/{deviceAccountId}/deleted", s.guard(s.handleDebugSetDeviceAccountDeleted))
+	mux.HandleFunc("GET /api/debug/tables", s.guard(s.handleDebugTables))
+	mux.HandleFunc("GET /api/debug/tables/{table}", s.guard(s.handleDebugTableRows))
+	mux.HandleFunc("PATCH /api/debug/tables/{table}", s.guard(s.handleDebugUpdateRow))
+
 	mux.HandleFunc("GET /api/events", s.guard(s.handleEvents))
 
 	// The BCAT delivery cache, for the console-side installer. Behind the same
@@ -147,23 +210,51 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// guard applies the shared token, when one is configured.
+// authCookieName holds the shared token once a browser has presented it
+// once, either via /login's form or a bookmarked ?token= link. It carries
+// the same secret the query string and Authorization header already
+// accept -- there is no separate session store, on purpose: phase 1 has no
+// person to attach a session to (see TODO.md §3.3), so a cookie here is
+// just a fourth, browser-friendly place to say the one shared secret,
+// never a stand-in for an account.
+const authCookieName = "switchnet_dashboard_session"
+
+// presentedToken returns whatever credential the request offers: the query
+// string, the Authorization header, or the login cookie, in that order.
+// Checking the query and header first keeps a script using ?token= or
+// Authorization working exactly as before a cookie ever entered the
+// picture.
+func (s *Server) presentedToken(r *http.Request) string {
+	if t := r.URL.Query().Get("token"); t != "" {
+		return t
+	}
+	if h := r.Header.Get("Authorization"); h != "" {
+		if scheme, tok, ok := strings.Cut(h, " "); ok && strings.EqualFold(scheme, "Bearer") {
+			return tok
+		}
+	}
+	if c, err := r.Cookie(authCookieName); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// authorized reports whether the request carries the configured token, or
+// whether no token is configured at all.
+//
+// Constant-time compare, for the same reason internal/baas compares a
+// device-account password that way: a token is a secret, and a
+// length-dependent comparison leaks it a byte at a time.
+func (s *Server) authorized(r *http.Request) bool {
+	return s.token == "" || constantTimeEqual(s.presentedToken(r), s.token)
+}
+
+// guard applies the shared token, when one is configured. Used for every
+// API route: on failure it answers 401, which is the right shape for a
+// fetch() call, not a redirect.
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.token == "" {
-			next(w, r)
-			return
-		}
-		presented := r.URL.Query().Get("token")
-		if h := r.Header.Get("Authorization"); presented == "" && h != "" {
-			if scheme, tok, ok := strings.Cut(h, " "); ok && strings.EqualFold(scheme, "Bearer") {
-				presented = tok
-			}
-		}
-		// Constant-time compare, for the same reason internal/baas compares a
-		// device-account password that way: a token is a secret, and a
-		// length-dependent comparison leaks it a byte at a time.
-		if !constantTimeEqual(presented, s.token) {
+		if !s.authorized(r) {
 			http.Error(w, "unauthorised", http.StatusUnauthorized)
 			return
 		}
@@ -171,13 +262,101 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// guardPage is guard's counterpart for the one page a browser navigates to
+// directly: on failure it sends the operator to the login form instead of
+// a bare "unauthorised" response, which is meaningless outside a fetch
+// call.
+func (s *Server) guardPage(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorized(r) {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+	})
+}
+
+func (s *Server) clearAuthCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	// A bookmarked ?token= link still works (guardPage already accepted it
+	// above); set the cookie too, so the *next* visit no longer needs the
+	// query string. This is the same upgrade /login itself performs, just
+	// reached by the older path.
+	if t := r.URL.Query().Get("token"); t != "" && s.token != "" && constantTimeEqual(t, s.token) {
+		s.setAuthCookie(w, r, t)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "index.html", map[string]any{
-		"Token": r.URL.Query().Get("token"),
+		"Token":           r.URL.Query().Get("token"),
+		"TokenConfigured": s.token != "",
 	}); err != nil {
 		s.log.Error("dashboard: render", "error", err)
 	}
+}
+
+// handleLoginPage serves the login form. With no token configured there is
+// nothing to log in with, so it redirects straight to the dashboard rather
+// than showing a form that can never fail or succeed meaningfully.
+func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	if s.token == "" || s.authorized(r) {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.tmpl.ExecuteTemplate(w, "login.html", map[string]any{
+		"Failed": r.URL.Query().Get("failed") == "1",
+	}); err != nil {
+		s.log.Error("dashboard: render login", "error", err)
+	}
+}
+
+// handleLogin checks the submitted token against the configured one and, on
+// a match, sets the cookie guard/guardPage both accept. There is no session
+// to create beyond that cookie -- see authCookieName's comment.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.token == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/login?failed=1", http.StatusFound)
+		return
+	}
+	submitted := r.PostFormValue("token")
+	if !constantTimeEqual(submitted, s.token) {
+		http.Redirect(w, r, "/login?failed=1", http.StatusFound)
+		return
+	}
+	s.setAuthCookie(w, r, submitted)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	s.clearAuthCookie(w, r)
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 // ---- players and presence -------------------------------------------------
@@ -203,22 +382,22 @@ func (s *Server) players(ctx context.Context) ([]Player, error) {
 	for _, u := range users {
 		ids = append(ids, u.ID)
 	}
-	presences, err := s.store.GetPresences(ctx, ids)
+	presences, err := s.presence.EffectiveMany(ctx, ids, s.now())
 	if err != nil {
 		return nil, err
 	}
 
-	now := s.now()
 	out := make([]Player, 0, len(users))
 	for _, u := range users {
 		p := presences[u.ID]
-		state, appID := s.resolvePresence(p, now)
+		// Resolve has already cleared AppID for anything but PLAYING.
+		appID := p.AppID
 
 		name := u.Nickname
 		if name == "" {
 			name = u.ID
 		}
-		row := Player{ID: u.ID, Nickname: name, State: state, AppID: appID}
+		row := Player{ID: u.ID, Nickname: name, State: p.State, AppID: appID}
 		if appID != "" {
 			row.Activity = titleName(appID)
 		}
@@ -238,35 +417,6 @@ func (s *Server) players(ctx context.Context) ([]Player, error) {
 		return strings.ToLower(out[i].Nickname) < strings.ToLower(out[j].Nickname)
 	})
 	return out, nil
-}
-
-// resolvePresence applies the same rule internal/baas does.
-//
-// Deliberately duplicated in shape rather than imported, because BAAS's version
-// is a handler-level concern there — but the RULE must not drift. A dashboard
-// that disagrees with the friends applet about who is online sends the operator
-// hunting for a bug that is only in the dashboard.
-//
-//	fresh report?           use it exactly, including OFFLINE
-//	otherwise seen recently? ONLINE, with the app fields cleared
-//	otherwise                OFFLINE
-func (s *Server) resolvePresence(p db.Presence, now time.Time) (state, appID string) {
-	if !p.ReportedAt.IsZero() && now.Sub(p.ReportedAt) < s.presenceTTL {
-		if p.State == "PLAYING" {
-			return "PLAYING", p.AppID
-		}
-		// Not playing: the app fields are cleared. A console that closes a game
-		// reports ONLINE without clearing them, so keeping them would leave the
-		// dashboard showing a game that is no longer running.
-		return p.State, ""
-	}
-	if !p.LastSeenAt.IsZero() && now.Sub(p.LastSeenAt) < s.presenceTTL {
-		// Request traffic is proof of life. Without this branch a console
-		// sitting in the Home Menu -- which reports nothing but keeps polling --
-		// reads as offline.
-		return "ONLINE", ""
-	}
-	return "OFFLINE", ""
 }
 
 // titleName maps the title ids SwitchNet is likely to see onto something a
@@ -290,6 +440,185 @@ func (s *Server) handlePlayers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, players)
+}
+
+// ---- player detail ---------------------------------------------------------
+
+// playerFriend is one row of a player's friend list, enriched with the
+// friend's own effective presence -- the same resolution the players list and
+// the friends applet itself use, so a friend shown here as ONLINE is never
+// out of step with what they see of each other.
+type playerFriend struct {
+	ID       string `json:"id"`
+	Nickname string `json:"nickname"`
+	State    string `json:"state"`
+	Activity string `json:"activity,omitempty"`
+	Favorite bool   `json:"favorite"`
+	Since    string `json:"since"`
+}
+
+// playerDeviceAccount is one console linked to a player. The password is
+// never included -- it is a permanent, unrotatable per-console credential,
+// and the dashboard has no legitimate use for it.
+type playerDeviceAccount struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// playerDetail is everything the Players tab's detail panel needs for one
+// player, assembled from stores that already exist rather than a new one:
+// internal/db already has the friendship and device-account stores, and
+// internal/presence already resolves effective state the one way BAAS and
+// the friends applet do.
+type playerDetail struct {
+	Player
+	Country   string `json:"country,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	LogoutAt  string `json:"logoutAt,omitempty"`
+
+	// ReportedState and ReportedAt are what the console itself last said, and
+	// when -- kept apart from the EFFECTIVE state on Player. "Reported
+	// OFFLINE" and "never reported" are different states, and conflating them
+	// is what makes a friend list permanently offline (see CLAUDE.md's
+	// "friends were never online"). Both are absent when the console has
+	// never reported: presence.reported_at is NULL until it does, and filling
+	// ReportedState unconditionally would claim a report that never happened.
+	ReportedState string `json:"reportedState,omitempty"`
+	ReportedAt    string `json:"reportedAt,omitempty"`
+
+	FriendCode string `json:"friendCode,omitempty"`
+
+	Friends        []playerFriend        `json:"friends"`
+	DeviceAccounts []playerDeviceAccount `json:"deviceAccounts"`
+}
+
+func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	ctx := r.Context()
+
+	u, err := s.store.GetUser(ctx, id)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, "no such player", http.StatusNotFound)
+			return
+		}
+		s.fail(w, "load player", err)
+		return
+	}
+
+	now := s.now()
+	pres, err := s.presence.Effective(ctx, id, now)
+	if err != nil {
+		s.fail(w, "resolve presence", err)
+		return
+	}
+
+	name := u.Nickname
+	if name == "" {
+		name = u.ID
+	}
+	detail := playerDetail{
+		Player:    Player{ID: u.ID, Nickname: name, State: pres.State, AppID: pres.AppID},
+		Country:   u.Country,
+		CreatedAt: u.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if pres.AppID != "" {
+		detail.Activity = titleName(pres.AppID)
+	}
+	if !pres.LastSeenAt.IsZero() {
+		detail.LastSeenAt = pres.LastSeenAt.UTC().Format(time.RFC3339)
+	}
+	if pres.LogoutAt != nil {
+		detail.LogoutAt = pres.LogoutAt.UTC().Format(time.RFC3339)
+	}
+
+	// The RAW reported state, separate from the effective one above. "Reported
+	// OFFLINE" and "never reported" are different states -- see playerDetail's
+	// doc comment -- and the stored state column defaults to OFFLINE, so
+	// filling ReportedState unconditionally would claim a report that never
+	// happened.
+	if raw, err := s.store.GetPresence(ctx, id); err == nil {
+		if !raw.ReportedAt.IsZero() {
+			detail.ReportedState = raw.State
+			detail.ReportedAt = raw.ReportedAt.UTC().Format(time.RFC3339)
+		}
+	} else if !errors.Is(err, db.ErrNotFound) {
+		s.log.Debug("dashboard: load raw presence", "user", id, "error", err)
+	}
+
+	if code, err := s.store.GetFriendCode(ctx, id); err == nil {
+		detail.FriendCode = code.Code
+	} else if !errors.Is(err, db.ErrNotFound) {
+		s.log.Debug("dashboard: load friend code", "user", id, "error", err)
+	}
+
+	friendships, err := s.store.ListFriends(ctx, id, 500)
+	if err != nil {
+		s.fail(w, "list friends", err)
+		return
+	}
+	friendIDs := make([]string, 0, len(friendships))
+	for _, f := range friendships {
+		friendIDs = append(friendIDs, f.FriendID)
+	}
+	friendUsers, err := s.store.FindUsers(ctx, db.UserQuery{IDs: friendIDs})
+	if err != nil {
+		s.fail(w, "load friends", err)
+		return
+	}
+	friendNames := make(map[string]string, len(friendUsers))
+	for _, fu := range friendUsers {
+		friendNames[fu.ID] = fu.Nickname
+	}
+	friendPresences, err := s.presence.EffectiveMany(ctx, friendIDs, now)
+	if err != nil {
+		s.fail(w, "resolve friend presence", err)
+		return
+	}
+	detail.Friends = make([]playerFriend, 0, len(friendships))
+	for _, f := range friendships {
+		fp := friendPresences[f.FriendID]
+		fname := friendNames[f.FriendID]
+		if fname == "" {
+			fname = f.FriendID
+		}
+		row := playerFriend{
+			ID: f.FriendID, Nickname: fname, State: fp.State,
+			Favorite: f.Favorite, Since: f.BecameFriendAt.UTC().Format(time.RFC3339),
+		}
+		if fp.AppID != "" {
+			row.Activity = titleName(fp.AppID)
+		}
+		detail.Friends = append(detail.Friends, row)
+	}
+	// Favourites first, then online, then by name -- the same ordering
+	// instinct as the players list: what the operator is looking for should
+	// not be buried alphabetically.
+	rank := map[string]int{"PLAYING": 0, "ONLINE": 1, "OFFLINE": 2}
+	sort.SliceStable(detail.Friends, func(i, j int) bool {
+		a, b := detail.Friends[i], detail.Friends[j]
+		if a.Favorite != b.Favorite {
+			return a.Favorite
+		}
+		if ra, rb := rank[a.State], rank[b.State]; ra != rb {
+			return ra < rb
+		}
+		return strings.ToLower(a.Nickname) < strings.ToLower(b.Nickname)
+	})
+
+	das, err := s.store.ListDeviceAccounts(ctx, id)
+	if err != nil {
+		s.fail(w, "list device accounts", err)
+		return
+	}
+	detail.DeviceAccounts = make([]playerDeviceAccount, 0, len(das))
+	for _, da := range das {
+		detail.DeviceAccounts = append(detail.DeviceAccounts, playerDeviceAccount{
+			ID: da.ID, CreatedAt: da.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	writeJSON(w, detail)
 }
 
 // ---- overview -------------------------------------------------------------
@@ -325,6 +654,12 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Matchmaking's own "in queue" stat tile is populated separately, from
+	// /api/matchmaking (see handleMatchmaking and dashboard.js's
+	// renderMatchmaking) rather than folded in here: that endpoint already
+	// has to say "not configured" honestly rather than a zero that looks
+	// like "nobody is queuing", and one source for that answer is simpler
+	// than keeping two in sync.
 	writeJSON(w, map[string]any{
 		"players": len(players),
 		"online":  online,
@@ -334,18 +669,20 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		// "nobody is queuing", which is a different fact from "cmd/npln is not
 		// running or redis.url is unset" -- and only one of them is worth acting
 		// on. The page renders the two differently.
-		"matchmaking": s.matchmaking(r.Context()),
+		"matchmaking": s.matchmakingGauge(r.Context()),
 		"seed":        s.seedStatus(),
 	})
 }
 
-// matchmaking reads the game server's live queue gauge.
+// matchmakingGauge reads the game server's live queue gauge. Named apart from
+// the Server.matchmaking field (the admin-API client the matchmaking
+// controls panel uses) -- same concept, different purpose.
 //
 // nil when there is no bus, no snapshot, or the last snapshot has gone stale.
 // The dashboard is a separate process from cmd/npln, so this is the seam between
 // them -- and it is a gauge rather than an event because a freshly-loaded page
 // needs the current value, not the next change.
-func (s *Server) matchmaking(ctx context.Context) map[string]any {
+func (s *Server) matchmakingGauge(ctx context.Context) map[string]any {
 	if s.bus == nil {
 		return nil
 	}
@@ -368,73 +705,6 @@ func (s *Server) matchmaking(ctx context.Context) map[string]any {
 		"byMode":   stats.Matchmaking,
 		"reportAt": stats.At.UTC().Format(time.RFC3339),
 	}
-}
-
-// ---- matches -------------------------------------------------------------
-
-type matchRow struct {
-	ID        string   `json:"id"`
-	Mode      string   `json:"mode"`
-	Players   []string `json:"players"`
-	Host      string   `json:"host"`
-	CreatedAt string   `json:"createdAt"`
-}
-
-// handleMatches lists recent matches.
-func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
-	matches, err := s.store.ListMatches(r.Context(), 50)
-	if err != nil {
-		s.fail(w, "list matches", err)
-		return
-	}
-
-	// Nicknames, so the list reads as people rather than as ids. Resolved in one
-	// pass over the user list rather than a lookup per player: a match has up to
-	// eight players and the list has fifty matches, which is four hundred
-	// lookups for a page that does not need them.
-	names := s.nicknames(r.Context())
-
-	out := make([]matchRow, 0, len(matches))
-	for _, m := range matches {
-		row := matchRow{
-			ID:        m.ID,
-			Mode:      m.Mode,
-			Host:      displayName(names, m.Host),
-			CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339),
-		}
-		for _, p := range m.Players {
-			row.Players = append(row.Players, displayName(names, p))
-		}
-		out = append(out, row)
-	}
-	writeJSON(w, out)
-}
-
-// nicknames maps user id to nickname, for the views that show people.
-//
-// A miss is not an error: a match log outlives the accounts in it on purpose --
-// history that disappears when somebody leaves is not history -- so an id with
-// no user is shown as itself.
-func (s *Server) nicknames(ctx context.Context) map[string]string {
-	users, err := s.store.ListUsers(ctx, 500)
-	if err != nil {
-		s.log.Debug("dashboard: list users for nicknames", "error", err)
-		return nil
-	}
-	out := make(map[string]string, len(users))
-	for _, u := range users {
-		if u.Nickname != "" {
-			out[u.ID] = u.Nickname
-		}
-	}
-	return out
-}
-
-func displayName(names map[string]string, id string) string {
-	if name, ok := names[id]; ok {
-		return name
-	}
-	return id
 }
 
 // ---- splatfests -----------------------------------------------------------
@@ -581,6 +851,38 @@ func (s *Server) handleDeleteFest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("dashboard: fest deleted", "fest", id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- match history ----------------------------------------------------------
+
+// matchRow is one row of the match history. Player and host ids are left for
+// the page to resolve against the players list it already has, the same way
+// it already resolves the live matchmaking sessions view -- one lookup table
+// on the client rather than a join on every history row.
+type matchRow struct {
+	ID         string   `json:"id"`
+	Mode       string   `json:"mode"`
+	HostUserID string   `json:"hostUserId"`
+	PlayerIDs  []string `json:"playerIds"`
+	Forced     bool     `json:"forced"`
+	CreatedAt  string   `json:"createdAt"`
+}
+
+func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
+	matches, err := s.store.ListMatches(r.Context(), db.DefaultMatchListLimit)
+	if err != nil {
+		s.fail(w, "list matches", err)
+		return
+	}
+	out := make([]matchRow, 0, len(matches))
+	for _, m := range matches {
+		out = append(out, matchRow{
+			ID: m.ID, Mode: m.Mode, HostUserID: m.HostUserID,
+			PlayerIDs: m.PlayerIDs, Forced: m.Forced,
+			CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, out)
 }
 
 // ---- live events ----------------------------------------------------------

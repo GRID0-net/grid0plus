@@ -33,8 +33,13 @@ type Memory struct {
 	presence       map[string]Presence
 	images         map[string]Image
 	fests          map[string]Fest
-	festEntries    map[festEntryKey]FestEntry
-	matches        map[string]Match
+	// festEntries is keyed by fest id then user id: one entry per account per
+	// fest, the same shape friendships uses for its own per-pair map.
+	festEntries map[string]map[string]FestEntry
+	coopShifts  map[string]CoopShift
+	// matches is append-only, ordered by insertion (which is creation order,
+	// since CreateMatch is the only writer and never rewrites an existing id).
+	matches []Match
 }
 
 // NewMemory returns an empty in-memory store.
@@ -45,8 +50,8 @@ func NewMemory() *Memory {
 		deviceAccounts: map[string]DeviceAccount{},
 		friendCodes:    map[string]FriendCode{},
 		fests:          map[string]Fest{},
-		festEntries:    map[festEntryKey]FestEntry{},
-		matches:        map[string]Match{},
+		festEntries:    map[string]map[string]FestEntry{},
+		coopShifts:     map[string]CoopShift{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
 		blocks:         map[string]map[string]Block{},
@@ -57,6 +62,10 @@ func NewMemory() *Memory {
 
 // Close is a no-op.
 func (m *Memory) Close() error { return nil }
+
+// Ping always succeeds: the in-memory store is reachable exactly as long as the
+// process using it is.
+func (m *Memory) Ping(context.Context) error { return nil }
 
 // ---- users ---------------------------------------------------------------
 
@@ -168,6 +177,9 @@ func (m *Memory) UpdateUser(_ context.Context, id string, p UserPatch) (User, er
 	}
 	if p.Extras != nil {
 		u.Extras = cloneExtras(*p.Extras)
+	}
+	if p.Deleted != nil {
+		u.Deleted = *p.Deleted
 	}
 	u.UpdatedAt = time.Now().UTC()
 	m.users[id] = u
@@ -282,6 +294,23 @@ func (m *Memory) ListDeviceAccounts(_ context.Context, userID string) ([]DeviceA
 	return out, nil
 }
 
+// ListAllDeviceAccounts returns a user's device accounts, deleted ones
+// included -- see the interface doc for why ListDeviceAccounts's own
+// exclusion does not serve the Debug tab.
+func (m *Memory) ListAllDeviceAccounts(_ context.Context, userID string) ([]DeviceAccount, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []DeviceAccount
+	for _, da := range m.deviceAccounts {
+		if da.UserID == userID {
+			out = append(out, da)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
 // DeleteDeviceAccount marks a device account deleted.
 func (m *Memory) DeleteDeviceAccount(_ context.Context, userID, id string) error {
 	m.mu.Lock()
@@ -311,6 +340,37 @@ func (m *Memory) ReassignDeviceAccount(_ context.Context, deviceAccountID, newUs
 		return ErrNotFound
 	}
 	da.UserID = newUserID
+	da.UpdatedAt = time.Now().UTC()
+	m.deviceAccounts[deviceAccountID] = da
+	return nil
+}
+
+// UndeleteDeviceAccount clears DeletedAt.
+func (m *Memory) UndeleteDeviceAccount(_ context.Context, deviceAccountID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	da, ok := m.deviceAccounts[deviceAccountID]
+	if !ok || da.DeletedAt == nil {
+		return ErrNotFound
+	}
+	da.DeletedAt = nil
+	da.UpdatedAt = time.Now().UTC()
+	m.deviceAccounts[deviceAccountID] = da
+	return nil
+}
+
+// RevokeDeviceAccountTokens invalidates every token minted before `before`.
+func (m *Memory) RevokeDeviceAccountTokens(_ context.Context, deviceAccountID string, before time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	da, ok := m.deviceAccounts[deviceAccountID]
+	if !ok {
+		return ErrNotFound
+	}
+	t := before
+	da.TokensRevokedBefore = &t
 	da.UpdatedAt = time.Now().UTC()
 	m.deviceAccounts[deviceAccountID] = da
 	return nil
@@ -726,6 +786,41 @@ func (m *Memory) GetImage(_ context.Context, id string) (Image, error) {
 	return img, nil
 }
 
+// ---- operator debugging ----------------------------------------------------
+
+// Stats counts rows directly, holding the read lock for the whole pass — a
+// snapshot at one instant rather than a sum of independent reads, the same
+// consistency PostgreSQL's own single-query Stats gets from running in one
+// statement.
+func (m *Memory) Stats(context.Context) (Stats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	s := Stats{
+		Users:      len(m.users),
+		Devices:    len(m.devices),
+		Fests:      len(m.fests),
+		CoopShifts: len(m.coopShifts),
+		Matches:    len(m.matches),
+		Images:     len(m.images),
+	}
+	for _, u := range m.users {
+		if u.Deleted {
+			s.DeletedUsers++
+		}
+	}
+	for _, da := range m.deviceAccounts {
+		s.DeviceAccounts++
+		if da.DeletedAt != nil {
+			s.DeletedDeviceAccounts++
+		}
+	}
+	for _, byFriend := range m.friendships {
+		s.Friendships += len(byFriend)
+	}
+	return s, nil
+}
+
 // ---- helpers -------------------------------------------------------------
 
 // cloneUser deep-copies the maps in a user, so a caller mutating what it got
@@ -767,13 +862,6 @@ func cloneExtras(e ExtrasByScope) ExtrasByScope {
 
 // Compile-time check that Memory satisfies the interface.
 var _ Store = (*Memory)(nil)
-
-// festEntryKey is one player's entry in one fest. A composite map key rather
-// than a nested map, matching the table's composite primary key.
-type festEntryKey struct {
-	festID string
-	userID string
-}
 
 // ---- splatfests ----------------------------------------------------------
 
@@ -838,73 +926,31 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	delete(m.fests, id)
 	// The entries go with it, matching the ON DELETE CASCADE on the table.
 	// Without this a recreated fest of the same id would inherit the old votes.
-	for key := range m.festEntries {
-		if key.festID == id {
-			delete(m.festEntries, key)
-		}
-	}
+	delete(m.festEntries, id)
 	return nil
 }
 
-// ---- matches -------------------------------------------------------------
+// ---- fest entries -----------------------------------------------------------
 
-func (m *Memory) RecordMatch(_ context.Context, match Match) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, exists := m.matches[match.ID]; exists {
-		// Same as the PostgreSQL implementation's ON CONFLICT DO NOTHING.
-		return nil
-	}
-	if match.CreatedAt.IsZero() {
-		match.CreatedAt = time.Now().UTC()
-	}
-	// Copied, because the caller keeps a reference to the slice it passed and
-	// PostgreSQL cannot hand out its own backing array.
-	match.Players = append([]string(nil), match.Players...)
-	m.matches[match.ID] = match
-	return nil
-}
-
-func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if limit <= 0 {
-		limit = 50
-	}
-	out := make([]Match, 0, len(m.matches))
-	for _, match := range m.matches {
-		match.Players = append([]string(nil), match.Players...)
-		out = append(out, match)
-	}
-	// Newest first, id as the tiebreak so the order is total.
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].ID > out[j].ID
-		}
-		return out[i].CreatedAt.After(out[j].CreatedAt)
-	})
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
-}
-
-// ---- splatfest entries ---------------------------------------------------
-
+// UpsertFestEntry records or changes a player's team choice. An upsert, not
+// an insert: internal/toyohr allows changing team up until the fest opens,
+// which is a second call with the same fest/user pair.
 func (m *Memory) UpsertFestEntry(_ context.Context, e FestEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := festEntryKey{festID: e.FestID, userID: e.UserID}
-	if existing, ok := m.festEntries[key]; ok {
+	byUser, ok := m.festEntries[e.FestID]
+	if !ok {
+		byUser = map[string]FestEntry{}
+		m.festEntries[e.FestID] = byUser
+	}
+	if existing, ok := byUser[e.UserID]; ok {
 		e.CreatedAt = existing.CreatedAt
 	} else if e.CreatedAt.IsZero() {
 		e.CreatedAt = time.Now().UTC()
 	}
 	e.UpdatedAt = time.Now().UTC()
-	m.festEntries[key] = e
+	byUser[e.UserID] = e
 	return nil
 }
 
@@ -912,7 +958,7 @@ func (m *Memory) GetFestEntry(_ context.Context, festID, userID string) (FestEnt
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	e, ok := m.festEntries[festEntryKey{festID: festID, userID: userID}]
+	e, ok := m.festEntries[festID][userID]
 	if !ok {
 		return FestEntry{}, ErrNotFound
 	}
@@ -923,19 +969,112 @@ func (m *Memory) ListFestEntries(_ context.Context, festID string) ([]FestEntry,
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var out []FestEntry
-	for key, e := range m.festEntries {
-		if key.festID == festID {
-			out = append(out, e)
+	out := make([]FestEntry, 0, len(m.festEntries[festID]))
+	for _, e := range m.festEntries[festID] {
+		out = append(out, e)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+// ---- Salmon Run / Big Run schedule ---------------------------------------
+
+func (m *Memory) UpsertCoopShift(_ context.Context, c CoopShift) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if existing, ok := m.coopShifts[c.ID]; ok {
+		c.CreatedAt = existing.CreatedAt
+	} else if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now().UTC()
+	}
+	c.UpdatedAt = time.Now().UTC()
+	// Copy the slices, the same reason UpsertFest copies Regions/PackKeys: the
+	// caller keeps its own reference, and handing out the backing array lets
+	// it mutate stored state by accident in a way PostgreSQL cannot.
+	c.Weapons = append([]int64(nil), c.Weapons...)
+	c.Rewards = append([]int64(nil), c.Rewards...)
+	m.coopShifts[c.ID] = c
+	return nil
+}
+
+func (m *Memory) GetCoopShift(_ context.Context, id string) (CoopShift, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	c, ok := m.coopShifts[id]
+	if !ok {
+		return CoopShift{}, ErrNotFound
+	}
+	c.Weapons = append([]int64(nil), c.Weapons...)
+	c.Rewards = append([]int64(nil), c.Rewards...)
+	return c, nil
+}
+
+func (m *Memory) ListCoopShifts(_ context.Context) ([]CoopShift, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]CoopShift, 0, len(m.coopShifts))
+	for _, c := range m.coopShifts {
+		c.Weapons = append([]int64(nil), c.Weapons...)
+		c.Rewards = append([]int64(nil), c.Rewards...)
+		out = append(out, c)
+	}
+	// Soonest first, id as the tiebreak, the same total-order reasoning as
+	// ListFests: a map range is random and the contract test compares order.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartAt.Equal(out[j].StartAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].StartAt.Before(out[j].StartAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) DeleteCoopShift(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.coopShifts, id)
+	return nil
+}
+
+// ---- match history ---------------------------------------------------------
+
+func (m *Memory) CreateMatch(_ context.Context, match Match) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// A match is written once, at formation. Matches the PostgreSQL
+	// implementation's ON CONFLICT (id) DO NOTHING: a retried write after a
+	// network blip must not fail the caller or duplicate the row.
+	for _, existing := range m.matches {
+		if existing.ID == match.ID {
+			return nil
 		}
 	}
-	// Oldest first, user id as the tiebreak so the order is total. A map range
-	// is random, and an unstable order is what the contract test catches.
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].UserID < out[j].UserID
-		}
-		return out[i].CreatedAt.Before(out[j].CreatedAt)
-	})
+	match.PlayerIDs = append([]string(nil), match.PlayerIDs...)
+	m.matches = append(m.matches, match)
+	return nil
+}
+
+func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]Match, len(m.matches))
+	for i, match := range m.matches {
+		match.PlayerIDs = append([]string(nil), match.PlayerIDs...)
+		out[i] = match
+	}
+	// Newest first, matching the PostgreSQL implementation's ORDER BY
+	// created_at DESC.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if limit <= 0 || limit > DefaultMatchListLimit {
+		limit = DefaultMatchListLimit
+	}
+	if limit < len(out) {
+		out = out[:limit]
+	}
 	return out, nil
 }

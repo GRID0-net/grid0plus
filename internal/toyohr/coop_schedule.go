@@ -1,0 +1,331 @@
+package toyohr
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math/rand/v2"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/n-popescu/switchnet/internal/db"
+	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+)
+
+// CoopShiftKind is which of Salmon Run's three modes a shift belongs to.
+//
+// TeamContest (Eggstra Work) has no authoring path here yet -- CoopSchedule
+// carries it (proto/toyohr/v1/resources.pb.go's CoopSchedule_TeamContest),
+// but nothing in this pass builds or validates one. Adding it is the same
+// shape of work as BigRun was; see TODO.md.
+type CoopShiftKind int
+
+const (
+	// CoopShiftNormal is the ordinary Salmon Run rotation.
+	CoopShiftNormal CoopShiftKind = iota
+	// CoopShiftBigRun is a Big Run event.
+	CoopShiftBigRun
+)
+
+func (k CoopShiftKind) String() string {
+	switch k {
+	case CoopShiftBigRun:
+		return "big_run"
+	default:
+		return "normal"
+	}
+}
+
+// ParseCoopShiftKind parses "normal" or "big_run", the same strings
+// CoopShiftKind.String produces -- what the CLI and the store both use, so
+// there is exactly one place the two spellings are decided.
+func ParseCoopShiftKind(s string) (CoopShiftKind, error) {
+	switch s {
+	case "normal":
+		return CoopShiftNormal, nil
+	case "big_run":
+		return CoopShiftBigRun, nil
+	default:
+		return 0, fmt.Errorf("coop shift kind %q must be \"normal\" or \"big_run\"", s)
+	}
+}
+
+// CoopShift is one Salmon Run rotation slot, as the operator schedules it.
+//
+// Unlike Fest, there is no separate content pack: everything the console
+// needs is real Nintendo asset ids (coop_ids.go) carried directly in the
+// CoopSchedule message, so scheduling one is a one-part problem, not two.
+type CoopShift struct {
+	Kind CoopShiftKind
+
+	// Start and End must land on Splatoon 3's two-hour slot boundary --
+	// fest.go's AlignToSlot/IsSlotAligned, which its own comment already
+	// states as a fact about how the game files every schedule, not
+	// something specific to fests.
+	Start, End time.Time
+
+	// StageID must be a real CoopStages entry whose BigRun flag matches Kind.
+	StageID int32
+
+	// Boss is the king salmonid's codename for this shift's Xtrawave
+	// (coop_ids.go's CoopBosses), or "" if none is scheduled.
+	Boss string
+
+	// Weapons are exactly four real CoopWeapons ids, distinct -- every real
+	// rotation this project has seen shows exactly four.
+	Weapons [4]int64
+
+	// KumaWeaponID is the Grizzco weapon (CoopKumaWeapons) this shift's boss
+	// wave hands out.
+	KumaWeaponID int64
+
+	// RewardGearID is a gear reward for this shift, or 0 for none. Not
+	// validated against a real table -- coop_ids.go has none; see its
+	// comment for why.
+	RewardGearID int32
+
+	// Rewards are a Big Run's scale-tier reward values
+	// (CoopSchedule_BigRun.Rewards). Empty for CoopShiftNormal. Their exact
+	// meaning is unconfirmed -- see docs/QUESTIONS.md -- so nothing here
+	// validates their contents, only that a Normal shift has none.
+	Rewards []int64
+}
+
+// ID derives a stable identifier from the shift's kind and start time, the
+// same "derived, never typed twice" reasoning as fest.go's NewFestID: two
+// shifts of the same kind starting at once would otherwise need the operator
+// to invent a name that has to stay unique by hand.
+func (c CoopShift) ID() string {
+	return fmt.Sprintf("%s-%d", c.Kind, c.Start.UTC().Unix())
+}
+
+// Validate reports why a shift cannot be served, or nil.
+//
+// Every check here is one that would otherwise reach the console as a
+// message it either cannot resolve against its own asset tables (an id
+// coop_ids.go does not carry) or that contradicts the schedule Splatoon 3
+// expects (fest.go's slot-boundary reasoning, restated for Coop by that
+// file's own comment).
+func (c CoopShift) Validate() error {
+	if c.Start.IsZero() {
+		return fmt.Errorf("coop shift has no start time")
+	}
+	if !IsSlotAligned(c.Start) {
+		return fmt.Errorf("coop shift starts at %s, which is not on a two-hour slot boundary; "+
+			"Splatoon 3 files every schedule into two-hour slots",
+			c.Start.UTC().Format(time.RFC3339))
+	}
+	if c.End.IsZero() || !c.End.After(c.Start) {
+		return fmt.Errorf("coop shift ends at %s, which is not after its start %s",
+			c.End.UTC().Format(time.RFC3339), c.Start.UTC().Format(time.RFC3339))
+	}
+	if !IsSlotAligned(c.End) {
+		return fmt.Errorf("coop shift ends at %s, which is not on a two-hour slot boundary",
+			c.End.UTC().Format(time.RFC3339))
+	}
+
+	stage, ok := CoopStageByID(c.StageID)
+	if !ok {
+		return fmt.Errorf("coop shift stage id %d is not a real Salmon Run stage; "+
+			"see toyohr.CoopStages", c.StageID)
+	}
+	switch c.Kind {
+	case CoopShiftBigRun:
+		if !stage.BigRun {
+			return fmt.Errorf("coop shift is big_run but stage %d (%s) is not a Big Run stage",
+				c.StageID, stage.Name)
+		}
+	case CoopShiftNormal:
+		if stage.BigRun {
+			return fmt.Errorf("coop shift is normal but stage %d (%s) is a Big Run stage",
+				c.StageID, stage.Name)
+		}
+		if len(c.Rewards) != 0 {
+			return fmt.Errorf("coop shift is normal but carries %d Big Run reward tier(s); "+
+				"Rewards only applies to a big_run shift", len(c.Rewards))
+		}
+	default:
+		return fmt.Errorf("coop shift kind %d is neither CoopShiftNormal nor CoopShiftBigRun", c.Kind)
+	}
+
+	if !CoopBossValid(c.Boss) {
+		return fmt.Errorf("coop shift boss %q is not a real king salmonid codename; "+
+			"see toyohr.CoopBosses", c.Boss)
+	}
+
+	seen := make(map[int64]bool, len(c.Weapons))
+	for i, id := range c.Weapons {
+		if _, ok := CoopWeaponByID(id); !ok {
+			return fmt.Errorf("coop shift weapon %d (slot %d) is not a real Salmon Run weapon; "+
+				"see toyohr.CoopWeapons", id, i)
+		}
+		if seen[id] {
+			return fmt.Errorf("coop shift weapon %d appears more than once; a real rotation "+
+				"never repeats a weapon across its four slots", id)
+		}
+		seen[id] = true
+	}
+
+	if _, ok := CoopKumaWeaponByID(c.KumaWeaponID); !ok {
+		return fmt.Errorf("coop shift kuma weapon id %d is not a real Grizzco weapon; "+
+			"see toyohr.CoopKumaWeapons", c.KumaWeaponID)
+	}
+
+	return nil
+}
+
+// SaveCoopShift validates a coop shift and stores it, the same split
+// SaveFest makes: validation happens here (in front of the store, which is
+// deliberately free of business logic) because the reasons a shift is
+// invalid -- a stage that does not exist, a weapon that is not real, slot
+// misalignment -- need explaining, which is not something a column can
+// carry. The shift's ID is derived, not supplied: two calls describing the
+// same kind and start time upsert the same row, which is what lets the CLI
+// re-run a schedule command to fix a typo rather than leaving a stray entry.
+func (s *Service) SaveCoopShift(ctx context.Context, c CoopShift) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	return s.store.UpsertCoopShift(ctx, RowFromCoopShift(c))
+}
+
+// ListCoopShiftsForOperator returns every stored coop shift, soonest first --
+// for switchnetctl and, eventually, the dashboard. Named distinctly from the
+// gRPC-facing SelectCoopSchedules: that one also filters to unended shifts
+// and returns the wire type, not the domain type.
+func (s *Service) ListCoopShiftsForOperator(ctx context.Context) ([]CoopShift, error) {
+	rows, err := s.store.ListCoopShifts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CoopShift, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, coopShiftFromRow(row))
+	}
+	return out, nil
+}
+
+// DeleteCoopShift removes a coop shift by its derived ID. Not an error if it
+// does not exist, matching the store's own idempotent-delete contract.
+func (s *Service) DeleteCoopShift(ctx context.Context, id string) error {
+	return s.store.DeleteCoopShift(ctx, id)
+}
+
+// GenerateAndSaveCoopShifts fills count Normal rotation slots starting at
+// from with GenerateCoopShifts (coop_generate.go)'s own generator, storing
+// every one that does not already occupy that slot.
+//
+// "Already occupy" is deliberately whole -- a slot with ANY existing shift is
+// left alone, whether that shift was hand-scheduled or produced by an
+// earlier call to this same method. That is what makes generation additive
+// rather than destructive: an operator who manually corrects one slot in a
+// generated run, then generates again over a wider range, never has that
+// correction silently overwritten. Re-run with a fresh seed to actually
+// replace a stretch of generated shifts -- delete them first.
+func (s *Service) GenerateAndSaveCoopShifts(
+	ctx context.Context, from time.Time, count int, duration time.Duration, rng *rand.Rand,
+) (created, skipped []CoopShift, err error) {
+	for _, c := range GenerateCoopShifts(rng, from, count, duration) {
+		_, err := s.store.GetCoopShift(ctx, c.ID())
+		switch {
+		case err == nil:
+			skipped = append(skipped, c)
+			continue
+		case errors.Is(err, db.ErrNotFound):
+			// falls through to save below
+		default:
+			return created, skipped, err
+		}
+		if err := s.SaveCoopShift(ctx, c); err != nil {
+			// Validate should never actually reject a generator's own
+			// output -- every id it uses comes from coop_ids.go -- so this
+			// is defensive, not an expected path.
+			return created, skipped, err
+		}
+		created = append(created, c)
+	}
+	return created, skipped, nil
+}
+
+// RowFromCoopShift converts a shift into a storable row.
+func RowFromCoopShift(c CoopShift) db.CoopShift {
+	return db.CoopShift{
+		ID:           c.ID(),
+		Kind:         c.Kind.String(),
+		StageID:      c.StageID,
+		Boss:         c.Boss,
+		Weapons:      append([]int64(nil), c.Weapons[:]...),
+		KumaWeaponID: c.KumaWeaponID,
+		RewardGearID: c.RewardGearID,
+		Rewards:      append([]int64(nil), c.Rewards...),
+		StartAt:      c.Start.UTC(),
+		EndAt:        c.End.UTC(),
+	}
+}
+
+// coopShiftFromRow converts a stored row into the domain type. Malformed
+// stored data (a weapons slice of the wrong length, from a row written by a
+// version of this code with a different shape) is defensive: it would only
+// happen from a hand-edited database, since SaveCoopShift's Validate never
+// stores anything else.
+func coopShiftFromRow(r db.CoopShift) CoopShift {
+	kind, _ := ParseCoopShiftKind(r.Kind)
+	c := CoopShift{
+		Kind:         kind,
+		Start:        r.StartAt.UTC(),
+		End:          r.EndAt.UTC(),
+		StageID:      r.StageID,
+		Boss:         r.Boss,
+		KumaWeaponID: r.KumaWeaponID,
+		RewardGearID: r.RewardGearID,
+		Rewards:      append([]int64(nil), r.Rewards...),
+	}
+	copy(c.Weapons[:], r.Weapons)
+	return c
+}
+
+// coopScheduleProto renders a stored shift as the wire message.
+//
+// Three fields are an operator-local assumption rather than a confirmed
+// shape, in the same spirit as festEntryProto's resource-name guess --
+// documented in docs/QUESTIONS.md rather than left unexplained:
+//
+//   - Name, ScheduleSetId and ShiftId follow the "tenants/<t>/..." pattern
+//     GetFestDecryptionKey already confirms for a different resource, since
+//     no capture shows what these three actually carry for a CoopSchedule.
+//     Unlike Fest.Resource, nothing here derives a decryption IV from the
+//     string, so a wrong guess costs a cosmetic mismatch, not a broken RPC.
+//   - RewardType is left "" (unset) rather than guessed, since no source
+//     this project has seen says what the real enum-like strings are.
+func (s *Service) coopScheduleProto(r db.CoopShift) *toyohrpb.CoopSchedule {
+	name := s.tenantPath() + "/coopSchedules/" + r.ID
+	out := &toyohrpb.CoopSchedule{
+		Name:          name,
+		ScheduleSetId: r.ID,
+		ShiftId:       r.ID,
+		StartTime:     timestamppb.New(r.StartAt),
+		EndTime:       timestamppb.New(r.EndAt),
+		Timestamp:     timestamppb.New(s.now()),
+	}
+	switch r.Kind {
+	case "big_run":
+		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
+			Stage:        r.StageID,
+			Boss:         r.Boss,
+			MainWeapons:  append([]int64(nil), r.Weapons...),
+			KumaWeapon:   int32(r.KumaWeaponID),
+			RewardGearId: r.RewardGearID,
+			Rewards:      append([]int64(nil), r.Rewards...),
+		}
+	default:
+		out.Normal = &toyohrpb.CoopSchedule_Normal{
+			Stage:        r.StageID,
+			Boss:         r.Boss,
+			MainWeapons:  append([]int64(nil), r.Weapons...),
+			KumaWeapon:   int32(r.KumaWeaponID),
+			RewardGearId: r.RewardGearID,
+		}
+	}
+	return out
+}

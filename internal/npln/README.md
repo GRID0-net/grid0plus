@@ -30,9 +30,12 @@ keeps them apart and `cmd/switchnetctl`'s generator tests assert it.
 | `server.go` | the gRPC server, the interceptors, and the unauthenticated-method allowlist |
 | `metadata.go` | the `npln-tenant-id` / `authorization` / `uid` metadata |
 | `auth.go` | the BAAS id-token seam, token issue, and identity resolution |
-| `services.go` | the implemented services |
-| `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking` |
-| `names.go` | every NPLN resource name, in one place |
+| `services.go` | auth, maintenance and toyohr/gamesync registration |
+| `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking`'s queue |
+| `friends.go` | `Friends`, over `internal/db`'s friendship store — the same rows BAAS reads |
+| `presence_service.go` | `PresenceService`, over `internal/presence`'s TTL rules — the same rules BAAS reads |
+| `messaging.go` | `Messaging`, over `internal/messaging`'s in-memory mailbox |
+| `names.go` | the one NPLN resource name still built outside its own file — `userResourceName` |
 | `errors.go` | how a refusal is shaped |
 
 ## Identity is fail-closed, and `uid` is not a credential
@@ -136,6 +139,104 @@ will not serve — a delegated matchmaking ticket, malformed metadata — and th
 are decisions rather than gaps.
 
 `grep -rn 'TODO(capture-needed)' .` for the shapes that are reasoned rather than
-known. The two here today are the resource-name shapes — all of them, collected
-in `names.go` so that one capture settles the lot — and whether the game ever
-calls `RefreshToken`.
+known — resource-name shapes among them, collected in `names.go`/each
+service's own file so that one capture settles the lot — and whether the
+game ever calls `RefreshToken`.
+
+## Matchmaking
+
+`matchmaking.go` serves the two services; the queue and its rules are
+`internal/matchmaking`, which knows nothing about gRPC.
+
+Three things it refuses, each the same shape as the bug this repository is built
+around:
+
+- a ticket is created for the **token's** user, never for the `UserDefinitions`
+  the request names;
+- a ticket may only be tracked or cancelled by the console that made it, and
+  somebody else's answers `NotFound` rather than `PermissionDenied` — whether it
+  exists is not that caller's to learn;
+- a game session may only be read or joined by a player who was actually matched
+  into it, because the players list names other people.
+
+Joining a session you were *not* matched into is backfill or a short alias.
+Neither is implemented and neither shape is documented, so it is refused rather
+than guessed at.
+
+`SyncGameSession` adds a fourth: a matched player may always read a session
+back (`KeepAliveOnly: true` needs no special standing beyond membership,
+already checked above), but only the **host** may actually change it. The
+one thing there is to change is the port the host published --
+`internal/matchmaking`'s `Session.HostPort` -- because it is the one piece
+of session state that genuinely lives on the host's own console and nowhere
+else; everything else the request carries (participant counts, state, who
+the host is) is ignored in favour of what this server already knows, same
+as `AllocateIceServerSet` ignoring the request's tenant and user fields.
+
+Resource names (`tenants/<t>/matchmakingTickets/<id>` and friends) are
+`TODO(capture-needed)`. `lastSegment` parses whatever the console echoes back
+leniently, including a bare id, so a wrong prefix costs a cosmetic mismatch
+instead of making every `Track` and `Cancel` answer `NotFound`.
+
+## Friends and presence
+
+**One friend graph, not two.** `friends.go` reads `internal/db`'s friendship
+store directly — the same rows `internal/baas/friends.go` reads — rather than
+keeping a second copy. `presence_service.go` resolves presence through
+`internal/presence`, the package `internal/baas`'s own HTTP presence
+endpoints were refactored onto for exactly this reason: a second
+implementation of the TTL rules is how "friends were never online" happens
+again, in a new place. See `docs/ROADMAP.md#2.5`.
+
+Two things ROADMAP §2.5 calls out as easy to miss, both handled here:
+
+- **`FriendUser.Relationship` sets `presence_deliverable` and
+  `presence_receivable`** from `internal/presence.Visible`, in each
+  direction — not left `false`, which would make the client neither show a
+  friend's presence nor publish its own while the friend list itself still
+  looks healthy.
+- **`SubscribeFriendUsers` and `SubscribePresences` both stay warm**: a
+  keep-alive timer resends on its own, and a fresh presence report on
+  `internal/presencebus` (when `redis.url` is set — see `cmd/npln/main.go`)
+  pushes an update immediately rather than waiting for the timer.
+
+`SubscribePresences` only ever serves the caller's own presence and their
+friends'; anything else named in the request is dropped rather than refusing
+the whole call, the same "skip and log" reasoning
+`internal/baas/friends.go`'s `listFriends` uses for a friendship naming a
+deleted user.
+
+Every authenticated call — not just PresenceService's own streams — counts as
+liveness: `enter()` in `server.go` touches presence on every request, the
+same as `internal/baas/router.go`'s `authenticated` middleware does for
+HTTP. Without it, a console that only ever touches BAAS at login would never
+look alive to `PresenceService`'s own TTL rules.
+
+`Presence.Attributes` (a `map<string, nn.npln.common.Value>` in
+`resources.proto`) is left empty: nothing confirms the keys a real client
+reads, and `resources.proto`'s own `State` enum has no `PLAYING` — `PLAYING`
+is read down to `ONLINE` here, on the theory that BAAS's richer detail (title
+id, app field) is what the friends applet reads separately rather than
+through this service. Both are `TODO(capture-needed)`.
+
+## Messaging
+
+`messaging.go` relays opaque payloads between two authenticated users:
+`SendMessage` fans one out to any number of receivers, `SendAck`
+acknowledges one back to its original sender, and `RecvMessage` streams a
+caller's own mailbox — everything retained since its resume tokens, then
+live as it arrives.
+
+`MessageBody`'s `message_type` and `fields` are never read here, the same
+reason `internal/baas` never parses a game's `appField`: guessing at a
+game-private format is exactly what CLAUDE.md warns against for an
+undocumented shape. Routing an ack needs nothing this server tracked
+itself — `AckBody` already carries the original message's sender, so
+`SendAck` delivers straight there.
+
+`internal/messaging`'s mailbox is in memory, the same tradeoff
+`internal/matchmaking`'s queue makes: a message undelivered when this
+process restarts is one the sender's own retry resends, and it keeps this
+package as protocol-agnostic as that one — it imports nothing from `proto/`,
+and `messaging.go` is where a `Message` or `Ack` becomes a
+`RecvMessageResponse`.

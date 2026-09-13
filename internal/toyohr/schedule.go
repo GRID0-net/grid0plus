@@ -132,25 +132,46 @@ func (s *Service) vsSchedule(start time.Time, index int, rot Rotation) *toyohrpb
 	return out
 }
 
-// SelectCoopSchedules returns the Salmon Run rotation.
+// SelectCoopSchedules answers the Salmon Run rotation -- every operator-
+// scheduled shift that has not fully ended yet, soonest first.
 //
-// Answered empty. A co-op shift names a stage, a boss, four weapon ids and a
-// reward — every one of them a Splatoon 3 internal number, and unlike the versus
-// rotation there is nothing useful left once they are removed. An empty
-// response is what the game sees when no shift is scheduled, so it is a state
-// it has a reading for; a shift with invented ids is not.
+// Unlike currentFest, this does not pick just one: a console reasonably
+// wants to know about more than the shift live right now (Splatoon 3 shows
+// upcoming rotations in its Salmon Run menu before they open), so every
+// shift whose End is still in the future is included.
 //
-// TODO(capture-needed): the stage, boss, weapon and reward identifiers, and
-// what the console does with an unknown one. Change: this function, plus a
-// CoopShifts field on Rotation.
+// Not empty by policy, unlike the four Vs/season handlers above: unlike a
+// normal Vs rotation, nn.npln.toyohr.v1.CoopSchedule's own decompiled proto
+// already carries the real shape (Normal/BigRun/TeamContest as parallel
+// sub-messages -- resources.pb.go), independently corroborated by
+// nintendoapis/splatnet3-types' own SplatNet 3 GraphQL schema
+// (CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
+// teamContestSchedules}, each CoopSchedule{startTime,endTime,setting}
+// discriminated by __typename). Real stage/weapon/boss content and an
+// authoring path come from SaveCoopShift and coop_ids.go -- see
+// internal/toyohr/README.md.
 func (sc *scheduleService) SelectCoopSchedules(
 	ctx context.Context, _ *toyohrpb.SelectCoopSchedulesRequest,
 ) (*toyohrpb.SelectCoopSchedulesResponse, error) {
 	if _, ok := sc.s.caller(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
-	sc.s.noteNoRotation("coop")
-	return &toyohrpb.SelectCoopSchedulesResponse{}, nil
+
+	rows, err := sc.s.store.ListCoopShifts(ctx)
+	if err != nil {
+		sc.s.log.Error("toyohr: list coop shifts", "error", err)
+		return nil, status.Error(codes.Internal, "")
+	}
+
+	now := sc.s.now()
+	resp := &toyohrpb.SelectCoopSchedulesResponse{}
+	for _, row := range rows {
+		if !row.EndAt.After(now) {
+			continue
+		}
+		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(row))
+	}
+	return resp, nil
 }
 
 // SelectSeasonSchedules returns the current season.

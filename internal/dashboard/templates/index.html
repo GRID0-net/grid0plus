@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SwitchNet</title>
 <link rel="stylesheet" href="/assets/dashboard.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦑</text></svg>">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23f5407e'/%3E%3Cstop offset='100%25' stop-color='%2338b6ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M24 2c9 0 16 8 16 18 0 6-3 10-3 14 0 5 4 6 4 10 0 3-3 3-5 1-2-2-4-5-7-5-3 0-4 4-8 4s-5-4-8-4c-3 0-5 3-7 5-2 2-5 2-5-1 0-4 4-5 4-10 0-4-3-8-3-14C2 10 9 2 18 2c2 0 4 1 6 1s4-1 6-1z'/%3E%3Ccircle cx='17' cy='19' r='3.4' fill='%230e0e12'/%3E%3Ccircle cx='31' cy='19' r='3.4' fill='%230e0e12'/%3E%3C/svg%3E">
 </head>
 <body>
 
@@ -15,44 +15,73 @@
 
 <header class="top">
   <div class="brand">
-    <span class="squid">🦑</span>
+    <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+      <defs>
+        <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="var(--ink-a)"/>
+          <stop offset="100%" stop-color="var(--ink-c)"/>
+        </linearGradient>
+      </defs>
+      <path fill="url(#brandGrad)" d="M24 2c9 0 16 8 16 18 0 6-3 10-3 14 0 5 4 6 4 10 0 3-3 3-5 1-2-2-4-5-7-5-3 0-4 4-8 4s-5-4-8-4c-3 0-5 3-7 5-2 2-5 2-5-1 0-4 4-5 4-10 0-4-3-8-3-14C2 10 9 2 18 2c2 0 4 1 6 1s4-1 6-1z"/>
+      <circle class="brand-eye" cx="17" cy="19" r="3.4"/>
+      <circle class="brand-eye" cx="31" cy="19" r="3.4"/>
+    </svg>
     <div>
       <h1>SwitchNet</h1>
       <p class="sub">Splatoon&nbsp;3 · tenant <code id="tenant">dce9377b</code></p>
     </div>
   </div>
-  <div class="live" id="live-pill" data-state="connecting">
-    <span class="dot"></span><span class="label">connecting</span>
+  <div class="top-actions">
+    <div class="live" id="live-pill" data-state="connecting">
+      <span class="dot"></span><span class="label">connecting</span>
+    </div>
+    {{ if .TokenConfigured }}
+    <form class="logout-form" method="post" action="/logout">
+      <button type="submit" class="btn btn-ghost" title="Log out of the dashboard">Log out</button>
+    </form>
+    {{ end }}
+    <button type="button" class="theme-toggle" id="theme-toggle" title="Switch theme" aria-label="Switch theme">
+      <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><g stroke-linecap="round"><path d="M12 2.5v3"/><path d="M12 18.5v3"/><path d="M2.5 12h3"/><path d="M18.5 12h3"/><path d="M5 5l2 2"/><path d="M17 17l2 2"/><path d="M19 5l-2 2"/><path d="M7 17l-2 2"/></g></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
+    </button>
   </div>
 </header>
 
 <nav class="tabs" role="tablist">
   <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
   <button role="tab" aria-selected="false" data-view="players">Players</button>
+  <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
   <button role="tab" aria-selected="false" data-view="matches">Matches</button>
+  <button role="tab" aria-selected="false" data-view="health">Health</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
+  <button role="tab" aria-selected="false" data-view="coop">Salmon Run</button>
+  <button role="tab" aria-selected="false" data-view="debug">Debug</button>
 </nav>
 
 <main>
   <!-- Overview -->
   <section id="view-overview" class="view is-active">
     <div class="stat-row">
-      <div class="stat">
+      <div class="stat stat-online">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
         <span class="stat-value" id="stat-online">–</span>
         <span class="stat-label">online now</span>
       </div>
-      <div class="stat">
+      <div class="stat stat-playing">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg>
         <span class="stat-value" id="stat-playing">–</span>
         <span class="stat-label">in game</span>
       </div>
-      <div class="stat">
+      <div class="stat stat-accounts">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
         <span class="stat-value" id="stat-players">–</span>
         <span class="stat-label">accounts</span>
       </div>
       <div class="stat stat-queue">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18v-2a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v2"/><circle cx="7.5" cy="7.5" r="3"/><path d="M15 18v-1.5a3.8 3.8 0 0 1 3-3.7 3 3 0 1 0-2.2-5.4"/></svg>
         <span class="stat-value" id="stat-queue">—</span>
         <span class="stat-label">in matchmaking</span>
-        <span class="stat-note" id="stat-queue-note">no report from the game server</span>
+        <span class="stat-note" id="stat-queue-note">not configured</span>
       </div>
     </div>
 
@@ -100,6 +129,60 @@
         <tbody></tbody>
       </table>
       <p class="empty" id="players-empty" hidden>No accounts yet. Register a console and it appears here.</p>
+    </div>
+  </section>
+
+  <dialog id="player-detail" class="player-detail">
+    <button type="button" class="dialog-close" id="player-detail-close" aria-label="Close">&times;</button>
+    <div id="player-detail-body">
+      <p class="empty">Loading…</p>
+    </div>
+  </dialog>
+
+  <!-- Health -->
+  <section id="view-health" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Services</h2>
+        <span class="meta" id="health-summary"></span>
+      </div>
+      <div id="health-list"></div>
+      <p class="note">Each service is asked directly, on the address it is
+        configured to listen on. A service that cannot be probed says so rather
+        than showing green — green for “we did not look” is worse than a gap.</p>
+    </div>
+  </section>
+
+  <!-- Matchmaking -->
+  <section id="view-matchmaking" class="view">
+    <!-- Shown when npln.admin_* is not set. Explaining the gap beats an empty
+         queue, which reads as "nobody is playing". -->
+    <div class="panel" id="mm-unconfigured" hidden>
+      <h2>Matchmaking controls are not set up</h2>
+      <p class="empty" id="mm-unconfigured-reason"></p>
+      <p class="note">The queue lives in the <code>npln</code> process, not in the
+        dashboard, so the two have to be introduced to each other.</p>
+    </div>
+
+    <div id="mm-configured" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Queue</h2>
+          <span class="meta" id="mm-summary"></span>
+        </div>
+        <div id="mm-modes"></div>
+        <p class="empty" id="mm-empty" hidden>Nobody is queuing. A console that
+          enters matchmaking appears here within a few seconds.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Live matches</h2>
+          <span class="meta">Peer-to-peer once started — SwitchNet is out of the path.</span>
+        </div>
+        <div id="mm-sessions"></div>
+        <p class="empty" id="mm-sessions-empty" hidden>No matches running.</p>
+      </div>
     </div>
   </section>
 
@@ -181,6 +264,179 @@
         configured, a source file is a <em>build error</em> rather than a PNG
         packed into the archive.
       </p>
+    </div>
+  </section>
+
+  <!-- Salmon Run / Big Run -->
+  <section id="view-coop" class="view">
+    <div class="panel">
+      <h2>Schedule a shift</h2>
+      <form id="coop-form" class="fest-form">
+        <label>
+          <span>Kind</span>
+          <div class="chips" id="coop-kind-chips">
+            <label><input type="radio" name="coop-kind" value="normal" checked> Normal</label>
+            <label><input type="radio" name="coop-kind" value="big_run"> Big Run</label>
+          </div>
+        </label>
+        <label>
+          <span>Stage</span>
+          <select name="stageId" id="coop-stage"></select>
+          <small>The list is filtered to Big Run stages, or normal-rotation stages, to match Kind above -- a real console never sees Big Run running on an ordinary stage.</small>
+        </label>
+        <label>
+          <span>Main weapons <em>four, in order</em></span>
+          <div class="coop-weapon-row">
+            <select name="weapon0" class="coop-weapon"></select>
+            <select name="weapon1" class="coop-weapon"></select>
+            <select name="weapon2" class="coop-weapon"></select>
+            <select name="weapon3" class="coop-weapon"></select>
+          </div>
+        </label>
+        <label>
+          <span>Kuma (Grizzco) weapon</span>
+          <select name="kumaWeaponId" id="coop-kuma"></select>
+        </label>
+        <label>
+          <span>Xtrawave boss <em>optional</em></span>
+          <select name="boss" id="coop-boss">
+            <option value="">None scheduled</option>
+          </select>
+        </label>
+        <label>
+          <span>Starts</span>
+          <input type="datetime-local" name="startAt" id="coop-start">
+          <small>Snapped to a two-hour slot, the same as a Splatfest.</small>
+        </label>
+        <label>
+          <span>Ends</span>
+          <input type="datetime-local" name="endAt" id="coop-end">
+        </label>
+        <label>
+          <span>Reward gear id <em>optional</em></span>
+          <input type="number" name="rewardGearId" id="coop-reward-gear" min="0" placeholder="0">
+          <small>Not checked against a real gear table -- see internal/toyohr/coop_ids.go.</small>
+        </label>
+        <label id="coop-rewards-field" hidden>
+          <span>Big Run scale-tier rewards <em>optional</em></span>
+          <input type="text" name="rewards" id="coop-rewards" placeholder="100, 200, 300" autocapitalize="off" spellcheck="false">
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Schedule shift</button>
+        </div>
+        <p class="form-error" id="coop-error" hidden></p>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Auto-fill the normal rotation</h2>
+      <form id="coop-generate-form" class="fest-form">
+        <label>
+          <span>Starting</span>
+          <input type="datetime-local" name="fromAt" id="coop-gen-from">
+        </label>
+        <label>
+          <span>Shifts to generate</span>
+          <input type="number" name="count" id="coop-gen-count" min="1" value="4">
+        </label>
+        <label>
+          <span>Shift length, hours <em>optional</em></span>
+          <input type="number" name="durationHours" id="coop-gen-duration" min="1" placeholder="40">
+          <small>Defaults to 40h -- Salmon Run's real rotation length.</small>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Generate</button>
+        </div>
+        <p class="note" id="coop-gen-result" hidden></p>
+        <p class="form-error" id="coop-gen-error" hidden></p>
+      </form>
+      <p class="note">
+        Picks real stages/weapons from <code>internal/toyohr/coop_ids.go</code>
+        at random -- SwitchNet's own generator, not a recovered Nintendo
+        algorithm (nobody outside Nintendo has published how the real server
+        actually chooses one). Never touches a slot that already has a
+        shift, so schedule one by hand above first and generating around it
+        is safe.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Scheduled</h2>
+      <div id="coop-list" class="fest-list"></div>
+      <p class="empty" id="coop-empty" hidden>Nothing scheduled.</p>
+    </div>
+
+    <div class="panel panel-note">
+      <h2>Real ids only</h2>
+      <p>
+        Every stage, weapon and boss above comes straight from the game's own
+        shipped data (<code>internal/toyohr/coop_ids.go</code>), not a guess --
+        a shift the operator schedules is checked against the exact same
+        tables <code>switchnetctl coop schedule</code> uses before it is
+        stored, so nothing reaches a console that its own asset tables cannot
+        resolve.
+      </p>
+    </div>
+  </section>
+
+  <!-- Debug -->
+  <section id="view-debug" class="view">
+    <div class="panel panel-note">
+      <h2>This tab writes to the database</h2>
+      <p>Every control below acts on the same store BAAS and NPLN read from
+        directly, with no confirmation beyond the one dialog a destructive
+        action shows. It exists for an operator who already knows what a
+        device account or a <code>Deleted</code> flag does -- see
+        <code>CLAUDE.md</code> if not.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Database</h2>
+        <button type="button" class="btn btn-ghost btn-tiny" id="debug-stats-refresh">Refresh</button>
+      </div>
+      <div id="debug-stats" class="debug-stats"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Account lookup</h2>
+      <form id="debug-lookup-form" class="debug-lookup">
+        <input type="text" id="debug-lookup-id" placeholder="Account id (16 hex characters)" autocapitalize="off" spellcheck="false">
+        <button type="submit" class="btn btn-primary">Look up</button>
+      </form>
+      <p class="empty" id="debug-lookup-empty">Look up an account by id to see its
+        raw and resolved presence side by side, and to manage its device
+        accounts.</p>
+      <div id="debug-account"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Live tables</h2>
+        <div class="debug-tables-controls">
+          <select id="debug-table-select"></select>
+          <label class="debug-live-toggle">
+            <input type="checkbox" id="debug-tables-live" checked>
+            live
+          </label>
+          <button type="button" class="btn btn-ghost btn-tiny" id="debug-tables-refresh">Refresh</button>
+        </div>
+      </div>
+      <p class="meta">Every row of the selected table, straight from the
+        database. Read-only cells (keys, and anything another system depends
+        on byte-for-byte) are dimmed; everything else is an Excel-style cell
+        -- click in, edit, and it saves on blur or Enter. While "live" is on,
+        the table re-polls every few seconds and any row a console or another
+        tab changed flashes; a cell you are actively editing is never
+        overwritten mid-edit.</p>
+      <p class="empty" id="debug-tables-unavailable" hidden>Not available:
+        this instance is running the in-memory store, not Postgres.</p>
+      <div class="debug-table-scroll">
+        <table class="grid debug-table-grid" id="debug-table-grid">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </section>
 </main>

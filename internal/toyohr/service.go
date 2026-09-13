@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -24,8 +25,21 @@ import (
 )
 
 // Service implements the Splatoon 3 services.
+//
+// Canola, CoopScenario, GameRecord, Locker, Replay and UserScreening are
+// deliberately NOT embedded here: CanolaServer and LockerServer declare the
+// identical IkasuDocument/SelectDocuments/RegisterDocument method names (so
+// both Unimplemented types promoted onto one struct would make every one of
+// those an ambiguous selector), and CoopScenarioServer/ReplayServer both
+// declare RegisterDocument with different signatures (which Go cannot
+// satisfy with one method, ambiguous or not -- there is no overloading).
+// Each gets its own small adapter type in backlog.go instead, the same
+// shape internal/npln/services.go already uses for its own several
+// interfaces on one *Server. See backlog.go's package comment for what is
+// and is not implemented there.
 type Service struct {
 	toyohrpb.UnimplementedFestServiceServer
+	toyohrpb.UnimplementedCloudSaveServer
 
 	store  db.Store
 	log    *slog.Logger
@@ -88,6 +102,30 @@ func NewService(opts Options) *Service {
 		rotation: opts.Rotation,
 		messages: newMessageHub(),
 	}
+}
+
+// Register attaches every Splatoon 3 service to a gRPC server.
+//
+// **All of them, including the ones with no handlers yet**, and that is the
+// point. An RPC on a registered service answers Unimplemented and
+// internal/npln's interceptor logs it once; an RPC on a service that was
+// never registered fails the same way with no log line. ROADMAP §2.4 says to
+// let the console drive the order of this backlog -- which only works if the
+// console's asking is recorded. See backlog.go's package comment for what is
+// and is not implemented there, and Service's own doc comment above for why
+// several of these get their own adapter type instead of being embedded here
+// directly.
+func (s *Service) Register(srv *grpc.Server) {
+	toyohrpb.RegisterFestServiceServer(srv, s)
+	toyohrpb.RegisterCloudSaveServer(srv, s)
+	toyohrpb.RegisterScheduleServer(srv, &scheduleService{s: s})
+	toyohrpb.RegisterLobbyMessagingServer(srv, &lobbyMessagingService{s: s})
+	toyohrpb.RegisterUserScreeningServer(srv, &userScreeningService{s: s})
+	toyohrpb.RegisterCanolaServer(srv, canolaService{Service: s})
+	toyohrpb.RegisterLockerServer(srv, lockerService{Service: s})
+	toyohrpb.RegisterCoopScenarioServer(srv, coopScenarioService{Service: s})
+	toyohrpb.RegisterReplayServer(srv, replayService{Service: s})
+	toyohrpb.RegisterGameRecordServer(srv, gameRecordService{Service: s})
 }
 
 // caller returns the authenticated player's id, or false.
@@ -258,6 +296,21 @@ func festIDFromResourceName(name string) string {
 		return strings.ToUpper(name)
 	}
 	return ""
+}
+
+// lastSegment returns the trailing path component of a resource name, or the
+// whole string if it has none -- the same lenient parsing
+// internal/npln's own lastSegment does, for the same reason: a console
+// echoing back whatever name this server minted (or a bare id) should not
+// have to match a prefix nobody has confirmed against a capture. Unlike
+// festIDFromResourceName, this does not uppercase: ids outside the fest
+// family (a user id, a lobby id) are not fest ids.
+func lastSegment(name string) string {
+	name = strings.TrimSuffix(strings.TrimSpace(name), "/")
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 // currentFest returns the fest a region should be showing, if any.

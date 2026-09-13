@@ -34,8 +34,9 @@ Nintendo friends applet. That cannot be verified without two consoles.
 endpoint shapes, which are undocumented and reasoned rather than known. The friend
 list response is the one to watch — if it is an envelope rather than a bare array,
 the applet comes up empty with nothing in the log.
-[`CAPTURES/README.md`](CAPTURES/README.md) lists all ten guesses in priority
-order.
+[`CAPTURES/README.md`](CAPTURES/README.md) lists all nine guesses in priority
+order — two (items 1 and 8) now partly settled by a real capture, each with a
+residual open sub-question.
 
 **Console-side work still open.** Redirection is solved off the console with DNS
 (`internal/dns`, or the generated dnsmasq/unbound configuration), so nothing goes
@@ -84,6 +85,17 @@ definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocol
 > §2.7 and §2.8 are work this section did not know about at all. The subsection
 > numbers are kept because source comments cite them.
 
+> **This section was written before any of it was built, and four things in it
+> turned out to be wrong.** They are corrected in place below, and
+> [`PHASE2_PLAN.md`](PHASE2_PLAN.md) is the record of how each was found.
+> [`../TODO.md`](../TODO.md) is the live work list — this is the shape of the
+> phase, not its state.
+>
+> In short: **gRPC is not the first thing the game talks to**; three hosts were
+> misfiled; **BCAT was missing from the plan entirely** and is what makes a
+> Splatfest actually appear; and certificate trust for this title is a separate
+> problem from Phase 1's, because Splatoon 3 pins its own.
+
 ### 2.1 Protobuf pipeline
 
 **Done.** `scripts/fetch-proto.sh` clones the upstream definitions from a pinned
@@ -98,6 +110,30 @@ toolchain.
 This step was genuinely independent of phase 1's hardware verification, which is
 why it was first.
 
+### 2.1a The JSON front end comes FIRST
+
+**Splatoon 3 does not open with gRPC.** It speaks ordinary JSON over HTTPS to
+`gw.hac.lp1.vermillion…` (device init) and `val.hac.lp1.penne…` (login tickets,
+and the FQDN of a `fro-*.hac.lp1.penne…` frontline host), and only *then* opens
+the gRPC channel to the tenant. Those four hosts were originally filed as
+ordinary stubs; they are `ServiceNPLNRest` now.
+
+They need different nginx from the gateway — `proxy_pass` and HTTP/1.1, against
+`grpc_pass` and HTTP/2. Routing either through the other's block completes the
+TLS handshake and then fails with nothing in either log.
+
+The frontline connection is a long-lived stream the console holds open; closing
+it is an error on the console, not a clean end.
+
+**Built** (`internal/nplnrest`, on `npln.rest_listen`, a second listener
+alongside the gRPC gateway in `cmd/npln`). Penne's two endpoints answer
+against a real field-level spec; Vermillion's two answer honestly-empty JSON,
+since the wiki names them but gives no response field table. Every other
+Vermillion endpoint, and `god` (Penne provisioning), are still unanswered.
+Three real open questions remain, each in `docs/QUESTIONS.md` — see
+[`../TODO.md`](../TODO.md) §1.3 for what they are and the assumption each was
+built on.
+
 ### 2.2 Gateway and core services
 
 **Done.** `cmd/npln` + `internal/npln`. gRPC middleware reads the
@@ -111,29 +147,48 @@ production, 14 (`Unavailable`) on development.
 > channel. Building the gateway first meant building the second half of the
 > handshake and never reaching it — see §2.7.
 
-| Service | State |
-| --- | --- |
-| `nn.npln.auth.v1.Auth` | done. `IssueToken` exchanges the BAAS id token for an NPLN session, verified against the key BAAS publishes at `/1.0.0/certificates` — **the phase 1 → phase 2 seam** |
-| `nn.npln.maintenance.v1.MaintenanceScheduleService` | done. Always "no maintenance", with keep-alives |
-| `nn.npln.matchmaking.v1.*` | done — see §2.3 |
-| `nn.npln.gamesync.v1.Gamesync` | done. The live lobby document and watch service, on port 7575 |
-| `nn.npln.hydro.v1.Datastore`, `leaderboard`, `messaging` | not implemented. Registered services log every unanswered RPC — see §2.4 |
+| Service | Note | Built? |
+| --- | --- | --- |
+| `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built | yes |
+| `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
+| `nn.npln.matchmaking.v1.*` | see §2.3 | yes |
+| `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | yes — `internal/npln/friends.go`, `presence_service.go` |
+| `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | yes — `internal/npln/messaging.go`, over `internal/messaging`'s in-memory mailbox |
+| `nn.npln.gamesync.v1.Gamesync` | the Firestore-shaped document/watch service for lobby and match state, on its own port (7575) | yes, except `CreateRound` — `internal/gamesync`; see `../TODO.md` §1.5 for where it turned out to actually be reached from |
+| `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
 
 **NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that
 does, and `internal/jwt` has a separate EC path for it. Right about this.
 
 ### 2.3 Matchmaking and sessions
 
-**Done.** `internal/matchmaking` has the queue, the ticket state machine and match
-formation; `internal/npln/matchmaking.go` serves them. Every match is logged to
-`npln_matches` for the dashboard.
+**Built** (`internal/npln/matchmaking.go`, with `matchmaking_test.go` covering
+the queue and session formation): a FIFO queue per mode, in memory. On a match,
+form a session naming a host and hand it to every player on their ticket
+stream. `AllocateIceServerSet` is built too.
 
-**A FIFO queue, and `players_per_match` defaults to 2 rather than 8.** On a
-private network of a handful of consoles, waiting for a faithful 4v4 means never
-playing. `npln.mode_players` is how an operator with enough consoles asks for the
-real sizes — and the names are not hardcoded, because nothing public documents the
-strings the game puts in `matchmaking_config`. Every unknown mode is logged once,
-and that log is how they get discovered.
+**`players_per_match` defaults to 2 rather than 8.** On a private network of a
+handful of consoles, waiting for a faithful 4v4 means never playing.
+`npln.mode_players` is how an operator with enough consoles asks for the real
+sizes — and the names are not hardcoded, because nothing public documents the
+strings the game puts in `matchmaking_config`. Every unknown mode is logged
+once, and that log is how they get discovered.
+
+**Built: `SyncGameSession`.** The host publishes its listening port
+(`internal/matchmaking`'s `Session.HostPort`, set via `Queue.SetHostPort`);
+any matched player, host or joiner, may read the session back with
+`KeepAliveOnly: true`, but only the host may actually change it — a
+non-host attempting to is `PermissionDenied`, and a stranger gets the same
+`NotFound` `GetGameSession`/`JoinGameSession` already give. Everything else
+`GameSession` carries (participant counts, state, who the host is) stays
+server-authoritative; a client-supplied value for those is ignored, the
+same reasoning `AllocateIceServerSet`'s doc comment gives for ignoring the
+request's own tenant and user fields.
+
+**Built: match history.** Every formed session — filled on its own or force-
+started by an operator — is recorded to `npln_matches` (`Server.recordMatch`
+in `matchmaking.go` and `admin.go`), for the dashboard's recent-matches list.
+See §2.6.
 
 **NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
 so `natcheck` is not involved in this title, and coturn is a new deployment
@@ -144,6 +199,15 @@ lobby fills but the match never starts", and from the server side it is
 indistinguishable from a matchmaking bug. `switchnetctl check` warns when the list
 is empty; consoles on one LAN work without it.
 
+Note that gameplay is **peer-to-peer**: once a match starts the consoles talk
+directly and SwitchNet is out of the path, so the session names a *host player*,
+not a station address. `AllocateIceServerSet` reads `npln.ice_servers`, which is
+empty by default — consoles on one LAN connect directly, which is the common
+case for a private server.
+
+The match log (`npln_matches`) is built — see the "Built: match history" note
+above and §2.6.
+
 ### 2.4 Splatoon 3 services (`nn.npln.toyohr.v1.*`)
 
 **Every service is registered, including the ones with no handlers.** That is the
@@ -151,32 +215,71 @@ mechanism this section's advice depends on: an RPC on a registered service answe
 `Unimplemented` and the gateway logs it once by name, whereas an RPC on an
 unregistered service fails identically with nothing in the log.
 
-**Let the console drive the order. That log is the to-do list.**
+**Built: `FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, and
+`CloudSave.GetSaveRecord`** (`internal/toyohr`, package doc: "starting with
+Splatfests").
 
 | Service | State |
 | --- | --- |
 | `FestService` | done, end to end: schedule, decryption keys, team choice, results |
-| `Schedule` | done for versus and season. Co-op is capture-gated — a shift is a stage, a boss, four weapon ids and a reward, all Splatoon 3 internal numbers |
-| `LobbyMessaging` | done. In-memory delivery to connected players |
-| `UserScreening` | done. Reports are logged, violations are always none |
-| `GameRecord` | **the one that matters most.** Battle results come from here, and they are the missing half of a Splatfest verdict |
-| `CoopScenario`, `Locker`, `CloudSave`, `Replay`, `Canola` | registered, unimplemented |
+| `Schedule` | `SelectVsParams`/`SelectVsSchedules`/`SelectSeasonSchedules`/`SelectLeagueSchedules` answer "nothing scheduled" — the map/mode rotation content is Nintendo's own game design data, not something this server can fabricate. `SelectCoopSchedules` is **not** empty: every operator-scheduled, unended Salmon Run shift is served for real, backed by `SaveCoopShift`/`GenerateAndSaveCoopShifts` and `switchnetctl coop` — see [`../TODO.md`](../TODO.md) §1.4 |
+| `LobbyMessaging` | done, including `SendMessage` — in-memory delivery to connected players via a per-lobby hub |
+| `UserScreening` | done. `CreateReport` is logged for the operator (it is data the caller hands over, not data this server needs to already have); `GetViolation` always answers none |
+| `CloudSave.GetSaveRecord` | answers `NotFound` for every account — a fresh account genuinely has no cloud save on a real server either, so this is a correct answer rather than a placeholder. The other five `CloudSave` RPCs are left unimplemented: real player data this server has no legitimate way to have, see CLAUDE.md's "anything needing a game dump" boundary |
+| `Canola`/`Locker` | empty/`NotFound` reads; the writes are unimplemented — no `internal/ugcstore` exists to write into |
+| `CoopScenario`/`Replay` | `NotFound` reads; `FulfillReservations` answers an empty valid list |
+| `GameRecord` | **the one that matters most, and left entirely `Unimplemented`.** Battle results come from here, and they are the missing half of a Splatfest verdict — `InitializeAttributes` alone carries per-mode X Power seed values with no defensible default |
+
+See [`../TODO.md`](../TODO.md) §1.4 for the file-by-file detail and what each
+remaining `TODO(capture-needed)` would settle. Log every unimplemented RPC
+with a hexdump — that log is the to-do list.
 
 > **Correction.** This section filed Splatfests under `FestService` as if the whole
 > feature were gRPC. **It is not.** The schedule carries only a fest's mechanics;
 > every custom asset lives in a BCAT pack the console fetches separately — see
 > §2.8.
 
+`FestService` turned out to be the one with a dependency outside NPLN entirely,
+which is 2.4a.
+
+### 2.4a BCAT — how a Splatfest actually appears
+
+**Missing from this plan as first written, and it is half the feature.**
+
+`FestService` announces only a fest's *mechanics*: which pack to load, its
+revision, the phase times. Every piece of content — team names, splashart, tee
+designs, idol dialogue — lives in a **BCAT** pack the console fetches
+separately, encrypted with `nisasyst` (AES-128-CBC, IV derived from a CRC32 of
+the resource path seeding `sead::Random`).
+
+The announced id, the resource name, the revision and the decryption keys must
+all agree, or the game reports `BcatInvalid` — which reaches the player as a
+generic communication error. And every fest timestamp must land on a two-hour
+boundary or the game demands its verdict instead of opening.
+
+`internal/bcat` builds and encrypts the packs, verified byte-identical against
+real ones. What it cannot do is **serve** them: the `list` response body is
+undocumented and whether the console verifies the container signature has never
+been established. §2.4 of [`../TODO.md`](../TODO.md) has the experiment that
+would settle it, and the probe for stage 1 is built.
+
 ### 2.5 Friends integration
 
-**One friend graph, not two.** NPLN has its own friends layer, and it must read
-the *same* friendships as BAAS. `internal/toyohr` and `internal/npln` go through
-`internal/db` — the same rows. **Do not create a second graph.**
+**Built** (`internal/npln/friends.go`, `presence_service.go`, backed by
+`internal/presence` — the TTL and visibility rules `internal/baas`'s own HTTP
+presence endpoints were refactored onto, for exactly this section's reason).
+Not built: `Presence.Attributes` (undocumented keys) and richer
+game-reported presence over `KeepAlive`'s `UpdatePresence` field — see
+`docs/CAPTURES/README.md`.
 
-`Friends.ListFriendUsers` and `PresenceService` are **not yet implemented**. Two
+**One friend graph, not two.** NPLN has its own friends layer, but it must read
+the *same* friendships as BAAS. `internal/npln/friends.go` and `internal/toyohr`
+both go through `internal/db` — the same rows. **Do not create a second graph.**
+
+`Friends.ListFriendUsers` and `PresenceService` are both implemented. Two
 details from
 [the `splatoon-3` write-up](https://github.com/n-popescu/splatoon-3/blob/main/docs/FRIENDS.md)
-that whoever does implement them must not miss:
+that they had to get right:
 
 - **`FriendUser.Relationship` must set `presence_deliverable` and
   `presence_receivable`.** If they are false the client will not show a friend's
@@ -197,6 +300,14 @@ cache — including serving it to the console-side installer.
 
 SSE rather than WebSockets: the traffic is one-way, it reconnects on its own, and
 it survives an ordinary HTTP proxy with no upgrade handling.
+
+Built, plus a Splatfest section that schedules, announces, holds and deletes
+fests, live matchmaking counts (the "in matchmaking" overview tile and the
+Matchmaking tab's queue/live-match panels, both fed from `cmd/npln`'s admin
+API — the same cross-process wiring `redis.url` above is for, just over
+HTTP rather than the presence bus), and a recent match list
+(`npln_matches`, written by `internal/npln/matchmaking.go` and
+`admin.go`'s `recordMatch`, read by `/api/matches`).
 
 **Switch `redis.url` on before the dashboard runs as a separate process** — the
 in-process bus delivers nothing across a process boundary, silently. `cmd/npln`

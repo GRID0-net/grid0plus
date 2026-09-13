@@ -140,6 +140,83 @@ func TestServiceStatusReportsEverythingUp(t *testing.T) {
 	}
 }
 
+// TestElicenseExerciseAnswersWithATrulyEmptyBody covers dragons' one path
+// that is not a safe empty object: "exercising" a licence is the online-play
+// eligibility check, and answering it any other way 404s, which the console
+// reads as having no right to play online at all.
+func TestElicenseExerciseAnswersWithATrulyEmptyBody(t *testing.T) {
+	h := newTestHandler(t)
+
+	rec := get(t, h, "dragons.hac.lp1.dragons.nintendo.net", "/v2/elicenses/exercise")
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Body.Bytes(); len(got) != 0 {
+		t.Errorf("body = %q, want zero bytes -- an empty JSON object here is the wrong shape of empty", got)
+	}
+}
+
+func TestElicenseMigrationStateAndArchivePublishAnswerWithTheirOwnFields(t *testing.T) {
+	h := newTestHandler(t)
+
+	rec := get(t, h, "dragons.hac.lp1.dragons.nintendo.net", "/v2/elicenses/migration_state")
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &state); err != nil {
+		t.Fatalf("body is not JSON: %v", err)
+	}
+	if state["state"] != "COMPLETED" || state["migration_state"] != "NONE" {
+		t.Errorf("migration_state body = %v, want state=COMPLETED migration_state=NONE", state)
+	}
+
+	for _, path := range []string{
+		"/v2/elicense_archives/publish",
+		"/v2/rights/publish_device_linked_elicenses",
+	} {
+		rec := get(t, h, "dragons.hac.lp1.dragons.nintendo.net", path)
+		if rec.Code != 200 {
+			t.Errorf("%s: status = %d, want 200", path, rec.Code)
+			continue
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Errorf("%s: body is not JSON: %v", path, err)
+			continue
+		}
+		archives, ok := body["elicense_archives"].([]any)
+		if !ok {
+			t.Errorf("%s: elicense_archives = %v, want an empty list", path, body["elicense_archives"])
+			continue
+		}
+		if len(archives) != 0 {
+			t.Errorf("%s: elicense_archives has %d entries, want 0", path, len(archives))
+		}
+	}
+}
+
+// TestOtherDragonsPathsStillGetAnEmptyObject covers the paths dragons
+// deliberately leaves alone -- SwitchNet's aauth does not look at their
+// content either way.
+func TestOtherDragonsPathsStillGetAnEmptyObject(t *testing.T) {
+	h := newTestHandler(t)
+
+	for _, path := range []string{
+		"/v2/contents_authorization_token_for_aauth/issue",
+		"/v2/elicense_archives/some-id/report",
+	} {
+		rec := get(t, h, "dragons.hac.lp1.dragons.nintendo.net", path)
+		if rec.Code != 200 {
+			t.Errorf("%s: status = %d, want 200", path, rec.Code)
+			continue
+		}
+		if got := rec.Body.String(); got != "{}" {
+			t.Errorf("%s: body = %q, want {}", path, got)
+		}
+	}
+}
+
 func TestAnUnknownHostGetsAnEmptyJSONObject(t *testing.T) {
 	h := newTestHandler(t)
 

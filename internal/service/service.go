@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,12 +20,16 @@ import (
 	"time"
 
 	"github.com/n-popescu/switchnet/config"
+	"github.com/n-popescu/switchnet/internal/health"
 )
 
 // ConfigFlag registers the -config flag and returns a pointer to its value.
 //
-// An empty path is valid and means "defaults plus environment overrides", which
-// is how the containers in docker-compose.yml run.
+// An empty path is valid and means "defaults plus environment overrides" --
+// every service run through switchnetctl (`run`, or the systemd units under
+// deploy/systemd/) passes an explicit path instead, but a bare SWITCHNET_*
+// environment with no config file at all still works for anything invoking
+// a binary directly.
 func ConfigFlag() *string {
 	return flag.String("config", os.Getenv("SWITCHNET_CONFIG"),
 		"path to config.yaml (empty: defaults plus SWITCHNET_* environment overrides)")
@@ -70,6 +75,30 @@ const shutdownGrace = 10 * time.Second
 // network: a console that drops off mid-request must not hold a connection open
 // indefinitely.
 func ServeHTTP(ctx context.Context, log *slog.Logger, addr string, handler http.Handler) error {
+	return ServeHTTPWithHealth(ctx, log, addr, handler, nil)
+}
+
+// ServeHTTPWithHealth is ServeHTTP with a /healthz endpoint in front.
+//
+// In front of the service's own router, not inside it: every service has its
+// own mux that answers a Nintendo API, and threading health through each of
+// them is how one gets missed. A nil health handler serves nothing extra, so
+// this is also just ServeHTTP.
+func ServeHTTPWithHealth(
+	ctx context.Context, log *slog.Logger, addr string,
+	handler http.Handler, healthz *health.Handler,
+) error {
+	if healthz != nil {
+		inner := handler
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == health.Path {
+				healthz.ServeHTTP(w, r)
+				return
+			}
+			inner.ServeHTTP(w, r)
+		})
+	}
+
 	return Serve(ctx, log, &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -125,4 +154,22 @@ func Serve(ctx context.Context, log *slog.Logger, srv *http.Server) error {
 func Fatal(log *slog.Logger, msg string, err error) {
 	log.Error(msg, "error", err)
 	os.Exit(1)
+}
+
+// ClientIP returns the console's address as seen from outside the nginx edge.
+//
+// X-Forwarded-For is only trusted for its last entry, which is the one the
+// immediately preceding proxy wrote. Trusting the first entry would let a
+// console put whatever it liked in the header and have the server repeat it.
+func ClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+			return ip
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

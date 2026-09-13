@@ -167,7 +167,7 @@ func hasDirective(block, prefix string) bool {
 // port 7575, not 443) removed gamesync.npln.nintendo.net from the hosts file,
 // and the only symptom would have been a console reaching real Nintendo for it.
 func TestEveryHostReachesTheGeneratedHostsFile(t *testing.T) {
-	file := hostsFile(testConfig())
+	file := hostsFile(testConfig(), false)
 
 	for _, h := range nintendo.Hosts {
 		if h.Service == nintendo.ServicePassthrough {

@@ -22,7 +22,7 @@ TEST_REDIS_URL    ?=
 help:
 	@echo "SwitchNet"
 	@echo
-	@grep -E '^## ' $(MAKEFILE_LIST) | sed -E 's/^## ([a-z-]+): (.*)/  \1|\2/' | awk -F'|' '{printf "  %-16s %s\n", $$1, $$2}'
+	@grep -E '^## ' $(MAKEFILE_LIST) | sed -E 's/^## ([a-z0-9-]+): (.*)/  \1|\2/' | awk -F'|' '{printf "  %-16s %s\n", $$1, $$2}'
 	@echo
 	@echo "Configuration:"
 	@echo "  CONFIG=$(CONFIG)"
@@ -101,6 +101,19 @@ gen-proto:
 	@echo "proto/ is generated and tracked in git, so a plain build needs neither"
 	@echo "the network nor a protobuf toolchain. Commit the regenerated files."
 
+## patch-splatoon3: build the game's cert-verification patch from your own dump
+.PHONY: patch-splatoon3
+patch-splatoon3:
+	@test -n "$(NSO)" || { \
+	  echo "usage: make patch-splatoon3 NSO=/path/to/main [OUT=<mods dir>] [SD=<sd root>]"; \
+	  echo; \
+	  echo "NSO is the game's main NSO. Ryujinx dumps one: right-click the title,"; \
+	  echo "then Extract Data, ExeFS. There is no patch checked in and there cannot"; \
+	  echo "be one -- see the comment at the top of scripts/splatoon3-patch.sh."; \
+	  exit 2; \
+	}
+	scripts/splatoon3-patch.sh "$(NSO)" $(if $(OUT),--out "$(OUT)") $(if $(SD),--sd "$(SD)")
+
 ## gen-certs: create the local CA and the edge certificate
 .PHONY: gen-certs
 gen-certs:
@@ -150,23 +163,31 @@ switchnet-mode:
 config-check:
 	$(GO) run ./cmd/switchnetctl $(if $(wildcard $(CONFIG)),-config $(CONFIG),) check
 
-## up: start Postgres, Redis and every service (phases 1 and 2)
+## up: start Postgres, Redis and nginx (the Go services run natively -- see 'run' and 'install-systemd')
 .PHONY: up
 up:
-	docker compose up -d --build
+	docker compose up -d
 	@echo
 	@docker compose ps
 
-## down: stop everything, keeping the volumes
+## down: stop Postgres, Redis and nginx, keeping the volumes
 .PHONY: down
 down:
 	docker compose down
 
-## dev-baas: run baas natively (go run) against the Dockerized Postgres/Redis, for fast iteration -- see scripts/dev-baas.sh
-.PHONY: dev-baas
-dev-baas:
-	docker compose stop baas
-	scripts/dev-baas.sh
+## run: build and run the Go services natively (foreground, Ctrl-C to stop). Needs postgres/redis already up -- see 'make up'. To run a subset: bin/switchnetctl run baas dauth
+.PHONY: run
+run: $(BIN_DIR)/switchnetctl
+	$(BIN_DIR)/switchnetctl -config $(CONFIG) run
+
+$(BIN_DIR)/switchnetctl:
+	@mkdir -p $(BIN_DIR)
+	$(GO) build -o $(BIN_DIR)/switchnetctl ./cmd/switchnetctl
+
+## install-systemd: install and enable the systemd units for production (see scripts/install-systemd.sh). Run from /opt/switchnet
+.PHONY: install-systemd
+install-systemd:
+	scripts/install-systemd.sh
 
 ## clean-data: stop everything and DELETE the database and uploaded images
 .PHONY: clean-data
@@ -174,7 +195,7 @@ clean-data:
 	docker compose down -v
 	rm -rf data/images
 
-## logs: follow the logs of every service
+## logs: follow Postgres/Redis/nginx logs -- for the Go services: journalctl -u 'switchnet-*' -f (or their own output under 'make run')
 .PHONY: logs
 logs:
 	docker compose logs -f

@@ -138,6 +138,11 @@ type DeviceAccount struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
+	// TokensRevokedBefore invalidates every token minted for this device
+	// account before this instant, without touching the password or deleting
+	// the account: a token whose 'iat' predates it is refused even though it
+	// has not expired. Nil means nothing has ever been revoked.
+	TokensRevokedBefore *time.Time
 }
 
 // Device is a console, identified by its TLS client certificate.
@@ -251,6 +256,7 @@ type UserPatch struct {
 	ThumbnailUploadedAt *time.Time
 	Permissions         *Permissions
 	Extras              *ExtrasByScope
+	Deleted             *bool
 }
 
 // PresencePatch is a set of optional changes to a presence row.
@@ -334,24 +340,97 @@ type FestEntry struct {
 	UpdatedAt time.Time
 }
 
-// Match is a formed Splatoon 3 match.
+// CoopShift is one Salmon Run rotation slot, as the operator scheduled it.
 //
-// The queue is deliberately not persisted -- see
-// migrations/0012_npln_matches.up.sql -- so this is only what actually happened.
-type Match struct {
-	// ID is the session id the players were told.
+// Only the mechanics, the same split Fest makes: when it runs and what real
+// Nintendo stage/weapon/boss ids it carries. Unlike a fest there is no
+// separate content pack -- internal/toyohr's CoopShift (the domain type this
+// row round-trips to) is what decides what these values mean and validates
+// them; this type just carries them. See internal/toyohr/coop_ids.go for
+// where the real ids come from.
+type CoopShift struct {
+	// ID is "<kind>-<start unix seconds>", derived rather than typed --
+	// internal/toyohr.CoopShift.ID.
 	ID string
-	// Mode is what they queued for.
-	Mode string
-	// Players are in the order they were matched, which is queue order.
-	Players []string
-	// Host is whose console the others connect to.
-	Host string
+	// Kind is "normal" or "big_run".
+	Kind string
+	// StageID is a real Salmon Run stage id.
+	StageID int32
+	// Boss is the king salmonid's codename for this shift's Xtrawave, or ""
+	// if none is scheduled.
+	Boss string
+	// Weapons are exactly four real main-weapon ids.
+	Weapons []int64
+	// KumaWeaponID is the real Grizzco weapon id this shift's boss wave uses.
+	KumaWeaponID int64
+	// RewardGearID is a gear reward id, or 0 for none.
+	RewardGearID int32
+	// Rewards are a Big Run's scale-tier reward values; empty for "normal".
+	Rewards []int64
+	// StartAt is when the shift opens; EndAt is when it closes. Both must
+	// land on Splatoon 3's two-hour slot boundary -- enforced in
+	// internal/toyohr, where the reason can be explained.
+	StartAt time.Time
+	EndAt   time.Time
 
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Match is one game session NPLN's matchmaking queue has formed, recorded
+// for the dashboard's match history.
+//
+// The queue itself lives in memory (internal/matchmaking) and does not
+// survive a restart; this is the record that does. SwitchNet only ever knows
+// a match was FORMED — gameplay is peer-to-peer, so there is no signal for
+// when, or whether, one actually starts or ends, and no EndedAt to carry.
+type Match struct {
+	// ID is the session id internal/matchmaking.Queue assigned.
+	ID     string
+	Tenant string
+	Mode   string
+	// HostUserID is the player whose console the others connect to.
+	HostUserID string
+	PlayerIDs  []string
+	// Forced is whether an operator started this match with fewer players
+	// than the mode wanted, via the dashboard's matchmaking controls.
+	Forced    bool
 	CreatedAt time.Time
 }
 
+// DefaultMatchListLimit bounds ListMatches when the caller passes zero or a
+// number larger than this, the same way internal/baas's page-size caps do —
+// the dashboard is the only caller today, and it always asks for a bounded
+// page, but the store's contract should not depend on that being true
+// forever.
+const DefaultMatchListLimit = 200
+
+// Stats is a set of row counts across the main tables, for the dashboard's
+// Debug tab. Deleted rows (a soft-deleted user, a soft-deleted device
+// account) are counted separately rather than excluded, so the two numbers
+// together tell an operator whether "nobody's here" means "empty database"
+// or "everyone got deleted".
+type Stats struct {
+	Users                 int
+	DeletedUsers          int
+	DeviceAccounts        int
+	DeletedDeviceAccounts int
+	Devices               int
+	Friendships           int
+	Fests                 int
+	CoopShifts            int
+	Matches               int
+	Images                int
+}
+
 type Store interface {
+	// Ping reports whether the store is reachable.
+	//
+	// For health checks. A service whose database has gone away is running and
+	// useless, and that is the state worth being able to see from the outside --
+	// "the process is up" is already answered by the connection succeeding.
+	Ping(ctx context.Context) error
+
 	// ---- users ----
 
 	// CreateUser inserts a new user together with its first device account, in
@@ -387,6 +466,12 @@ type Store interface {
 	GetDeviceAccount(ctx context.Context, id string) (DeviceAccount, error)
 	// ListDeviceAccounts returns a user's device accounts, excluding deleted ones.
 	ListDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
+	// ListAllDeviceAccounts returns a user's device accounts, deleted ones
+	// included. For the dashboard's Debug tab: undeleting one requires being
+	// able to find it in the first place, which ListDeviceAccounts's
+	// existing exclusion (correct for the console-facing paths it serves)
+	// makes impossible.
+	ListAllDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
 	// DeleteDeviceAccount marks a device account deleted.
 	DeleteDeviceAccount(ctx context.Context, userID, id string) error
 	// ---- splatfests (phase 2) ----
@@ -397,15 +482,6 @@ type Store interface {
 	GetFest(ctx context.Context, id string) (Fest, error)
 	// ListFests returns every fest, soonest first.
 	ListFests(ctx context.Context) ([]Fest, error)
-	// RecordMatch stores a formed match.
-	//
-	// Recording the same id twice is not an error: the alternative is a game
-	// server that fails a request because it already logged something, and a
-	// match log is not worth failing a match over.
-	RecordMatch(ctx context.Context, m Match) error
-	// ListMatches returns the most recent matches, newest first.
-	ListMatches(ctx context.Context, limit int) ([]Match, error)
-
 	// UpsertFestEntry records or changes a player's team choice.
 	//
 	// An upsert rather than an insert: two rows for one player would count them
@@ -421,6 +497,28 @@ type Store interface {
 	// dashboard's delete button should be idempotent.
 	DeleteFest(ctx context.Context, id string) error
 
+	// ---- Salmon Run / Big Run schedule (phase 2) ----
+
+	// UpsertCoopShift creates or replaces a coop shift by id.
+	UpsertCoopShift(ctx context.Context, c CoopShift) error
+	// GetCoopShift returns a coop shift by id, or ErrNotFound.
+	GetCoopShift(ctx context.Context, id string) (CoopShift, error)
+	// ListCoopShifts returns every coop shift, soonest first.
+	ListCoopShifts(ctx context.Context) ([]CoopShift, error)
+	// DeleteCoopShift removes a coop shift. Not an error if it does not
+	// exist: the same idempotent-delete reasoning as DeleteFest.
+	DeleteCoopShift(ctx context.Context, id string) error
+
+	// ---- match history (phase 2) ----
+
+	// CreateMatch records a formed game session. Called once, at formation —
+	// there is nothing to update afterward, since nothing tells this server
+	// when a match ends.
+	CreateMatch(ctx context.Context, m Match) error
+	// ListMatches returns the most recent matches, newest first, capped at
+	// limit.
+	ListMatches(ctx context.Context, limit int) ([]Match, error)
+
 	// ---- devices and device accounts (continued) ----
 
 	// ReassignDeviceAccount moves a device account to a different user,
@@ -430,6 +528,16 @@ type Store interface {
 	// not who is allowed to present it. ErrNotFound if the device account or
 	// the target user does not exist.
 	ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error
+
+	// UndeleteDeviceAccount clears DeletedAt, letting a soft-deleted device
+	// account log in again. ErrNotFound if the device account does not exist
+	// or is not currently deleted.
+	UndeleteDeviceAccount(ctx context.Context, deviceAccountID string) error
+
+	// RevokeDeviceAccountTokens sets TokensRevokedBefore, invalidating every
+	// token minted for this device account before `before`. ErrNotFound if the
+	// device account does not exist.
+	RevokeDeviceAccountTokens(ctx context.Context, deviceAccountID string, before time.Time) error
 
 	// ---- friend codes ----
 
@@ -504,6 +612,14 @@ type Store interface {
 	CreateImage(ctx context.Context, img Image) error
 	// GetImage returns an image by id, or ErrNotFound.
 	GetImage(ctx context.Context, id string) (Image, error)
+
+	// ---- operator debugging ----
+
+	// Stats returns row counts across the main tables, for the dashboard's
+	// Debug tab. A cheap, approximate sanity check ("did `make seed` actually
+	// write anything") rather than a metrics endpoint — nothing here is
+	// expected to be called often enough to need to be fast.
+	Stats(ctx context.Context) (Stats, error)
 
 	// Close releases the store's resources.
 	Close() error

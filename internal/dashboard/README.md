@@ -1,7 +1,7 @@
 # internal/dashboard
 
 The operator's view of SwitchNet: who is online, what they are playing, and the
-Splatfest controls.
+Splatfest and Salmon Run controls.
 
 | | |
 | --- | --- |
@@ -18,6 +18,20 @@ Two colours carry meaning and are used for nothing else: **pink is in game**,
 **green is online**. Everything decorative stays grey, so a splash of colour on
 the page always means somebody is actually there.
 
+A player's avatar colour is the one exception, and it is deliberate: it is
+hashed from their user id (`hueForID` in `dashboard.js`), stable for the
+whole session, and picked from hues that skip the pink/green bands
+specifically so it never gets confused for a status. It exists so a player
+becomes a colour the operator recognises at a glance, not another line of
+text — the small status dot at the avatar's corner is what still carries the
+actual state.
+
+The theme (dark by default, light on request) is a **viewer-local**
+preference, not a server one: the toggle in the header writes
+`data-theme` on `<html>` and remembers it in `localStorage`, falling back to
+the OS preference when nothing has been chosen. It has nothing to do with
+`dashboard.token` and nothing is sent to the server about it.
+
 ## Set `redis.url`, or the page never updates
 
 The dashboard is a **separate process** from `baas`. `internal/presencebus`'s
@@ -31,7 +45,10 @@ Both exist because the silent version of this wastes an afternoon.
 
 ## Presence is resolved here, not read
 
-The dashboard applies **the same rule** `internal/baas` does:
+The dashboard applies **the same rule** `internal/baas` and `internal/npln`'s
+`PresenceService` do, through `internal/presence` — a shared package rather
+than a third copy, after the copy that used to live here directly was found
+to have quietly drifted (see that package's own README):
 
 ```
 fresh report?            use it exactly, including OFFLINE
@@ -66,22 +83,45 @@ It **expires**. A running server with an idle queue keeps republishing "still
 nobody", so a server that stops reads as absent within one TTL rather than as an
 empty queue forever.
 
-## The player page puts the three presence timestamps side by side
+## Match history outlives the live queue
 
-`/api/players/{id}` is the page an operator opens when somebody says "it is not
-working for me", and the useful answer is almost always a *combination* of facts:
-a reported `OFFLINE` with a recent `last_seen_at`, a device account that was
-reassigned, a friend list with one entry.
+`internal/matchmaking`'s queue is in memory — a formed session ages out
+(`Sweep`) or vanishes on restart, same as an unmatched ticket. `npln_matches`
+is the record that survives it: `internal/npln/matchmaking.go` and
+`admin.go` each call `Server.recordMatch` the moment a match forms, whether
+it filled on its own or an operator force-started it, and the Matchmaking
+tab's "Recent matches" panel reads it back through `/api/matches`.
 
-So it shows the effective state **and** the console's own last reported state
-**and** both timestamps. "Reported OFFLINE" and "never reported" are different
-states — conflating them is what makes a friend list permanently offline — and
-only showing all three lets an operator see which case they are in without
-reading the database.
+It is deliberately **not** gated behind `npln.admin_*` the way the live
+queue panels above it are: it reads straight from the database this process
+already has open, so it works even before the admin API is configured — the
+one part of the Matchmaking tab that does not need `cmd/npln` to be
+reachable at all.
 
-Friends are resolved with the same presence rule as everywhere else, favourites
-first. A friend list here that disagreed with the console's would send the
-operator hunting for a bug that is only in this page.
+## A player row opens onto stores that already exist
+
+Clicking a row in the Players table opens a detail panel -- friends, device
+accounts, recent matches -- assembled entirely from `GET /api/players/{id}`
+(`handlePlayerDetail` in `server.go`) rather than a new history table.
+Friends are resolved through the same `internal/presence` rule everything
+else on this page uses, so a friend shown here as online is never out of
+step with what they see of each other, favourites first. A friend list here
+that disagreed with the console's would send the operator hunting for a bug
+that is only in this page.
+
+The panel is also the page an operator opens when somebody says "it is not
+working for me", and the useful answer is almost always a *combination* of
+facts: a reported `OFFLINE` with a recent `last_seen_at`, a device account
+that was reassigned, a friend list with one entry. So it shows the effective
+state **and** the console's own last reported state **and** both timestamps.
+"Reported OFFLINE" and "never reported" are different states — conflating
+them is what makes a friend list permanently offline — and only showing all
+three lets an operator see which case they are in without reading the
+database. There is no stored presence *history* beyond that, deliberately:
+SwitchNet keeps one current presence row per user (see "Presence is resolved
+here, not read", above), so what the panel shows for "last seen" is that same
+row, not a log. Matches are filtered client-side from the match history the
+Matchmaking tab already fetches, rather than a second server-side query.
 
 ## Fest controls normalise what they safely can
 
@@ -93,6 +133,90 @@ answer to substitute — it has to come from the pack's `summary.yml`.
 Validation errors are passed through to the page verbatim rather than flattened
 into "invalid", because "not on a two-hour slot boundary" *is* the explanation.
 
+## Salmon Run controls offer only real ids, rather than validating them after the fact
+
+The "Salmon Run" tab's dropdowns (`GET /api/coop-reference`, `coop.go`) are
+populated from `internal/toyohr/coop_ids.go`'s own tables -- the same ones
+`switchnetctl coop stages`/`weapons`/`bosses` print -- so the operator picks
+from what a console can actually resolve rather than typing an id and
+finding out it was wrong from a validation error. The one thing the page
+still enforces client-side is filtering the stage list to match the Kind
+toggle (Big Run stages only for Big Run, normal-rotation stages otherwise):
+that mirrors `CoopShift.Validate`'s own check, not a replacement for it --
+`POST /api/coop-shifts` still runs the real `Validate` before storing
+anything, the same as fest creation does.
+
+A scheduled shift's status (`upcoming`/`live`/`ended`) is computed the same
+way `festRow`'s `Phase` is: from the server's clock against the shift's own
+`Start`/`End`, not tracked as separate state that could drift from them.
+
+## "Auto-fill" is additive, not authoritative
+
+The Salmon Run tab's "Auto-fill" panel (`POST /api/coop-shifts/generate`,
+`handleGenerateCoopShifts`) is a thin wrapper over
+`toyohr.Service.GenerateAndSaveCoopShifts` -- the same generator
+`switchnetctl coop generate` uses, picking real stage/weapon/boss ids at
+random rather than a discovered Nintendo algorithm (see
+`internal/toyohr/README.md`'s note on `coop_generate.go` for why that
+distinction matters). The one property worth knowing before clicking it
+twice: it never overwrites a slot that already has a shift, whichever form
+put it there. Schedule one slot by hand in the panel above first, generate
+around it, and that hand-scheduled shift is never at risk from a later
+generate call over the same range -- there is no "regenerate everything"
+button, on purpose.
+
+## The Debug tab shows raw state next to resolved state, on purpose
+
+`GET /api/debug/accounts/{id}` (`debug.go`) is the one view on this page that
+does **not** go through `internal/presence.Resolver` alone -- it shows the
+raw `db.Presence` row next to the resolved one. The two are expected to
+disagree: a console idle in the Home Menu reports nothing (`RawPresence`
+stays whatever it last was, `ReportedAt` empty) while still touching
+presence on every poll, so `EffectivePresence` reads `ONLINE`. That gap is
+exactly the shape of both bugs this codebase is built around (see
+CLAUDE.md), so the Debug tab is where an operator goes to see it directly
+instead of inferring it from the Players tab looking wrong.
+
+The account and device-account controls next to it (`Deleted` toggle, token
+revocation, device-account delete/undelete) all wrap existing `db.Store`
+methods with no new state of their own -- see `db.Stats` and
+`db.Store.ListAllDeviceAccounts` (added for this tab; `ListDeviceAccounts`
+excludes deleted rows, which would make undeleting one impossible to find).
+Every write here is exactly as reversible as the underlying store method
+already is: `Deleted` is a flag, not a row removal, and there is no path
+from this tab to `DELETE FROM users`.
+
+## The live table browser (`tables.go`) is a different kind of control
+
+Below the account lookup, an Excel-shaped view over every table BAAS and
+NPLN read from, driven entirely by `tables.go`'s own registry rather than
+`db.Store`: real cells, editable in place, polling every few seconds while
+"live" is on. It does **not** go through a `db.Store` method at all --
+deliberately, and Postgres-only, for the same reason `db.Memory` exists
+purely for the fast handler-test suite rather than as a deployment target
+(see `tables.go`'s package comment for the full reasoning). `s.postgres()`
+type-asserts the configured store down to `*db.Postgres` and reaches its raw
+pool; against `db.Memory` the endpoints answer 503 rather than pretending to
+work.
+
+Every value crosses the wire as text, both ways: a `SELECT` casts every
+column with `::text`, and an edit is cast back with the column's own
+Postgres type (`$1::jsonb`, `$1::text[]`, ...). That is what lets this stay
+one generic handler instead of one per column type, and it is also the
+safety net -- a value that is not valid syntax for the column's type, or
+that a `CHECK` constraint refuses, answers with Postgres's own error message
+rather than something this file would have to duplicate. The registry is
+the actual access-control surface: no primary key, foreign-key-shaped
+column (`host_user_id`, `player_ids`, ...), or password-hash column is ever
+selected or editable, no matter what a request asks for -- see the
+column-by-column reasoning in `tables.go`'s own comment.
+
+`tables_test.go` needs a real database and is skipped without
+`SWITCHNET_TEST_DATABASE_URL`, same as `internal/db`'s own PostgreSQL
+contract test -- and deliberately exercises `npln_matches`, not `users`, so
+it cannot be caught mid-test by that contract test's own `TRUNCATE ...
+CASCADE` when `go test` runs the two packages concurrently against the same
+database.
 ## It serves the BCAT seed to the console-side installer
 
 `GET /api/seed/manifest` and `GET /api/seed/file/{region}/{name}`, behind the same
@@ -131,6 +255,25 @@ A real answer probably arrives with phase 3's Nintendo Account work, which
 introduces the first human-facing login. **Do not build a bespoke user system for
 one page before then** — it would be thrown away. Recorded in
 [`docs/QUESTIONS.md`](../../docs/QUESTIONS.md).
+
+**`/login` is a friendlier door onto the same token, not a second credential.**
+Before it existed, using the dashboard meant either bookmarking a URL with
+`?token=...` in it or hand-configuring an `Authorization: Bearer` header —
+workable for a script, awkward for a person. `/login`'s form takes the same
+`dashboard.token` and, on a match, sets an `HttpOnly` cookie
+(`switchnet_dashboard_session`) that `guard()`/`guardPage()` accept exactly
+like the query string or the header — see `presentedToken` in `server.go`.
+There is no session store behind it: the cookie just carries the one shared
+secret a fourth way, so it stays exactly as strong (or as absent, with the
+token unset) as the token already was, and logging out
+(`POST /logout`) is nothing more than clearing that cookie. A bookmarked
+`?token=` link still works on its own and, as a courtesy, upgrades itself to
+a cookie the first time it loads (`handleIndex`), so switching to `/login`
+is never required for an existing setup to keep working.
+
+`guardPage` exists only because `guard`'s plain 401 is the right answer for a
+failed `fetch()` and the wrong one for a browser navigating to `/` by hand —
+the operator needs `/login`, not an error page.
 
 ## No build step
 

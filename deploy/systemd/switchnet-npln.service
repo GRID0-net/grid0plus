@@ -1,0 +1,20 @@
+[Unit]
+Description=SwitchNet npln
+PartOf=switchnet.target
+After=network-online.target docker.service
+Wants=network-online.target
+# See the StartLimitIntervalSec comment on switchnet-baas.service -- npln
+# has the same Postgres/Redis-on-startup dependency.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=switchnet
+Group=switchnet
+WorkingDirectory=/opt/switchnet
+ExecStart=/opt/switchnet/bin/npln -config /opt/switchnet/config/config.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=switchnet.target

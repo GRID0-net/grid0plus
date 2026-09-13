@@ -1,0 +1,28 @@
+[Unit]
+Description=SwitchNet baas
+PartOf=switchnet.target
+After=network-online.target docker.service switchnet-dauth.service
+Wants=network-online.target
+# Unlimited retries, deliberately: baas exits immediately if Postgres or
+# Redis is not reachable yet (see cmd/baas/main.go), and on a fresh boot
+# there is no guarantee the Docker daemon -- let alone the postgres/redis
+# containers it starts -- is ready before systemd starts this unit. Without
+# this, the default "5 failures in 10s" throttle gives up permanently after
+# a few quick restarts and the operator finds a dead service with nothing
+# retrying it. Restart=on-failure at a 2s backoff, uncapped, is the native
+# analogue of docker-compose.yml's `depends_on: condition: service_healthy`,
+# which systemd has no equivalent of without extra tooling this project does
+# not otherwise need.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=switchnet
+Group=switchnet
+WorkingDirectory=/opt/switchnet
+ExecStart=/opt/switchnet/bin/baas -config /opt/switchnet/config/config.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=switchnet.target

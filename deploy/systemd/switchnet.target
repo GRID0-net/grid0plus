@@ -1,0 +1,8 @@
+[Unit]
+Description=SwitchNet (all Go services)
+Wants=switchnet-dns.service switchnet-dauth.service switchnet-aauth.service \
+      switchnet-baas.service switchnet-stubs.service switchnet-natcheck.service \
+      switchnet-npln.service switchnet-dashboard.service
+
+[Install]
+WantedBy=multi-user.target

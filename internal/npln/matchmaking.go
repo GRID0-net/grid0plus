@@ -2,12 +2,10 @@ package npln
 
 import (
 	"context"
-	"errors"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,13 +25,19 @@ type matchmakerService struct {
 
 // CreateMatchmakingTicket puts the caller in the queue.
 //
-// The player is the AUTHENTICATED caller, never the user the request names.
-// CreateMatchmakingTicketRequest carries user delegation tokens for the case
-// where one console queues on behalf of several accounts, and honouring those
-// without verifying them would let any console queue as anybody — the same
-// shape as the bug this repository is built around. They are refused rather
-// than ignored, because a console that asked to queue two players and got one
-// back sits in a lobby waiting for a player who was never queued.
+// The ticket is created for the AUTHENTICATED caller, never for the user the
+// request names. A request's UserDefinitions are the client saying who it
+// believes it is; the token is what proves it. Accepting the former would let
+// any authenticated console queue as anybody else, which is the same class of
+// bug as the device-account fallback internal/baas is shaped around.
+//
+// TODO(capture-needed): whether Splatoon 3 ever sends more than one
+// UserDefinition here. NPLN supports delegation -- one console queuing on
+// behalf of a party, carrying UserDelegationTokens -- and if the game uses it
+// for a squad, everyone but the leader is currently dropped. SwitchNet issues
+// no delegation tokens, so it cannot honour the field without inventing one.
+// A capture of a squad entering matchmaking would settle it.
+// Change: this function, and Queue.Enqueue's one-ticket-per-player rule.
 func (m *matchmakerService) CreateMatchmakingTicket(
 	ctx context.Context, req *mmpb.CreateMatchmakingTicketRequest,
 ) (*mmpb.MatchmakingTicket, error) {
@@ -41,71 +45,54 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	if !ok {
 		return nil, ErrUnauthenticated
 	}
-	if len(req.GetUserDelegationTokens()) > 0 {
-		m.s.log.Warn("npln: refused a delegated matchmaking ticket",
-			"user", caller.UserID, "delegations", len(req.GetUserDelegationTokens()))
-		return nil, status.Error(codes.Unimplemented, "")
-	}
 
-	mode := lastSegment(req.GetMatchmakingTicket().GetMatchmakingConfig())
+	// The mode is the one thing here that IS the client's to choose: it is what
+	// they want to play, not who they are.
+	mode := req.GetMatchmakingTicket().GetMatchmakingConfig()
 	if mode == "" {
-		// A ticket with no config is a ticket for nothing. Matching it against
-		// other configless tickets would put two players queuing for different
-		// modes into one match.
-		return nil, status.Error(codes.InvalidArgument, "no matchmaking config")
-	}
-	if _, known := m.s.matchModes[mode]; !known {
-		// Logged at info, once per mode per process, because this log line is
-		// how an operator learns the mode names to put in npln.mode_players —
-		// nothing public documents them.
-		m.s.noteUnknownMode(mode)
+		// A ticket with no mode would match against every other modeless
+		// ticket, which is every mode at once. Refusing is better than forming
+		// a match nobody asked for.
+		m.s.log.Debug("npln: matchmaking ticket with no config", "user", caller.UserID)
+		return nil, errMalformed(m.s.env)
 	}
 
 	ticket, sessions, err := m.s.queue.Enqueue(caller.UserID, mode)
 	if err != nil {
-		m.s.log.Error("npln: enqueue", "user", caller.UserID, "mode", mode, "error", err)
-		return nil, status.Error(codes.Internal, "")
+		m.s.log.Error("npln: enqueue", "user", caller.UserID, "error", err)
+		return nil, errMalformed(m.s.env)
 	}
 	for _, sess := range sessions {
-		m.s.log.Info("npln: match formed", "session", sess.ID, "mode", sess.Mode,
-			"players", sess.Players, "host", sess.Host)
-		m.s.recordMatch(ctx, sess)
+		m.s.log.Info("npln: match formed",
+			"session", sess.ID, "mode", sess.Mode,
+			"players", len(sess.Players), "host", sess.Host)
+		m.s.recordMatch(ctx, sess, false)
 	}
-	// The gauge, on every change as well as on the timer, so the dashboard
-	// reflects a player queuing within the request rather than within ten
-	// seconds.
-	m.s.publishStats()
 
 	return m.s.ticketProto(ticket), nil
 }
 
-// recordMatch writes a formed match to the match log.
-//
-// Failures are logged and swallowed. The match has already been formed and the
-// players are being told to connect; failing the RPC because the history could
-// not be written would turn a bookkeeping problem into a match that does not
-// happen.
-func (s *Server) recordMatch(ctx context.Context, sess matchmaking.Session) {
-	err := s.store.RecordMatch(ctx, db.Match{
-		ID:        sess.ID,
-		Mode:      sess.Mode,
-		Players:   sess.Players,
-		Host:      sess.Host,
-		CreatedAt: sess.CreatedAt,
+// recordMatch persists a formed session to the match history, for the
+// dashboard. Best-effort: a match already formed in the live queue either
+// way, and failing the caller's request over a history write it did not ask
+// for would turn a cosmetic gap into a dropped ticket.
+func (s *Server) recordMatch(ctx context.Context, sess matchmaking.Session, forced bool) {
+	err := s.store.CreateMatch(ctx, db.Match{
+		ID: sess.ID, Tenant: s.tenant, Mode: sess.Mode,
+		HostUserID: sess.Host, PlayerIDs: sess.Players,
+		Forced: forced, CreatedAt: sess.CreatedAt,
 	})
 	if err != nil {
-		s.log.Error("npln: record match", "session", sess.ID, "error", err)
+		s.log.Warn("npln: record match history", "session", sess.ID, "error", err)
 	}
 }
 
-// TrackMatchmakingTicket streams a ticket's state until it resolves.
+// TrackMatchmakingTicket streams a ticket until it reaches a terminal state.
 //
-// **The console lives on this stream.** It is how it learns a match was formed;
-// there is no polling path. So the stream stays open until the ticket reaches a
-// terminal state or the console goes away, and it sends the current state
-// immediately rather than waiting for the next change — a stream that attached
-// after its ticket already matched would otherwise wait for an event that has
-// already happened.
+// The console lives on this stream: it opens one after creating a ticket and
+// reads its own progress off it, so closing it early is how a player ends up
+// staring at a spinner. It returns only when the ticket is finished one way or
+// another, or when the console itself goes away.
 func (m *matchmakerService) TrackMatchmakingTicket(
 	req *mmpb.TrackMatchmakingTicketRequest,
 	stream grpc.ServerStreamingServer[mmpb.MatchmakingTicket],
@@ -121,23 +108,26 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 	if !found {
 		return ErrNotFound
 	}
+	// Somebody else's ticket is NotFound rather than PermissionDenied: whether
+	// a given ticket exists is not this caller's to learn. Same rule as
+	// internal/baas's requireSelf.
 	if ticket.UserID != caller.UserID {
-		// Somebody else's ticket. Refused rather than served read-only: the
-		// stream reveals who they are matched with and when.
-		m.s.log.Warn("npln: refused tracking another player's ticket",
-			"caller", caller.UserID, "owner", ticket.UserID)
-		return ErrPermissionDenied
+		m.s.log.Warn("npln: ticket tracked by another user",
+			"ticket", id, "owner", ticket.UserID, "caller", caller.UserID)
+		return ErrNotFound
 	}
 
+	// Watch sends the current state immediately, so a stream that attaches
+	// after the ticket already succeeded does not wait for a change that has
+	// already happened.
 	updates, stop := m.s.queue.Watch(id)
 	defer stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			// The console hung up. Not an error: it happens whenever a player
-			// backs out of matchmaking.
-			return nil
+			// The console hung up, or the whole server is shutting down.
+			return ctx.Err()
 		case t, open := <-updates:
 			if !open {
 				return nil
@@ -146,9 +136,6 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 				return err
 			}
 			if terminal(t.State) {
-				// Ending the stream here rather than holding it open: the
-				// ticket cannot change again, and the console reads the
-				// terminal state as its answer.
 				return nil
 			}
 		}
@@ -156,6 +143,11 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 }
 
 // CancelMatchmakingTicket withdraws the caller's ticket.
+//
+// Cancelling something that already matched is deliberately not an error: the
+// console may have sent it before the success arrived on its stream, and the
+// answer to that race is the ticket's own state, which the stream already
+// carries.
 func (m *matchmakerService) CancelMatchmakingTicket(
 	ctx context.Context, req *mmpb.CancelMatchmakingTicketRequest,
 ) (*emptypb.Empty, error) {
@@ -170,26 +162,14 @@ func (m *matchmakerService) CancelMatchmakingTicket(
 		return nil, ErrNotFound
 	}
 	if ticket.UserID != caller.UserID {
-		return nil, ErrPermissionDenied
+		m.s.log.Warn("npln: ticket cancelled by another user",
+			"ticket", id, "owner", ticket.UserID, "caller", caller.UserID)
+		return nil, ErrNotFound
 	}
 
-	// A ticket that already matched cannot be cancelled, and that is not an
-	// error: the other players are being told to connect, and answering
-	// anything but "done" makes the console retry a cancellation that will
-	// never succeed. Queue.Cancel reports false; the state the console reads
-	// back on its stream is the truth.
 	m.s.queue.Cancel(id)
-	m.s.publishStats()
 	return &emptypb.Empty{}, nil
 }
-
-// CreateAcceptance is deliberately left to the embedded Unimplemented.
-//
-// Acceptance is the flow where a formed match is offered to each player and
-// waits for them to agree — the REQUIRING_ACCEPTANCE and DECLINED ticket
-// states. SwitchNet never puts a ticket into that state, so there is nothing an
-// acceptance could apply to, and answering one would mean inventing a response
-// for a flow that cannot occur.
 
 // ---- nn.npln.matchmaking.v1.GameSessionService ----------------------------
 
@@ -198,11 +178,11 @@ type gameSessionService struct {
 	s *Server
 }
 
-// GetGameSession describes a match to one of its players.
+// GetGameSession returns a match the caller was placed into.
 //
-// Only to one of its players: a session names who is in it and which console
-// hosts, so it is not public information on a server whose whole point is a
-// private group.
+// Only a match they are actually in. A session id is not a secret worth much,
+// but the players list inside one names other people, and handing that to any
+// authenticated caller who guesses an id is a leak for no gain.
 func (g *gameSessionService) GetGameSession(
 	ctx context.Context, req *mmpb.GetGameSessionRequest,
 ) (*mmpb.GameSession, error) {
@@ -211,20 +191,24 @@ func (g *gameSessionService) GetGameSession(
 		return nil, ErrUnauthenticated
 	}
 
-	sess, found := g.s.queue.Session(lastSegment(req.GetName()))
-	if !found {
+	id := lastSegment(req.GetName())
+	if !g.s.queue.IsPlayer(id, caller.UserID) {
 		return nil, ErrNotFound
 	}
-	if !participates(sess, caller.UserID) {
-		// NotFound rather than PermissionDenied: a caller who is not in the
-		// session should not learn that it exists.
+	sess, found := g.s.queue.Session(id)
+	if !found {
 		return nil, ErrNotFound
 	}
 	return g.s.sessionProto(sess), nil
 }
 
-// JoinGameSession puts the caller into a session and tells them who else is in
-// it.
+// JoinGameSession confirms the caller into a session they were matched into.
+//
+// Only that. SwitchNet forms every session through matchmaking, so the players
+// are already known by the time this is called and joining is an
+// acknowledgement rather than a mutation. Joining a session you were NOT
+// matched into is backfill or a short alias -- neither is implemented, and
+// neither shape is documented, so this refuses rather than inventing one.
 func (g *gameSessionService) JoinGameSession(
 	ctx context.Context, req *mmpb.JoinGameSessionRequest,
 ) (*mmpb.JoinGameSessionResponse, error) {
@@ -232,226 +216,286 @@ func (g *gameSessionService) JoinGameSession(
 	if !ok {
 		return nil, ErrUnauthenticated
 	}
-	if len(req.GetUserDelegationTokens()) > 0 {
-		// Same reasoning as CreateMatchmakingTicket: an unverified delegation
-		// is a console joining as somebody else.
-		return nil, status.Error(codes.Unimplemented, "")
-	}
 
-	sess, err := g.s.queue.Join(lastSegment(req.GetName()), caller.UserID)
-	switch {
-	case errors.Is(err, matchmaking.ErrNoSession):
+	id := lastSegment(req.GetName())
+	if !g.s.queue.IsPlayer(id, caller.UserID) {
+		g.s.log.Warn("npln: join by a user who was not matched into the session",
+			"session", id, "caller", caller.UserID)
 		return nil, ErrNotFound
-	case errors.Is(err, matchmaking.ErrSessionFull):
-		return nil, status.Error(codes.FailedPrecondition, "session is full")
-	case err != nil:
-		g.s.log.Error("npln: join session", "user", caller.UserID, "error", err)
-		return nil, status.Error(codes.Internal, "")
 	}
-
-	matched := g.s.matchedSessionsProto(sess)
+	sess, found := g.s.queue.Session(id)
+	if !found {
+		return nil, ErrNotFound
+	}
 
 	return &mmpb.JoinGameSessionResponse{
-		MatchedUserSessions: matched,
 		GameSession:         g.s.sessionProto(sess),
+		MatchedUserSessions: g.s.matchedUserSessions(sess),
 	}, nil
 }
 
-// iceServerSetTTL is how long a console may use an allocated ICE server set.
+// SyncGameSession is how the host publishes its reachable port, and how any
+// matched player -- host or joiner -- reads the session's current
+// participants back.
 //
-// One hour, and the client is told to cache it for the same period. Both are
-// SwitchNet's own numbers: the servers are static configuration here rather
-// than allocated per session, so there is nothing to expire — but answering
-// with no TTL at all would leave a console free to cache addresses across an
-// operator changing them.
-const iceServerSetTTL = time.Hour
-
-// AllocateIceServerSet hands the console the STUN and TURN servers to use.
+// TODO(capture-needed): whether Splatoon 3 dials GameSession.Port directly at
+// all. Gameplay is peer-to-peer over ICE (see AllocateIceServerSet), and a
+// real client that connects entirely through negotiated ICE candidates may
+// never read this field. Persisting and returning whatever the host sends is
+// the defensible reading either way -- a field the client ignores costs
+// nothing, where refusing to store it risks dropping something a real client
+// does depend on -- but nothing here confirms which. A capture of a match
+// actually connecting would settle it. Change: this function and
+// matchmaking.Session's HostPort field.
 //
-// **The addresses must be reachable from the CONSOLE.** They come straight from
-// config rather than from anything this server can discover, because a server
-// behind NAT cannot know its own reachable address and a guess here produces
-// the single most common Splatoon 3 failure: the lobby fills and the match
-// never starts, which from the server side is indistinguishable from a
-// matchmaking bug.
+// Only the port moves through here. Everything else GameSession carries
+// (participant counts, state, who the host is) is already authoritative on
+// this server; a client-supplied value for any of those is ignored rather
+// than trusted, the same reasoning AllocateIceServerSet's doc comment gives
+// for ignoring the request's own tenant and user fields. A listening port is
+// different: it is the one piece of session state that genuinely lives on
+// the host's console and nowhere else, so this is the one field this server
+// has no other way to learn.
 //
-// An empty list is answered with an empty set rather than an error. Peers on one
-// LAN reach each other without ICE, so a small deployment is legitimately
-// configured this way; `switchnetctl check` warns about it instead.
-func (g *gameSessionService) AllocateIceServerSet(
-	ctx context.Context, _ *mmpb.AllocateIceServerSetRequest,
-) (*mmpb.IceServerSet, error) {
-	if _, ok := CallerFrom(ctx); !ok {
-		return nil, ErrUnauthenticated
-	}
-
-	out := &mmpb.IceServerSet{
-		Name:                g.s.iceServerSetName(),
-		Ttl:                 durationpb.New(iceServerSetTTL),
-		UpdateTime:          timestamppb.New(g.s.now()),
-		ClientCacheDuration: durationpb.New(iceServerSetTTL),
-	}
-
-	for _, srv := range g.s.iceServers {
-		switch srv.Kind {
-		case "stun":
-			// One stun_server, not a list — the message declares a single
-			// field. A second one in config is a configuration mistake worth
-			// naming rather than silently dropping.
-			if out.StunServer != nil {
-				g.s.log.Warn("npln: more than one stun server configured; using the first",
-					"ignored", srv.Host)
-				continue
-			}
-			out.StunServer = &mmpb.StunServer{
-				Host:     srv.Host,
-				Port:     int32(srv.Port),
-				Protocol: stunProtocol(srv.Protocol),
-			}
-		case "turn":
-			out.TurnServers = append(out.TurnServers, &mmpb.TurnServer{
-				Host:     srv.Host,
-				Port:     int32(srv.Port),
-				Protocol: turnProtocol(srv.Protocol),
-				Username: srv.Username,
-				Password: srv.Password,
-			})
-		}
-	}
-	return out, nil
-}
-
-// IssueMatchmakingIdToken issues id tokens for the caller's own user.
-//
-// **For their own user only.** The token proves who a player is to a service
-// that is not the gateway — gamesync verifies one before it will open a session
-// — so handing a console a token naming another player is handing it that
-// player's identity. The protocol names this case itself:
-// DelegationAction.INCLUDE_ID_TOKEN_FOR_SAME_CLIENT.
-//
-// A request naming somebody else is refused rather than filtered. A console that
-// asked for two tokens and received one would proceed with the peer it has and
-// fail later, somewhere that says nothing about this call.
-func (g *gameSessionService) IssueMatchmakingIdToken(
-	ctx context.Context, req *mmpb.IssueMatchmakingIdTokenRequest,
-) (*mmpb.IssueMatchmakingIdTokenResponse, error) {
+// KeepAliveOnly is honoured as a read: any matched player may call this to
+// read the current session back without needing host privileges to do so --
+// useful for a joiner checking whether the host has published a port yet.
+func (g *gameSessionService) SyncGameSession(
+	ctx context.Context, req *mmpb.SyncGameSessionRequest,
+) (*mmpb.SyncGameSessionResponse, error) {
 	caller, ok := CallerFrom(ctx)
 	if !ok {
 		return nil, ErrUnauthenticated
 	}
-	if len(req.GetUserDelegationTokens()) > 0 {
-		return nil, status.Error(codes.Unimplemented, "")
+
+	id := lastSegment(req.GetGameSession().GetName())
+	if !g.s.queue.IsPlayer(id, caller.UserID) {
+		return nil, ErrNotFound
 	}
 
-	sess, found := g.s.queue.Session(lastSegment(req.GetGameSession()))
+	sess, found := g.s.queue.Session(id)
 	if !found {
 		return nil, ErrNotFound
 	}
-	if !participates(sess, caller.UserID) {
-		return nil, ErrNotFound
+
+	if !req.GetKeepAliveOnly() {
+		if caller.UserID != sess.Host {
+			// The caller is a real participant -- IsPlayer already confirmed
+			// that -- so refusing this is a permission problem, not a "does
+			// this exist" one, unlike JoinGameSession's stranger case.
+			g.s.log.Warn("npln: SyncGameSession update attempted by a non-host participant",
+				"session", id, "host", sess.Host, "caller", caller.UserID)
+			return nil, ErrPermissionDenied
+		}
+		updated, found := g.s.queue.SetHostPort(id, req.GetGameSession().GetPort())
+		if !found {
+			// The session aged out between the two lookups above.
+			return nil, ErrNotFound
+		}
+		sess = updated
+		g.s.log.Info("npln: host published its game session port",
+			"session", id, "host", sess.Host, "port", sess.HostPort)
 	}
 
-	matched := make([]*mmpb.MatchedUserSession, 0, len(sess.Players))
-	for _, p := range sess.Players {
-		entry := &mmpb.MatchedUserSession{
-			UserDefinition: &mmpb.UserDefinition{User: userResourceName(p)},
-			UserSession:    g.s.userSessionName(sess.ID, p),
-		}
-		if wants(req.GetUsers(), p) || wants(req.GetIncludeIdTokenUsers(), p) {
-			if p != caller.UserID {
-				g.s.log.Warn("npln: refused an id token for another player",
-					"caller", caller.UserID, "asked_for", p)
-				return nil, ErrPermissionDenied
-			}
-			token, err := g.s.issueMatchmakingIDToken(caller, sess.ID)
-			if err != nil {
-				g.s.log.Error("npln: issue matchmaking id token",
-					"user", caller.UserID, "error", err)
-				return nil, status.Error(codes.Internal, "")
-			}
-			entry.MatchmakingIdToken = token
-		}
-		matched = append(matched, entry)
-	}
-
-	return &mmpb.IssueMatchmakingIdTokenResponse{
-		MatchedUserSessions: matched,
-		GameSession:         g.s.sessionProto(sess),
+	return &mmpb.SyncGameSessionResponse{
+		UserSessions: g.s.userSessions(sess),
 	}, nil
 }
 
-// wants reports whether a list names a user. An empty list names nobody, not
-// everybody: "issue tokens for these users" with no users is a request for none.
-func wants(list []string, userID string) bool {
-	for _, u := range list {
-		if lastSegment(u) == userID {
-			return true
+// AllocateIceServerSet hands the console the STUN/TURN servers to use.
+//
+// Splatoon 3's gameplay is peer-to-peer and it uses ICE rather than the Pia
+// NAT-check pair, so these addresses are how two consoles behind different NATs
+// find a path to each other. They must be reachable FROM THE CONSOLE.
+//
+// An empty set is a valid answer and the default one: consoles on the same LAN
+// connect directly, which is the whole of what a small private network needs.
+// 'switchnetctl check' warns when it is empty, because the failure it causes
+// elsewhere -- the lobby fills and the match never starts -- reads as a
+// matchmaking bug rather than a connectivity one.
+func (g *gameSessionService) AllocateIceServerSet(
+	ctx context.Context, _ *mmpb.AllocateIceServerSetRequest,
+) (*mmpb.IceServerSet, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+
+	// The request names a tenant and a user. Both are ignored: the tenant was
+	// already checked against this server's own on the way in, and the user is
+	// the caller's token, not the request's field.
+	set := &mmpb.IceServerSet{
+		Name: g.s.tenantPath() + "/users/" + caller.UserID + "/iceServerSet",
+		Ttl:  durationpb.New(iceServerSetTTL),
+		// Cached for the same span it is valid for. A console that re-asks
+		// every match adds a round trip to something that has not changed since
+		// the operator last edited their configuration file.
+		ClientCacheDuration: durationpb.New(iceServerSetTTL),
+		UpdateTime:          timestamppb.New(g.s.now()),
+	}
+
+	for _, cfgServer := range g.s.iceServers {
+		switch cfgServer.Kind {
+		case "stun":
+			set.StunServer = &mmpb.StunServer{
+				Host:     cfgServer.Host,
+				Port:     int32(cfgServer.Port),
+				Protocol: stunProtocol(cfgServer.Protocol),
+			}
+		case "turn":
+			set.TurnServers = append(set.TurnServers, &mmpb.TurnServer{
+				Host:     cfgServer.Host,
+				Port:     int32(cfgServer.Port),
+				Protocol: turnProtocol(cfgServer.Protocol),
+				Username: cfgServer.Username,
+				Password: cfgServer.Password,
+			})
 		}
 	}
-	return false
+	return set, nil
+}
+
+// iceServerSetTTL is how long an allocated ICE server set is good for.
+//
+// SwitchNet's set does not actually expire -- it is read straight from a
+// configuration file and changes only when the operator edits one -- but the
+// field is not optional and a zero would read as "already stale". An hour is
+// long enough not to churn and short enough that an edit takes effect within
+// one session.
+const iceServerSetTTL = time.Hour
+
+func stunProtocol(name string) mmpb.StunServer_Protocol {
+	switch name {
+	case "tcp":
+		return mmpb.StunServer_TCP
+	case "tls":
+		return mmpb.StunServer_TLS
+	default:
+		return mmpb.StunServer_UDP
+	}
+}
+
+func turnProtocol(name string) mmpb.TurnServer_Protocol {
+	switch name {
+	case "tcp":
+		return mmpb.TurnServer_TCP
+	case "tls":
+		return mmpb.TurnServer_TLS
+	default:
+		return mmpb.TurnServer_UDP
+	}
 }
 
 // ---- rendering ------------------------------------------------------------
 
+// tenantPath is the resource-name prefix every matchmaking resource hangs off.
+func (s *Server) tenantPath() string { return "tenants/" + s.tenant }
+
+// ticketProto renders a queue ticket as the wire message.
+//
+// TODO(capture-needed): the resource-name shape. Every NPLN resource name in
+// the definitions is a path, and this follows the AIP-style convention the rest
+// of them do, but nothing confirms what Splatoon 3 receives here. lastSegment
+// deliberately parses whatever comes back leniently, so a wrong prefix costs a
+// cosmetic mismatch rather than a broken Track or Cancel.
+// Change: this function and sessionProto.
 func (s *Server) ticketProto(t matchmaking.Ticket) *mmpb.MatchmakingTicket {
 	out := &mmpb.MatchmakingTicket{
-		Name:              s.ticketName(t.ID),
-		MatchmakingConfig: s.tenantName() + "/matchmakingConfigs/" + t.Mode,
+		Name:              s.tenantPath() + "/matchmakingTickets/" + t.ID,
+		MatchmakingConfig: t.Mode,
 		State:             ticketState(t.State),
 		UserDefinitions: []*mmpb.UserDefinition{
 			{User: userResourceName(t.UserID)},
 		},
 	}
+
 	if t.SessionID == "" {
 		return out
 	}
 	sess, ok := s.queue.Session(t.SessionID)
 	if !ok {
+		// The session aged out from under a ticket somebody is still reading.
+		// The state is still the truth, so the ticket is worth sending without
+		// it rather than failing the stream.
 		return out
 	}
 	out.GameSession = s.sessionProto(sess)
-	// Who else is in the match, carried on the ticket rather than left for a
-	// follow-up call: the ticket stream is the only thing the console is
-	// guaranteed to be reading when a match forms.
-	out.MatchedUserSessions = s.matchedSessionsProto(sess)
+	out.MatchedUserSessions = s.matchedUserSessions(sess)
 	return out
 }
 
-// matchedSessionsProto names every player in a session.
-//
-// No matchmaking id tokens. The console asks for those per player through
-// include_id_token_users, so that peers can prove who they are to each other;
-// issuing one unasked would hand every player a credential for every other.
-func (s *Server) matchedSessionsProto(sess matchmaking.Session) []*mmpb.MatchedUserSession {
-	out := make([]*mmpb.MatchedUserSession, 0, len(sess.Players))
-	for _, p := range sess.Players {
-		out = append(out, &mmpb.MatchedUserSession{
-			UserDefinition: &mmpb.UserDefinition{User: userResourceName(p)},
-			UserSession:    s.userSessionName(sess.ID, p),
+// sessionProto renders a formed match as the wire message.
+func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
+	return &mmpb.GameSession{
+		Name:                s.tenantPath() + "/gameSessions/" + sess.ID,
+		MaxParticipantCount: int32(len(sess.Players)),
+		// Everyone matched is a participant. There is no lobby to fill here:
+		// the session is created at the moment it is already full.
+		CurrentParticipantCount: int32(len(sess.Players)),
+		CanParticipate:          false,
+		IsPublic:                false,
+		State:                   mmpb.GameSession_ACTIVE,
+		// Host names the player whose console the others connect to, not an
+		// address. Gameplay is peer-to-peer and SwitchNet is not in the path
+		// once a match starts -- all this does is say who to reach, and ICE
+		// works out how.
+		Host: userResourceName(sess.Host),
+		// Port is zero until the host publishes one over SyncGameSession --
+		// see gameSessionService.SyncGameSession. A joiner reading zero knows
+		// to wait rather than dial nothing.
+		Port:         sess.HostPort,
+		CreateTime:   timestamppb.New(sess.CreatedAt),
+		UserSessions: s.userSessions(sess),
+	}
+}
+
+// userSessions renders one entry per matched player.
+func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
+	out := make([]*mmpb.UserSession, 0, len(sess.Players))
+	for _, userID := range sess.Players {
+		out = append(out, &mmpb.UserSession{
+			Name:       s.userSessionName(sess.ID, userID),
+			User:       userResourceName(userID),
+			State:      mmpb.UserSession_ACTIVE,
+			CreateTime: timestamppb.New(sess.CreatedAt),
 		})
 	}
 	return out
 }
 
-func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
-	return &mmpb.GameSession{
-		Name:                    s.sessionName(sess.ID),
-		MaxParticipantCount:     int32(sess.MaxPlayers),
-		CurrentParticipantCount: int32(len(sess.Players)),
-		CanParticipate:          len(sess.Players) < sess.MaxPlayers,
-		// Not public: a session exists because SwitchNet matched these players
-		// into it, and there is no browse-and-join path for anybody else.
-		IsPublic:   false,
-		State:      mmpb.GameSession_ACTIVE,
-		Host:       userResourceName(sess.Host),
-		CreateTime: timestamppb.New(sess.CreatedAt),
-		// No Port. Gameplay is peer-to-peer and the port belongs to the host's
-		// console, which this server never learns: it is negotiated over ICE.
-		// Sending a plausible number would point every peer at a port nothing
-		// is listening on.
+// matchedUserSessions names each player's session in the match.
+//
+// MatchmakingIdToken is deliberately left empty. It is NPLN's mechanism for one
+// player to prove to another that the server placed them in this match, and
+// SwitchNet issues no such token: peers here are consoles on one operator's own
+// network, and a token nobody verifies is a token that only looks like a
+// safeguard.
+//
+// TODO(capture-needed): whether Splatoon 3 refuses to start a match when this
+// is absent. If it does, this becomes a real signed token rather than a gap,
+// and the thing it has to be signed with is the same key IssueToken uses.
+// Change: this function.
+func (s *Server) matchedUserSessions(sess matchmaking.Session) []*mmpb.MatchedUserSession {
+	out := make([]*mmpb.MatchedUserSession, 0, len(sess.Players))
+	for _, userID := range sess.Players {
+		out = append(out, &mmpb.MatchedUserSession{
+			UserDefinition: &mmpb.UserDefinition{User: userResourceName(userID)},
+			UserSession:    s.userSessionName(sess.ID, userID),
+		})
 	}
+	return out
 }
 
+func (s *Server) userSessionName(sessionID, userID string) string {
+	return s.tenantPath() + "/gameSessions/" + sessionID + "/userSessions/" + userID
+}
+
+// ticketState maps a queue state onto the wire enum.
+//
+// One-to-one, which is why matchmaking.State mirrors the protocol's own states
+// instead of inventing a parallel vocabulary. FAILED, REQUIRING_ACCEPTANCE and
+// DECLINED have no queue equivalent: nothing here fails a ticket for a reason
+// of its own, and acceptance is not implemented.
 func ticketState(s matchmaking.State) mmpb.MatchmakingTicket_State {
 	switch s {
 	case matchmaking.StateSearching:
@@ -469,47 +513,49 @@ func ticketState(s matchmaking.State) mmpb.MatchmakingTicket_State {
 	}
 }
 
-// terminal reports whether a ticket can still change.
+// terminal reports whether a ticket has finished, one way or another.
 func terminal(s matchmaking.State) bool {
 	switch s {
 	case matchmaking.StateSucceeded, matchmaking.StateTimedOut, matchmaking.StateCancelled:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
-func participates(sess matchmaking.Session, userID string) bool {
-	for _, p := range sess.Players {
-		if p == userID {
-			return true
+// lastSegment takes the id off the end of a resource name.
+//
+// Lenient on purpose. The exact name shapes are TODO(capture-needed), so this
+// accepts whatever the console echoes back rather than insisting on the one
+// this server happened to mint -- including a bare id. Getting the prefix wrong
+// then costs a cosmetic mismatch instead of every Track and Cancel answering
+// NotFound. Same reasoning as internal/toyohr's festIDFromResourceName.
+func lastSegment(name string) string {
+	name = strings.TrimSuffix(strings.TrimSpace(name), "/")
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
+// iceServersFrom copies the configured ICE servers, dropping any the validator
+// would have rejected.
+//
+// Defensive rather than redundant: a Server can be built without going through
+// config.Validate -- the tests do -- and a half-specified server handed to a
+// console is worse than one not offered at all, because the console tries it.
+func iceServersFrom(cfg []config.IceServer) []config.IceServer {
+	out := make([]config.IceServer, 0, len(cfg))
+	for _, s := range cfg {
+		if (s.Kind != "stun" && s.Kind != "turn") || s.Host == "" || s.Port <= 0 {
+			continue
 		}
+		out = append(out, s)
 	}
-	return false
+	return out
 }
 
-func stunProtocol(p string) mmpb.StunServer_Protocol {
-	switch p {
-	case "tcp":
-		return mmpb.StunServer_TCP
-	case "tls":
-		return mmpb.StunServer_TLS
-	default:
-		return mmpb.StunServer_UDP
-	}
-}
-
-func turnProtocol(p string) mmpb.TurnServer_Protocol {
-	switch p {
-	case "tcp":
-		return mmpb.TurnServer_TCP
-	case "tls":
-		return mmpb.TurnServer_TLS
-	default:
-		return mmpb.TurnServer_UDP
-	}
-}
-
-// queueConfig turns the NPLN configuration into the queue's own.
+// queueConfig builds the matchmaking queue's config from the NPLN section.
 func queueConfig(c config.NPLN) matchmaking.Config {
 	cfg := matchmaking.Config{
 		PlayersPerMatch: c.PlayersPerMatch,

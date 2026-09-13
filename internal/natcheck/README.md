@@ -54,9 +54,13 @@ Running with one address does work — type 2 falls back to the secondary port �
 but consoles then report a stricter NAT type than their router really has, and
 some titles refuse to matchmake on that basis.
 
-## Docker
+## Why this has to run natively
 
-The container uses `network_mode: host`, not a port mapping. Docker's userland
-proxy rewrites the source address of the reply, so every message type would
-appear to come from the same place and classification would be wrong — in a way
-that looks like a NAT problem rather than a Docker one.
+The protocol works by the console observing *which* address and port
+answered. `natcheck` runs as a native process talking directly on its
+configured addresses (`primary_listen`, `secondary_listen`,
+`alternate_listen`) rather than behind any port-forwarding layer, which is
+what makes that observation trustworthy. (Running it in Docker used to be a
+real footgun here: the userland proxy rewrote the reply's source address, so
+every message type appeared to come from the same place and classification
+came out wrong — in a way that looked like a NAT problem, not a Docker one.)

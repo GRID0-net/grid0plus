@@ -12,16 +12,16 @@ that was never registered fails the same way with nothing in the log. ROADMAP
 §2.4 says to let the console drive the order of this backlog, and that only
 works if the console's asking is recorded.
 
-`services.go` carries a note on each unimplemented one saying what taking it on
+`backlog.go` carries a note on each unimplemented one saying what taking it on
 would involve. `GameRecord` is the one that matters most — battle results come
 from there, and battle results are the missing half of a fest verdict.
 
 | | |
 | --- | --- |
-| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening` |
+| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, `CloudSave.GetSaveRecord` |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
-| Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/fest.proto` |
-| Needs a database | yes |
+| Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/{fest,schedule,cloud_save,messaging}.proto` |
+| Needs a database | yes, for fests and coop shifts -- the rest of `Schedule` and `GetSaveRecord` need none |
 
 ## A Splatfest lives in two places, and they must agree
 
@@ -115,9 +115,13 @@ An empty rotation answers with no schedules, which is what the game sees between
 seasons on a real server, and logs once per kind so the operator can tell that
 from a broken server.
 
-`SelectCoopSchedules` answers empty for a sharper reason: a co-op shift is a
-stage, a boss, four weapon ids and a reward, and unlike the versus rotation
-there is nothing useful left once the unknown numbers are removed.
+`SelectCoopSchedules` is **not** empty: every operator-scheduled Salmon Run
+shift that has not fully ended yet is served for real, soonest first. Unlike
+the versus rotation, `nn.npln.toyohr.v1.CoopSchedule`'s own decompiled proto
+already carries the real shape, so once `coop_ids.go` supplied real
+stage/boss/weapon/reward ids and an authoring path (`SaveCoopShift`,
+`GenerateAndSaveCoopShifts`, `switchnetctl coop`), there was nothing left
+that genuinely needed a capture — see `coop_schedule.go`.
 
 ## Lobby messaging: a message, not a mailbox
 
@@ -213,3 +217,98 @@ the bug this repository is shaped around.
 Two fests live at once is a state the game has no reading for. The operator can
 create it by mistake, so `currentFest` picks the most recently started and logs
 a warning rather than picking arbitrarily.
+
+## `Schedule`: honest emptiness for Vs, a real rotation for Coop
+
+`schedule.go` answers `SelectVsParams`, `SelectVsSchedules`,
+`SelectSeasonSchedules` and `SelectLeagueSchedules` with an empty schedule
+list rather than `Unimplemented`, because the console calls these early in
+boot and the alternative is a to-do-list log line where a working boot query
+should be.
+
+The content those four RPCs would normally carry — which stages, which mode
+— is Nintendo's own game design data. Unlike a fest, which the operator
+authors and `SaveFest` validates, there is no equivalent authoring path for a
+normal Vs rotation and no dump of one. CLAUDE.md is explicit that a genuinely
+undocumented shape must not be filled with an invented-but-plausible
+Nintendo internal, so these four stay honestly empty (`TODO(capture-needed)`,
+in `schedule.go`) rather than serving a fabricated rotation nothing here
+would ever catch as wrong.
+
+**`SelectCoopSchedules` is the fifth RPC, and it is different**, because the
+usual blocker for a Vs/Coop rotation — no known wire shape — did not actually
+apply here: `nn.npln.toyohr.v1.CoopSchedule`'s own decompiled proto
+(`proto/toyohr/v1/resources.pb.go`) already carries `Normal`, `BigRun` and
+`TeamContest` as three parallel sub-messages, each with real fields
+(`stage`, `boss`, `main_weapons`, `kuma_weapon`, `reward_gear_id`, and
+`BigRun`'s own `rewards`). Independently corroborated, not just read once:
+[`nintendoapis/splatnet3-types`](https://github.com/nintendoapis/splatnet3-types),
+a public typed schema of SplatNet 3's own GraphQL API, has the identical
+three-way split (`CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
+teamContestSchedules}`, each entry's `setting.__typename` naming
+`CoopNormalSetting` or `CoopBigRunSetting`). Two independently maintained
+sources agreeing on the same shape is as much confidence as this project
+gets without a console of its own.
+
+What was actually missing was **content and an authoring path** — real
+stage/weapon/boss ids, and something to play `SaveFest`'s role. Both now
+exist:
+
+- `coop_ids.go` — every real Salmon Run and Big Run stage id, every real
+  weapon id (including the Grizzco/kuma pool), and the three real king
+  salmonid boss codenames, all read directly out of the game's own shipped
+  parameter tables (see that file's package comment for exactly which ones
+  and how they were cross-checked against each other and against Inkipedia's
+  independently maintained Big Run stage list).
+- `coop_schedule.go`'s `CoopShift` + `Validate` — the `SaveFest`-equivalent:
+  an operator describes a shift (kind, stage, weapons, boss, timing) and it
+  is checked against `coop_ids.go`'s real tables before being stored, the
+  same "explain the constraint in Go, not in a column" split `Fest.Validate`
+  uses.
+- `switchnetctl coop schedule` (and `list`/`delete`/`stages`/`weapons`/
+  `bosses` to print the reference tables) — the CLI surface, mirroring
+  `switchnetctl fest build`.
+- `internal/dashboard`'s "Salmon Run" tab — the same `CoopShift`/`Validate`
+  path behind a form, mirroring the "Splatfests" tab: a Kind toggle filters
+  the stage dropdown to Big Run or normal-rotation stages (a real console
+  never sees the two combined), the weapon/kuma/boss dropdowns are the exact
+  tables `switchnetctl coop weapons`/`bosses` print, and the scheduled list
+  shows each shift's live/upcoming/ended status. See
+  `internal/dashboard/coop.go`.
+- `coop_generate.go`'s `GenerateCoopShifts` — fills a stretch of the normal
+  rotation with randomly-picked real ids rather than requiring every shift
+  to be hand-typed, for an operator who wants Salmon Run to keep changing
+  without babysitting it. **Not a recovered Nintendo algorithm** -- no
+  public source documents how the real server actually picks a rotation,
+  only that it does, on a real, cited cadence (`DefaultCoopShiftDuration`'s
+  comment: 40 hours, confirmed against two independent public sources,
+  distinct from Big Run's own 48-hour window). The one thing this generator
+  guarantees beyond "pick something real" -- avoiding an immediate stage
+  repeat between consecutive shifts -- is this project's own design choice,
+  not a discovered rule. `Service.GenerateAndSaveCoopShifts` is additive: it
+  never touches a slot that already holds a shift, hand-scheduled or
+  previously generated, which is what makes "mostly automatic, but a
+  specific slot can always be corrected by hand" true rather than aspirational
+  -- `switchnetctl coop generate` and the dashboard's "Auto-fill" panel are
+  both thin wrappers over it.
+
+TeamContest (Eggstra Work) has no authoring OR generation path yet; adding
+one is the same shape of work Big Run was. Three fields on the wire message
+are an operator-local assumption rather than a confirmed shape —
+`coopScheduleProto` documents which, and `docs/QUESTIONS.md` has the entry.
+
+## `CloudSave.GetSaveRecord`: `NotFound` is the correct answer, not a stub
+
+A cloud save is real player save state. SwitchNet has no legitimate way to
+have one — the same "no game dump, no save data" boundary CLAUDE.md draws
+for phase 3 applies here too. `GetSaveRecord` answers `NotFound` for every
+account, which is not a placeholder: a fresh account has no cloud save on a
+real server either, and the game already has to handle that case on its
+very first boot.
+
+The other five `CloudSave` RPCs are left to
+`UnimplementedCloudSaveServer`. Nothing calls them this early, and actually
+implementing `Write`/`Create`/`Delete` convincingly would mean this server
+keeping opaque save blobs it has no way to validate — a materially
+different scope than answering the one boot query that would otherwise
+hang.

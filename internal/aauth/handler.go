@@ -19,13 +19,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/service"
 )
 
 // Config is what the handler needs to run.
@@ -88,30 +88,12 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 // as expired tokens everywhere, because the console sets its clock from here.
 func (h *Handler) time(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UnixMilli()
-	ip := clientIP(r)
+	ip := service.ClientIP(r)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-NINTENDO-UNIXTIME", strconv.FormatInt(now, 10))
 	w.Header().Set("X-NINTENDO-GLOBAL-IP", ip)
 	fmt.Fprintf(w, "%d\n%s\n", now, ip)
-}
-
-// clientIP returns the console's address as seen from outside.
-//
-// X-Forwarded-For is only trusted for its last entry, which is the one the
-// immediately preceding proxy wrote. Trusting the first entry would let a
-// console put whatever it liked in the header and have the server repeat it.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
-			return ip
-		}
-	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
 }
 
 // ---- gamecard challenge --------------------------------------------------

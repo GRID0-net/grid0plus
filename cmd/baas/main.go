@@ -14,6 +14,7 @@ import (
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/baas"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/service"
@@ -99,6 +100,9 @@ func main() {
 		ImageBaseURL:       cfg.BAAS.ImageBaseURL,
 		MaxImageBytes:      int64(cfg.BAAS.MaxImageBytes),
 		AllowRegistration:  cfg.BAAS.AllowRegistration,
+
+		LoginAttemptsPerWindow: cfg.BAAS.LoginAttemptsPerWindow,
+		LoginWindow:            time.Duration(cfg.BAAS.LoginWindowSeconds) * time.Second,
 	}, baas.Deps{
 		Store:          store,
 		Bus:            bus,
@@ -119,7 +123,9 @@ func main() {
 		log.Info("registration is disabled; an unknown console cannot create an account")
 	}
 
-	if err := service.ServeHTTP(ctx, log, cfg.BAAS.Listen, srv.Handler()); err != nil {
+	healthz := health.New("baas").Add("database", store.Ping)
+
+	if err := service.ServeHTTPWithHealth(ctx, log, cfg.BAAS.Listen, srv.Handler(), healthz); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

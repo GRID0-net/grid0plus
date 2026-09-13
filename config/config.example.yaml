@@ -1,8 +1,8 @@
 # SwitchNet configuration
 #
 # Copy this to config/config.yaml and edit it. Every value can also be set from
-# the environment as SWITCHNET_<SECTION>_<KEY>, which is how the containers in
-# docker-compose.yml are configured; the environment always wins over this file.
+# the environment as SWITCHNET_<SECTION>_<KEY> -- useful for a one-off override
+# without editing the file; the environment always wins over this file.
 #
 # Validate a config without starting anything:
 #
@@ -123,7 +123,10 @@ keys:
 # dauth: device authentication
 # ---------------------------------------------------------------------------
 dauth:
-  listen: ":8081"
+  # Loopback only: nothing outside this machine calls dauth directly -- nginx
+  # is the only thing that reaches it, over the edge TLS listener. Bind-all
+  # would put it on the LAN unauthenticated with no reason to.
+  listen: "127.0.0.1:8081"
   # Keep Nintendo's values. The console does not check them, but tooling and
   # packet-capture diffs compare against them.
   issuer: "dauth-lp1.ndas.srv.nintendo.net"
@@ -147,7 +150,8 @@ dauth:
 # aauth: application authentication
 # ---------------------------------------------------------------------------
 aauth:
-  listen: ":8082"
+  # Loopback only, same reasoning as dauth.listen above.
+  listen: "127.0.0.1:8082"
   issuer: "aauth-lp1.ndas.srv.nintendo.net"
   jwks_url: "https://acert-lp1.ndas.srv.nintendo.net/keys"
   token_ttl: 86400
@@ -211,21 +215,42 @@ baas:
   # add themselves to it.
   allow_registration: true
 
+  # How many login attempts (POST /1.0.0/login and federation) one client
+  # address gets per login_window_seconds, before further attempts from it are
+  # refused until the window rolls forward. 0 disables the limit. A device
+  # account's password is generated and never user-chosen, so unbounded
+  # guessing is a smaller risk here than for a password a person picked -- but
+  # smaller is not zero, and there was previously no limit at all.
+  login_attempts_per_window: 20
+  login_window_seconds: 300
+
 # ---------------------------------------------------------------------------
 # stubs: endpoints answered but not implemented
 # ---------------------------------------------------------------------------
 stubs:
-  listen: ":8084"
+  # Loopback only, same reasoning as dauth.listen above.
+  listen: "127.0.0.1:8084"
   # Log request bodies. Useful exactly once, while working out what an
   # unimplemented endpoint is being asked for. Far too chatty to leave on.
   log_bodies: false
 
-  # Where the BCAT probe writes a transcript of what the console asked BCAT for.
+  # Answer the bcat-* hosts, logging every request in full.
   #
-  # Nothing reaches the probe in a normal deployment: the three bcat-* hosts are
-  # null-routed. This is here for TODO.md §2.4's experiment, which flips them and
-  # needs a console -- and the transcript this writes is the first record anyone
-  # would have of BCAT's undocumented request shapes.
+  # An EXPERIMENT, not a service, and it must stay off outside one. SwitchNet
+  # cannot serve BCAT: the `list` response body is undocumented, and whether the
+  # console verifies the delivery container's RSA signature has never been
+  # established. This settles only the first half -- does the console reach us,
+  # and what does it ask for -- and the log is the first record anyone would
+  # have of either.
+  #
+  # The probe itself is always registered; what gates it is a hosts file
+  # generated with 'switchnetctl hosts -bcat-probe', which points the three
+  # bcat-* hosts here instead of null-routing them. Regenerate without that
+  # flag afterwards: answering 200-with-no-body to a console that expected
+  # content turns an immediate, legible failure into a hang. See TODO.md 2.4.
+  #
+  # Where the BCAT probe writes a transcript of what the console asked BCAT for.
+  # Empty means it only logs, and writes no transcript to disk.
   bcat_record_dir: ""
 
 # ---------------------------------------------------------------------------
@@ -279,6 +304,13 @@ bcat:
 dashboard:
   listen: ":8087"
 
+  # Where to reach npln's matchmaking controls, and the token for them. Both
+  # must match npln.admin_listen and npln.admin_token above. Leave either empty
+  # and the matchmaking panel says it is not configured -- deliberately, rather
+  # than showing an empty queue that reads as "nobody is playing".
+  npln_admin_url: "127.0.0.1:8089"
+  npln_admin_token: ""
+
   # A shared secret required on every request. Empty means NO authentication:
   # anyone who can reach this port can schedule and cancel Splatfests.
   #
@@ -302,8 +334,10 @@ npln:
   # `listen`, proxy_pass for `rest_listen`. Crossing them completes the TLS
   # handshake and then fails with nothing in either log -- the game reports a
   # generic communication error and the server never sees a request.
-  listen: ":8085"
-  rest_listen: ":8086"
+  #
+  # All three loopback only: nginx is the only thing that reaches them directly.
+  listen: "127.0.0.1:8085"
+  rest_listen: "127.0.0.1:8086"
 
   # gamesync is the document/watch service, and this is where it listens
   # INTERNALLY -- deliberately not 7575.
@@ -312,7 +346,7 @@ npln:
   # edge: it terminates TLS there and grpc_passes to this address. Binding the
   # backend to 7575 too means nginx cannot start, and two listeners racing for
   # the port is a much worse first symptom than a port that reads oddly here.
-  gamesync_listen: ":8088"
+  gamesync_listen: "127.0.0.1:8088"
 
   # The NPLN tenant id. Splatoon 3's is dce9377b, which is where the tenant
   # hostname t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net comes from.
@@ -413,6 +447,19 @@ npln:
     # regular_stages: ["1", "2", "3", "4"]
     # bankara_rules: ["1", "2"]
     # bankara_stages: ["5", "6", "7", "8"]
+
+  # The matchmaking controls the dashboard drives: the live queue, force-start,
+  # per-mode player counts, cancelling a ticket.
+  #
+  # The queue lives in THIS process and the dashboard is a different one, so it
+  # needs a way across. NOT one of the Nintendo hostnames and never reached by a
+  # console -- bind it to loopback or a private interface.
+  #
+  # Served ONLY when admin_token is set. These controls start matches and change
+  # how many players one takes, so there is no version of them that is safe to
+  # hand to whoever can reach the port. Must match dashboard.npln_admin_token.
+  admin_listen: "127.0.0.1:8089"
+  admin_token: ""
 
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder

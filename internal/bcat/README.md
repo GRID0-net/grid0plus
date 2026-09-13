@@ -237,6 +237,126 @@ The container is a 4-byte little-endian length followed by block-padded
 ciphertext. The length bounds the real content, so there is no padding scheme to
 strip; trusting the block size instead hands zstd up to fifteen bytes of rubbish.
 
+## Texture conversion: shelling out, not reimplementing
+
+`ConvertTextures` (`texture.go`) turns a directory of PNGs into the `.bntx`
+files `BuildPacks` expects, by shelling out to an external tool rather than
+reimplementing BCn compression and Tegra swizzling in Go -- TODO.md §2.1
+says why: getting swizzling wrong "produces a texture that loads and renders
+as garbage, which is worse than one that fails," and an existing,
+purpose-built tool is a smaller risk than a fresh reimplementation.
+
+**What was actually verified, not assumed:** the tool this was built and
+tested against is
+[jam1garner/img2bntx](https://github.com/jam1garner/img2bntx) (and the
+`bntx` crate it wraps). It was cloned, built from source with `cargo build
+--release`, and run end to end against a real PNG as part of writing this
+package -- not taken on faith from its README. The output was byte-inspected
+and confirmed to carry a real `BNTX`/`NX  ` header and the given name in its
+string table.
+
+Two real properties of that output, read from its source rather than
+guessed: every texture comes out **uncompressed R8G8B8A8_SRGB** (no
+BC1/BC3/BC7 -- larger files, but nothing to get wrong about a compression
+format), and the container holds **exactly one texture, one mip level, no
+array layers**. It has no releases or prebuilt binaries; building it needs a
+Rust toolchain (`cargo build --release` from a clone, or
+`cargo install --git https://github.com/jam1garner/img2bntx`).
+
+`ConvertTextures` calls whatever binary `-texture-converter` names
+(`switchnetctl fest build`'s own flag) using img2bntx's CLI contract
+(`<tool> <in.png> <out.bntx> -n <name>`) -- any tool that speaks the same
+contract works, this package does not hardcode img2bntx specifically.
+Nothing here vendors the Rust source: it stays an external, operator-built
+dependency, the same way this repository treats mitmproxy for packet
+captures rather than embedding a proxy.
+
+**Settled 2026-09-03, against a real fest pack (`JUEA-00210`), not
+guessed:** a Splatfest does not load a standalone `.bntx`. Its `base` pack
+carries exactly one visual asset, `Model/Fest_JUEA-DUMPLING.bfres.zs` -- an
+`FRES` container (Switch/NX BFRES, magic `"FRES    "`, not the Wii U-era
+`v3.x` format most public BFRES libraries target) with **one embedded BNTX
+texture archive holding five named textures** (`M_HappiA_Alb`,
+`M_HappiB_Alb`, `M_HappiC_Alb`, `IconA_Uia`, `IconB_Uia` -- three team happi
+recolors and two icons) and no model data of any kind (no `FMDL`/`FVTX`
+section anywhere in the file). `ConvertTextures`'s bare `.bntx` output is
+therefore not, on its own, what a console loads for this.
+
+Two things worth recording precisely, since a future pass will need them:
+the embedded BNTX's own header (revision `0x400c`, the `BNTX`/`NX  ` layout)
+matched jam1garner's `bntx` crate **byte for byte** -- direct, real
+confirmation that this project's earlier verification of img2bntx's output
+shape was correct, not just plausible. What is *not* settled: the outer
+FRES container's own pointer/dictionary structure (the multi-texture
+dictionary the embedded BNTX uses, and roughly 4KB of outer-FRES data this
+pass could not identify) was not fully reverse-engineered, because doing so
+with confidence needs either a public spec this pass did not find or
+hardware to test a wrong guess against, and CLAUDE.md's first ground rule
+means the real file this was checked against cannot be committed here as a
+fixture regardless. **Do not build FRES-authoring code from a partial
+understanding of that structure** -- the failure mode is a texture that
+loads and renders as garbage, per TODO.md §2.1's own warning, with no way
+for this project to test it before an operator does.
+
+The best-founded next step, if this is picked up again: same-dimension
+texture *replacement* inside an existing real template (an operator-local
+file, never committed -- the same pattern as `SWITCHNET_BCAT_KEY_MATERIAL`
+below), splicing new swizzled pixel bytes into an already-valid container
+without changing its size or touching any pointer. That is a materially
+smaller, safer problem than authoring a new container's dictionary and
+relocation table from scratch, and was not attempted this pass for the same
+reason: it still needs the multi-texture dictionary walked correctly to
+find the right splice point, which was not verified with confidence.
+
+BFRES *model* authoring and BYAML editing (team names, idol dialogue) remain
+completely untouched either way.
+
+**Also settled 2026-09-03, against
+[`RAMDRAGONS/Splatoon-FesData`](https://github.com/RAMDRAGONS/Splatoon-FesData)
+(37 independent real fest packs, cross-checked against `JUEA-00210` above):
+what compression format each real texture slot actually uses, and that
+img2bntx's uncompressed output is a bigger gap than "larger files."** Every
+happi-coat and signboard slot is `0x1a06`; every icon slot is `0x2006`. That
+looks like it should mean BC7 for the small icons and something lighter for
+the large happi coats -- backwards from what "larger asset, lighter format"
+would suggest, which is exactly the kind of guess CLAUDE.md rule 6 warns
+against making from a plausible-looking pattern. Read against
+[`ScanMountGoat/bntx`](https://github.com/ScanMountGoat/bntx)'s own
+`SurfaceFormat` enum (`src/lib.rs`) instead of guessed: **`0x1a06` is
+`BC1Srgb`, `0x2006` is `BC7Srgb`** -- happi coats and the signboard are BC1,
+the icons are BC7, the reverse of the size-based guess. (Not ASTC anywhere;
+this project has no reason to think Splatfest textures use it.)
+
+Verified end to end, not just read from source: built
+[`ScanMountGoat/ultimate_tex`](https://github.com/ScanMountGoat/ultimate_tex)'s
+`ultimate_tex_cli` from source (`cargo build --release`, needing
+`RUSTFLAGS="-C link-arg=-lstdc++"` -- its ASTC backend links a compiled
+ISPC/C++ object the Rust linker does not pull `libstdc++` in for on its
+own) and ran it against synthetic images matching each real slot's exact
+dimensions:
+
+| slot | real dimensions | real format | real mips | `-f` flag that reproduced both, byte for byte |
+| --- | --- | --- | --- | --- |
+| happi coat | 512×512 | `0x1a06` | 10 | `BC1RgbaUnormSrgb` |
+| signboard | 870×340 | `0x1a06` | 10 | `BC1RgbaUnormSrgb` |
+| icon | 64×64 | `0x2006` | 7 | `BC7RgbaUnormSrgb` |
+
+The mip counts needed no flag at all -- `ultimate_tex_cli`'s default
+(`Mipmaps::GeneratedAutomatic`, full chain down to 1×1) lands on 10 and 7
+respectively for these exact dimensions, matching the real data without
+`--no-mipmaps` or any override.
+
+This does not change what `ConvertTextures` ships: `ultimate_tex_cli`
+takes the output name from the filename rather than an `-n` flag, and
+picking the right `-f` per slot needs code that knows which named slot an
+image is going into (happi/signboard vs. icon) -- and, per the section
+above, an uncompressed standalone `.bntx` from either tool is not what the
+game loads regardless of compression, since the real asset is the one
+embedded in a `.bfres`'s `FRES` container. Recorded here as the exact,
+verified mapping the next pass needs the moment the FRES-wrapper problem
+is solved, so that pass does not have to re-derive it -- or repeat this
+one's first guess, which had the two formats backwards.
+
 ## The lookup table is not in this repository
 
 `nisasyst`'s IV table is lifted from the game binary, so under CLAUDE.md's first

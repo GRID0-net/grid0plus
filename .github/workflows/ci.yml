@@ -107,26 +107,36 @@ jobs:
           # nncs2 must not point at the same address as everything else.
           grep -q '^192.168.1.51 *nncs2' /tmp/hosts.txt || {
             echo "::error::nncs2 is not pointed at the secondary address"; exit 1; }
-          # The system-update and phase 3 hosts must be commented out, not
-          # redirected. A redirected update host sets a persistent flag on the
-          # console; a redirected eShop host breaks the eShop for no gain.
+          # The system-update and phase 3 hosts must be null-routed (0.0.0.0),
+          # not redirected to a SwitchNet endpoint that does not implement
+          # them: a redirected update host sets a persistent flag on a
+          # console that ever switches back to real Nintendo (this
+          # deployment's emuMMC never does, which is why these are
+          # ServiceBlackhole rather than left ServicePassthrough -- see
+          # TestSystemUpdateHostsAreNullRouted), and a redirected eShop host
+          # breaks the eShop for no gain. accounts.nintendo.com is NOT in
+          # this list: unlike these, it is deliberately redirected to
+          # SwitchNet's own Nintendo Account link stub (internal/baas/nalink.go).
           for host in atumn.hac.lp1.d4c.nintendo.net \
                       aqua.hac.lp1.d4c.nintendo.net \
                       atum.hac.lp1.d4c.nintendo.net \
-                      bugyo.hac.lp1.eshop.nintendo.net \
-                      accounts.nintendo.com; do
-            if grep -qE "^[0-9]" <(grep -F "$host" /tmp/hosts.txt); then
-              echo "::error::$host is being redirected; it must stay passthrough"; exit 1
+                      bugyo.hac.lp1.eshop.nintendo.net; do
+            line=$(grep -F "$host" /tmp/hosts.txt)
+            if ! echo "$line" | grep -qE '^0\.0\.0\.0[[:space:]]'; then
+              echo "::error::$host is not null-routed to 0.0.0.0: $line"; exit 1
             fi
           done
           test -s /tmp/nginx.conf
           test -s /tmp/sans.txt
-          # The generated resolver configs must redirect, and must NOT redirect
-          # the system update or phase 3 hosts.
+          # The generated resolver configs must redirect the hosts SwitchNet
+          # implements, and must null-route (not redirect to a live
+          # SwitchNet endpoint) the system update hosts -- same reasoning as
+          # the hosts.txt check above.
           grep -q 'address=/dauth-lp1.ndas.srv.nintendo.net/192.168.1.50' /tmp/switchnet.dnsmasq.conf
           grep -q 'address=/nncs2-lp1.n.n.srv.nintendo.net/192.168.1.51'  /tmp/switchnet.dnsmasq.conf
-          if grep -qE '^address=/(atumn|aqua|sun)\.' /tmp/switchnet.dnsmasq.conf; then
-            echo "::error::a system update host is being redirected in the dnsmasq config"; exit 1
+          if grep -E '^address=/(atumn|aqua|sun)\.' /tmp/switchnet.dnsmasq.conf \
+              | grep -qvE '^address=/[^/]+/0\.0\.0\.0([[:space:]#]|$)'; then
+            echo "::error::a system update host is being redirected to a live endpoint in the dnsmasq config"; exit 1
           fi
           # unbound must use 'static', not 'transparent'/'redirect', or AAAA leaks.
           grep -q 'local-zone: "dauth-lp1.ndas.srv.nintendo.net." static' /tmp/switchnet.unbound.conf
@@ -165,22 +175,3 @@ jobs:
           # by go vet and the tests; this reports the rest without gating a merge
           # on style.
           args: --timeout=5m --issues-exit-code=0
-
-  docker:
-    name: docker build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # The image build runs go vet and go test itself, so this also proves the
-      # tests pass in a clean container with no host Go cache.
-      - name: build the image
-        run: docker build -t switchnet:ci .
-
-      - name: every binary is in the image and runs
-        run: |
-          for svc in dns dauth aauth baas stubs natcheck switchnetctl; do
-            docker run --rm switchnet:ci /usr/local/bin/$svc -h >/dev/null 2>&1 \
-              || docker run --rm switchnet:ci test -x /usr/local/bin/$svc \
-              || { echo "::error::$svc is missing from the image"; exit 1; }
-          done

@@ -43,8 +43,9 @@ func writeConfig(t *testing.T, body string) string {
 func TestDefaultsAreValid(t *testing.T) {
 	clearEnv(t)
 
-	// A first run with no config file at all has to work, because that is how
-	// the containers in docker-compose.yml start.
+	// A first run with no config file at all has to work: internal/service's
+	// ConfigFlag defaults to an empty path, so anything invoking a binary
+	// directly with no -config flag and no SWITCHNET_CONFIG set relies on this.
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("the defaults do not validate: %v", err)
@@ -160,6 +161,30 @@ network:
 		if _, err := Load(writeConfig(t, body)); err != nil {
 			t.Errorf("rejected a valid configuration: %v", err)
 		}
+	}
+}
+
+// TestNATCheckSecondaryIPMustDifferByAddressNotByText covers the gap fixed
+// alongside this test: the same check above compared the two settings as
+// plain strings, so two different textual spellings of the identical address
+// (here, an IPv4-mapped IPv6 form) passed validation -- the exact
+// misconfiguration TestNATCheckSecondaryIPMustDiffer exists to catch, only
+// caught later at `make up` when internal/dns.Listen's own net.IP.Equal
+// check refuses to start instead.
+func TestNATCheckSecondaryIPMustDifferByAddressNotByText(t *testing.T) {
+	clearEnv(t)
+
+	path := writeConfig(t, `
+network:
+  public_ip: 192.168.1.50
+  natcheck_secondary_ip: ::ffff:192.168.1.50
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("an IPv4-mapped-IPv6 spelling of the same address was accepted for nncs1 and nncs2")
+	}
+	if !strings.Contains(err.Error(), "de-duplicate") {
+		t.Errorf("the error does not explain the consequence: %v", err)
 	}
 }
 

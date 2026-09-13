@@ -12,6 +12,7 @@ import (
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/aauth"
+	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/service"
 )
@@ -58,7 +59,11 @@ func main() {
 	ctx, cancel := service.SignalContext()
 	defer cancel()
 
-	if err := service.ServeHTTP(ctx, log, cfg.AAuth.Listen, mux); err != nil {
+	// No dependency checks: these services hold their signing keys in memory and
+	// talk to nothing else, so answering at all IS the health.
+	healthz := health.New("aauth")
+
+	if err := service.ServeHTTPWithHealth(ctx, log, cfg.AAuth.Listen, mux, healthz); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

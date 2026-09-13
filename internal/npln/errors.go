@@ -59,3 +59,12 @@ var (
 	// caller may not know exists.
 	ErrNotFound = status.Error(codes.NotFound, "not found")
 )
+
+// errInternal refuses a call that failed for a reason on this server's own
+// side -- a database error, not anything about the request. Unlike
+// errMalformed it carries no meaning about what the console did, so it does
+// not vary with Environment, and the real reason is logged by the caller
+// rather than sent: a database error is not the console's to read.
+func errInternal() error {
+	return status.Error(codes.Internal, "")
+}

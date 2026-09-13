@@ -47,7 +47,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images, npln_fests, npln_matches RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts, npln_matches RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -56,20 +56,25 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 // runStoreContract exercises one Store implementation.
 func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 	tests := map[string]func(*testing.T, Store){
-		"users":                 testUsers,
-		"deviceAccounts":        testDeviceAccounts,
-		"reassignDeviceAccount": testReassignDeviceAccount,
-		"friendCodes":           testFriendCodes,
-		"friendships":           testFriendships,
-		"friendRequests":        testFriendRequests,
-		"blocks":                testBlocks,
-		"presence":              testPresence,
-		"images":                testImages,
-		"findUsers":             testFindUsers,
-		"userLogin":             testUserLogin,
-		"fests":                 testFests,
-		"festEntries":           testFestEntries,
-		"matches":               testMatches,
+		"users":                     testUsers,
+		"deviceAccounts":            testDeviceAccounts,
+		"reassignDeviceAccount":     testReassignDeviceAccount,
+		"revokeDeviceAccountTokens": testRevokeDeviceAccountTokens,
+		"undeleteDeviceAccount":     testUndeleteDeviceAccount,
+		"friendCodes":               testFriendCodes,
+		"friendships":               testFriendships,
+		"friendRequests":            testFriendRequests,
+		"blocks":                    testBlocks,
+		"presence":                  testPresence,
+		"images":                    testImages,
+		"findUsers":                 testFindUsers,
+		"userLogin":                 testUserLogin,
+		"fests":                     testFests,
+		"festEntries":               testFestEntries,
+		"coopShifts":                testCoopShifts,
+		"matches":                   testMatches,
+		"ping":                      testPing,
+		"stats":                     testStats,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -177,6 +182,38 @@ func testUsers(t *testing.T, s Store) {
 	}
 	if updated.Extras[ScopeFriends]["playLog"] == nil {
 		t.Error("friends extras did not round-trip")
+	}
+
+	// Deleted is a patchable field like any other, and FindUsers/ListUsers
+	// must stop returning the user the moment it is set -- both
+	// implementations filter it themselves rather than the caller doing so,
+	// per Postgres's `NOT u.deleted` and Memory's equivalent skip.
+	deleted := true
+	updated, err = s.UpdateUser(ctx, u.ID, UserPatch{Deleted: &deleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Deleted {
+		t.Error("Deleted did not round-trip")
+	}
+	if found, err := s.FindUsers(ctx, UserQuery{IDs: []string{u.ID}}); err != nil {
+		t.Fatal(err)
+	} else if len(found) != 0 {
+		t.Errorf("FindUsers returned a deleted user: %+v", found)
+	}
+
+	notDeleted := false
+	updated, err = s.UpdateUser(ctx, u.ID, UserPatch{Deleted: &notDeleted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Deleted {
+		t.Error("Deleted did not clear")
+	}
+	if found, err := s.FindUsers(ctx, UserQuery{IDs: []string{u.ID}}); err != nil {
+		t.Fatal(err)
+	} else if len(found) != 1 {
+		t.Errorf("FindUsers did not return the restored user: %+v", found)
 	}
 
 	// A duplicate user id must conflict rather than overwrite.
@@ -356,6 +393,16 @@ func testDeviceAccounts(t *testing.T, s Store) {
 		t.Errorf("a deleted device account is still listed: %+v", das)
 	}
 
+	// ListAllDeviceAccounts still shows it -- the Debug tab's undelete button
+	// has nothing to act on otherwise.
+	all, err := s.ListAllDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].DeletedAt == nil {
+		t.Errorf("ListAllDeviceAccounts = %+v, want the one deleted device account", all)
+	}
+
 	// Deleting twice, or deleting somebody else's, is not found.
 	if err := s.DeleteDeviceAccount(ctx, u.ID, da.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete: err = %v, want ErrNotFound", err)
@@ -423,6 +470,102 @@ func testReassignDeviceAccount(t *testing.T, s Store) {
 	}
 	if err := s.ReassignDeviceAccount(ctx, da.ID, "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("reassign to a missing user: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testRevokeDeviceAccountTokens(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Revocable")
+	das, err := s.ListDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	da := das[0]
+
+	if da.TokensRevokedBefore != nil {
+		t.Fatalf("a fresh device account already has TokensRevokedBefore set: %v", da.TokensRevokedBefore)
+	}
+
+	cutoff := time.Now().UTC().Truncate(time.Microsecond)
+	if err := s.RevokeDeviceAccountTokens(ctx, da.ID, cutoff); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+
+	got, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatalf("get device account: %v", err)
+	}
+	if got.TokensRevokedBefore == nil || !got.TokensRevokedBefore.Equal(cutoff) {
+		t.Errorf("tokens_revoked_before = %v, want it to equal %v exactly", got.TokensRevokedBefore, cutoff)
+	}
+	// Everything else about the account is untouched.
+	if got.PasswordSHA256 != da.PasswordSHA256 || got.UserID != da.UserID {
+		t.Error("revoking tokens changed the device account's password or owner")
+	}
+
+	// Revoking again with a later cutoff moves it forward -- an operator
+	// noticing a second leak should not have to remember the first cutoff.
+	later := cutoff.Add(time.Hour)
+	if err := s.RevokeDeviceAccountTokens(ctx, da.ID, later); err != nil {
+		t.Fatalf("revoke again: %v", err)
+	}
+	got, err = s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TokensRevokedBefore == nil || !got.TokensRevokedBefore.Equal(later) {
+		t.Errorf("tokens_revoked_before after a second revoke = %v, want %v", got.TokensRevokedBefore, later)
+	}
+
+	if err := s.RevokeDeviceAccountTokens(ctx, "ffffffffffffffff", cutoff); !errors.Is(err, ErrNotFound) {
+		t.Errorf("revoke a missing device account: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testUndeleteDeviceAccount(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Reinstatable")
+	das, err := s.ListDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	da := das[0]
+
+	// Undeleting one that was never deleted is refused -- there is nothing to
+	// reinstate, and silently succeeding would hide a caller's mistake about
+	// which id it meant.
+	if err := s.UndeleteDeviceAccount(ctx, da.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("undelete a never-deleted device account: err = %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteDeviceAccount(ctx, u.ID, da.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	deleted, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.DeletedAt == nil {
+		t.Fatal("device account was not marked deleted")
+	}
+
+	if err := s.UndeleteDeviceAccount(ctx, da.ID); err != nil {
+		t.Fatalf("undelete: %v", err)
+	}
+	restored, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.DeletedAt != nil {
+		t.Errorf("device account still marked deleted after undelete: %v", restored.DeletedAt)
+	}
+	// Nothing else about the account moved.
+	if restored.PasswordSHA256 != da.PasswordSHA256 || restored.UserID != da.UserID {
+		t.Error("undelete changed the device account's password or owner")
+	}
+
+	if err := s.UndeleteDeviceAccount(ctx, "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("undelete a missing device account: err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -777,6 +920,25 @@ func testPresence(t *testing.T, s Store) {
 	}
 	if updated.Extras[ScopeFriends]["appInfo:appId"] != appID {
 		t.Errorf("extras did not round-trip: %+v", updated.Extras[ScopeFriends])
+	}
+
+	// LastSeenAt tracks the report's own timestamp, not the moment the write
+	// happened -- a patch carrying a ReportedAt far from wall-clock time must
+	// come back exactly, not merely "close to now". A test that only ever
+	// passes a ReportedAt captured moments before the call cannot tell "value
+	// from the patch" from "value from the database's own clock", which is
+	// exactly the gap that let the two Store implementations disagree here
+	// (Postgres used to always write now()) without either failing.
+	reportedInThePast := now.Add(-30 * 24 * time.Hour)
+	backdated, err := s.UpdatePresence(ctx, u.ID, PresencePatch{
+		State: &state, ReportedAt: &reportedInThePast,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !backdated.LastSeenAt.Equal(reportedInThePast) {
+		t.Errorf("last_seen_at = %v, want it to equal the reported timestamp %v exactly",
+			backdated.LastSeenAt, reportedInThePast)
 	}
 
 	// A patch touches only the fields it names.
@@ -1139,6 +1301,130 @@ func testFests(t *testing.T, s Store) {
 	}
 }
 
+func testCoopShifts(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	sept := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)
+
+	first := CoopShift{
+		ID: "normal-1", Kind: "normal", StageID: 1, Boss: "SakeJaw",
+		Weapons:      []int64{20000, 20010, 20020, 20030},
+		KumaWeaponID: 20900, RewardGearID: 0,
+		StartAt: sept, EndAt: sept.Add(8 * time.Hour),
+	}
+	second := CoopShift{
+		ID: "big_run-1", Kind: "big_run", StageID: 100, Boss: "SakeRope",
+		Weapons:      []int64{21000, 21010, 21020, 21030},
+		KumaWeaponID: 21900, RewardGearID: 7,
+		Rewards: []int64{100, 200, 300},
+		StartAt: oct, EndAt: oct.Add(48 * time.Hour),
+	}
+
+	if err := s.UpsertCoopShift(ctx, first); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if err := s.UpsertCoopShift(ctx, second); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	got, err := s.GetCoopShift(ctx, "normal-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.StageID != 1 || got.Boss != "SakeJaw" {
+		t.Errorf("round-tripped %+v, want stage/boss to match", got)
+	}
+	if !got.StartAt.UTC().Equal(sept) {
+		t.Errorf("start_at = %s, want %s", got.StartAt.UTC(), sept)
+	}
+	if len(got.Weapons) != 4 || got.Weapons[0] != 20000 {
+		// Positional order matters: main_weapons is sent to the console in
+		// this order, so a reordering here would be silently wrong on the
+		// wire even though nothing about the store contract would catch it
+		// as a missing value.
+		t.Errorf("weapons = %v, want [20000 20010 20020 20030] in order", got.Weapons)
+	}
+
+	gotBigRun, err := s.GetCoopShift(ctx, "big_run-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(gotBigRun.Rewards) != 3 || gotBigRun.Rewards[0] != 100 {
+		t.Errorf("rewards = %v, want [100 200 300] in order", gotBigRun.Rewards)
+	}
+
+	// Soonest first.
+	list, err := s.ListCoopShifts(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("listed %d coop shifts, want 2", len(list))
+	}
+	if list[0].ID != "normal-1" || list[1].ID != "big_run-1" {
+		t.Errorf("list order = [%s %s], want the sooner shift first", list[0].ID, list[1].ID)
+	}
+
+	// Upsert replaces rather than duplicating, and preserves created_at.
+	updated := first
+	updated.Boss = "SakelienGiant"
+	if err := s.UpsertCoopShift(ctx, updated); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	list, err = s.ListCoopShifts(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("re-upserting created a duplicate: %d coop shifts", len(list))
+	}
+	again, err := s.GetCoopShift(ctx, "normal-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if again.Boss != "SakelienGiant" {
+		t.Error("boss was not updated")
+	}
+	if !again.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at changed on update: %s -> %s", got.CreatedAt, again.CreatedAt)
+	}
+
+	// A stored shift's weapons must not alias the caller's slice.
+	mutable := []int64{22000, 22010, 22030, 22050}
+	third := CoopShift{
+		ID: "normal-2", Kind: "normal", StageID: 2, Weapons: mutable,
+		KumaWeaponID: 22900,
+		StartAt:      oct.Add(24 * time.Hour), EndAt: oct.Add(32 * time.Hour),
+	}
+	if err := s.UpsertCoopShift(ctx, third); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	mutable[0] = 99999
+	stored, err := s.GetCoopShift(ctx, "normal-2")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if stored.Weapons[0] != 22000 {
+		t.Error("mutating the caller's slice changed stored state")
+	}
+
+	if _, err := s.GetCoopShift(ctx, "normal-99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing coop shift returned %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteCoopShift(ctx, "normal-2"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetCoopShift(ctx, "normal-2"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted coop shift returned %v, want ErrNotFound", err)
+	}
+	// Idempotent, the same as DeleteFest.
+	if err := s.DeleteCoopShift(ctx, "normal-2"); err != nil {
+		t.Errorf("deleting a missing coop shift errored: %v", err)
+	}
+}
+
 // testFestEntries exercises the Splatfest vote store against both
 // implementations.
 //
@@ -1233,78 +1519,122 @@ func testFestEntries(t *testing.T, s Store) {
 	}
 }
 
-// testMatches exercises the match log against both implementations.
-//
-// Two properties matter. Recording the same id twice must not error, because a
-// match log is not worth failing a match over. And the log must NOT be tied to
-// the users in it: history that disappears when somebody leaves is not history,
-// which is why players is an array rather than a join table.
 func testMatches(t *testing.T, s Store) {
 	ctx := t.Context()
 
-	base := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
-	for i, m := range []Match{
-		{ID: "m1", Mode: "turf_war", Players: []string{"alice", "bob"}, Host: "alice", CreatedAt: base},
-		{ID: "m2", Mode: "turf_war", Players: []string{"bob", "carol"}, Host: "bob", CreatedAt: base.Add(time.Minute)},
-		{ID: "m3", Mode: "salmon_run", Players: []string{"alice"}, Host: "alice", CreatedAt: base.Add(2 * time.Minute)},
-	} {
-		if err := s.RecordMatch(ctx, m); err != nil {
-			t.Fatalf("record match %d: %v", i, err)
-		}
+	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	older := Match{
+		ID: "session-older", Tenant: "dce9377b", Mode: "turf_war",
+		HostUserID: "aaaaaaaaaaaaaaaa",
+		PlayerIDs:  []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"},
+		CreatedAt:  now.Add(-time.Hour),
+	}
+	newer := Match{
+		ID: "session-newer", Tenant: "dce9377b", Mode: "salmon_run",
+		HostUserID: "cccccccccccccccc",
+		PlayerIDs:  []string{"cccccccccccccccc", "dddddddddddddddd", "eeeeeeeeeeeeeeee"},
+		Forced:     true,
+		CreatedAt:  now,
 	}
 
-	// Recording the same id again is a no-op, not an error.
-	if err := s.RecordMatch(ctx, Match{
-		ID: "m1", Mode: "changed", Players: []string{"nobody"}, Host: "nobody",
-	}); err != nil {
-		t.Fatalf("re-recording a match errored: %v", err)
+	if err := s.CreateMatch(ctx, older); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.CreateMatch(ctx, newer); err != nil {
+		t.Fatalf("create: %v", err)
 	}
 
 	list, err := s.ListMatches(ctx, 10)
 	if err != nil {
-		t.Fatalf("list matches: %v", err)
-	}
-	if len(list) != 3 {
-		t.Fatalf("got %d matches, want 3", len(list))
-	}
-	// Newest first: the only read this table has is "what happened recently".
-	if list[0].ID != "m3" || list[2].ID != "m1" {
-		t.Errorf("order = %s %s %s, want m3 m2 m1", list[0].ID, list[1].ID, list[2].ID)
-	}
-	if list[2].Mode != "turf_war" {
-		t.Errorf("re-recording overwrote the original: mode = %q", list[2].Mode)
-	}
-	if len(list[0].Players) != 1 || list[0].Players[0] != "alice" {
-		t.Errorf("players = %v", list[0].Players)
-	}
-
-	if limited, err := s.ListMatches(ctx, 2); err != nil {
-		t.Fatalf("list matches: %v", err)
-	} else if len(limited) != 2 {
-		t.Errorf("the limit was ignored: got %d", len(limited))
-	}
-
-	// A match with no players at all: nil and empty must mean the same thing in
-	// both implementations, which is the divergence this contract keeps finding.
-	if err := s.RecordMatch(ctx, Match{ID: "empty", Mode: "turf_war", Host: "alice"}); err != nil {
-		t.Fatalf("a match with a nil player list was refused: %v", err)
-	}
-
-	// The stored slice must not alias the caller's.
-	mutable := []string{"alice"}
-	if err := s.RecordMatch(ctx, Match{
-		ID: "alias", Mode: "turf_war", Players: mutable, Host: "alice",
-	}); err != nil {
-		t.Fatalf("record: %v", err)
-	}
-	mutable[0] = "MUTATED"
-	list, err = s.ListMatches(ctx, 50)
-	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	for _, m := range list {
-		if m.ID == "alias" && m.Players[0] != "alice" {
-			t.Error("mutating the caller's slice changed stored state")
-		}
+	if len(list) != 2 {
+		t.Fatalf("got %d matches, want 2", len(list))
+	}
+	// Newest first.
+	if list[0].ID != "session-newer" || list[1].ID != "session-older" {
+		t.Errorf("order = [%s %s], want the newer match first", list[0].ID, list[1].ID)
+	}
+	if !list[0].Forced {
+		t.Error("forced did not round-trip")
+	}
+	if len(list[0].PlayerIDs) != 3 || list[0].PlayerIDs[0] != "cccccccccccccccc" {
+		t.Errorf("player_ids = %v, want them back in order", list[0].PlayerIDs)
+	}
+	if list[1].HostUserID != "aaaaaaaaaaaaaaaa" {
+		t.Errorf("host_user_id = %q, want aaaaaaaaaaaaaaaa", list[1].HostUserID)
+	}
+
+	// limit is honoured.
+	limited, err := s.ListMatches(ctx, 1)
+	if err != nil {
+		t.Fatalf("list limited: %v", err)
+	}
+	if len(limited) != 1 || limited[0].ID != "session-newer" {
+		t.Errorf("limited list = %+v, want just the newer match", limited)
+	}
+
+	// Re-recording the same id is not an error and does not duplicate the
+	// row: a match is written once, at formation, and a retried write after a
+	// network blip must not fail the caller or grow the history.
+	if err := s.CreateMatch(ctx, older); err != nil {
+		t.Fatalf("re-create: %v", err)
+	}
+	list, err = s.ListMatches(ctx, 10)
+	if err != nil {
+		t.Fatalf("list after re-create: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("re-recording an existing match id created a duplicate: %d matches", len(list))
+	}
+}
+
+// testPing is in the contract because health checks read it, and a Ping that
+// answers on one implementation and not the other would make a service look
+// degraded only in the deployment that matters.
+func testPing(t *testing.T, s Store) {
+	if err := s.Ping(context.Background()); err != nil {
+		t.Errorf("Ping on a live store: %v", err)
+	}
+}
+
+// testStats guards against Stats drifting from what the other contract tests
+// already establish -- a friendship written as two rows (testFriendships),
+// deleted counted alongside total rather than instead of it (testUsers).
+func testStats(t *testing.T, s Store) {
+	ctx := t.Context()
+
+	before, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+
+	a := makeUser(t, s, "Alice")
+	b := makeUser(t, s, "Bob")
+	if err := s.AddFriendship(ctx, a.ID, b.ID, time.Now()); err != nil {
+		t.Fatalf("add friendship: %v", err)
+	}
+	deleted := true
+	if _, err := s.UpdateUser(ctx, b.ID, UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+
+	got, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if got.Users != before.Users+2 {
+		t.Errorf("users = %d, want %d", got.Users, before.Users+2)
+	}
+	if got.DeletedUsers != before.DeletedUsers+1 {
+		t.Errorf("deletedUsers = %d, want %d", got.DeletedUsers, before.DeletedUsers+1)
+	}
+	// makeUser creates one device account per user.
+	if got.DeviceAccounts != before.DeviceAccounts+2 {
+		t.Errorf("deviceAccounts = %d, want %d", got.DeviceAccounts, before.DeviceAccounts+2)
+	}
+	// AddFriendship writes both directions.
+	if got.Friendships != before.Friendships+2 {
+		t.Errorf("friendships = %d, want %d", got.Friendships, before.Friendships+2)
 	}
 }

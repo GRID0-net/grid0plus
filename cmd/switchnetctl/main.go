@@ -12,6 +12,7 @@
 //	switchnetctl nginx    > deploy/nginx.generated.conf
 //	switchnetctl sans             # one hostname per line, for gen-certs.sh
 //	switchnetctl check            # validate config without writing anything
+//	switchnetctl run [service...] # build and run the Go services natively
 package main
 
 import (
@@ -27,13 +28,18 @@ import (
 func main() {
 	configPath := flag.String("config", os.Getenv("SWITCHNET_CONFIG"),
 		"path to config.yaml")
+	bcatProbe := flag.Bool("bcat-probe", false,
+		"hosts: point the bcat-* hosts at SwitchNet instead of null-routing them, "+
+			"for the TODO.md 2.4 experiment.")
 	flag.Usage = usage
 	flag.Parse()
 
-	// "account create" and "fest build" take further arguments of their own;
-	// every other command takes none.
-	subcommands := map[string]bool{"account": true, "fest": true}
-	if flag.NArg() == 0 || (!subcommands[flag.Arg(0)] && flag.NArg() != 1) {
+	// "account <sub>", "fest <sub>" and "coop <sub>" take further arguments
+	// of their own; "run" takes zero or more service names; every other
+	// command takes none.
+	if flag.NArg() == 0 ||
+		(flag.Arg(0) != "account" && flag.Arg(0) != "fest" && flag.Arg(0) != "coop" &&
+			flag.Arg(0) != "run" && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -47,7 +53,7 @@ func main() {
 	switch flag.Arg(0) {
 	case "hosts":
 		requirePublicIP(cfg)
-		fmt.Print(hostsFile(cfg))
+		fmt.Print(hostsFile(cfg, *bcatProbe))
 
 	case "dnsmasq":
 		requirePublicIP(cfg)
@@ -69,13 +75,56 @@ func main() {
 		fmt.Fprintln(os.Stderr, "switchnetctl: configuration is valid")
 		warn(cfg)
 
+	case "run":
+		runCmd(cfg, *configPath, flag.Args()[1:])
+
 	case "account":
-		if flag.NArg() < 2 || flag.Arg(1) != "create" {
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account create ...\n\n")
-			fmt.Fprint(os.Stderr, accountCreateUsage)
+		if flag.NArg() < 2 {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable|delete-user|restore-user> ...\n")
 			os.Exit(2)
 		}
-		accountCreate(cfg, flag.Args()[2:])
+		switch flag.Arg(1) {
+		case "create":
+			accountCreate(cfg, flag.Args()[2:])
+		case "revoke-tokens":
+			accountRevokeTokens(cfg, flag.Args()[2:])
+		case "disable":
+			accountDisable(cfg, flag.Args()[2:])
+		case "enable":
+			accountEnable(cfg, flag.Args()[2:])
+		case "delete-user":
+			accountDeleteUser(cfg, flag.Args()[2:])
+		case "restore-user":
+			accountRestoreUser(cfg, flag.Args()[2:])
+		default:
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl account <create|revoke-tokens|disable|enable|delete-user|restore-user> ...\n")
+			os.Exit(2)
+		}
+
+	case "coop":
+		if flag.NArg() < 2 {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|generate|list|delete|stages|weapons|bosses> ...\n")
+			os.Exit(2)
+		}
+		switch flag.Arg(1) {
+		case "schedule":
+			coopSchedule(cfg, flag.Args()[2:])
+		case "generate":
+			coopGenerate(cfg, flag.Args()[2:])
+		case "list":
+			coopList(cfg, flag.Args()[2:])
+		case "delete":
+			coopDelete(cfg, flag.Args()[2:])
+		case "stages":
+			coopStages()
+		case "weapons":
+			coopWeapons(flag.Args()[2:])
+		case "bosses":
+			coopBosses()
+		default:
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|generate|list|delete|stages|weapons|bosses> ...\n")
+			os.Exit(2)
+		}
 
 	case "fest":
 		if flag.NArg() < 2 || flag.Arg(1) != "build" {
@@ -105,12 +154,27 @@ Commands:
   nginx     nginx server blocks routing each Nintendo hostname to its backend
   sans      the hostnames the edge certificate needs, one per line
   check     validate the configuration and report anything risky
+  run       build and run the Go services natively, in this terminal --
+            'switchnetctl run' for all of them, or name a subset, e.g.
+            'switchnetctl run baas dauth'. Deliberately does not restart a
+            service that exits unexpectedly; see deploy/systemd for that.
   account   create a user from a device account id and password you already
-            have, rather than one the server generates. See
-            'switchnetctl account create -h'.
+            have, rather than one the server generates; revoke a device
+            account's live sessions; disable/re-enable a single device
+            account; or delete/restore a user entirely -- every device
+            account under them at once, existing sessions included -- all
+            without touching the database by hand. See
+            'switchnetctl account create -h', '... revoke-tokens -h',
+            '... disable -h', '... enable -h', '... delete-user -h' and
+            '... restore-user -h'.
   fest      build a Splatfest's BCAT packs, write the seed folder and register
             the fest, in one step so the four values that must agree cannot
             drift apart. See 'switchnetctl fest build -h'.
+  coop      schedule a Salmon Run or Big Run rotation shift by hand, or
+            auto-fill a stretch of the normal rotation with 'coop generate';
+            list or delete scheduled shifts, or print the real
+            stage/weapon/boss id tables a shift is built from. See
+            'switchnetctl coop schedule -h' and '... generate -h'.
 
 Redirection is best done off the console: run cmd/dns, or add the generated
 dnsmasq or unbound configuration to a resolver you already have. The hosts file
@@ -138,27 +202,49 @@ func warn(cfg config.Config) {
 			"warning: keys.device_id_secret is empty. Device ids and the 'edi' claim "+
 				"will be derived from an empty secret, so they are predictable.")
 	}
+	if len(cfg.NPLN.IceServers) == 0 {
+		fmt.Fprintln(os.Stderr,
+			"warning: npln.ice_servers is empty. Splatoon 3 uses ICE rather than the "+
+				"NAT-check pair, so consoles behind different NATs will match and then "+
+				"fail to connect -- the lobby fills and the match never starts, which "+
+				"looks like a matchmaking bug from the server side. Consoles on one LAN "+
+				"are unaffected.")
+	}
+	for i, s := range cfg.NPLN.IceServers {
+		if s.Kind == "turn" && s.Username == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: npln.ice_servers[%d] is a TURN server with no username. "+
+					"TURN needs a credential; the console will be handed one it cannot "+
+					"use, and will fall back to a direct connection that may not work.\n", i)
+		}
+	}
 	if cfg.Keys.GenerateIfMissing {
 		fmt.Fprintln(os.Stderr,
 			"note: keys.generate_if_missing is on. Once "+cfg.Keys.Dir+" is backed up, "+
 				"turn it off so a lost volume fails loudly instead of silently "+
 				"invalidating every token the consoles hold.")
 	}
-	if len(cfg.NPLN.IceServers) == 0 {
-		fmt.Fprintln(os.Stderr,
-			"warning: npln.ice_servers is empty, so AllocateIceServerSet hands the "+
-				"console nothing. Splatoon 3 uses ICE rather than the NAT-check pair, "+
-				"so consoles that cannot reach each other directly will fill a lobby "+
-				"that never starts a match -- which looks exactly like a matchmaking "+
-				"bug from this side. Consoles on one LAN are fine without it.")
-	}
 	if cfg.Redis.URL == "" {
-		// The dashboard is a separate process from baas, so the in-process bus
-		// delivers nothing to it. Silently: the page simply never updates.
 		fmt.Fprintln(os.Stderr,
-			"warning: redis.url is empty. The presence bus is then in-process, which "+
-				"does not cross a process boundary -- the dashboard's live view will "+
-				"never update and nothing will say why.")
+			"warning: redis.url is empty. baas, npln and dashboard each get their own "+
+				"in-process presence bus, which delivers nothing across a process "+
+				"boundary -- the dashboard's 'online now' view will silently stay empty "+
+				"and match/presence updates from npln will never reach it. Fine when "+
+				"everything runs as one process; set this before running dashboard or "+
+				"npln separately.")
+	}
+	if (cfg.Dashboard.NPLNAdminToken == "") != (cfg.NPLN.AdminToken == "") {
+		fmt.Fprintln(os.Stderr,
+			"warning: exactly one of dashboard.npln_admin_token and npln.admin_token is "+
+				"set. They must agree -- the dashboard authenticates to npln's matchmaking "+
+				"controls with this token, and a mismatch reaches the operator as a plain "+
+				"401 with nothing connecting it back to these two settings.")
+	} else if cfg.Dashboard.NPLNAdminToken != "" && cfg.NPLN.AdminToken != "" &&
+		cfg.Dashboard.NPLNAdminToken != cfg.NPLN.AdminToken {
+		fmt.Fprintln(os.Stderr,
+			"warning: dashboard.npln_admin_token does not match npln.admin_token. "+
+				"They must be the same value, or the dashboard's matchmaking controls "+
+				"will fail every request with a plain 401.")
 	}
 }
 
@@ -169,7 +255,7 @@ func warn(cfg config.Config) {
 // Atmosphère applies the LAST matching line, so order is significant: broad
 // entries first, specific overrides last. In the hosts file '*' matches zero or
 // more characters and '%' expands to the environment ("lp1").
-func hostsFile(cfg config.Config) string {
+func hostsFile(cfg config.Config, bcatProbe bool) string {
 	ip := cfg.Network.PublicIP
 	nncs2 := cfg.Network.NATCheckSecondaryIP
 
@@ -245,8 +331,22 @@ func hostsFile(cfg config.Config) string {
 	section("telemetry: null-routed")
 	b.WriteString("# Not redirected to SwitchNet: there is nothing useful to do with a\n")
 	b.WriteString("# console's crash and play reports, and answering them only fills the log.\n")
+	if bcatProbe {
+		b.WriteString("#\n")
+		b.WriteString("# -bcat-probe is ON: the three bcat-* hosts below point at SwitchNet\n")
+		b.WriteString("# instead of 0.0.0.0. This is the TODO.md 2.4 experiment, NOT a working\n")
+		b.WriteString("# BCAT service -- SwitchNet logs what the console asks for and answers\n")
+		b.WriteString("# 200 with an empty body via internal/bcat.Probe, which is always\n")
+		b.WriteString("# registered -- this flag only decides which hosts route to it.\n")
+		b.WriteString("# Regenerate WITHOUT the flag when the experiment is over: answering a\n")
+		b.WriteString("# console that expected content turns a clean failure into a hang.\n")
+	}
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceBlackhole) {
-		emit("0.0.0.0", h)
+		addr := "0.0.0.0"
+		if bcatProbe && strings.HasPrefix(h.Pattern, "bcat-") {
+			addr = ip
+		}
+		emit(addr, h)
 	}
 
 	// Passthrough hosts get their own section only when there are any: on a
@@ -315,8 +415,9 @@ func nginxConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
-	// Phase 2's upstreams. Both are served by cmd/npln, which exists now: the
-	// gRPC gateway on npln.listen and the JSON front end on npln.rest_listen.
+	// Phase 2's upstreams. All three are served by cmd/npln, which exists now:
+	// the gRPC gateway on npln.listen, the JSON front end on npln.rest_listen,
+	// and gamesync on its own port (npln.gamesync_listen).
 	for _, svc := range []nintendo.Service{
 		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
 	} {
@@ -376,11 +477,11 @@ func nginxConf(cfg config.Config) string {
 		}
 		if svc == nintendo.ServiceNPLNRest {
 			b.WriteString("# These are the hosts Splatoon 3 talks to BEFORE it opens its gRPC\n")
-			b.WriteString("# channel: vermillion (device init), penne (login tickets), and the\n")
-			b.WriteString("# fro-N frontline connection. They are ordinary JSON, so proxy_pass\n")
-			b.WriteString("# -- NOT grpc_pass. The frontline connection is held open by the\n")
-			b.WriteString("# console and must not be closed or buffered, hence the long read\n")
-			b.WriteString("# timeout and proxy_buffering off in the block below.\n")
+			b.WriteString("# channel: vermillion, penne (login tickets), and the fro-N frontline\n")
+			b.WriteString("# connection -- served by internal/nplnrest on NPLN.RestListen. They\n")
+			b.WriteString("# are ordinary JSON, so proxy_pass -- NOT grpc_pass. The frontline\n")
+			b.WriteString("# connection is held open by the console and must not be closed or\n")
+			b.WriteString("# buffered, hence the long read timeout and proxy_buffering off below.\n")
 			// One block for the whole service: unlike baas, no host here has a
 			// per-host interop flag, so grouping by variant would only ever
 			// produce one bucket -- and picking the wrong one silently emits a

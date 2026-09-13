@@ -42,9 +42,15 @@ tokens and `baas` verifies both. Pointing them at different directories does not
 error: it rejects every request with "device token expired", which points nowhere
 near the cause.
 
-Key generation uses `O_EXCL`, so when `docker compose up` starts five services at
-once on a fresh volume, one wins and the rest load what it wrote. Before that,
-each generated its own and kept it in memory while the last writer won on disk.
+Key generation writes a temporary file and `os.Link`s it into place, so when
+several services start at the same moment on a fresh key directory --
+`switchnetctl run`, or `systemctl start switchnet.target` bringing up all
+eight units together -- one wins and the rest load what it wrote. It is not a
+plain `O_EXCL` create onto the final path: that publishes the NAME before the
+CONTENT, so the loser of the race can see the file exist and read it empty --
+see `writeKeyOnce`'s comment for the failure this fixed. Before either
+version of this existed, each process generated its own key independently and
+kept it in memory while the last writer won on disk.
 
 ## What is and is not verified
 

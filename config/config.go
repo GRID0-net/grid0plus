@@ -228,6 +228,21 @@ type BAAS struct {
 	// once every console in the group is registered, so a stranger who finds
 	// the server cannot add themselves.
 	AllowRegistration bool `yaml:"allow_registration"`
+
+	// LoginAttemptsPerWindow caps how many /1.0.0/login (and federation) login
+	// attempts one client address gets per LoginWindowSeconds. 0 disables the
+	// limit entirely.
+	//
+	// A device account's password is generated, high-entropy and never
+	// user-chosen, so unbounded guessing is a much smaller practical risk here
+	// than for a password a person picked -- but "much smaller" is not "none",
+	// and there was previously no limit of any kind on this endpoint. The
+	// default is generous enough that a household sharing one NAT address
+	// during ordinary, repeated wrong-password mistakes will not be affected.
+	LoginAttemptsPerWindow int `yaml:"login_attempts_per_window"`
+	// LoginWindowSeconds is the sliding window LoginAttemptsPerWindow counts
+	// over.
+	LoginWindowSeconds int `yaml:"login_window_seconds"`
 }
 
 // NPLN configures the Splatoon 3 game server (phase 2).
@@ -318,6 +333,24 @@ type NPLN struct {
 	// console sends, headers included — credentials are redacted, bodies are
 	// not.
 	RestRecordDir string `yaml:"rest_record_dir"`
+
+	// AdminListen is the operator API for the matchmaking controls: the queue,
+	// force-start, mode sizes, cancelling a ticket. The dashboard is a separate
+	// process from this one and the queue lives here, so this is how the two
+	// meet.
+	//
+	// NOT one of the Nintendo hostnames and never reached by a console. Bind it
+	// to loopback or a private interface.
+	AdminListen string `yaml:"admin_listen"`
+
+	// AdminToken is a shared secret required on every admin request. Empty
+	// means the admin API is NOT SERVED AT ALL.
+	//
+	// Off rather than open, because this API starts matches and changes how
+	// many players one takes. An operator who has not set a token has not opted
+	// in, and there is no version of these controls that is safe to hand to
+	// whoever can reach the port.
+	AdminToken string `yaml:"admin_token"`
 }
 
 // Rotation is the stage and mode rotation Splatoon 3's lobby shows.
@@ -408,6 +441,15 @@ type Dashboard struct {
 	// controls off the open network without pretending to be an identity
 	// system. See TODO.md for what a real answer would look like.
 	Token string `yaml:"token"`
+
+	// NPLNAdminURL and NPLNAdminToken reach cmd/npln's matchmaking controls,
+	// and must match that server's npln.admin_listen and npln.admin_token.
+	//
+	// The queue lives in the npln process. Without these the dashboard's
+	// matchmaking panel says it is not configured -- deliberately, rather than
+	// showing an empty queue that reads as "nobody is playing".
+	NPLNAdminURL   string `yaml:"npln_admin_url"`
+	NPLNAdminToken string `yaml:"npln_admin_token"`
 }
 
 // Stubs configures the catch-all server.
@@ -418,11 +460,8 @@ type Stubs struct {
 	LogBodies bool `yaml:"log_bodies"`
 
 	// BCATRecordDir is where the BCAT probe writes a transcript of what the
-	// console asked BCAT for.
-	//
-	// Nothing reaches the probe until the three bcat-* hosts are flipped away
-	// from ServiceBlackhole in internal/nintendo/hosts.go -- that is TODO.md
-	// §2.4's experiment, and it needs a console. See internal/bcat.Probe.
+	// console asked BCAT for. Empty means it only logs, and writes no
+	// transcript to disk. See internal/bcat.Probe.
 	BCATRecordDir string `yaml:"bcat_record_dir"`
 }
 
@@ -476,7 +515,7 @@ func Default() Config {
 			GenerateIfMissing: true,
 		},
 		DAuth: DAuth{
-			Listen:              ":8081",
+			Listen:              "127.0.0.1:8081",
 			Issuer:              "dauth-lp1.ndas.srv.nintendo.net",
 			JWKSURL:             "https://dcert-lp1.ndas.srv.nintendo.net/keys",
 			TokenTTL:            86400,
@@ -485,7 +524,7 @@ func Default() Config {
 			ClientCertPEMHeader: "X-SwitchNet-Client-Cert-PEM",
 		},
 		AAuth: AAuth{
-			Listen:           ":8082",
+			Listen:           "127.0.0.1:8082",
 			Issuer:           "aauth-lp1.ndas.srv.nintendo.net",
 			JWKSURL:          "https://acert-lp1.ndas.srv.nintendo.net/keys",
 			TokenTTL:         86400,
@@ -507,17 +546,20 @@ func Default() Config {
 			ImageBaseURL:       "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/images",
 			MaxImageBytes:      1 << 20,
 			AllowRegistration:  true,
+
+			LoginAttemptsPerWindow: 20,
+			LoginWindowSeconds:     300,
 		},
 		Stubs: Stubs{
-			Listen: ":8084",
+			Listen: "127.0.0.1:8084",
 		},
 		Dashboard: Dashboard{
 			Listen: ":8087",
 		},
 		NPLN: NPLN{
-			Listen:         ":8085",
-			RestListen:     ":8086",
-			GamesyncListen: ":8088",
+			Listen:         "127.0.0.1:8085",
+			RestListen:     "127.0.0.1:8086",
+			GamesyncListen: "127.0.0.1:8088",
 			Tenant:         "dce9377b",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
@@ -613,6 +655,8 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_BAAS_CONSOLE_PRESENCE_TTL", &c.BAAS.ConsolePresenceTTL)
 	envInt("SWITCHNET_BAAS_FRIEND_CODE_COOLDOWN", &c.BAAS.FriendCodeCooldown)
 	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
+	envInt("SWITCHNET_BAAS_LOGIN_ATTEMPTS_PER_WINDOW", &c.BAAS.LoginAttemptsPerWindow)
+	envInt("SWITCHNET_BAAS_LOGIN_WINDOW_SECONDS", &c.BAAS.LoginWindowSeconds)
 
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
 	envStr("SWITCHNET_STUBS_BCAT_RECORD_DIR", &c.Stubs.BCATRecordDir)
@@ -623,17 +667,21 @@ func applyEnv(c *Config) {
 
 	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)
 	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)
+	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_URL", &c.Dashboard.NPLNAdminURL)
+	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_TOKEN", &c.Dashboard.NPLNAdminToken)
 
 	envStr("SWITCHNET_NPLN_LISTEN", &c.NPLN.Listen)
 	envStr("SWITCHNET_NPLN_REST_LISTEN", &c.NPLN.RestListen)
-	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
 	envStr("SWITCHNET_NPLN_TENANT", &c.NPLN.Tenant)
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
+	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
 	envStr("SWITCHNET_NPLN_FRONTLINE_HOST", &c.NPLN.FrontlineHost)
 	envStr("SWITCHNET_NPLN_REST_RECORD_DIR", &c.NPLN.RestRecordDir)
 	envInt("SWITCHNET_NPLN_PLAYERS_PER_MATCH", &c.NPLN.PlayersPerMatch)
 	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)
+	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
+	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
@@ -653,9 +701,17 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("network.public_ip: %q is not an IP address", c.Network.PublicIP))
 	}
 	if ip := c.Network.NATCheckSecondaryIP; ip != "" {
-		if net.ParseIP(ip) == nil {
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
 			errs = append(errs, fmt.Errorf("network.natcheck_secondary_ip: %q is not an IP address", ip))
-		} else if ip == c.Network.PublicIP {
+		} else if parsed.Equal(net.ParseIP(c.Network.PublicIP)) {
+			// Parsed IP equality, not a string compare: two different textual
+			// forms of the same address (an IPv4-mapped IPv6 form, non-canonical
+			// zero-padding, and so on) are the SAME mistake this check exists to
+			// catch. internal/dns.Listen enforces the identical invariant with
+			// net.IP.Equal for the same reason -- string equality here would give
+			// this a false pass that only surfaces later, at `make up`, when dns
+			// refuses to start.
 			errs = append(errs, errors.New(
 				"network.natcheck_secondary_ip is the same as network.public_ip: "+
 					"Pia will de-duplicate the second NAT probe and NAT detection will never "+

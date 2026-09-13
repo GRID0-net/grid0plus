@@ -27,11 +27,31 @@ import (
 
 // registerPage renders the registration form.
 func (s *Server) registerPage(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.AllowRegistration {
+		writeHTML(w, http.StatusForbidden, registrationClosedHTML())
+		return
+	}
 	writeHTML(w, http.StatusOK, registerPageHTML(""))
 }
 
 // registerSubmit creates a person's SwitchNet account.
+//
+// Gated on AllowRegistration for the same reason POST /1.0.0/users is: an
+// operator turns it off once every console in the group is registered, "so
+// that somebody who finds the server cannot add themselves to it" (see that
+// field's own doc comment in router.go). Before this check existed, that lock
+// only covered the console-facing endpoint -- this page, reachable by anyone
+// who could reach the BAAS port, could still create a full login-credentialed
+// person account regardless of the setting, and internal/baas/nalink.go's
+// Nintendo Account link flow exists specifically to attach an account created
+// here onto a console.
 func (s *Server) registerSubmit(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.AllowRegistration {
+		s.log.Warn("baas: refused website registration, registration is disabled")
+		writeHTML(w, http.StatusForbidden, registrationClosedHTML())
+		return
+	}
+
 	form, err := parseForm(r)
 	if err != nil {
 		writeHTML(w, http.StatusBadRequest, registerPageHTML("Could not read that form submission."))
@@ -147,6 +167,14 @@ func registerPageHTML(problem string) string {
 		`autocomplete="new-password" required>`+
 		`<button type="submit">Create account</button>`+
 		`</form></body></html>`, htmlPageStyle, problemHTML)
+}
+
+func registrationClosedHTML() string {
+	return fmt.Sprintf(`<!doctype html><html><head><meta charset="utf-8">`+
+		`<title>SwitchNet — registration closed</title><style>%s</style></head><body>`+
+		`<h1>Registration is closed</h1>`+
+		`<p>The operator has turned off self-service registration on this server.</p>`+
+		`</body></html>`, htmlPageStyle)
 }
 
 func registerSuccessHTML(username string) string {

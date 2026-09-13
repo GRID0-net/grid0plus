@@ -53,3 +53,20 @@ from there. A shared device id costs a useful device list on the dashboard and
 nothing else. Conflating the two is how a friends system ends up showing every
 console the same account — see
 [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#identity-and-the-bug-this-design-exists-to-avoid).
+
+## Two undocumented `nintendo` claims: `x5t#S256` and `esv`
+
+Neither is on the [Kinnay wiki's device-information
+page](https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#device-information),
+but both are present on every real device token — see
+[`docs/CAPTURES/README.md`](../../docs/CAPTURES/README.md) item 9 for the full
+writeup.
+
+`x5t#S256` is a real RFC 7517 §4.9 SHA-256 thumbprint of the console's own TLS
+client certificate — `x5tS256` in this file hashes the same
+already-unverified bytes `deviceFrom` reads for everything else. `esv` is
+opaque, freshly-random padding: `NextendoNetwork/nx-dauth`'s own source
+(source-available) mints it as `base64url(33 random bytes)` on every single
+token, derived from nothing. `sign` calls `sjwt.NewESV()` fresh per token for
+exactly that reason — see `DeviceInfo`'s package comment in `internal/jwt` for
+why it is never cached or derived from the device.

@@ -67,6 +67,12 @@ type Config struct {
 
 	// AllowRegistration lets an unknown console create an account.
 	AllowRegistration bool
+
+	// LoginAttemptsPerWindow caps login attempts per client address per
+	// LoginWindow. 0 disables the limit.
+	LoginAttemptsPerWindow int
+	// LoginWindow is the sliding window LoginAttemptsPerWindow counts over.
+	LoginWindow time.Duration
 }
 
 // Server is the BAAS HTTP server.
@@ -127,6 +133,10 @@ type Server struct {
 	// same reason authCode is: an opaque value has nothing in it to verify.
 	naRefreshTokens   map[string]authCode
 	naRefreshTokensMu sync.Mutex
+
+	// loginLimiter throttles /1.0.0/login and /1.0.0/federation by client
+	// address. See ratelimit.go.
+	loginLimiter *loginLimiter
 }
 
 // Deps are the collaborators a Server needs.
@@ -160,6 +170,7 @@ func New(cfg Config, d Deps) *Server {
 		now:             func() time.Time { return time.Now().UTC() },
 		naAuthCodes:     map[string]authCode{},
 		naRefreshTokens: map[string]authCode{},
+		loginLimiter:    newLoginLimiter(cfg.LoginAttemptsPerWindow, cfg.LoginWindow),
 	}
 }
 
@@ -386,6 +397,39 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*caller, 
 			s.log.Warn("baas: refused token whose device account does not match its subject",
 				"subject", claims.Subject, "device_account", claims.DeviceAccountID,
 				"owner", da.UserID, "deleted", da.DeletedAt != nil)
+			writeError(w, r, errInvalidToken)
+			return nil, false
+		}
+		if da.TokensRevokedBefore != nil && time.Unix(claims.IssuedAt, 0).Before(*da.TokensRevokedBefore) {
+			// Minted before an operator revoked this device account's sessions
+			// (switchnetctl account revoke-tokens) -- cryptographically valid,
+			// not expired, refused anyway. The only way to react to a
+			// leaked-but-unexpired token before this existed was rotating the
+			// key every token for every console is signed with.
+			s.log.Warn("baas: refused a token minted before this device account's tokens were revoked",
+				"device_account", claims.DeviceAccountID,
+				"issued_at", time.Unix(claims.IssuedAt, 0), "revoked_before", *da.TokensRevokedBefore)
+			writeError(w, r, errInvalidToken)
+			return nil, false
+		}
+
+		// A user-level delete (switchnetctl account delete-user) is meant to
+		// evict every device account under that person at once, existing
+		// tokens included -- not just block new logins. The device account's
+		// own DeletedAt, checked above, does not cover this: deleting a user
+		// does not touch its device accounts' rows.
+		user, err := s.store.GetUser(r.Context(), claims.Subject)
+		switch {
+		case errors.Is(err, db.ErrNotFound):
+			writeError(w, r, errInvalidToken)
+			return nil, false
+		case err != nil:
+			writeInternalError(s.log, w, r, "load user", err)
+			return nil, false
+		}
+		if user.Deleted {
+			s.log.Warn("baas: refused token for a deleted user",
+				"subject", claims.Subject, "device_account", claims.DeviceAccountID)
 			writeError(w, r, errInvalidToken)
 			return nil, false
 		}

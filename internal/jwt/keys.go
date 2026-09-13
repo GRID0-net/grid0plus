@@ -200,8 +200,9 @@ func generate(path string) (*rsa.PrivateKey, error) {
 // process wrote first.
 //
 // The exclusive create is what makes this safe when several services start at
-// the same moment — which is every `docker compose up`, because they all share
-// one key directory and all find it empty. Without it, each process generates
+// the same moment — every `switchnetctl run` or `systemctl start
+// switchnet.target`, because they all share one key directory and all find it
+// empty. Without it, each process generates
 // its own key, the last writer wins on disk, and every process keeps the one it
 // made in memory. The result is dauth signing with one key while aauth verifies
 // with another, and the error the console eventually sees is "device token

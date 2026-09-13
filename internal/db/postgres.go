@@ -18,6 +18,9 @@ type Postgres struct {
 	pool *pgxpool.Pool
 }
 
+// Ping reports whether the pool can reach PostgreSQL.
+func (p *Postgres) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }
+
 // OpenPostgres connects to PostgreSQL and, if autoMigrate is set, brings the
 // schema up to date.
 func OpenPostgres(ctx context.Context, url string, maxConns int32, autoMigrate bool) (*Postgres, error) {
@@ -275,6 +278,9 @@ func (p *Postgres) UpdateUser(ctx context.Context, id string, patch UserPatch) (
 		}
 		add("extras", buf)
 	}
+	if patch.Deleted != nil {
+		add("deleted", *patch.Deleted)
+	}
 
 	q := `UPDATE users SET ` + strings.Join(sets, ", ") +
 		` WHERE id = $1 RETURNING ` + userColumns
@@ -370,12 +376,12 @@ func (p *Postgres) UpsertDevice(ctx context.Context, d Device) error {
 	return mapErr(err)
 }
 
-const deviceAccountColumns = `id, user_id, password_sha256, coalesce(device_id, ''), created_at, updated_at, deleted_at`
+const deviceAccountColumns = `id, user_id, password_sha256, coalesce(device_id, ''), created_at, updated_at, deleted_at, tokens_revoked_before`
 
 func scanDeviceAccount(row pgx.Row) (DeviceAccount, error) {
 	var da DeviceAccount
 	err := row.Scan(&da.ID, &da.UserID, &da.PasswordSHA256, &da.DeviceID,
-		&da.CreatedAt, &da.UpdatedAt, &da.DeletedAt)
+		&da.CreatedAt, &da.UpdatedAt, &da.DeletedAt, &da.TokensRevokedBefore)
 	if err != nil {
 		return DeviceAccount{}, mapErr(err)
 	}
@@ -393,6 +399,29 @@ func (p *Postgres) ListDeviceAccounts(ctx context.Context, userID string) ([]Dev
 	rows, err := p.pool.Query(ctx,
 		`SELECT `+deviceAccountColumns+` FROM device_accounts
 		 WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []DeviceAccount
+	for rows.Next() {
+		da, err := scanDeviceAccount(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, da)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// ListAllDeviceAccounts returns a user's device accounts, deleted ones
+// included -- see the interface doc for why ListDeviceAccounts's own
+// exclusion does not serve the Debug tab.
+func (p *Postgres) ListAllDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+deviceAccountColumns+` FROM device_accounts
+		 WHERE user_id = $1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -430,6 +459,34 @@ func (p *Postgres) ReassignDeviceAccount(ctx context.Context, deviceAccountID, n
 	tag, err := p.pool.Exec(ctx, `
 		UPDATE device_accounts SET user_id = $2, updated_at = now()
 		WHERE id = $1`, deviceAccountID, newUserID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UndeleteDeviceAccount clears deleted_at.
+func (p *Postgres) UndeleteDeviceAccount(ctx context.Context, deviceAccountID string) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE device_accounts SET deleted_at = NULL, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NOT NULL`, deviceAccountID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RevokeDeviceAccountTokens invalidates every token minted before `before`.
+func (p *Postgres) RevokeDeviceAccountTokens(ctx context.Context, deviceAccountID string, before time.Time) error {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE device_accounts SET tokens_revoked_before = $2, updated_at = now()
+		WHERE id = $1`, deviceAccountID, before)
 	if err != nil {
 		return mapErr(err)
 	}
@@ -819,11 +876,22 @@ func (p *Postgres) UpdatePresence(ctx context.Context, userID string, patch Pres
 		return Presence{}, mapErr(err)
 	}
 
-	sets := []string{"last_seen_at = now()"}
+	var sets []string
 	args := []any{userID}
 	add := func(col string, v any) {
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+
+	// LastSeenAt tracks the reported state's own timestamp when there is one --
+	// consistent with Memory.UpdatePresence, and with what "last seen" ought to
+	// mean: when the console said this happened, not when this write landed.
+	// Falling back to the database's own clock only when nothing was reported
+	// matches TouchPresence, which never sets ReportedAt at all.
+	if patch.ReportedAt != nil {
+		add("last_seen_at", *patch.ReportedAt)
+	} else {
+		sets = append(sets, "last_seen_at = now()")
 	}
 
 	if patch.State != nil {
@@ -972,51 +1040,6 @@ func (p *Postgres) DeleteFest(ctx context.Context, id string) error {
 	return mapErr(err)
 }
 
-// ---- matches -------------------------------------------------------------
-
-func (p *Postgres) RecordMatch(ctx context.Context, m Match) error {
-	if m.Players == nil {
-		// A nil slice becomes SQL NULL, which the NOT NULL column rejects while
-		// the in-memory store accepts it happily. The contract test is what
-		// catches that class of difference; this is the fix.
-		m.Players = []string{}
-	}
-	// ON CONFLICT DO NOTHING rather than an error: a match log is not worth
-	// failing a match over.
-	_, err := p.pool.Exec(ctx,
-		`INSERT INTO npln_matches (id, mode, players, host)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (id) DO NOTHING`,
-		m.ID, m.Mode, m.Players, m.Host)
-	return mapErr(err)
-}
-
-func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-	// id as the tiebreak on created_at, so the order is total and matches the
-	// in-memory store's -- two matches formed in the same instant is normal
-	// when several consoles queue at once.
-	rows, err := p.pool.Query(ctx,
-		`SELECT id, mode, players, host, created_at FROM npln_matches
-		 ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	defer rows.Close()
-
-	var out []Match
-	for rows.Next() {
-		var m Match
-		if err := rows.Scan(&m.ID, &m.Mode, &m.Players, &m.Host, &m.CreatedAt); err != nil {
-			return nil, mapErr(err)
-		}
-		out = append(out, m)
-	}
-	return out, mapErr(rows.Err())
-}
-
 // ---- splatfest entries ---------------------------------------------------
 
 const festEntryColumns = `fest_id, user_id, team, region, created_at, updated_at`
@@ -1078,4 +1101,144 @@ func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 		return Fest{}, mapErr(err)
 	}
 	return f, nil
+}
+
+// ---- Salmon Run / Big Run schedule ---------------------------------------
+
+const coopShiftColumns = `id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, start_at, end_at, created_at, updated_at`
+
+func (p *Postgres) UpsertCoopShift(ctx context.Context, c CoopShift) error {
+	// Same normalisation UpsertFest applies to Regions/PackKeys: a nil slice
+	// becomes SQL NULL, which the NOT NULL columns reject while the in-memory
+	// store accepts it happily. Normalised here so both implementations agree.
+	if c.Weapons == nil {
+		c.Weapons = []int64{}
+	}
+	if c.Rewards == nil {
+		c.Rewards = []int64{}
+	}
+
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_coop_shifts (id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, start_at, end_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 ON CONFLICT (id) DO UPDATE SET
+		     kind           = EXCLUDED.kind,
+		     stage_id       = EXCLUDED.stage_id,
+		     boss           = EXCLUDED.boss,
+		     weapons        = EXCLUDED.weapons,
+		     kuma_weapon_id = EXCLUDED.kuma_weapon_id,
+		     reward_gear_id = EXCLUDED.reward_gear_id,
+		     rewards        = EXCLUDED.rewards,
+		     start_at       = EXCLUDED.start_at,
+		     end_at         = EXCLUDED.end_at,
+		     updated_at     = now()`,
+		c.ID, c.Kind, c.StageID, c.Boss, c.Weapons, c.KumaWeaponID, c.RewardGearID, c.Rewards, c.StartAt, c.EndAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetCoopShift(ctx context.Context, id string) (CoopShift, error) {
+	return scanCoopShift(p.pool.QueryRow(ctx,
+		`SELECT `+coopShiftColumns+` FROM npln_coop_shifts WHERE id = $1`, id))
+}
+
+func (p *Postgres) ListCoopShifts(ctx context.Context) ([]CoopShift, error) {
+	// Soonest first, id as the tiebreak: the in-memory store orders the same
+	// way, and the contract test compares them.
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+coopShiftColumns+` FROM npln_coop_shifts ORDER BY start_at, id`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []CoopShift
+	for rows.Next() {
+		c, err := scanCoopShift(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) DeleteCoopShift(ctx context.Context, id string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM npln_coop_shifts WHERE id = $1`, id)
+	return mapErr(err)
+}
+
+func scanCoopShift(row interface{ Scan(...any) error }) (CoopShift, error) {
+	var c CoopShift
+	err := row.Scan(&c.ID, &c.Kind, &c.StageID, &c.Boss, &c.Weapons, &c.KumaWeaponID,
+		&c.RewardGearID, &c.Rewards, &c.StartAt, &c.EndAt, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return CoopShift{}, mapErr(err)
+	}
+	return c, nil
+}
+
+// ---- match history ---------------------------------------------------------
+
+const matchColumns = `id, tenant, mode, host_user_id, player_ids, forced, created_at`
+
+func (p *Postgres) CreateMatch(ctx context.Context, m Match) error {
+	if m.PlayerIDs == nil {
+		m.PlayerIDs = []string{}
+	}
+	// ON CONFLICT DO NOTHING: a match is recorded exactly once, at formation,
+	// and session ids do not repeat within the queue's own lifetime -- but a
+	// retried write after a network blip must not fail the caller (the match
+	// already formed either way) or duplicate the row.
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_matches (`+matchColumns+`)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO NOTHING`,
+		m.ID, m.Tenant, m.Mode, m.HostUserID, m.PlayerIDs, m.Forced, m.CreatedAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) {
+	if limit <= 0 || limit > DefaultMatchListLimit {
+		limit = DefaultMatchListLimit
+	}
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+matchColumns+` FROM npln_matches ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []Match
+	for rows.Next() {
+		var m Match
+		if err := rows.Scan(&m.ID, &m.Tenant, &m.Mode, &m.HostUserID,
+			&m.PlayerIDs, &m.Forced, &m.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, m)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// ---- operator debugging ----------------------------------------------------
+
+// Stats counts rows across the main tables in one query, so the numbers are
+// a consistent snapshot rather than drifting between separate round trips
+// under concurrent writes.
+func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
+	var s Stats
+	err := p.pool.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM users),
+		(SELECT count(*) FROM users WHERE deleted),
+		(SELECT count(*) FROM device_accounts),
+		(SELECT count(*) FROM device_accounts WHERE deleted_at IS NOT NULL),
+		(SELECT count(*) FROM devices),
+		(SELECT count(*) FROM friendships),
+		(SELECT count(*) FROM npln_fests),
+		(SELECT count(*) FROM npln_coop_shifts),
+		(SELECT count(*) FROM npln_matches),
+		(SELECT count(*) FROM images)
+	`).Scan(&s.Users, &s.DeletedUsers, &s.DeviceAccounts, &s.DeletedDeviceAccounts,
+		&s.Devices, &s.Friendships, &s.Fests, &s.CoopShifts, &s.Matches, &s.Images)
+	return s, mapErr(err)
 }

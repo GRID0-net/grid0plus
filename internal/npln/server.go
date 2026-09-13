@@ -23,12 +23,15 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
+	"github.com/n-popescu/switchnet/internal/messaging"
+	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
@@ -53,8 +56,9 @@ type Server struct {
 	accessTokenTTL int
 	env            Environment
 
-	// queue forms matches. In memory, because a ticket is worth nothing across
-	// a restart — see internal/matchmaking.
+	// queue forms matches. In memory: a ticket is worth nothing once the
+	// process restarts, because the console that owned it has already given up
+	// and made a new one.
 	queue *matchmaking.Queue
 	// matchModes are the modes with a configured size, used only to decide
 	// whether an arriving mode is worth logging.
@@ -66,8 +70,26 @@ type Server struct {
 	// unanswered, for the same reason: the console retries.
 	unimplemented sync.Map
 
+	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
 	iceServers []config.IceServer
+	// adminToken guards the operator API. Empty means it is not served at all.
+	adminToken string
 
+	// messages is every user's mailbox for the Messaging service. In memory,
+	// like queue above -- see internal/messaging's package doc for why.
+	messages *messaging.Queue
+
+	// presence resolves a user's presence through the exact same TTL rules
+	// BAAS's HTTP endpoints do -- see internal/presence's package doc.
+	presence presence.Resolver
+	// bus is where a fresh BAAS presence report arrives, so the Friends and
+	// PresenceService streams can push a change instead of only reporting what
+	// was already true when the stream opened. Nil is a valid value: the
+	// streams still work, they just only refresh on their own keep-alive timer
+	// -- the same graceful degradation internal/dashboard has without
+	// redis.url set (see cmd/npln/main.go and ROADMAP §2.6, and the same
+	// reason: this process is not the one BAAS's HTTP handlers run in, so the
+	// in-process bus variant delivers nothing across the boundary).
 	bus presencebus.Bus
 
 	// rotation is the stage and mode rotation internal/toyohr's Schedule
@@ -79,6 +101,7 @@ type Server struct {
 	now func() time.Time
 
 	grpc *grpc.Server
+
 	// stop closes when the server is shutting down, ending the background
 	// sweeper. Separate from a request context because the sweeper outlives
 	// every request.
@@ -92,9 +115,12 @@ type Options struct {
 	Log    *slog.Logger
 	Config config.NPLN
 
-	// Bus carries the live matchmaking gauge to the dashboard. Optional: nil
-	// means the dashboard's tile reports no data, which is the honest answer
-	// rather than a zero that reads as "nobody is queuing".
+	// Bus carries the live matchmaking gauge to the dashboard, and delivers
+	// live presence changes for the Friends and PresenceService streams to
+	// push. Optional: nil means the dashboard's tile reports no data rather
+	// than a zero that reads as "nobody is queuing", and the streams still
+	// work, just refreshed only on their own keep-alive timer. See
+	// Server.bus's doc comment.
 	Bus presencebus.Bus
 
 	// AccessKey signs and verifies NPLN access tokens (ES256).
@@ -105,6 +131,15 @@ type Options struct {
 
 	// Env selects how malformed metadata is refused. Production by default.
 	Env Environment
+
+	// PresenceTTL and ConsolePresenceTTL apply the exact same TTL rules
+	// BAAS's presence read path does -- pass the same values as BAAS's own
+	// config (cfg.BAAS.PresenceTTL, cfg.BAAS.ConsolePresenceTTL), not a
+	// separate NPLN setting: presence is one user's state, not one per
+	// service, and a second pair of knobs is a second way for the two to
+	// disagree about who is online.
+	PresenceTTL        time.Duration
+	ConsolePresenceTTL time.Duration
 
 	// Now is overridable in tests. Defaults to time.Now.
 	Now func() time.Time
@@ -150,11 +185,18 @@ func New(opts Options) (*Server, error) {
 		env:            opts.Env,
 		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),
 		matchModes:     opts.Config.ModePlayers,
-		iceServers:     opts.Config.IceServers,
-		rotation:       rotation,
-		bus:            opts.Bus,
-		now:            opts.Now,
-		stop:           make(chan struct{}),
+		iceServers:     iceServersFrom(opts.Config.IceServers),
+		adminToken:     opts.Config.AdminToken,
+		messages:       messaging.New(opts.Now),
+		presence: presence.Resolver{
+			Store:      opts.Store,
+			ReportTTL:  opts.PresenceTTL,
+			ConsoleTTL: opts.ConsolePresenceTTL,
+		},
+		bus:      opts.Bus,
+		rotation: rotation,
+		now:      opts.Now,
+		stop:     make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(
@@ -297,9 +339,40 @@ func (s *Server) unaryInterceptor(
 	if err != nil {
 		return nil, err
 	}
+	sendNPLNHeader(ctx, s.log, info.FullMethod)
 	resp, err := handler(ctx, req)
 	s.noteUnimplemented(info.FullMethod, err)
 	return resp, err
+}
+
+// sendNPLNHeader forces this call's HTTP/2 response headers out before the
+// handler below returns, so a handler that answers with no message or with a
+// bare error (NotFound, Unimplemented -- most of internal/toyohr's backlog)
+// never collapses into a single "Trailers-Only" frame.
+//
+// grpc-go's default, when a unary handler returns without ever having sent
+// anything, IS Trailers-Only: headers and the grpc-status trailer folded into
+// one HEADERS frame, an optimisation for the common "failed before doing
+// anything" case. Nintendo's own NPLN gateway never does this -- every
+// response, empty or not, arrives as two frames: ordinary headers
+// (content-type, npln-grpc-type: Unary), then a separate trailers frame
+// carrying grpc-status. NextendoNetwork/splatoon-3 (a from-scratch NPLN
+// reimplementation tested against real hardware; PolyForm Shield-licensed,
+// so only this fact is taken, never its code) measured a real console
+// crashing specifically on the single-frame shape for an otherwise-correct
+// NotFound: nn.npln.Worker aborting with 2162-0001, immediately, the same
+// abort this repository's own ground rules exist to avoid shipping blind.
+// Calling SendHeader up front -- before the handler has a chance to return
+// -- is what keeps grpc-go from folding the two frames together, for every
+// RPC this gateway serves, not only the ones already known to answer empty.
+//
+// A no-op outside a real call (grpc.SendHeader errors when the context
+// carries no live stream, e.g. a test invoking a handler directly): that
+// failure is expected and not this call's to report.
+func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string) {
+	if err := grpc.SendHeader(ctx, metadata.Pairs("npln-grpc-type", "Unary")); err != nil {
+		log.Debug("npln: send header", "method", method, "error", err)
+	}
 }
 
 func (s *Server) streamInterceptor(
@@ -367,6 +440,18 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 		logAuthFailure(s.log, method, err)
 		return nil, err
 	}
+
+	// The console is talking to us over NPLN, so it is online -- the same
+	// liveness signal internal/baas/router.go's authenticated middleware
+	// records for every HTTP request. Without this, a console that only ever
+	// touches BAAS at login (everything else being Splatoon 3's own gRPC
+	// traffic) would never look alive to PresenceService's TTL rules.
+	if err := s.store.TouchPresence(ctx, c.UserID, s.now()); err != nil {
+		// Liveness is a nicety. Failing the call over it would turn a
+		// cosmetic problem into every RPC failing.
+		s.log.Warn("npln: touch presence", "user", c.UserID, "error", err)
+	}
+
 	return context.WithValue(ctx, callerKey{}, c), nil
 }
 

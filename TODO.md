@@ -62,77 +62,234 @@ at once.
 
 ## 1. NPLN protocol
 
-### 1.1 The rest of `nn.npln.toyohr.v1.*` — **P2**
+### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware, built**
 
-Every service is now registered, so an RPC with no handler answers
-`codes.Unimplemented` and `internal/npln`'s interceptor logs it once, naming the
-method. **That log is the to-do list** — it exists now, which it did not when
-the services were unregistered.
+`internal/nplnrest` now serves this, on `npln.rest_listen` (`cmd/npln`, a
+second listener alongside the gRPC gateway). The hosts were already
+classified (`ServiceNPLNRest`) and the nginx generator already emitted
+their block; both now point at a real backend instead of a comment.
 
-Implemented: `FestService` in full, `Schedule` (versus and season; co-op is
-capture-gated, see below), `LobbyMessaging`, `UserScreening`.
+Penne's two endpoints (`GET /v1/frontlines`, `POST /v1/login_tickets`) are
+implemented against a real field-level spec
+([kinnay's wiki](https://github.com/kinnay/NintendoClients/wiki/Penne-Servers)),
+including the literal `persistent_connection_params_simple` constants.
+Vermillion's two (`GET /v1/accounts/config`, `GET /v1/accounts/devices`)
+answer honestly-empty JSON — the wiki names the endpoints but gives no
+response field table for either, unlike Penne's. Every other Vermillion
+endpoint (device replace, family, notify, nearness-checks) is left
+unanswered (404) rather than guessed at.
 
-Still open, roughly in the order a console will ask for them:
+**Still open, each recorded in `docs/QUESTIONS.md`:**
 
-| Service | What it needs beyond a handler |
-| --- | --- |
-| `GameRecord` | **the most valuable one.** Battle results come from here, and battle results are the missing half of a Splatfest verdict — see `GetFestResult` |
-| `CloudSave` | be deliberate rather than quick: this holds the player's actual save, so a bug loses progress rather than degrading a feature |
-| `CoopScenario`, `Replay` | a document store and a shared code namespace |
-| `Locker`, `Canola` | the same document shape, per player |
+- Whether Splatoon 3's boot actually needs anything from vermillion at
+  all — the wiki describes that host as the *virtual game card* system, a
+  general Switch feature, not anything Splatoon-specific, which sits
+  uneasily with `hosts.go`'s existing "NPLN device initialisation"
+  classification.
+- How a console obtains a Penne id/password in the first place —
+  `god.hac.lp1.penne.srv.nintendo.net`'s provisioning endpoints
+  (`/v1/immigrate`, `/v1/penne_ids`) are undocumented past their path, and
+  `god` itself is not served by `internal/nplnrest` (still `ServiceStubs`).
+  A weaker, unconfirmed lead worth checking before spending a capture here:
+  `NextendoNetwork/nx-dauth` serves this from
+  `dragons.hac.lp1.dragons.nintendo.net`'s `POST /v2/penne_id` instead,
+  which would mean the host and path guessed at are wrong, not just the
+  shape — see `docs/CAPTURES/README.md`'s item 10.
+- What a frontline connection actually carries once open. `frontline`
+  accepts it and holds it open — confirmed safe from a real error-code
+  capture — but sends nothing further, because no source found this pass
+  documents the wire framing.
 
-Two things inside what *is* implemented are capture-gated rather than
-unwritten:
+Do **not** invent a plausible Nintendo internal for any of the three
+without a capture to check it against.
 
-- **`SelectCoopSchedules` answers empty.** A co-op shift is a stage, a boss,
-  four weapon ids and a reward — all Splatoon 3 internal numbers, and unlike the
-  versus rotation nothing useful is left once they are removed. An empty
-  response is a state the game has a reading for; a shift full of invented ids
-  is not.
-- **`Schedule`'s stage and rule ids come from `npln.rotation`.** The mechanics
-  around them are SwitchNet's; the numbers are not, so they are operator input.
+### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2, mostly done**
+
+`Schedule` is built (`internal/toyohr/schedule.go`). Four of its five RPCs
+(`SelectVsParams`, `SelectVsSchedules`, `SelectSeasonSchedules`,
+`SelectLeagueSchedules`) answer "nothing scheduled" rather than
+`Unimplemented`, since the map/mode rotation content itself is Nintendo's own
+game design data with no dump or capture to draw from — see
+`docs/CAPTURES/README.md`. `SelectCoopSchedules`, the fifth, is a real,
+operator-schedulable Salmon Run/Big Run rotation now: `coop_ids.go` carries
+real stage/weapon/boss ids (read from the game's own shipped parameter
+tables, cross-checked two ways — see that file's comment), `coop_schedule.go`
+is the `Fest`/`SaveFest`-equivalent authoring/validation path, and
+`switchnetctl coop schedule` (plus `list`/`delete`/`stages`/`weapons`/
+`bosses`) is the CLI surface, and `internal/dashboard`'s "Salmon Run" tab is
+the operator-facing one — see `internal/toyohr/README.md`'s "honest emptiness
+for Vs, a real rotation for Coop" section for why Coop's wire shape was
+never actually the blocker Vs's still is. On top of hand-scheduling,
+`coop_generate.go`'s `GenerateCoopShifts` auto-fills a stretch of the normal
+rotation with real, randomly-picked ids (`switchnetctl coop generate`, or
+the dashboard's "Auto-fill" panel) — SwitchNet's own generator, not a
+recovered Nintendo algorithm, and additive: it never overwrites a slot a
+hand-scheduled shift or an earlier generate call already filled, so manual
+correction of any one slot always sticks. TeamContest (Eggstra Work) has no
+authoring OR generation path yet, CLI or dashboard. `CloudSave` is built
+only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
+an account with no cloud save, not a stub); its other five RPCs
+(`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)
+are not attempted — nothing calls them this early, and actually writing save
+state is real player data this server has no legitimate way to have.
+
+The rest is `internal/toyohr/backlog.go` and `messaging.go` now:
+
+- **`LobbyMessaging`**: `RecvMessage`/`SendMessage`/`SendLobbyMessage` are all
+  real, backed by `internal/toyohr/messaging.go`'s per-lobby `messageHub`
+  (membership = "currently subscribed", the same shape `internal/presencebus`
+  and `internal/matchmaking`'s ticket `Watch` already use, so nothing invents
+  a roster this codebase has no other record of).
+- **`Canola`/`Locker`**: `SelectDocuments` answers empty and `IkasuDocument`
+  answers `NotFound` — SwitchNet has no `internal/ugcstore`, so both are
+  honest rather than guessed. `RegisterDocument` (the write) stays
+  `Unimplemented` on both.
+- **`CoopScenario`/`Replay`**: `Resolve*Code` answers `NotFound` (nothing
+  was ever registered, since `RegisterDocument` is unimplemented on both).
+  `Replay.FulfillReservations` answers an empty, valid list rather than an
+  error — the `ListDeviceAccounts`-vs-`GetDeviceAccount` distinction.
+- **`UserScreening`**: `GetViolation`/`SelectSnapshot` answer `NotFound` --
+  no screening exists. `CreateReport` is the one write implemented for
+  real: it is data the caller hands over, not data this server needs to
+  have already had, so there is no undocumented shape to get wrong. It is
+  logged for the operator, not acted on -- SwitchNet has no moderation
+  system to act with.
+- **`GameRecord`**: left entirely `Unimplemented`. `InitializeAttributes`
+  alone carries per-mode X Power seed values -- deeply Nintendo-internal
+  rating data with no defensible default, exactly what CLAUDE.md's first
+  ground rule forbids inventing.
+
+Treat what remains as a backlog and let the console drive the order: an
+unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
+the to-do list**.
+
+### 1.5 `gamesync` — **P2, built**
+
+`internal/gamesync` implements almost all of `nn.npln.gamesync.v1.Gamesync`:
+`IssueToken`/`RefreshToken`, `GetDocument`/`ReadDocuments`/`ListDocuments`/
+`QueryCollectionIds`, `WriteDocuments`/`LazyWriteDocuments`,
+`BeginTransaction`/`CommitTransaction`/`RollbackTransaction`, and the
+`KeepUserSession` watch stream. `CreateRound` is left `Unimplemented`
+deliberately — see below.
+
+**Its own port, not the tenant channel.** `gamesync.npln.nintendo.net` not
+ending in `srv.nintendo.net`, unlike every other NPLN host, turned out to be
+exactly the deliberate signal it looked like: `internal/nintendo/hosts.go`
+classifies it `ServiceGamesync`, a distinct service on its own port (7575,
+`npln.gamesync_listen`) rather than grouped with the tenant host's nginx
+block. `internal/gamesync` is a complete, self-contained `*grpc.Server` with
+its own listener in `cmd/npln` — not a service registered on
+`internal/npln`'s gateway — verifying the matchmaking id token the gateway
+signs via a `TokenVerifier` callback rather than an import (which would be a
+cycle). See `internal/gamesync/README.md` and `docs/QUESTIONS.md`'s now-
+resolved entry on this.
+
+**What's refused rather than guessed at:** `FieldTransform`'s
+`LoadGlobalValue`/`StoreGlobalValue`/`ClearGlobalValue` read and write a
+namespace shared across documents that nothing here models — treating them
+as no-ops would have a client store a value it later reads back as absent,
+so a transform batch containing one is refused whole (`codes.Unimplemented`)
+before any write in it applies, the same atomicity guarantee a transform
+this code understands gets. `WriteDocuments`/`CommitTransaction`'s
+`DefermentOperation` (a batch of writes to apply later, on a trigger nothing
+here models) is refused the same way — accepting one and silently dropping
+it would tell a client "done" for an effect that never arrives. `CreateRound`
+is left entirely to the embedded `Unimplemented`: `Round` has five fields,
+four of them named `Unk1` through `Unk4` in this project's own proto
+reversal, and answering would mean inventing values for fields whose meaning
+is unknown — worse than a logged `Unimplemented`.
+
+---
 
 ## 2. Splatfests and BCAT
 
-### 2.1 A texture converter — **P2, and the only remaining part is external**
+### 2.1 Asset conversion: images → game-ready textures — **P2, large, texture piece built**
 
 **The pipeline is built; the converter is not, and probably should not be
 written here.**
 
-`internal/bcat` now has the conversion seam: a source asset is named for what it
-must become (`UI/Splashart.bfres.png` → `UI/Splashart.bfres`), `bcat.converter`
-is a command that does the conversion, its output is validated, and — the part
-that mattered most — **a source asset with no converter configured is a build
-error** rather than a PNG packed into the archive. The dashboard's Assets panel
-reports the same thing.
+`internal/bcat` takes assets that are *already* in the game's formats
+(`.bfres`, `.byaml`, `.sarc.zs`), assembles them into a SARC archive and
+encrypts it. What is wanted is uploading a **PNG of the splashart, the tee
+designs, the banners** and having the server produce a loadable pack. Of the
+four pieces that needs, one is now built:
 
-What is left is a converter to point it at, and that means:
+- **Texture encoding + Tegra swizzling — the raw pixel piece is built, by
+  shelling out, not reimplementing.** `internal/bcat.ConvertTextures`
+  (`texture.go`) and `switchnetctl fest build -source-images
+  -texture-converter` turn a directory of PNGs into `.bntx` files by
+  calling an external tool -- verified against a real, built copy of
+  [jam1garner/img2bntx](https://github.com/jam1garner/img2bntx), not
+  assumed from its README: its BNTX header layout (revision `0x400c`
+  included) matches a real Splatfest's own embedded texture archive **byte
+  for byte** (checked 2026-09-03 against `JUEA-00210`'s real pack). This
+  only produces uncompressed RGBA8 textures, no BC1/BC3/BC7 -- larger
+  files, but nothing to get a compression format wrong about.
+- **BFRES authoring — confirmed necessary, not yet built.** A real
+  Splatfest's only visual asset is one `FRES` container (Switch/NX BFRES,
+  not the Wii U-era format most public BFRES libraries target) with a
+  single embedded multi-texture BNTX archive and no model data. So
+  `ConvertTextures`'s bare `.bntx` is not, on its own, what a console loads.
+  Building the FRES wrapper from scratch needs the outer container's
+  dictionary/relocation structure fully understood first, which this
+  project could not do with confidence from one sample and no hardware to
+  test a wrong guess against -- see `internal/bcat/README.md`'s texture
+  section for exactly what was and was not verified, and the safer
+  same-dimension-replacement approach recommended there as the next step.
+- **BYAML editing** — team names and idol dialogue live in structured data
+  inside the pack, not in the images. Still not built.
 
-- **texture encoding** — BC1/BC3/BC7, plus the exact format each slot expects;
-- **Tegra swizzling** — the GPU's block-linear memory layout;
-- **BFRES authoring** — the container Nintendo's textures live in;
-- **BYAML authoring** — team names and idol dialogue are structured data, not
-  images.
+**Start at** `internal/bcat/texture.go` (`ConvertTextures`) for the texture
+piece, and `internal/bcat/README.md`'s texture-conversion section for what
+building the FRES wrapper actually needs; the dashboard's Assets panel
+(`internal/dashboard/templates/index.html`) still explains the remaining
+limitation to the operator and has not been wired to this yet.
 
-**Do not write this in Go.** Switch Toolbox and the
-`BinaryTextureLibrary`/`Syroot.NintenTools` family already do it, and they exist
-because it is hard. The failure mode is the worst available: a texture that
-*loads and renders as garbage*, on a console, with nothing on the server to look
-at — so a reimplementation that is subtly wrong is worse than no
-reimplementation. Wrapping one of those tools in a script that meets the
-contract in `internal/bcat/convert.go` is the tractable job.
+**Done when** an operator uploads a PNG in the dashboard and a console loads
+the resulting fest with that image visible in-game. Nothing short of the last
+clause counts — a pack that builds, encrypts and decrypts can still contain a
+texture the game renders as noise, and that clause needs the operator's own
+console and a real dumped pack to compare against, not more server code.
 
-**Done when** an operator uploads a PNG in the dashboard and a console loads the
-resulting fest with that image visible in-game. Nothing short of the last clause
-counts — a pack that builds, encrypts and decrypts can still contain a texture
-the game renders as noise. **That last clause needs a console, so an agent
-cannot close this item.**
+### 2.2 Internal asset names embed the ORIGINAL fest id — **P2, and a trap**
 
-### 2.4 Serving BCAT natively — **P1 to TEST, and the server is now ready**
+Reading a real custom pack showed every file inside named for the fest it was
+derived from:
 
-**The blocker here is smaller than earlier notes in this repository claimed, and
-it is worth an hour of an operator's time before any more is built around the
-workaround.**
+```
+Mals/Msg_EUde.Fest_JUEA-DUMPLING_Bh.sarc.zs
+Event/EventSetting/Fest_JUEA-DUMPLING_WinA.engine__event__EventSettingParam.bgyml
+RSDB/Tag.Fest_JUEA-DUMPLING.dev.rstbl.byml.zs
+```
+
+That pack's `summary.yml` announces `JUEA-00210` / `juea-lovefes2`. So the
+*container* is named for the custom fest while its *contents* are named for
+Nintendo's `JUEA-DUMPLING` — because it was made by editing that fest.
+
+**Nobody has established what the game actually keys on, against SwitchNet's
+own hardware.** If it resolves assets by the announced fest id, a genuinely
+from-scratch fest needs every internal path renamed consistently *and* the
+RSDB/rstbl tables that reference them rebuilt. If it only reads the pack it
+was handed, the names are inert.
+
+**This needs a console, so an autonomous agent cannot settle it outright** —
+but it now has independent corroboration rather than just a guess.
+`NextendoNetwork/splatoon-3`, a from-scratch NPLN server the operator
+supplied and that repository says was tested against real hardware
+(PolyForm Shield-licensed — this design fact only, never its code), depends
+on exactly "names are inert" in production: unable to synthesise Nintendo's
+encrypted packs either, it announces whatever fest identity a console's
+*existing* BCAT cache already holds (a hot-reloadable id/resource/revision
+rewrite over its served schedule) rather than ever renaming a pack's
+internal files to match. See
+[`docs/QUESTIONS.md`](docs/QUESTIONS.md) for the full citation. Build §2.1
+so that changing the assumption later, if SwitchNet's own hardware disagrees,
+is a contained change rather than a rewrite — keep the naming decision in one
+place.
+
+### 2.4 Serving BCAT natively — **P1 to TEST, and the tooling is now built**
+
+**The blocker here is smaller than earlier notes in this repository claimed.**
 
 What was previously written down: Nintendo's delivery container carries an
 RSA-2048 signature, therefore the console verifies it, therefore serving BCAT
@@ -146,48 +303,207 @@ already depends on that for phase 3. Whether they reach the `bcat` sysmodule is
 unknown: `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and `bcat` is not
 listed. Unknown is not impossible.
 
-**Stage 1 is now a five-minute job, and it needs a console.**
-`internal/bcat.Probe` is written, wired into `internal/stubs`, and tested. To
-run it:
+#### Stage 1 — does the console reach us at all? **Built. Needs an operator.**
 
-1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
-   `ServiceBlackhole` to `ServiceStubs`;
-2. move them out of `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
-   says why (`hosts.go` and that test both record that the null-route is
-   contingent rather than settled);
-3. set `stubs.bcat_record_dir`, regenerate the DNS and nginx configuration, and
-   open Splatoon 3.
+`internal/bcat.Probe` (`internal/stubs/handler.go` wires it in) logs every
+BCAT request in full — method, path, headers, a hexdump of the body — and
+answers 200 with an empty body, writing a transcript to `stubs.bcat_record_dir`
+when set. It is off by default and needs only the hosts flip, since the probe
+itself is always registered:
 
-Every request lands in the log and in a hexdumped transcript. If they arrive, the
-paths are right and DNS and TLS work — and that transcript is the first record
-anyone has of what the console actually asks BCAT for.
+```sh
+switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
+# stubs.bcat_record_dir: /some/path   (optional -- logs either way, writes a transcript with this set)
+```
 
-**Stage 2 — the deliberately-invalid signature — is deliberately NOT built.** It
-only tests whether the signature is checked if the rest of the 0x120 header is
-right, and the only public facts about that header are its size and the
-signature's offset at 0x20. A guessed header produces a refusal nobody can
-attribute, so a negative result would mean nothing. Stage 1's hexdumps are how
-the header becomes writable; then this becomes a small commit.
+Then open Splatoon 3 and watch the stubs log (or the transcript directory).
+
+If requests arrive, the paths are right and DNS and TLS work — and the log is
+the first record anyone has of what the console actually asks for. **Turn it
+back off afterwards**: answering a console that expected content turns an
+immediate failure into a hang, which is why those hosts are null-routed the rest
+of the time.
+
+#### Stage 2 — does it care about the signature? **Not built.**
+
+Answer `/api/nx/v1/list/<name>` with a container that has the right 0x120 header
+shape and a deliberately garbage signature. If the console proceeds, sigpatches
+cover `bcat` and the signature is a non-issue. If it refuses, that is the first
+real evidence either way.
+
+Stage 1 has to run first, because its hexdumps are what say which path to answer
+and what the console sent. Do not build stage 2 against a guess when stage 1
+costs an operator five minutes.
+
+**Even a positive result does not finish it**: the `list` response *body* is
+still undocumented, and stage 1's hexdumps are how that gets chipped away. But a
+positive result turns "nobody has documented how" into a tractable
+reverse-engineering job instead of a closed door.
 
 **Done when** there is a written record, under `docs/CAPTURES/`, of what the
 console requested and how it reacted. Either answer is worth having; right now
 the repository has neither.
 
+**An autonomous agent cannot run stage 1** — it needs a console. The question is
+recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md).
+
+### 2.4a The `.nro` installer — **P2, the path that works today**
+
+A homebrew that fetches a seed from SwitchNet and writes it into Splatoon 3's
+BCAT save data — what JKSV does by hand, automatically.
+
+This exists because §2.4 is unresolved, **not** because serving BCAT is
+forbidden. If §2.4 comes back positive this may become unnecessary; if it comes
+back negative, this is the answer.
+
+**Independent corroboration, 2026-09-05:** `NextendoNetwork/nextendo-account`
+and `NextendoNetwork/splatoon-3` (real, source-available reimplementations
+the operator supplied; PolyForm Shield-licensed, so only this design fact is
+taken, never their code) do not serve native BCAT over the wire either, for
+either of their two titles that use it (Splatoon 2's NEX BCAT and Splatoon
+3's Splatfest packs). Both instead relay a pre-dumped delivery-cache
+directly into the console's save data via their own homebrew installer,
+verbatim, and never attempt to answer the live `bcat-*` protocol at all.
+That is exactly this section's approach, arrived at independently -- it is
+not just "the path that works today" for lack of a better one, it appears to
+be what a real production service settled on too, which raises this
+section's priority relative to §2.4's still-open signature question.
+
+Note that the delivery cache is *downstream* of the wire protocol, so dumping a
+console's BCAT save reveals the seed layout (already known) and **not** the
+`list` response format. Do not expect a save dump to settle §2.4.
+
+**No toolchain in this repository's dev container** — `DEVKITPRO` is unset and
+there is no `aarch64-none-elf-gcc`, so an agent working here can write the
+source and a Makefile but cannot compile or test it. Say so plainly if you
+hand over untested C.
+
+**Start at** `switch/`, and serve the seed over plain HTTPS from the dashboard
+or a small endpoint on `cmd/npln`.
+
+---
+
 ## 3. Dashboard
 
-### 3.2 Splatfest asset editing — **P2, blocked on §2.1's converter**
+### 3.2 Splatfest asset editing — **P2, depends on §2.1**
 
-The Splatfests tab creates, announces, holds and deletes fests, and now also
-reports the delivery cache on disk — id, resource, revision and regions, read
-from the seed's own `summary.yml` so a disagreement with the announced fest is
-visible rather than hidden.
+The Splatfests tab creates, announces, holds and deletes fests. It does not
+touch assets: splashart, tee designs, team names and idol dialogue all still
+come from files built elsewhere.
 
-What it still does not do is edit assets. The intended end state is uploading a
-PNG in the browser, and the blocker is §2.1's converter rather than the UI:
-without one, an upload can only be stored, not turned into anything a console
-reads. The Assets panel says so, with the naming rule and the reason SwitchNet
-does not convert textures itself.
+The intended end state is doing all of it from the dashboard. §2.1 is the
+blocker, not the UI.
 
-**When a converter exists**, this becomes an upload endpoint that writes into
-`bcat.seed_dir`'s assets tree and shells out to
-`bcat.BuildPacksWith` — everything below the UI is already in place.
+### 3.3 Real authentication — **P2**
+
+The dashboard's only protection is a shared token in config
+(`dashboard.token`), and with it unset there is none at all: anyone who can
+reach the port can schedule and cancel Splatfests.
+
+That is deliberate rather than lazy — **nothing in phase 1 authenticates a
+person.** Every credential in the stack belongs to a console, so there is no
+user account to check against. A shared token is the honest minimum.
+
+A real answer probably arrives with phase 3's Nintendo Account work, which
+introduces the first human-facing login. Until then, do not build a bespoke
+user system for the dashboard alone.
+
+---
+
+## 4. Verification and hardware
+
+### 4.1 Certificate pinning — **P1, operator decision recorded**
+
+Splatoon 3 carries its own TLS stack and pins its own certificates,
+independently of the console's CA store — so phase 1's LayeredFS work does not
+cover it.
+
+`kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch
+disabling verification in the game's NSO. **The operator has accepted a
+system-wide patch**, so this is a decision already made, not an open question.
+
+**Done:** `make patch-splatoon3 NSO=<main>` builds the patch from the operator's
+own dump and installs it for Ryujinx or an Atmosphère SD card. Nothing is
+checked in and nothing can be: the address the patch writes to is found by
+searching the dump, and the file has to be named for that build's module id, so
+a prebuilt patch would be a patch for somebody else's copy. Both properties are
+written down in the script's header and in `README.md` — it *disables*
+verification rather than *adding* trust, and it is gated on the game version, so
+a title update silently stops it applying.
+
+Still unverified against a real dump: no Splatoon 3 NSO has been near this. The
+script is exercised end to end against a synthetic NSO carrying the signature
+upstream looks for, which proves the plumbing and the emitted IPS bytes but not
+that the signature is present in the operator's build.
+
+### 4.2 Nothing here has touched a console — **P1**
+
+Every test in phase 2 runs against a Go client. That was deliberate, so the
+work could proceed while §4.1 was open, but it means **no shape in this phase
+is confirmed against hardware.**
+
+The first console test is worth more than any amount of further server work.
+Expect the JSON front end (§1.3) to be wrong first, because it is the least
+documented and the earliest in the sequence.
+
+### 4.3 Captures still wanted — **P2**
+
+`grep -rn 'TODO(capture-needed)' internal/` for the live list —
+`docs/CAPTURES/README.md` keeps the same list with what each would settle,
+and is the one to trust when this paragraph and the grep disagree, since it
+grows every time a new phase-2 service gets registered against an
+undocumented shape rather than a real capture (fourteen when this paragraph
+was first written; fifty-two as of the gamesync/nplnrest work). This
+paragraph deliberately names no number of its own from here on, to stop
+repeating the same drift.
+
+Two from the original five are still the ones that change behaviour rather
+than cosmetics, not just naming: whether the game sends more than one
+`UserDefinition` when a squad queues together (a squad currently has
+everyone but the leader dropped), and whether it refuses to start a match
+with an empty `MatchmakingIdToken` (a gap SwitchNet cannot fill without
+issuing a credential nothing verifies). Newer arrivals worth the same
+weight: `Messaging.RecvMessage`'s empty-resume-token behaviour (get it
+backwards and an invite mailbox either loses invites silently or replays
+stale ones on every reconnect), and whether a real client dials
+`GameSession.Port` at all now that `SyncGameSession` exists to publish it.
+
+Write captures up under `docs/CAPTURES/` using the template, redacted,
+reconcile the implementation, and **delete the `TODO` comment in the same
+commit** so the source and the notes cannot disagree.
+
+---
+
+## 5. Housekeeping
+
+### 5.2 The `bcat-*` hosts are null-routed — **contingent, not settled**
+
+`hosts.go` null-routes `bcat-list`, `bcat-data` and `bcat-topics`, and
+`TestBlackholedHostsAreAccountedFor` pins that.
+
+That is correct **while SwitchNet cannot answer them** — redirecting to a
+server that fails to respond usefully turns an immediate failure into a hang.
+
+It is not a permanent decision, and §2.4's experiment no longer requires
+changing it: `switchnetctl hosts -bcat-probe` overrides the address at
+*generation* time, leaving the classification in `hosts.go` — and the test that
+pins it — untouched. That was deliberate. The flag is opt-in and temporary; the
+classification is what the default deployment does.
+
+A positive result from §2.4 would be the reason to change the classification
+itself. Amend the test then, in a commit that says why, rather than treating
+this entry as a rule.
+
+### 5.3 A mode table for matchmaking — **P3**
+
+`matchmaking.DefaultConfig.PlayersPerMatch` is still **2**, and per-mode sizes
+are now settable at runtime from the dashboard and seeded from
+`matchmaking.Config.ModeSizes`. So an operator can already make a mode the right
+size without a code change.
+
+What is still missing is knowing what the **faithful** sizes are. They belong in
+the config's `ModeSizes`, driven by what a capture shows the game expects. Until
+there is one, a number that lets two friends start a match beats one that is
+correct and idle.
+
+---

@@ -1,6 +1,8 @@
 # Phase 2 implementation plan — NPLN, Splatoon 3, and the dashboard
 
-Status: **complete, and folded back into the roadmap.** Written 2026-08-28.
+Status: **complete, and folded back into the roadmap.** Written 2026-08-28,
+status table last refreshed 2026-09-13 — **for the current state of any row
+below, `TODO.md` is the one to trust**, not this table.
 
 [`ROADMAP.md`](ROADMAP.md) §2 now carries the corrections this document found,
 marked in place, with the subsection numbers preserved because source comments
@@ -14,15 +16,19 @@ belongs in a roadmap.
 | ES256 in `internal/jwt` | done |
 | Host reclassification + nginx generator | done |
 | gRPC gateway, and the phase-1 auth seam | done — `internal/npln`, `cmd/npln` |
+| Friends, presence, messaging (`Friends`, `PresenceService`, `Messaging`) | done — `internal/npln/friends.go`, `presence_service.go`, `messaging.go` |
+| The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, `cmd/npln`'s second listener; see `TODO.md` §1.3 for what within it is still honestly-empty rather than real |
+| `gamesync` (`nn.npln.gamesync.v1.Gamesync`) | done except `CreateRound` — `internal/gamesync`, its own listener on port 7575; see `TODO.md` §1.5 |
 | Splatfest scheduling | done — `internal/toyohr` |
+| `Schedule` (map/mode + Salmon Run rotation) | done — Vs answers "nothing scheduled" (undocumented game data), Coop is a real operator-schedulable/auto-fillable rotation; see `TODO.md` §1.4 |
+| The rest of `toyohr` (`LobbyMessaging`, `Canola`/`Locker`, `CoopScenario`/`Replay`, `UserScreening`) | mostly done, `GameRecord` and `LobbyMessaging.SendMessage` left `Unimplemented`; see `TODO.md` §1.4 |
 | Match queue and formation | done — `internal/matchmaking` |
-| Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go` |
+| Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go`, incl. `AllocateIceServerSet` and `SyncGameSession` |
 | Certificate pinning decision | settled: accepted, written up in `switch/README.md` part 3 |
-| BCAT pack building and serving | not started — `internal/bcat` |
-| The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, shapes still capture-gated |
-| Splatfest entries, results and the rest of toyohr | done — `internal/toyohr` |
-| `gamesync` document/watch service | done — `internal/gamesync` |
-| Dashboard | done — `internal/dashboard`: players, matches, fests, the delivery cache |
+| Match history (`npln_matches`) | done — recorded by `matchmaking.go`/`admin.go`, read by the dashboard |
+| BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
+| BCAT serving | stage 1 (does the console reach us) built and needs an operator to run it; stage 2 (does it check the signature) not built — see `TODO.md` §2.4 |
+| Dashboard | done — `internal/dashboard`, `cmd/dashboard`, incl. match history, live matchmaking counts, per-player detail and a Debug tab for database controls |
 
 Everything done so far is verifiable without a console, which is the ordering
 this plan committed to while the certificate-pinning question is open. The
@@ -181,14 +187,16 @@ Flat under `internal/`, matching every existing package — no subpackage trees.
 | `internal/npln` | the gRPC gateway: TLS, HTTP/2, metadata middleware, sessions, auth |
 | `internal/nplnrest` | the JSON front that comes first: vermillion, penne, the frontline stream |
 | `internal/toyohr` | Splatoon 3's own services: schedule, fest, game records, co-op |
-| `internal/gamesync` | the document/watch service, on its own port (7575) |
+| `internal/gamesync` | the document/watch service, registered on the tenant gRPC gateway |
 | `internal/bcat` | pack construction, `nisasyst` encryption, and serving |
 | `internal/dashboard` | the web dashboard, fed by `presencebus` |
 | `proto/` | generated stubs; `scripts/{fetch,gen}-proto.sh` |
 
-New commands: `cmd/npln`, `cmd/dashboard`. `gamesync` runs inside `cmd/npln` as
-a second listener rather than a third process — it shares session state with the
-gateway, and splitting it would mean inventing a protocol between them.
+New commands: `cmd/npln`, `cmd/dashboard`. `gamesync` runs inside `cmd/npln`,
+registered on the same `*grpc.Server` as the tenant gateway's other services
+rather than as a second listener — `gamesync.npln.nintendo.net` turned out to
+be routed there by SNI, not to a separate port; see `internal/gamesync`'s
+README.
 
 Changes to existing packages:
 
