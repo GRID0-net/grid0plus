@@ -12,6 +12,7 @@
 //	switchnetctl nginx    > deploy/nginx.generated.conf
 //	switchnetctl sans             # one hostname per line, for gen-certs.sh
 //	switchnetctl check            # validate config without writing anything
+//	switchnetctl run [service...] # build and run the Go services natively
 package main
 
 import (
@@ -34,9 +35,11 @@ func main() {
 	flag.Parse()
 
 	// "account <sub>", "fest <sub>" and "coop <sub>" take further arguments
-	// of their own; every other command takes none.
+	// of their own; "run" takes zero or more service names; every other
+	// command takes none.
 	if flag.NArg() == 0 ||
-		(flag.Arg(0) != "account" && flag.Arg(0) != "fest" && flag.Arg(0) != "coop" && flag.NArg() != 1) {
+		(flag.Arg(0) != "account" && flag.Arg(0) != "fest" && flag.Arg(0) != "coop" &&
+			flag.Arg(0) != "run" && flag.NArg() != 1) {
 		usage()
 		os.Exit(2)
 	}
@@ -71,6 +74,9 @@ func main() {
 	case "check":
 		fmt.Fprintln(os.Stderr, "switchnetctl: configuration is valid")
 		warn(cfg)
+
+	case "run":
+		runCmd(cfg, *configPath, flag.Args()[1:])
 
 	case "account":
 		if flag.NArg() < 2 {
@@ -153,6 +159,10 @@ Commands:
   nginx     nginx server blocks routing each Nintendo hostname to its backend
   sans      the hostnames the edge certificate needs, one per line
   check     validate the configuration and report anything risky
+  run       build and run the Go services natively, in this terminal --
+            'switchnetctl run' for all of them, or name a subset, e.g.
+            'switchnetctl run baas dauth'. Deliberately does not restart a
+            service that exits unexpectedly; see deploy/systemd for that.
   account   create a user from a device account id and password you already
             have, rather than one the server generates; revoke a device
             account's live sessions; disable/re-enable a single device
