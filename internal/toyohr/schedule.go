@@ -2,56 +2,134 @@ package toyohr
 
 import (
 	"context"
-	"errors"
-	"math/rand/v2"
+	"crypto/sha1"
+	"encoding/hex"
+	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/db"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
-// SelectVsParams, SelectVsSchedules, SelectSeasonSchedules and
-// SelectLeagueSchedules answer "there is currently no schedule", the same
-// "minimum that does not crash the client" ROADMAP §2.2 already plans for
-// hydro and leaderboard.
-//
-// TODO(capture-needed): the map/mode/weapon rotation content itself. Unlike a
-// fest, which the operator authors and SaveFest validates, a normal Vs
-// rotation is Nintendo's own game design data -- there is no dump or capture
-// this server has of it, and CLAUDE.md is explicit that a genuinely
-// undocumented shape must not be filled with an invented-but-plausible
-// Nintendo internal. An empty schedule list is honest: the game reads it as
-// "nothing scheduled right now" rather than crashing on a malformed one,
-// which is strictly better than a fabricated rotation that is wrong in a way
-// nothing here would ever catch. Change: these four functions.
-//
-// SelectCoopSchedules is different from the other four, and no longer
-// empty: nn.npln.toyohr.v1.CoopSchedule's own decompiled proto already
-// carries the real shape (Normal/BigRun/TeamContest as parallel
-// sub-messages -- resources.pb.go), independently corroborated by
-// nintendoapis/splatnet3-types' own SplatNet 3 GraphQL schema
-// (CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
-// teamContestSchedules}, each CoopSchedule{startTime,endTime,setting}
-// discriminated by __typename). What was missing was real stage/weapon/boss
-// content and an authoring path, both of which SaveCoopShift and
-// coop_ids.go now provide -- see internal/toyohr/README.md.
-
-// SelectVsParams answers the current turf-war/ranked/league mode parameters.
-func (s *Service) SelectVsParams(
-	_ context.Context, _ *toyohrpb.SelectVsParamsRequest,
-) (*toyohrpb.SelectVsParamsResponse, error) {
-	return &toyohrpb.SelectVsParamsResponse{}, nil
+// scheduleService is nn.npln.toyohr.v1.Schedule: the stage and mode rotation.
+type scheduleService struct {
+	toyohrpb.UnimplementedScheduleServer
+	s *Service
 }
 
-// SelectVsSchedules answers the Vs (turf war / ranked / league) rotation.
-func (s *Service) SelectVsSchedules(
-	_ context.Context, _ *toyohrpb.SelectVsSchedulesRequest,
+// Rotation is the stage and rule rotation an operator configured.
+//
+// **The mechanics here are SwitchNet's; the numbers are not.** Slot alignment,
+// windowing, ordering and the etag are all this package's to decide and are
+// implemented below. The stage and rule identifiers are Splatoon 3's own
+// internal numbering, which nothing public documents — so they are operator
+// input rather than a table in this source. Inventing them would be an invented
+// game internal, and an invalid stage number's behaviour on the console is
+// itself unknown (see docs/PHASE2_PLAN.md's capture list).
+//
+// An empty Rotation is legitimate: the schedule handlers then answer with no
+// schedules at all, which is what the game sees on a real server between
+// seasons, and each unanswered request is logged so the absence is visible.
+type Rotation struct {
+	// RegularStages are the stage ids Turf War rotates through, in order.
+	RegularStages []int32
+	// BankaraRules are the rule ids Anarchy rotates through, in order.
+	BankaraRules []int32
+	// BankaraStages are the stage ids Anarchy rotates through, in order.
+	BankaraStages []int32
+
+	// StagesPerSlot is how many stages one slot offers. Two on a real server;
+	// configurable because it depends on how many stages the operator listed.
+	StagesPerSlot int
+}
+
+// scheduleSlot is how long one entry in the rotation lasts.
+//
+// Two hours, the same bucket a Splatfest's phases must land on. Splatoon 3
+// files every scheduled thing into 7200-second slots, so a schedule whose
+// boundaries are elsewhere describes windows the game cannot place.
+const scheduleSlot = slotSeconds * time.Second
+
+// scheduleHorizon is how far ahead schedules are generated.
+//
+// Twelve slots — a day. The game asks for a window and shows the next few
+// rotations; generating more costs nothing but says less about what is actually
+// planned, and generating fewer leaves the lobby's "coming up" list short.
+const scheduleHorizon = 12
+
+// SelectVsSchedules returns the versus rotation.
+//
+// Generated rather than stored: a rotation is a deterministic function of the
+// clock and the operator's stage list, so there is nothing to keep in sync. The
+// same request at the same time always produces the same answer, which is what
+// makes the etag meaningful.
+func (sc *scheduleService) SelectVsSchedules(
+	ctx context.Context, req *toyohrpb.SelectVsSchedulesRequest,
 ) (*toyohrpb.SelectVsSchedulesResponse, error) {
-	return &toyohrpb.SelectVsSchedulesResponse{}, nil
+	if _, ok := sc.s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+
+	rot := sc.s.rotation
+	if len(rot.RegularStages) == 0 && len(rot.BankaraStages) == 0 {
+		sc.s.noteNoRotation("vs")
+		return &toyohrpb.SelectVsSchedulesResponse{}, nil
+	}
+
+	from := AlignToSlot(sc.s.now())
+	slots := scheduleHorizon
+	if d := req.GetSelectDuration().AsDuration(); d > 0 {
+		// The client says how much it wants. Honoured up to the horizon: a
+		// client asking for a week would otherwise get one, and a schedule
+		// stretching further than the operator has thought about is a promise
+		// about stages that may change.
+		if asked := int(d / scheduleSlot); asked > 0 && asked < slots {
+			slots = asked
+		}
+	}
+
+	schedules := make([]*toyohrpb.VsSchedule, 0, slots)
+	for i := 0; i < slots; i++ {
+		start := from.Add(time.Duration(i) * scheduleSlot)
+		schedules = append(schedules, sc.s.vsSchedule(start, i, rot))
+	}
+
+	return &toyohrpb.SelectVsSchedulesResponse{
+		Schedules: schedules,
+		Etag:      etagOf(schedules),
+	}, nil
+}
+
+// vsSchedule renders one two-hour slot.
+func (s *Service) vsSchedule(start time.Time, index int, rot Rotation) *toyohrpb.VsSchedule {
+	end := start.Add(scheduleSlot)
+	setID := scheduleSetID(start)
+
+	out := &toyohrpb.VsSchedule{
+		Name:          s.tenantPath() + "/vsSchedules/" + setID,
+		StartTime:     timestamppb.New(start),
+		EndTime:       timestamppb.New(end),
+		ScheduleSetId: setID,
+	}
+	if stages := pick(rot.RegularStages, index, rot.stagesPerSlot()); len(stages) > 0 {
+		out.RegularSettings = &toyohrpb.RegularSettings{Stages: stages}
+	}
+	if stages := pick(rot.BankaraStages, index, rot.stagesPerSlot()); len(stages) > 0 {
+		// One BankaraSettings per rule the operator listed. Anarchy runs two
+		// modes at once — Series and Open — and a slot offering one rule is a
+		// lobby with half its buttons inert.
+		for r, rule := range rot.BankaraRules {
+			out.BankaraSettings = append(out.BankaraSettings, &toyohrpb.BankaraSettings{
+				Rule:   rule,
+				Stages: pick(rot.BankaraStages, index+r, rot.stagesPerSlot()),
+			})
+		}
+	}
+	return out
 }
 
 // SelectCoopSchedules answers the Salmon Run rotation -- every operator-
@@ -59,193 +137,212 @@ func (s *Service) SelectVsSchedules(
 //
 // Unlike currentFest, this does not pick just one: a console reasonably
 // wants to know about more than the shift live right now (Splatoon 3 shows
-// upcoming rotations in its Salmon Run menu before they open), so every shift
-// whose End is still in the future is included.
-func (s *Service) SelectCoopSchedules(
+// upcoming rotations in its Salmon Run menu before they open), so every
+// shift whose End is still in the future is included.
+//
+// Not empty by policy, unlike the four Vs/season handlers above: unlike a
+// normal Vs rotation, nn.npln.toyohr.v1.CoopSchedule's own decompiled proto
+// already carries the real shape (Normal/BigRun/TeamContest as parallel
+// sub-messages -- resources.pb.go), independently corroborated by
+// nintendoapis/splatnet3-types' own SplatNet 3 GraphQL schema
+// (CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
+// teamContestSchedules}, each CoopSchedule{startTime,endTime,setting}
+// discriminated by __typename). Real stage/weapon/boss content and an
+// authoring path come from SaveCoopShift and coop_ids.go -- see
+// internal/toyohr/README.md.
+func (sc *scheduleService) SelectCoopSchedules(
 	ctx context.Context, _ *toyohrpb.SelectCoopSchedulesRequest,
 ) (*toyohrpb.SelectCoopSchedulesResponse, error) {
-	rows, err := s.store.ListCoopShifts(ctx)
+	if _, ok := sc.s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+
+	rows, err := sc.s.store.ListCoopShifts(ctx)
 	if err != nil {
-		s.log.Error("toyohr: list coop shifts", "error", err)
+		sc.s.log.Error("toyohr: list coop shifts", "error", err)
 		return nil, status.Error(codes.Internal, "")
 	}
 
-	now := s.now()
+	now := sc.s.now()
 	resp := &toyohrpb.SelectCoopSchedulesResponse{}
 	for _, row := range rows {
 		if !row.EndAt.After(now) {
 			continue
 		}
-		resp.Schedules = append(resp.Schedules, s.coopScheduleProto(row))
+		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(row))
 	}
 	return resp, nil
 }
 
-// SelectSeasonSchedules answers the current ranked/league season.
-func (s *Service) SelectSeasonSchedules(
-	_ context.Context, _ *toyohrpb.SelectSeasonSchedulesRequest,
+// SelectSeasonSchedules returns the current season.
+//
+// A season is a window with a name and nothing else this layer has to invent:
+// three months, aligned to a slot boundary like everything else. It is
+// generated because the game uses it to bucket records, and a client with no
+// season has nowhere to file what it did.
+func (sc *scheduleService) SelectSeasonSchedules(
+	ctx context.Context, req *toyohrpb.SelectSeasonSchedulesRequest,
 ) (*toyohrpb.SelectSeasonSchedulesResponse, error) {
-	return &toyohrpb.SelectSeasonSchedulesResponse{}, nil
+	if _, ok := sc.s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+
+	count := int(req.GetSeasonScheduleCount())
+	if count <= 0 || count > 4 {
+		count = 1
+	}
+
+	now := sc.s.now().UTC()
+	schedules := make([]*toyohrpb.SeasonSchedule, 0, count)
+	start := seasonStart(now)
+	for i := 0; i < count; i++ {
+		end := start.AddDate(0, 3, 0)
+		setID := scheduleSetID(start)
+		schedules = append(schedules, &toyohrpb.SeasonSchedule{
+			Name:          sc.s.tenantPath() + "/seasonSchedules/" + setID,
+			StartTime:     timestamppb.New(start),
+			EndTime:       timestamppb.New(end),
+			ScheduleSetId: setID,
+		})
+		start = end
+	}
+
+	return &toyohrpb.SelectSeasonSchedulesResponse{
+		Schedules: schedules,
+		Etag:      seasonEtag(schedules),
+	}, nil
 }
 
-// SelectLeagueSchedules answers the current league rotation.
-func (s *Service) SelectLeagueSchedules(
-	_ context.Context, _ *toyohrpb.SelectLeagueSchedulesRequest,
-) (*toyohrpb.SelectLeagueSchedulesResponse, error) {
-	return &toyohrpb.SelectLeagueSchedulesResponse{}, nil
+// seasonStart returns the start of the three-month season containing t.
+//
+// Quarters from January, at midnight UTC — already slot-aligned, since midnight
+// is a multiple of two hours. Arbitrary but stated: a season boundary is
+// editorial on a private server, and a rule an operator can predict beats one
+// derived from when the server happened to start.
+func seasonStart(t time.Time) time.Time {
+	t = t.UTC()
+	month := time.Month((int(t.Month())-1)/3*3 + 1)
+	return time.Date(t.Year(), month, 1, 0, 0, 0, 0, time.UTC)
 }
 
-// SaveCoopShift validates a coop shift and stores it, the same split
-// SaveFest makes: validation happens here (in front of the store, which is
-// deliberately free of business logic) because the reasons a shift is
-// invalid -- a stage that does not exist, a weapon that is not real, slot
-// misalignment -- need explaining, which is not something a column can
-// carry. The shift's ID is derived, not supplied: two calls describing the
-// same kind and start time upsert the same row, which is what lets the CLI
-// re-run a schedule command to fix a typo rather than leaving a stray entry.
-func (s *Service) SaveCoopShift(ctx context.Context, c CoopShift) error {
-	if err := c.Validate(); err != nil {
-		return err
+// pick returns n identifiers from a rotation, starting at index and wrapping.
+//
+// Wrapping rather than running out: a rotation is meant to be cyclic, and a
+// slot with no stages is a lobby that cannot start a match.
+func pick(from []int32, index, n int) []int32 {
+	if len(from) == 0 || n <= 0 {
+		return nil
 	}
-	return s.store.UpsertCoopShift(ctx, RowFromCoopShift(c))
+	if n > len(from) {
+		n = len(from)
+	}
+	out := make([]int32, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, from[((index*n)+i)%len(from)])
+	}
+	return out
 }
 
-// ListCoopShiftsForOperator returns every stored coop shift, soonest first --
-// for switchnetctl and, eventually, the dashboard. Named distinctly from the
-// gRPC-facing SelectCoopSchedules: that one also filters to unended shifts
-// and returns the wire type, not the domain type.
-func (s *Service) ListCoopShiftsForOperator(ctx context.Context) ([]CoopShift, error) {
-	rows, err := s.store.ListCoopShifts(ctx)
-	if err != nil {
-		return nil, err
+func (r Rotation) stagesPerSlot() int {
+	if r.StagesPerSlot > 0 {
+		return r.StagesPerSlot
 	}
-	out := make([]CoopShift, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, coopShiftFromRow(row))
+	// Two, which is what a real rotation offers per slot.
+	return 2
+}
+
+// scheduleSetID names a slot.
+//
+// Derived from the slot's start, so the same slot has the same id every time it
+// is described — which is what lets a client cache one and compare.
+func scheduleSetID(start time.Time) string {
+	return fmt.Sprintf("%d", start.UTC().Unix()/slotSeconds)
+}
+
+// etagOf digests a generated schedule list.
+//
+// Over the values the client would act on, so it changes when and only when the
+// answer does. The point is the client's conditional request: an etag that moves
+// for no reason costs a needless refetch, and one that fails to move leaves the
+// lobby showing yesterday's rotation.
+func etagOf(schedules []*toyohrpb.VsSchedule) string {
+	h := sha1.New()
+	for _, s := range schedules {
+		fmt.Fprintf(h, "%s|%d|%d|", s.ScheduleSetId,
+			s.StartTime.GetSeconds(), s.EndTime.GetSeconds())
+		writeStages(h, s.GetRegularSettings().GetStages())
+		for _, b := range s.GetBankaraSettings() {
+			fmt.Fprintf(h, "r%d:", b.GetRule())
+			writeStages(h, b.GetStages())
+		}
 	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func seasonEtag(schedules []*toyohrpb.SeasonSchedule) string {
+	h := sha1.New()
+	for _, s := range schedules {
+		fmt.Fprintf(h, "%s|%d|%d|", s.ScheduleSetId,
+			s.StartTime.GetSeconds(), s.EndTime.GetSeconds())
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeStages(h interface{ Write([]byte) (int, error) }, stages []int32) {
+	for _, st := range stages {
+		fmt.Fprintf(h, "%d,", st)
+	}
+	fmt.Fprint(h, ";")
+}
+
+// noteNoRotation logs, once per kind, that a schedule was asked for and there
+// is nothing configured to answer with.
+//
+// Once, because the console asks on a timer. Logged at all because an empty
+// schedule is indistinguishable from a broken one from the console's side, and
+// this is the line that tells the operator which it is.
+func (s *Service) noteNoRotation(kind string) {
+	if _, seen := s.noRotation.LoadOrStore(kind, struct{}{}); seen {
+		return
+	}
+	s.log.Info("toyohr: a schedule was requested and no rotation is configured",
+		"kind", kind, "hint", "set npln.rotation in config")
+}
+
+// RotationFromStrings parses the operator's configured rotation.
+//
+// Identifiers are given as strings in YAML so a typo is reported here, with the
+// offending value, rather than silently becoming zero — and stage 0 is a
+// perfectly plausible valid id, so a zero from a parse failure would be
+// indistinguishable from an intended one.
+func RotationFromStrings(regular, bankaraRules, bankaraStages []string, stagesPerSlot int) (Rotation, error) {
+	var out Rotation
+	var err error
+	if out.RegularStages, err = parseIDs("regular_stages", regular); err != nil {
+		return Rotation{}, err
+	}
+	if out.BankaraRules, err = parseIDs("bankara_rules", bankaraRules); err != nil {
+		return Rotation{}, err
+	}
+	if out.BankaraStages, err = parseIDs("bankara_stages", bankaraStages); err != nil {
+		return Rotation{}, err
+	}
+	out.StagesPerSlot = stagesPerSlot
 	return out, nil
 }
 
-// DeleteCoopShift removes a coop shift by its derived ID. Not an error if it
-// does not exist, matching the store's own idempotent-delete contract.
-func (s *Service) DeleteCoopShift(ctx context.Context, id string) error {
-	return s.store.DeleteCoopShift(ctx, id)
-}
-
-// GenerateAndSaveCoopShifts fills count Normal rotation slots starting at
-// from with GenerateCoopShifts (coop_generate.go)'s own generator, storing
-// every one that does not already occupy that slot.
-//
-// "Already occupy" is deliberately whole -- a slot with ANY existing shift is
-// left alone, whether that shift was hand-scheduled or produced by an
-// earlier call to this same method. That is what makes generation additive
-// rather than destructive: an operator who manually corrects one slot in a
-// generated run, then generates again over a wider range, never has that
-// correction silently overwritten. Re-run with a fresh seed to actually
-// replace a stretch of generated shifts -- delete them first.
-func (s *Service) GenerateAndSaveCoopShifts(
-	ctx context.Context, from time.Time, count int, duration time.Duration, rng *rand.Rand,
-) (created, skipped []CoopShift, err error) {
-	for _, c := range GenerateCoopShifts(rng, from, count, duration) {
-		_, err := s.store.GetCoopShift(ctx, c.ID())
-		switch {
-		case err == nil:
-			skipped = append(skipped, c)
+func parseIDs(field string, values []string) ([]int32, error) {
+	out := make([]int32, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
 			continue
-		case errors.Is(err, db.ErrNotFound):
-			// falls through to save below
-		default:
-			return created, skipped, err
 		}
-		if err := s.SaveCoopShift(ctx, c); err != nil {
-			// Validate should never actually reject a generator's own
-			// output -- every id it uses comes from coop_ids.go -- so this
-			// is defensive, not an expected path.
-			return created, skipped, err
+		var n int32
+		if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+			return nil, fmt.Errorf("npln.rotation.%s: %q is not a number", field, v)
 		}
-		created = append(created, c)
+		out = append(out, n)
 	}
-	return created, skipped, nil
-}
-
-// RowFromCoopShift converts a shift into a storable row.
-func RowFromCoopShift(c CoopShift) db.CoopShift {
-	return db.CoopShift{
-		ID:           c.ID(),
-		Kind:         c.Kind.String(),
-		StageID:      c.StageID,
-		Boss:         c.Boss,
-		Weapons:      append([]int64(nil), c.Weapons[:]...),
-		KumaWeaponID: c.KumaWeaponID,
-		RewardGearID: c.RewardGearID,
-		Rewards:      append([]int64(nil), c.Rewards...),
-		StartAt:      c.Start.UTC(),
-		EndAt:        c.End.UTC(),
-	}
-}
-
-// coopShiftFromRow converts a stored row into the domain type. Malformed
-// stored data (a weapons slice of the wrong length, from a row written by a
-// version of this code with a different shape) is defensive: it would only
-// happen from a hand-edited database, since SaveCoopShift's Validate never
-// stores anything else.
-func coopShiftFromRow(r db.CoopShift) CoopShift {
-	kind, _ := ParseCoopShiftKind(r.Kind)
-	c := CoopShift{
-		Kind:         kind,
-		Start:        r.StartAt.UTC(),
-		End:          r.EndAt.UTC(),
-		StageID:      r.StageID,
-		Boss:         r.Boss,
-		KumaWeaponID: r.KumaWeaponID,
-		RewardGearID: r.RewardGearID,
-		Rewards:      append([]int64(nil), r.Rewards...),
-	}
-	copy(c.Weapons[:], r.Weapons)
-	return c
-}
-
-// coopScheduleProto renders a stored shift as the wire message.
-//
-// Three fields are an operator-local assumption rather than a confirmed
-// shape, in the same spirit as festEntryProto's resource-name guess --
-// documented in docs/QUESTIONS.md rather than left unexplained:
-//
-//   - Name, ScheduleSetId and ShiftId follow the "tenants/<t>/..." pattern
-//     GetFestDecryptionKey already confirms for a different resource, since
-//     no capture shows what these three actually carry for a CoopSchedule.
-//     Unlike Fest.Resource, nothing here derives a decryption IV from the
-//     string, so a wrong guess costs a cosmetic mismatch, not a broken RPC.
-//   - RewardType is left "" (unset) rather than guessed, since no source
-//     this project has seen says what the real enum-like strings are.
-func (s *Service) coopScheduleProto(r db.CoopShift) *toyohrpb.CoopSchedule {
-	name := s.tenantPath() + "/coopSchedules/" + r.ID
-	out := &toyohrpb.CoopSchedule{
-		Name:          name,
-		ScheduleSetId: r.ID,
-		ShiftId:       r.ID,
-		StartTime:     timestamppb.New(r.StartAt),
-		EndTime:       timestamppb.New(r.EndAt),
-		Timestamp:     timestamppb.New(s.now()),
-	}
-	switch r.Kind {
-	case "big_run":
-		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
-			Stage:        r.StageID,
-			Boss:         r.Boss,
-			MainWeapons:  append([]int64(nil), r.Weapons...),
-			KumaWeapon:   int32(r.KumaWeaponID),
-			RewardGearId: r.RewardGearID,
-			Rewards:      append([]int64(nil), r.Rewards...),
-		}
-	default:
-		out.Normal = &toyohrpb.CoopSchedule_Normal{
-			Stage:        r.StageID,
-			Boss:         r.Boss,
-			MainWeapons:  append([]int64(nil), r.Weapons...),
-			KumaWeapon:   int32(r.KumaWeaponID),
-			RewardGearId: r.RewardGearID,
-		}
-	}
-	return out
+	return out, nil
 }

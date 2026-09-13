@@ -4,10 +4,16 @@ Three phases. Each one is only worth starting when the previous one has been
 confirmed working on real hardware, because otherwise a failure has two possible
 causes and no way to tell them apart.
 
+Phase 2 was built against that rule rather than in obedience to it: the
+certificate-trust question that gates hardware testing was open, so every step
+was chosen to be verifiable without a console. That kept the work moving and it
+does mean **two phases are now waiting on the same hardware test**, which is the
+cost of the decision and is worth stating plainly.
+
 | Phase | Scope | State |
 | --- | --- | --- |
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
-| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | in progress: gateway, matchmaking+ICE, dashboard, `gamesync`, the JSON front end, BCAT pack-building and most `toyohr` services are built and tested; BCAT serving (getting a pack onto the console) and hardware verification are not |
+| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | code complete, **awaiting hardware verification** |
 | [3](#phase-3--the-eshop) | eShop, served from local NSP dumps | not started |
 
 ---
@@ -61,13 +67,23 @@ unnecessary.
 
 ## Phase 2 — Splatoon 3 (NPLN) + dashboard
 
+**Implemented. Nothing in it has touched a console.**
+
 Splatoon 3 does not use NEX/PRUDP. It uses **NPLN**: gRPC over HTTP/2 with
 protobuf payloads, one tenant per title. The Splatoon 3 tenant is `dce9377b`, at
 `t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net`.
 
 That is good news. Compared to NEX's custom binary protocol, NPLN is a standard
 transport with mature tooling, and **Kinnay has published the decompiled protobuf
-definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols).
+definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols)
+— covering more than expected, including Splatoon 3's own `toyohr/v1` with
+`fest.proto`.
+
+> **This section was written before the phase was built and got four things
+> wrong.** They are corrected in place below, each marked **Correction**.
+> [`PHASE2_PLAN.md`](PHASE2_PLAN.md) is the record of how they were found, and
+> §2.7 and §2.8 are work this section did not know about at all. The subsection
+> numbers are kept because source comments cite them.
 
 > **This section was written before any of it was built, and four things in it
 > turned out to be wrong.** They are corrected in place below, and
@@ -82,14 +98,17 @@ definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocol
 
 ### 2.1 Protobuf pipeline
 
-`scripts/fetch-proto.sh` clones the upstream definitions; `scripts/gen-proto.sh`
-runs `protoc`/`buf` to generate Go server stubs into `proto/`.
+**Done.** `scripts/fetch-proto.sh` clones the upstream definitions from a pinned
+commit; `scripts/gen-proto.sh` runs `buf` to generate Go server stubs into
+`proto/` — 77 files.
 
 **Do not hand-transcribe the `.proto` files.** Always regenerate from upstream, so
-an update is a one-command refresh rather than a diffing exercise.
+an update is a one-command refresh rather than a diffing exercise. Only the
+generated Go lands in git, so `go build` needs neither the network nor a protobuf
+toolchain.
 
-This step is genuinely independent of Phase 1's hardware verification, so it is
-the safe thing to do first if Phase 1 is still waiting on consoles.
+This step was genuinely independent of phase 1's hardware verification, which is
+why it was first.
 
 ### 2.1a The JSON front end comes FIRST
 
@@ -117,24 +136,29 @@ built on.
 
 ### 2.2 Gateway and core services
 
-`cmd/npln` + `internal/npln/server.go`. gRPC middleware reads the
+**Done.** `cmd/npln` + `internal/npln`. gRPC middleware reads the
 `npln-tenant-id`, `authorization` and `uid` metadata fields and rejects malformed
 metadata the way Nintendo's server does — status 12 (`Unimplemented`) on
 production, 14 (`Unavailable`) on development.
 
-Then, in order of what a session needs:
+> **Correction.** This section had the gateway speaking gRPC from the first
+> request. **It does not.** The game first talks JSON over HTTPS to two host
+> families and holds a third connection open, and only then opens the gRPC
+> channel. Building the gateway first meant building the second half of the
+> handshake and never reaching it — see §2.7.
 
 | Service | Note | Built? |
 | --- | --- | --- |
 | `nn.npln.auth.v1.Auth` | exchanges the BAAS id token for an NPLN session. Verify it against `/1.0.0/certificates` — that is the seam Phase 1 built | yes |
 | `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
+| `nn.npln.matchmaking.v1.*` | see §2.3 | yes |
 | `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | yes — `internal/npln/friends.go`, `presence_service.go` |
 | `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | yes — `internal/npln/messaging.go`, over `internal/messaging`'s in-memory mailbox |
-| `nn.npln.gamesync.v1.Gamesync` | the Firestore-shaped document/watch service for lobby and match state | yes, except `CreateRound` — `internal/gamesync`, `internal/gamesyncstore`; see `../TODO.md` §1.5 for where it turned out to actually be reached from |
+| `nn.npln.gamesync.v1.Gamesync` | the Firestore-shaped document/watch service for lobby and match state, on its own port (7575) | yes, except `CreateRound` — `internal/gamesync`; see `../TODO.md` §1.5 for where it turned out to actually be reached from |
 | `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
 
 **NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that
-does. `internal/jwt` currently only does RS256 and will need an EC path.
+does, and `internal/jwt` has a separate EC path for it. Right about this.
 
 ### 2.3 Matchmaking and sessions
 
@@ -142,6 +166,13 @@ does. `internal/jwt` currently only does RS256 and will need an EC path.
 the queue and session formation): a FIFO queue per mode, in memory. On a match,
 form a session naming a host and hand it to every player on their ticket
 stream. `AllocateIceServerSet` is built too.
+
+**`players_per_match` defaults to 2 rather than 8.** On a private network of a
+handful of consoles, waiting for a faithful 4v4 means never playing.
+`npln.mode_players` is how an operator with enough consoles asks for the real
+sizes — and the names are not hardcoded, because nothing public documents the
+strings the game puts in `matchmaking_config`. Every unknown mode is logged
+once, and that log is how they get discovered.
 
 **Built: `SyncGameSession`.** The host publishes its listening port
 (`internal/matchmaking`'s `Session.HostPort`, set via `Queue.SetHostPort`);
@@ -160,10 +191,13 @@ in `matchmaking.go` and `admin.go`), for the dashboard's recent-matches list.
 See §2.6.
 
 **NAT traversal for Splatoon 3 is ICE (STUN/TURN), not the Pia NAT-check pair** —
-so `natcheck` is not involved in this title, and a STUN/TURN server (coturn) is a
-new deployment dependency. The addresses handed to the console must be reachable
-*from the console*: this is the most common cause of "the lobby fills but the
-match never starts".
+so `natcheck` is not involved in this title, and coturn is a new deployment
+dependency. `AllocateIceServerSet` serves `npln.ice_servers` **verbatim**: a
+server behind NAT cannot discover its own reachable address, and the addresses
+have to be reachable *from the console*. This is the most common cause of "the
+lobby fills but the match never starts", and from the server side it is
+indistinguishable from a matchmaking bug. `switchnetctl check` warns when the list
+is empty; consoles on one LAN work without it.
 
 Note that gameplay is **peer-to-peer**: once a match starts the consoles talk
 directly and SwitchNet is out of the path, so the session names a *host player*,
@@ -176,47 +210,34 @@ above and §2.6.
 
 ### 2.4 Splatoon 3 services (`nn.npln.toyohr.v1.*`)
 
-Roughly boot-to-match order: `Schedule` (map/mode rotation), `LobbyMessaging`,
-`GameRecord`, `CoopScenario` (Salmon Run), `FestService` (Splatfests), then
-`Locker`, `CloudSave`, `Replay`, `Canola`, `UserScreening`.
+**Every service is registered, including the ones with no handlers.** That is the
+mechanism this section's advice depends on: an RPC on a registered service answers
+`Unimplemented` and the gateway logs it once by name, whereas an RPC on an
+unregistered service fails identically with nothing in the log.
 
-**Built: `FestService`, `Schedule`, and `CloudSave.GetSaveRecord`**
-(`internal/toyohr`, package doc: "starting with Splatfests"). `Schedule` and
-`CloudSave` were prioritised over the rest of this backlog because they are
-called during ordinary boot queries, ahead of Fest in the sequence a session
-actually needs.
+**Built: `FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, and
+`CloudSave.GetSaveRecord`** (`internal/toyohr`, package doc: "starting with
+Splatfests").
 
-`Schedule`'s five RPCs (`SelectVsParams`, `SelectVsSchedules`,
-`SelectCoopSchedules`, `SelectSeasonSchedules`, `SelectLeagueSchedules`) all
-answer "nothing scheduled" rather than `Unimplemented` — the map/mode
-rotation content itself is Nintendo's own game design data, not something
-this server can fabricate; see the `TODO(capture-needed)` in
-`internal/toyohr/schedule.go`. `CloudSave.GetSaveRecord` answers `NotFound`
-for every account — a fresh account genuinely has no cloud save on a real
-server either, so this is a correct answer rather than a placeholder. The
-other five `CloudSave` RPCs (`Create`/`Validate`/`Write`SaveRecord,
-`ChangeUserName`, `Delete`) are left unimplemented: nothing calls them this
-early, and actually writing save state is a different scope than answering
-the boot query that would otherwise hang, on top of being real player data
-this server has no legitimate way to have — see CLAUDE.md's "anything
-needing a game dump" boundary.
+| Service | State |
+| --- | --- |
+| `FestService` | done, end to end: schedule, decryption keys, team choice, results |
+| `Schedule` | `SelectVsParams`/`SelectVsSchedules`/`SelectSeasonSchedules`/`SelectLeagueSchedules` answer "nothing scheduled" — the map/mode rotation content is Nintendo's own game design data, not something this server can fabricate. `SelectCoopSchedules` is **not** empty: every operator-scheduled, unended Salmon Run shift is served for real, backed by `SaveCoopShift`/`GenerateAndSaveCoopShifts` and `switchnetctl coop` — see [`../TODO.md`](../TODO.md) §1.4 |
+| `LobbyMessaging` | done, including `SendMessage` — in-memory delivery to connected players via a per-lobby hub |
+| `UserScreening` | done. `CreateReport` is logged for the operator (it is data the caller hands over, not data this server needs to already have); `GetViolation` always answers none |
+| `CloudSave.GetSaveRecord` | answers `NotFound` for every account — a fresh account genuinely has no cloud save on a real server either, so this is a correct answer rather than a placeholder. The other five `CloudSave` RPCs are left unimplemented: real player data this server has no legitimate way to have, see CLAUDE.md's "anything needing a game dump" boundary |
+| `Canola`/`Locker` | empty/`NotFound` reads; the writes are unimplemented — no `internal/ugcstore` exists to write into |
+| `CoopScenario`/`Replay` | `NotFound` reads; `FulfillReservations` answers an empty valid list |
+| `GameRecord` | **the one that matters most, and left entirely `Unimplemented`.** Battle results come from here, and they are the missing half of a Splatfest verdict — `InitializeAttributes` alone carries per-mode X Power seed values with no defensible default |
 
-Most of the rest is built too, honestly-empty rather than guessed at where
-there is nothing legitimate to answer with: `LobbyMessaging` (real, backed
-by `internal/lobbymessaging`'s per-lobby broadcast, `SendMessage` still
-`Unimplemented`), `Canola`/`Locker` (empty/`NotFound` reads, the writes
-unimplemented — no `internal/ugcstore` exists to write into),
-`CoopScenario`/`Replay` (`NotFound` reads, `FulfillReservations` answers an
-empty valid list), and `UserScreening` (`NotFound` reads, `CreateReport`
-implemented for real since it is data the caller hands over rather than
-data this server would need to already have). Left entirely
-`Unimplemented`: `GameRecord`, whose `InitializeAttributes` alone carries
-per-mode X Power seed values with no defensible default. See
-[`../TODO.md`](../TODO.md) §1.4 for the file-by-file detail and what each
-`TODO(capture-needed)` on the remaining gaps would settle.
+See [`../TODO.md`](../TODO.md) §1.4 for the file-by-file detail and what each
+remaining `TODO(capture-needed)` would settle. Log every unimplemented RPC
+with a hexdump — that log is the to-do list.
 
-Treat what is not yet real as a backlog and let capture data drive the order. Log every
-unimplemented RPC with a hexdump — that log is the to-do list.
+> **Correction.** This section filed Splatfests under `FestService` as if the whole
+> feature were gRPC. **It is not.** The schedule carries only a fest's mechanics;
+> every custom asset lives in a BCAT pack the console fetches separately — see
+> §2.8.
 
 `FestService` turned out to be the one with a dependency outside NPLN entirely,
 which is 2.4a.
@@ -252,30 +273,33 @@ game-reported presence over `KeepAlive`'s `UpdatePresence` field — see
 `docs/CAPTURES/README.md`.
 
 **One friend graph, not two.** NPLN has its own friends layer, but it must read
-the *same* friendships as BAAS. Either `internal/npln/friends.go` calls into
-`internal/db`'s friendship store directly, or both go through `presencebus` for
-the live view. Do not create a second graph.
+the *same* friendships as BAAS. `internal/npln/friends.go` and `internal/toyohr`
+both go through `internal/db` — the same rows. **Do not create a second graph.**
 
-Two details from
+`Friends.ListFriendUsers` and `PresenceService` are both implemented. Two
+details from
 [the `splatoon-3` write-up](https://github.com/n-popescu/splatoon-3/blob/main/docs/FRIENDS.md)
-that are easy to miss:
+that they had to get right:
 
 - **`FriendUser.Relationship` must set `presence_deliverable` and
   `presence_receivable`.** If they are false the client will not show a friend's
   presence and will not publish its own — a friend list that looks perfectly
   healthy while everybody is permanently offline.
 - **Streams must stay warm.** A stream that goes quiet is treated as dead and the
-  friend list stops updating with nothing in the log.
+  friend list stops updating with nothing in the log. `SubscribeMaintenanceSchedules`
+  and `RecvMessage` both carry a `KeepAlive` in their own oneof, which is the
+  protocol saying so outright, and both are implemented that way. The frontline
+  connection in §2.7 is the same rule one layer lower.
 
 ### 2.6 Dashboard
 
-`cmd/dashboard` plus a small frontend. Users list, "online now" fed by
-`presencebus` over WebSocket or SSE rather than polling, user detail with friend
-list and match history, and a recent match list.
+**Done.** `cmd/dashboard` plus a small frontend: players with resolved presence,
+"who's around" fed by `presencebus` over **SSE** rather than polling, a match
+list, the Splatfest controls, a per-player detail view, and the BCAT delivery
+cache — including serving it to the console-side installer.
 
-`internal/presencebus` already exists for this. **Switch `redis.url` on before the
-dashboard runs as a separate process** — the in-process bus delivers nothing
-across a process boundary, silently.
+SSE rather than WebSockets: the traffic is one-way, it reconnects on its own, and
+it survives an ordinary HTTP proxy with no upgrade handling.
 
 Built, plus a Splatfest section that schedules, announces, holds and deletes
 fests, live matchmaking counts (the "in matchmaking" overview tile and the
@@ -285,20 +309,91 @@ HTTP rather than the presence bus), and a recent match list
 (`npln_matches`, written by `internal/npln/matchmaking.go` and
 `admin.go`'s `recordMatch`, read by `/api/matches`).
 
-### 2.7 Certificate trust is a SEPARATE problem here
+**Switch `redis.url` on before the dashboard runs as a separate process** — the
+in-process bus delivers nothing across a process boundary, silently. `cmd/npln`
+and `cmd/dashboard` both warn when it is unset, and the matchmaking tile reports
+*no data* rather than a zero that would read as "nobody is queuing".
 
-Phase 1's CA-store work does not cover Splatoon 3. The game carries its own TLS
-stack and pins its own certificates independently of the console's trust store,
-so redirection succeeding tells you nothing about whether the handshake will.
+### 2.7 The JSON front end — what this section missed entirely
 
-`kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch
-disabling verification in the game's NSO. The operator has accepted a
-system-wide patch, so this is a decision already made rather than an open
-question — but write down both properties: it *disables* verification rather
-than *adding* trust, and it is gated on the game version, so a title update
-silently stops it applying.
+> **Correction.** Three hosts were listed in `internal/nintendo/hosts.go` as push
+> notifications and telemetry. They are the front end the game contacts **first**.
 
----
+| Host | What it does |
+| --- | --- |
+| `gw.hac.lp1.vermillion.srv.nintendo.net` | device initialisation, account config |
+| `val.hac.lp1.penne.srv.nintendo.net` | login tickets, and the frontline FQDN |
+| `fro-N.hac.lp1.penne.srv.nintendo.net` | a persistent connection the console holds open |
+
+`internal/nplnrest` serves them. It needs `proxy_pass` over HTTP/1.1, **not**
+`grpc_pass` over HTTP/2 — crossing the two completes the TLS handshake and then
+fails with nothing in either log.
+
+That reclassification also answered an open question recorded against
+`vermillion`: a 2026-08-27 capture showed 16.5 KB exchanged there mid-flow, which
+is not a background contact. It is a device-initialisation handshake that expects
+real answers, which is why a stub did not satisfy it. And `fro-N` is a **family**,
+not one host — a console handed a frontline FQDN it cannot reach fails after the
+handshake looks fine.
+
+**Every body on all three is undocumented.** SwitchNet answers as little as
+possible rather than inventing a Nintendo internal, and `npln.rest_record_dir`
+writes a hexdumped transcript of one boot — which is the cheapest capture in the
+project and settles all three at once.
+
+### 2.8 BCAT — the other half of a custom Splatfest
+
+> **Correction.** This section did not mention BCAT, and custom Splatfests depend
+> on it.
+
+A Splatfest exists in **two places that must agree**, or the game raises
+`BcatInvalid`:
+
+```
+NPLN schedule        names a fest, its resource, and a 40-hex revision
+BCAT delivery cache  holds packs whose own metadata names the fest it has
+GetFestDecryptionKey hands over keys that must actually open those packs
+```
+
+`internal/bcat` builds the packs and the delivery cache; `switchnetctl fest build`
+derives all four values from one build so they cannot drift; `switch/bcat-installer`
+puts the cache on a console.
+
+**SwitchNet does not serve BCAT**, and the reason is narrower than it looks: the
+`list` response body is undocumented, not that the container's signature could not
+be produced. `internal/bcat.Probe` is the server for the experiment that would
+settle it — see [`../TODO.md`](../TODO.md) §2.4.
+
+**SwitchNet does not convert textures either**, deliberately: a BFRES texture in
+the wrong compression or swizzle *loads and renders as garbage*, on a console,
+with nothing on the server to look at. `bcat.converter` is a command the operator
+points at their own tool, and a source asset with no converter configured is a
+build error rather than a PNG packed into the archive.
+
+### 2.9 Certificate trust is a separate problem from phase 1's
+
+> **Correction.** Phase 1's route extends the *console's* CA store. That does
+> nothing here: Splatoon 3 carries its own statically linked TLS stack and pins
+> its own certificates.
+
+The failure signature is worth memorising, because it looks identical to a dozen
+unrelated bugs: the TLS handshake **completes**, and the game then abandons the
+call before sending a single HTTP/2 HEADERS frame. A connection in the log, and no
+request.
+
+[`switch/README.md` part 3](../switch/README.md#part-3-splatoon-3-pins-its-own-certificates)
+has the route and its two costs — it *disables* verification rather than *adding*
+trust, and it is gated on the **game** version, so a title update stops it
+applying silently.
+
+### What is left
+
+[`../TODO.md`](../TODO.md) is the live list, and it is short: a texture converter
+(deliberately external), the remaining `toyohr` services in whatever order the
+console asks for them, and **a console**. The first hardware test is worth more
+than any further server work, and
+[`switch/README.md`](../switch/README.md#verify-splatoon-3-in-order) is the
+sequence for it.
 
 ## Phase 3 — the eShop
 

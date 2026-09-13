@@ -59,6 +59,16 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil)
+}
+
+// newHarnessWith builds a harness whose NPLN configuration a test has adjusted.
+//
+// Separate from newHarness so that the settings a test cares about are visible
+// in the test rather than buried in a shared default -- and so the default stays
+// the one every other test reads.
+func newHarnessWith(t *testing.T, adjust func(*config.NPLN)) *harness {
+	t.Helper()
 
 	dir := filepath.Join(t.TempDir(), "keys")
 	ring := sjwt.NewKeyring(dir, true)
@@ -93,17 +103,24 @@ func newHarness(t *testing.T) *harness {
 		now: time.Now(),
 	}
 
+	cfg := config.NPLN{
+		Tenant:          testTenant,
+		Issuer:          testIssuerName,
+		JWKSURL:         testJWKSURL,
+		AccessTokenTTL:  10800,
+		PlayersPerMatch: 2,
+		TicketTTL:       180,
+	}
+	if adjust != nil {
+		adjust(&cfg)
+	}
+
 	srv, err := New(Options{
 		Store: h.store,
 		// Discard: these tests deliberately provoke refusals, and the log lines
 		// are noise until one fails.
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Config: config.NPLN{
-			Tenant:         testTenant,
-			Issuer:         testIssuerName,
-			JWKSURL:        testJWKSURL,
-			AccessTokenTTL: 10800,
-		},
+		Log:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Config:             cfg,
 		AccessKey:          accessKey,
 		BAASIDKey:          baasIDKey,
 		PresenceTTL:        testPresenceTTL,

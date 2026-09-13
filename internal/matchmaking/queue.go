@@ -10,12 +10,20 @@
 package matchmaking
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+var (
+	// ErrNoSession means the named session does not exist, or no longer does.
+	ErrNoSession = errors.New("matchmaking: no such session")
+	// ErrSessionFull means the session has no room for another player.
+	ErrSessionFull = errors.New("matchmaking: session is full")
 )
 
 // State is where a ticket is in its life. It mirrors the protocol's own states
@@ -74,6 +82,13 @@ type Session struct {
 	ID      string
 	Mode    string
 	Players []string
+
+	// MaxPlayers is the size the match was formed at. Carried on the session
+	// rather than recomputed from the live mode size, because an operator
+	// changing ModeSizes after formation must not retroactively shrink or
+	// grow a match that already has its players -- Join checks room against
+	// this, not against whatever the mode's size happens to be right now.
+	MaxPlayers int
 
 	// Host is the player whose console the others connect to.
 	//
@@ -271,7 +286,78 @@ func (q *Queue) Session(sessionID string) (Session, bool) {
 	if !ok {
 		return Session{}, false
 	}
-	return *s, true
+	return s.clone(), true
+}
+
+// Join adds a player to an existing session, and is idempotent for a player who
+// is already in it.
+//
+// Idempotent rather than an error, because the console calls JoinGameSession
+// after its own ticket succeeded — it is joining the match it was just told it
+// is in, and answering "you are already here" as a failure strands it on the
+// loading screen.
+//
+// A session with no room left refuses. Silently over-filling would hand a
+// ninth player to an eight-player match, and the game rejects that on the
+// console with a generic error rather than saying the session was full.
+func (q *Queue) Join(sessionID, userID string) (Session, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return Session{}, ErrNoSession
+	}
+	for _, p := range s.Players {
+		if p == userID {
+			return s.clone(), nil
+		}
+	}
+	if len(s.Players) >= s.MaxPlayers {
+		return Session{}, ErrSessionFull
+	}
+	s.Players = append(s.Players, userID)
+	return s.clone(), nil
+}
+
+// SessionsFor returns the sessions a player is in. For GameSessionService's
+// per-user lookups.
+func (q *Queue) SessionsFor(userID string) []Session {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var out []Session
+	for _, s := range q.sessions {
+		for _, p := range s.Players {
+			if p == userID {
+				out = append(out, s.clone())
+				break
+			}
+		}
+	}
+	// Newest first, and by id when two were formed in the same instant — a
+	// map range would reorder the answer between two identical calls.
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// clone copies a session so a caller cannot mutate the queue's own slice.
+func (s *Session) clone() Session {
+	out := *s
+	out.Players = append([]string(nil), s.Players...)
+	return out
+}
+
+// PlayersFor returns how many players a match in this mode takes.
+func (q *Queue) PlayersFor(mode string) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.playersForLocked(mode)
 }
 
 // SetHostPort records the port the host published for a session.
@@ -617,9 +703,10 @@ func (q *Queue) formMatchesLocked() []Session {
 // the two drift until one of them produces a session the game will not join.
 func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 	s := Session{
-		ID:        uuid.NewString(),
-		Mode:      mode,
-		CreatedAt: q.now(),
+		ID:         uuid.NewString(),
+		Mode:       mode,
+		MaxPlayers: q.playersForLocked(mode),
+		CreatedAt:  q.now(),
 	}
 	for _, id := range chosen {
 		s.Players = append(s.Players, q.tickets[id].UserID)

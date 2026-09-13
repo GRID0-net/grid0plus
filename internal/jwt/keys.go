@@ -202,13 +202,17 @@ func generate(path string) (*rsa.PrivateKey, error) {
 // The exclusive create is what makes this safe when several services start at
 // the same moment — every `switchnetctl run` or `systemctl start
 // switchnet.target`, because they all share one key directory and all find it
-// empty. Without it, each process generates its own key, the last writer wins
-// on disk, and every process keeps the one it made in memory. The result is
-// dauth signing with one key while aauth verifies with another, and the error
-// the console eventually sees is "device token expired", which points
-// nowhere near the cause.
+// empty. Without it, each process generates
+// its own key, the last writer wins on disk, and every process keeps the one it
+// made in memory. The result is dauth signing with one key while aauth verifies
+// with another, and the error the console eventually sees is "device token
+// expired", which points nowhere near the cause.
+//
+// "Exclusive" has to mean the CONTENT appears atomically, not just the name —
+// see the comment inside for the bug an O_EXCL create onto the final path has.
 func writeKeyOnce(path string, priv any) (any, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create key dir: %w", err)
 	}
 
@@ -218,24 +222,52 @@ func writeKeyOnce(path string, priv any) (any, error) {
 	}
 	buf := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 
-	// O_EXCL: create or fail, never truncate. 0600 because it is a private key.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	// Written to a temporary file first, then LINKED into place.
+	//
+	// An O_EXCL create straight onto path looks like it does this and does not.
+	// It publishes the NAME before the CONTENT: the loser of the race sees
+	// os.ErrExist, reads the file, and finds it empty or half-written. The
+	// symptom is "no PEM block" from a directory that visibly contains a key,
+	// and it happens exactly when several services start at once -- which is
+	// every `docker compose up`, and is the one case this function exists for.
+	//
+	// os.Link is atomic and fails with EEXIST if the target exists, so it keeps
+	// the create-or-fail semantics while making the file appear complete.
+	tmp, err := os.CreateTemp(dir, ".key-*.tmp")
 	if err != nil {
+		return nil, fmt.Errorf("create temporary key file: %w", err)
+	}
+	tmpName := tmp.Name()
+	// Removed whichever way this goes: on success the link is what persists, and
+	// on failure a stray 0600 private key must not be left in the key
+	// directory for a later run to trip over.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("chmod temporary key file: %w", err)
+	}
+	if _, err := tmp.Write(buf); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("write signing key: %w", err)
+	}
+	// Flushed before the link, so a crash cannot leave a named file with no
+	// contents -- the durability half of the same problem.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return nil, fmt.Errorf("sync signing key: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("close temporary key file: %w", err)
+	}
+
+	if err := os.Link(tmpName, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			// Somebody else got there first. Use their key, not ours.
+			// Somebody else got there first, and because they linked too, their
+			// file is complete. Use their key, not ours.
 			return parsePEM(path)
 		}
 		return nil, fmt.Errorf("create signing key %s: %w", path, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	if _, err := f.Write(buf); err != nil {
-		return nil, fmt.Errorf("write signing key: %w", err)
-	}
-	// Flush to disk before returning. Another process that sees the file must
-	// see a complete key in it, not a partial write.
-	if err := f.Sync(); err != nil {
-		return nil, fmt.Errorf("sync signing key: %w", err)
 	}
 	return nil, nil
 }

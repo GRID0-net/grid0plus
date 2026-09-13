@@ -41,6 +41,129 @@ rather than treating this paragraph as settled.
 Building the cache directly sidesteps the question entirely, which is why it is
 what this package does today.
 
+## The probe, and why it exists before the experiment does
+
+`Probe` is the server for TODO.md §2.4 stage 1: *does the console reach us at
+all?* It logs every request the three `bcat-*` hosts receive, writes a hexdumped
+transcript when `stubs.bcat_record_dir` is set, and answers 200 with an empty
+body.
+
+It is wired into `internal/stubs` and **unreachable in a normal deployment**,
+because those three hosts are null-routed. Running the experiment is:
+
+1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
+   `ServiceBlackhole` to `ServiceStubs`;
+2. move them in `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
+   says why;
+3. regenerate the DNS and nginx configuration, set `stubs.bcat_record_dir`, and
+   open Splatoon 3.
+
+That is deliberately a five-minute job. The scarce resource in this experiment is
+console time, not server code, so the server exists first.
+
+**An empty 200 is a decision, not a placeholder.** An error tells the console the
+server is broken and it may stop asking, which loses the only thing the probe
+collects. A fabricated container is worse: the console rejects it for a reason
+nobody can name, and a negative result then means nothing.
+
+**Stage 2 is not built, and cannot honestly be.** Answering with a deliberately
+invalid signature only tests whether the signature is checked if the rest of the
+header is right — and the only public fact about that header is its size and the
+signature's offset. Stage 1's hexdumps are how the rest becomes known. Building
+stage 2 from a guess would produce an experiment whose negative result is
+uninterpretable.
+
+## Source assets, and the one thing this pipeline refuses to do
+
+An assets directory may hold two kinds of file.
+
+**Already in a game format** (`.bfres`, `.byml`, `.sarc.zs`) — packed as it is.
+
+**A source file**, named for what it must become with the source extension
+appended:
+
+```
+UI/Splashart.bfres.png    ->  UI/Splashart.bfres
+Mals/Msg_EUen.byml.yaml   ->  Mals/Msg_EUen.byml
+```
+
+One line, no separate manifest to keep in step with the filenames, and the
+target format visible in a directory listing.
+
+**A source file with no converter configured is a build error.** That refusal is
+the most valuable thing in this file. Before it, a PNG left in an assets
+directory went straight into the archive — the archive is still valid, so the
+console reads it, and then cannot decode the texture slot. The result is a fest
+that loads with missing or garbled art, on a console, with nothing on the server
+to look at. Failing at build time costs one message.
+
+## SwitchNet does not convert textures, on purpose
+
+A Splatfest's art is BC1/BC3/BC7-compressed textures in the Tegra GPU's
+block-linear layout, wrapped in BFRES. Getting any of that subtly wrong produces
+a texture that **loads and renders as garbage** — not a build error, not a
+refusal, noise on screen. Switch Toolbox and the
+`BinaryTextureLibrary`/`Syroot.NintenTools` family already do it correctly, and
+they exist because it is hard.
+
+So `bcat.converter` is a command the operator points at whatever tool they use:
+
+```
+<command> <source> <destination> <kind> <target-extension>
+```
+
+It must write the destination and exit zero. A non-zero exit, a missing output
+or an **empty** output all stop the build, carrying the command line that
+produced them — a conversion that half-worked is far harder to diagnose from the
+resulting pack than from the command that made it. The command is resolved when
+it is configured rather than when it is used, so a missing tool fails at startup
+and not halfway through building a fest.
+
+Two smaller guards, each closing a way to ship a broken pack:
+
+- **collisions are refused.** `Splashart.bfres.png` alongside `Splashart.bfres`
+  would otherwise be stored twice under one name, and the console reads whichever
+  it finds first.
+- **converted output never lands in the assets directory.** It goes to a scratch
+  directory that is removed, so the next build does not treat it as
+  hand-authored input.
+
+## `{FEST}` — one place for a question nobody has answered
+
+A real custom pack read during this project's research had every file inside
+named for the fest it was **derived from**, not the one it announces:
+
+```
+Mals/Msg_EUde.Fest_JUEA-DUMPLING_Bh.sarc.zs
+RSDB/Tag.Fest_JUEA-DUMPLING.dev.rstbl.byml.zs
+```
+
+while its `summary.yml` announced `JUEA-00210`. **Nobody has established what the
+game keys on.** If it resolves assets by the announced id, a from-scratch fest
+needs every internal path renamed consistently; if it only reads the pack it was
+handed, the names are inert.
+
+`Naming.Apply` is that decision in one place. Write
+`Mals/Msg_EUen.Fest_{FEST}_Bh.sarc.zs` and get consistent naming; write a literal
+name and it is left alone. Whichever way the question is answered, acting on the
+answer is a change to one function.
+
+With no fest id supplied the placeholder is left **visible** rather than
+stripped: a file literally called `Fest_{FEST}_Bh` is obviously wrong in a
+listing, whereas `Fest__Bh` looks like a real name and would be shipped.
+
+## Building one
+
+`switchnetctl fest build` is the only path that should be used, because it derives
+all four of the values that must agree from one source: the packs' bytes give the
+revision, the generated keys go to both the encryption and the fest row, and the
+announced id and resource are the ones written into `summary.yml`.
+
+`TestASeedAndItsKeysRoundTrip` is that contract as a test: it builds, writes, and
+then does exactly what a console does — takes the key `GetFestDecryptionKey` would
+hand over, derives the IV from the announced resource name, decrypts, and parses
+the archive.
+
 ## What it produces
 
 ```
@@ -88,6 +211,27 @@ Two consequences worth stating, each with a test:
   the resource alone (`juea-lovefes2.pack.zs`); the others append their short
   name (`juea-lovefes2_bh.pack.zs`). Getting it wrong breaks exactly one of the
   five — the largest.
+
+## Five packs, six key fields
+
+A seed folder holds **five** packs. `FestDecryptionKey` declares **six** key
+fields, and the keys are returned *positionally* — so no positional mapping
+between the two can be right, and treating `PackOrder` as a key order was a real
+bug: `wa`'s key landed in `result_winning_team`, `wb`'s in `team_alpha`, and every
+team pack failed to open with nothing in the failure naming a phase.
+
+`KeyFields` and `PackForKeyField` are the mapping, and `KeysInFieldOrder` is the
+only place that turns per-pack keys into the stored list.
+
+The three team fields are the certain half — `team_alpha` opens `wa` and so on;
+nothing else reads sensibly. Which of `notice` and `start` opens `base` and which
+opens `bh`, and what `result_winning_team` opens at all, is
+`TODO(capture-needed)`: a real seed folder has five files and the message has six
+fields, so at least one field has no pack.
+
+An absent pack keeps an **empty slot** rather than being left out. A two-team
+fest has no `wc`, and dropping its slot shifts every later key into the wrong
+phase.
 
 The container is a 4-byte little-endian length followed by block-padded
 ciphertext. The length bounds the real content, so there is no padding scheme to

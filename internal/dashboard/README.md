@@ -65,6 +65,24 @@ friends applet disagree goes hunting for a bug that is only in the dashboard.
 including the one that is easy to miss — a console reporting `OFFLINE` is
 signing out, and the heartbeat must not override it.
 
+## The matchmaking tile distinguishes zero from no data
+
+`/api/overview`'s `matchmaking` is **null** when nothing is reporting and an
+object when something is. That distinction is the whole reason the tile was left
+unwired rather than showing a zero: on a tile, "nobody is queuing" and
+"`cmd/npln` is not running, or `redis.url` is unset in one of the two processes"
+look identical, and only one of them is worth acting on.
+
+The seam is a **gauge**, not an event — `presencebus.Stats`, published by
+`internal/npln` on every queue change and on a timer, read on demand here. A
+gauge because a freshly-loaded page needs the current value, and an event stream
+only carries changes: a page opened between two players queuing would otherwise
+show nothing.
+
+It **expires**. A running server with an idle queue keeps republishing "still
+nobody", so a server that stops reads as absent within one TTL rather than as an
+empty queue forever.
+
 ## Match history outlives the live queue
 
 `internal/matchmaking`'s queue is in memory — a formed session ages out
@@ -87,12 +105,23 @@ accounts, recent matches -- assembled entirely from `GET /api/players/{id}`
 (`handlePlayerDetail` in `server.go`) rather than a new history table.
 Friends are resolved through the same `internal/presence` rule everything
 else on this page uses, so a friend shown here as online is never out of
-step with what they see of each other. There is no stored presence
-*history*, deliberately: SwitchNet keeps one current presence row per user
-(see "Presence is resolved here, not read", above), so what the panel shows
-for "last seen" is that same row, not a log. Matches are filtered
-client-side from the match history the Matchmaking tab already fetches,
-rather than a second server-side query.
+step with what they see of each other, favourites first. A friend list here
+that disagreed with the console's would send the operator hunting for a bug
+that is only in this page.
+
+The panel is also the page an operator opens when somebody says "it is not
+working for me", and the useful answer is almost always a *combination* of
+facts: a reported `OFFLINE` with a recent `last_seen_at`, a device account
+that was reassigned, a friend list with one entry. So it shows the effective
+state **and** the console's own last reported state **and** both timestamps.
+"Reported OFFLINE" and "never reported" are different states — conflating
+them is what makes a friend list permanently offline — and only showing all
+three lets an operator see which case they are in without reading the
+database. There is no stored presence *history* beyond that, deliberately:
+SwitchNet keeps one current presence row per user (see "Presence is resolved
+here, not read", above), so what the panel shows for "last seen" is that same
+row, not a log. Matches are filtered client-side from the match history the
+Matchmaking tab already fetches, rather than a second server-side query.
 
 ## Fest controls normalise what they safely can
 
@@ -188,6 +217,30 @@ contract test -- and deliberately exercises `npln_matches`, not `users`, so
 it cannot be caught mid-test by that contract test's own `TRUNCATE ...
 CASCADE` when `go test` runs the two packages concurrently against the same
 database.
+## It serves the BCAT seed to the console-side installer
+
+`GET /api/seed/manifest` and `GET /api/seed/file/{region}/{name}`, behind the same
+token as everything else. They exist so that
+[`switch/bcat-installer/`](../../switch/bcat-installer/) can fetch a fest's
+delivery cache instead of an operator moving files with JKSV — which works and
+does not survive the second fest.
+
+Three decisions in there:
+
+- **the manifest's fest id, resource and revision come from the `summary.yml` on
+  disk**, not from the fest table. What the console will actually hold is the
+  authority, and a disagreement between the two is exactly the thing worth
+  seeing rather than papering over.
+- **every file carries a SHA-1.** The installer verifies before writing, because
+  a truncated pack is indistinguishable from a valid one to the console's
+  filesystem and the failure surfaces hours later as `BcatInvalid`.
+- **the path is validated against an allowlist** — one region directory and one
+  filename — rather than by rejecting `..`. A rule that enumerates what is
+  allowed cannot be defeated by an encoding nobody thought of.
+
+An unbuilt seed directory answers 404 rather than an empty manifest: an empty
+manifest would have the installer report success having written nothing, and the
+operator would go looking at the console.
 
 ## Authentication is a shared token, and that is deliberate
 
@@ -196,8 +249,12 @@ no authentication at all.
 
 Nothing in phase 1 authenticates a **person** — every credential in the stack
 belongs to a console — so there is no account to check against. A shared token
-is the honest minimum rather than a pretend identity system. See
-[`TODO.md`](../../TODO.md) §3.3.
+is the honest minimum rather than a pretend identity system.
+
+A real answer probably arrives with phase 3's Nintendo Account work, which
+introduces the first human-facing login. **Do not build a bespoke user system for
+one page before then** — it would be thrown away. Recorded in
+[`docs/QUESTIONS.md`](../../docs/QUESTIONS.md).
 
 **`/login` is a friendlier door onto the same token, not a second credential.**
 Before it existed, using the dashboard meant either bookmarking a URL with

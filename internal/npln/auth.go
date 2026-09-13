@@ -44,6 +44,10 @@ type nplnClaims struct {
 	// the same device-account ownership check BAAS makes on every request can
 	// be made here too.
 	DeviceAccountID string `json:"npln:did,omitempty"`
+
+	// SessionID is the game session a matchmaking id token was issued for.
+	// Absent on an access token, which is not about one match.
+	SessionID string `json:"npln:gsid,omitempty"`
 }
 
 func (c nplnClaims) GetExpirationTime() (*gojwt.NumericDate, error) {
@@ -222,6 +226,74 @@ func (s *Server) issueAccessToken(c Caller, now time.Time) (string, time.Duratio
 		return "", 0, fmt.Errorf("sign npln access token: %w", err)
 	}
 	return tok, ttl, nil
+}
+
+// matchmakingIDTokenAudience is the 'aud' of a matchmaking id token.
+//
+// A distinct audience from an access token's, which is the tenant. That is what
+// stops one being used where the other belongs: gamesync accepts only this
+// audience, so an access token presented to it is refused even though both are
+// ES256 and signed by the same key.
+const matchmakingIDTokenAudience = "gamesync"
+
+// matchmakingIDTokenTTL is how long a matchmaking id token is good for.
+//
+// Five minutes. It exists to be handed straight to gamesync, which exchanges it
+// for a session of its own, so its whole life is one round trip — and a
+// short-lived credential that leaks is worth much less than a long-lived one.
+const matchmakingIDTokenTTL = 5 * time.Minute
+
+// issueMatchmakingIDToken signs a token a player presents to gamesync.
+func (s *Server) issueMatchmakingIDToken(c Caller, sessionID string) (string, error) {
+	now := s.now()
+	tok, err := s.issuer.Sign(nplnClaims{
+		Subject:  c.UserID,
+		Issuer:   s.issuerName,
+		Audience: matchmakingIDTokenAudience,
+		IssuedAt: now.Unix(),
+		Expires:  now.Add(matchmakingIDTokenTTL).Unix(),
+		TokenID:  sjwt.NewTokenID(),
+		// The session, so a token issued for one match cannot be replayed into
+		// another. Not enforced by gamesync today -- it has no view of matches
+		// -- but present so that becoming enforced is a change in one place
+		// rather than a new token format.
+		SessionID: sessionID,
+		// No device account. The device-account ownership check belongs to the
+		// gateway, which re-reads it on every call; carrying it here would
+		// invite gamesync to make the same check against a fact frozen at issue
+		// time.
+	})
+	if err != nil {
+		return "", fmt.Errorf("sign matchmaking id token: %w", err)
+	}
+	return tok, nil
+}
+
+// VerifyMatchmakingIDToken resolves a matchmaking id token to its player.
+//
+// Exported because internal/gamesync needs it and must not import this package's
+// internals: cmd/npln hands this method across as a function. It is the same
+// key, so there is nothing to distribute — but it is a different audience, which
+// is what makes an access token unusable there.
+func (s *Server) VerifyMatchmakingIDToken(idToken string) (string, error) {
+	if idToken == "" {
+		return "", errors.New("no token")
+	}
+
+	var claims nplnClaims
+	if err := s.tokens.Verify(idToken, &claims); err != nil {
+		return "", err
+	}
+	if claims.Audience != matchmakingIDTokenAudience {
+		// An access token, or a token for something else. Refused rather than
+		// accepted on its subject: the audience is the only thing separating a
+		// credential for the account API from one for a game service.
+		return "", fmt.Errorf("wrong audience %q", claims.Audience)
+	}
+	if claims.Subject == "" {
+		return "", errors.New("no subject")
+	}
+	return claims.Subject, nil
 }
 
 // logAuthFailure records why a call was refused, at the level that makes the

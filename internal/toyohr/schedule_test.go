@@ -2,190 +2,236 @@ package toyohr
 
 import (
 	"context"
+	"sort"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
-// TestScheduleRPCsAnswerEmptyRatherThanUnimplemented is the "minimum that
-// does not crash the client" property: SwitchNet has no map/mode rotation
-// data (that is Nintendo's own game design content, not something this
-// server can fabricate -- see schedule.go), but the console calling these
-// early in boot must get a structurally valid "nothing scheduled" answer,
-// not a stream of Unimplemented refusals.
-func TestScheduleRPCsAnswerEmptyRatherThanUnimplemented(t *testing.T) {
-	svc, _ := newService(t, time.Now())
-	ctx := context.Background()
+func scheduleServiceFor(t *testing.T, at time.Time, rot Rotation) *scheduleService {
+	t.Helper()
+	svc, _ := newService(t, at)
+	svc.rotation = rot
+	return &scheduleService{s: svc}
+}
 
-	if _, err := svc.SelectVsParams(ctx, &toyohrpb.SelectVsParamsRequest{}); err != nil {
-		t.Errorf("SelectVsParams: %v", err)
-	}
-	vs, err := svc.SelectVsSchedules(ctx, &toyohrpb.SelectVsSchedulesRequest{})
+func TestEveryGeneratedVsSlotLandsOnATwoHourBoundary(t *testing.T) {
+	// The same rule a Splatfest's phases obey: Splatoon 3 files scheduled
+	// things into 7200-second slots, so a window with boundaries elsewhere
+	// describes a rotation the game cannot place.
+	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{
+		RegularStages: []int32{1, 2, 3, 4},
+		BankaraRules:  []int32{1, 2},
+		BankaraStages: []int32{5, 6, 7, 8},
+	})
+
+	resp, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
 	if err != nil {
-		t.Errorf("SelectVsSchedules: %v", err)
-	} else if len(vs.GetSchedules()) != 0 {
-		t.Errorf("SelectVsSchedules: got %d schedules, want 0", len(vs.GetSchedules()))
+		t.Fatalf("select: %v", err)
 	}
-	coop, err := svc.SelectCoopSchedules(ctx, &toyohrpb.SelectCoopSchedulesRequest{})
-	if err != nil {
-		t.Errorf("SelectCoopSchedules: %v", err)
-	} else if len(coop.GetSchedules()) != 0 {
-		t.Errorf("SelectCoopSchedules: got %d schedules, want 0", len(coop.GetSchedules()))
+	if len(resp.GetSchedules()) != scheduleHorizon {
+		t.Fatalf("got %d slots, want %d", len(resp.GetSchedules()), scheduleHorizon)
 	}
-	season, err := svc.SelectSeasonSchedules(ctx, &toyohrpb.SelectSeasonSchedulesRequest{})
-	if err != nil {
-		t.Errorf("SelectSeasonSchedules: %v", err)
-	} else if len(season.GetSchedules()) != 0 {
-		t.Errorf("SelectSeasonSchedules: got %d schedules, want 0", len(season.GetSchedules()))
-	}
-	league, err := svc.SelectLeagueSchedules(ctx, &toyohrpb.SelectLeagueSchedulesRequest{})
-	if err != nil {
-		t.Errorf("SelectLeagueSchedules: %v", err)
-	} else if len(league.GetSchedules()) != 0 {
-		t.Errorf("SelectLeagueSchedules: got %d schedules, want 0", len(league.GetSchedules()))
+
+	var previousEnd time.Time
+	for i, s := range resp.GetSchedules() {
+		start := s.GetStartTime().AsTime()
+		end := s.GetEndTime().AsTime()
+
+		if !IsSlotAligned(start) || !IsSlotAligned(end) {
+			t.Errorf("slot %d runs %s..%s, which is not on a two-hour boundary", i, start, end)
+		}
+		if end.Sub(start) != scheduleSlot {
+			t.Errorf("slot %d is %s long, want %s", i, end.Sub(start), scheduleSlot)
+		}
+		// No gaps: a gap is a window in which the lobby has no rotation at all.
+		if i > 0 && !start.Equal(previousEnd) {
+			t.Errorf("slot %d starts at %s but the previous ended at %s", i, start, previousEnd)
+		}
+		previousEnd = end
+
+		if s.GetRegularSettings() == nil {
+			t.Errorf("slot %d offers no Turf War, so its lobby cannot start a match", i)
+		}
+		// Anarchy runs two modes at once. A slot offering one rule is a lobby
+		// with half its buttons inert.
+		if got := len(s.GetBankaraSettings()); got != 2 {
+			t.Errorf("slot %d offers %d Anarchy rules, want 2", i, got)
+		}
 	}
 }
 
-// TestSelectCoopSchedulesServesASavedBigRunShiftAsTheBigRunSubMessage checks
-// the one property CLAUDE.md rule 6 makes matter here: a shift saved as
-// big_run must come back with BigRun populated and Normal nil, carrying the
-// exact stage/weapon/boss ids it was saved with -- not a shape this project
-// invented, but nn.npln.toyohr.v1.CoopSchedule's own decompiled fields.
-func TestSelectCoopSchedulesServesASavedBigRunShiftAsTheBigRunSubMessage(t *testing.T) {
-	now := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
-	svc, _ := newService(t, now)
-	ctx := context.Background()
+func TestTheRotationWrapsRatherThanRunningOut(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	// Two stages, two per slot: every slot has to reuse them.
+	sc := scheduleServiceFor(t, at, Rotation{RegularStages: []int32{11, 22}})
 
-	shift := CoopShift{
-		Kind:         CoopShiftBigRun,
-		Start:        now.Add(2 * time.Hour),
-		End:          now.Add(50 * time.Hour),
-		StageID:      100, // Wahoo World
-		Boss:         "SakeRope",
-		Weapons:      [4]int64{21000, 21010, 21020, 21030},
-		KumaWeaponID: 21900,
-		Rewards:      []int64{100, 200, 300},
-	}
-	if err := svc.SaveCoopShift(ctx, shift); err != nil {
-		t.Fatalf("SaveCoopShift: %v", err)
-	}
-
-	resp, err := svc.SelectCoopSchedules(ctx, &toyohrpb.SelectCoopSchedulesRequest{})
+	resp, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
 	if err != nil {
-		t.Fatalf("SelectCoopSchedules: %v", err)
+		t.Fatalf("select: %v", err)
 	}
-	if len(resp.GetSchedules()) != 1 {
-		t.Fatalf("got %d schedules, want 1", len(resp.GetSchedules()))
-	}
-
-	got := resp.GetSchedules()[0]
-	if got.GetNormal() != nil {
-		t.Error("a big_run shift was served with Normal populated")
-	}
-	br := got.GetBigRun()
-	if br == nil {
-		t.Fatal("a big_run shift was served with BigRun nil")
-	}
-	if br.GetStage() != 100 || br.GetBoss() != "SakeRope" || br.GetKumaWeapon() != 21900 {
-		t.Errorf("BigRun = %+v, does not match the saved shift", br)
-	}
-	if len(br.GetMainWeapons()) != 4 || br.GetMainWeapons()[0] != 21000 {
-		t.Errorf("BigRun.MainWeapons = %v, want [21000 21010 21020 21030] in order", br.GetMainWeapons())
-	}
-	if len(br.GetRewards()) != 3 || br.GetRewards()[0] != 100 {
-		t.Errorf("BigRun.Rewards = %v, want [100 200 300] in order", br.GetRewards())
+	for i, s := range resp.GetSchedules() {
+		stages := s.GetRegularSettings().GetStages()
+		// A slot with no stages is a lobby that cannot start a match, which is
+		// why pick wraps instead of returning short.
+		if len(stages) != 2 {
+			t.Fatalf("slot %d offers %d stages, want 2", i, len(stages))
+		}
+		got := append([]int32(nil), stages...)
+		sort.Slice(got, func(a, b int) bool { return got[a] < got[b] })
+		if got[0] != 11 || got[1] != 22 {
+			t.Errorf("slot %d offers %v, want the two configured stages", i, stages)
+		}
 	}
 }
 
-// TestSelectCoopSchedulesDropsShiftsThatHaveAlreadyEnded mirrors
-// currentFest's own "not just anything stored" filtering: a console asking
-// what is scheduled should not be told about a shift whose window has
-// already closed.
-func TestSelectCoopSchedulesDropsShiftsThatHaveAlreadyEnded(t *testing.T) {
-	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
-	svc, _ := newService(t, now)
-	ctx := context.Background()
+func TestTheSameRequestAtTheSameTimeGivesTheSameEtag(t *testing.T) {
+	at := time.Date(2026, 9, 5, 4, 0, 0, 0, time.UTC)
+	rot := Rotation{RegularStages: []int32{1, 2, 3, 4}}
 
-	past := CoopShift{
-		Kind: CoopShiftNormal,
-		// Both well before now, so End is in the past.
-		Start: now.Add(-48 * time.Hour), End: now.Add(-40 * time.Hour),
-		StageID: 1, Weapons: [4]int64{20000, 20010, 20020, 20030}, KumaWeaponID: 20900,
-	}
-	if err := svc.SaveCoopShift(ctx, past); err != nil {
-		t.Fatalf("SaveCoopShift: %v", err)
-	}
-
-	resp, err := svc.SelectCoopSchedules(ctx, &toyohrpb.SelectCoopSchedulesRequest{})
+	first, err := scheduleServiceFor(t, at, rot).SelectVsSchedules(
+		context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
 	if err != nil {
-		t.Fatalf("SelectCoopSchedules: %v", err)
+		t.Fatalf("select: %v", err)
+	}
+	second, err := scheduleServiceFor(t, at, rot).SelectVsSchedules(
+		context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+
+	// The etag is what a client's conditional request compares. One that moves
+	// for no reason costs a needless refetch.
+	if first.GetEtag() == "" {
+		t.Fatal("no etag, so a client cannot cache the rotation")
+	}
+	if first.GetEtag() != second.GetEtag() {
+		t.Errorf("the same rotation produced two etags: %s and %s",
+			first.GetEtag(), second.GetEtag())
+	}
+
+	// And a different rotation must produce a different one, or the lobby keeps
+	// showing yesterday's stages.
+	changed, err := scheduleServiceFor(t, at, Rotation{RegularStages: []int32{9, 8, 7, 6}}).
+		SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if changed.GetEtag() == first.GetEtag() {
+		t.Error("changing the stages did not change the etag")
+	}
+}
+
+func TestAClientAskingForALimitedWindowGetsOne(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{RegularStages: []int32{1, 2}})
+
+	resp, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{
+		SelectDuration: durationpb.New(6 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if got := len(resp.GetSchedules()); got != 3 {
+		t.Errorf("six hours gave %d slots, want 3", got)
+	}
+
+	// But not more than the horizon: a schedule stretching further than the
+	// operator has thought about is a promise about stages that may change.
+	resp, err = sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{
+		SelectDuration: durationpb.New(30 * 24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if got := len(resp.GetSchedules()); got != scheduleHorizon {
+		t.Errorf("a month gave %d slots, want the horizon's %d", got, scheduleHorizon)
+	}
+}
+
+func TestNoConfiguredRotationIsAnEmptyScheduleRatherThanAnError(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
+
+	// An empty schedule is what the game sees between seasons on a real server,
+	// so it is a state it has a reading for. An error is not.
+	resp, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("select with no rotation configured: %v", err)
 	}
 	if len(resp.GetSchedules()) != 0 {
-		t.Errorf("got %d schedules, want 0 (the only shift stored has already ended)", len(resp.GetSchedules()))
+		t.Errorf("got %d slots from an empty rotation", len(resp.GetSchedules()))
+	}
+
+	coop, err := sc.SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("select coop: %v", err)
+	}
+	if len(coop.GetSchedules()) != 0 {
+		t.Errorf("got %d co-op shifts, but none can be described without invented ids",
+			len(coop.GetSchedules()))
 	}
 }
 
-// TestGenerateAndSaveCoopShiftsNeverOverwritesAnExistingSlot is the property
-// the whole "can be set manually" half of generation depends on: a slot the
-// operator already filled -- by hand, or by an earlier generate call -- is
-// left untouched by a later one, even when that later call's own random
-// draw would have picked something different for it.
-func TestGenerateAndSaveCoopShiftsNeverOverwritesAnExistingSlot(t *testing.T) {
-	svc, _ := newService(t, time.Now())
-	ctx := context.Background()
-	from := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+func TestTheSeasonIsAQuarterAndIsAligned(t *testing.T) {
+	// Mid-quarter, so the answer cannot come from the clock by accident.
+	at := time.Date(2026, 8, 28, 21, 22, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
 
-	// Hand-schedule the first slot before generating anything.
-	manual := validNormalShift()
-	manual.Start = AlignToSlot(from)
-	manual.End = manual.Start.Add(DefaultCoopShiftDuration)
-	manual.StageID = 1 // Spawning Grounds, deliberately
-	if err := svc.SaveCoopShift(ctx, manual); err != nil {
-		t.Fatalf("SaveCoopShift: %v", err)
-	}
-
-	created, skipped, err := svc.GenerateAndSaveCoopShifts(ctx, from, 5, DefaultCoopShiftDuration, nil)
+	resp, err := sc.SelectSeasonSchedules(context.Background(),
+		&toyohrpb.SelectSeasonSchedulesRequest{SeasonScheduleCount: 2})
 	if err != nil {
-		t.Fatalf("GenerateAndSaveCoopShifts: %v", err)
+		t.Fatalf("select season: %v", err)
 	}
-	if len(skipped) != 1 || skipped[0].ID() != manual.ID() {
-		t.Fatalf("skipped = %v, want exactly the manually-scheduled slot", skipped)
-	}
-	if len(created) != 4 {
-		t.Fatalf("created %d shifts, want 4 (5 requested minus the 1 pre-filled slot)", len(created))
+	if len(resp.GetSchedules()) != 2 {
+		t.Fatalf("got %d seasons, want 2", len(resp.GetSchedules()))
 	}
 
-	// The manual entry itself must be byte-for-byte unchanged.
-	still, err := svc.store.GetCoopShift(ctx, manual.ID())
-	if err != nil {
-		t.Fatalf("GetCoopShift: %v", err)
+	first := resp.GetSchedules()[0]
+	start := first.GetStartTime().AsTime()
+	if start.Month() != time.July || start.Day() != 1 {
+		t.Errorf("season starts %s, want 1 July — the quarter containing 28 August", start)
 	}
-	if still.StageID != 1 {
-		t.Errorf("manual slot's stage changed to %d, want it left at 1 (Spawning Grounds)", still.StageID)
+	if !IsSlotAligned(start) {
+		t.Errorf("season start %s is not slot-aligned", start)
 	}
-
-	// A second generate call over the same range creates nothing new.
-	created2, skipped2, err := svc.GenerateAndSaveCoopShifts(ctx, from, 5, DefaultCoopShiftDuration, nil)
-	if err != nil {
-		t.Fatalf("GenerateAndSaveCoopShifts (second call): %v", err)
-	}
-	if len(created2) != 0 {
-		t.Errorf("second call over the same range created %d shifts, want 0", len(created2))
-	}
-	if len(skipped2) != 5 {
-		t.Errorf("second call skipped %d, want all 5 (every slot is now filled)", len(skipped2))
+	// Back to back, so a record made on a boundary has somewhere to go.
+	if !resp.GetSchedules()[1].GetStartTime().AsTime().Equal(first.GetEndTime().AsTime()) {
+		t.Error("there is a gap between one season and the next")
 	}
 }
 
-// TestSaveCoopShiftRejectsAnInvalidShift checks that SaveCoopShift actually
-// calls Validate rather than storing whatever it is given -- coop_schedule_test.go
-// already covers Validate's own rules in detail, so this only needs one.
-func TestSaveCoopShiftRejectsAnInvalidShift(t *testing.T) {
-	svc, _ := newService(t, time.Now())
-	bad := validNormalShift()
-	bad.StageID = 999999
-	if err := svc.SaveCoopShift(context.Background(), bad); err == nil {
-		t.Error("SaveCoopShift accepted a shift with an unknown stage id")
+func TestAnUnauthenticatedCallCannotReadTheSchedule(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{RegularStages: []int32{1, 2}})
+	as(t, "")
+
+	if _, err := sc.SelectVsSchedules(context.Background(),
+		&toyohrpb.SelectVsSchedulesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("reading the schedule with no caller gave %v, want Unauthenticated", err)
+	}
+}
+
+func TestARotationWithATypoIsRefusedRatherThanReadAsStageZero(t *testing.T) {
+	// Stage 0 is a perfectly plausible valid id, so a zero produced by a failed
+	// parse would be indistinguishable from an intended one.
+	if _, err := RotationFromStrings([]string{"1", "two"}, nil, nil, 0); err == nil {
+		t.Error("a non-numeric stage id was accepted")
+	}
+	rot, err := RotationFromStrings([]string{"1", " 2 ", ""}, []string{"3"}, []string{"4"}, 1)
+	if err != nil {
+		t.Fatalf("a valid rotation was refused: %v", err)
+	}
+	if len(rot.RegularStages) != 2 || rot.RegularStages[1] != 2 {
+		t.Errorf("regular stages = %v, want [1 2] with the blank dropped", rot.RegularStages)
+	}
+	if rot.StagesPerSlot != 1 {
+		t.Errorf("stages per slot = %d, want 1", rot.StagesPerSlot)
 	}
 }

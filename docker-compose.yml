@@ -59,9 +59,10 @@ services:
   # nginx: TLS edge; routes Nintendo hostnames to the right backend by SNI
   # ---------------------------------------------------------------------------
   # Runs with host networking so the upstream addresses in the generated config
-  # (127.0.0.1:808x) resolve directly to where the Go services listen, whether
-  # they are running natively or (during a rolling restart) briefly not.
-  # NET_BIND_SERVICE is needed to bind port 443 without running as root.
+  # (127.0.0.1:808x, plus 7575 for gamesync) resolve directly to where the Go
+  # services listen, whether they are running natively or (during a rolling
+  # restart) briefly not. NET_BIND_SERVICE is needed to bind port 443 (and
+  # 7575) without running as root.
   nginx:
     image: nginx:alpine
     restart: unless-stopped

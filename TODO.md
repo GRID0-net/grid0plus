@@ -21,6 +21,11 @@ Keep the categories. Add items to the category they belong to rather than the
 bottom. When you finish something, delete the item rather than marking it done
 — `git log` is the record of what happened.
 
+**The numbers are stable identifiers, not an ordering.** Items are referenced
+from source comments, config and `docs/`, so a finished item is deleted and the
+gap it leaves is kept rather than closed. §2.4 is §2.4 for as long as
+`internal/bcat` and `hosts.go` point at it.
+
 **If you are working autonomously, you cannot ask anything.** Several items
 below would benefit from an operator's answer. Do not stop for one: write the
 question into [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption you
@@ -33,6 +38,25 @@ Priority labels are about *unblocking other work*, not importance:
 - **P1** — something else is waiting on it
 - **P2** — wanted, nothing blocked
 - **P3** — worth doing eventually
+
+## What is left, and why
+
+Every item below is blocked on something an agent does not have. That is not a
+coincidence and it is worth reading before starting anything:
+
+| Item | Blocked on |
+| --- | --- |
+| §1.1 | **a console**, by design. The remaining services are a backlog the console's own requests are meant to order, and the log line that records them now exists |
+| §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
+| §2.4 | **a console.** The server for the experiment is written, tested and waiting |
+| §3.2 | **§2.1** |
+
+So the highest-value next action is not in this file. It is
+[`switch/README.md`'s Splatoon 3 checklist](switch/README.md#verify-splatoon-3-in-order),
+because **nothing in phase 2 has touched hardware** — every test runs against a
+Go client. Set `npln.rest_record_dir` before that first attempt: it costs one
+config line and produces the transcript that settles three capture-gated shapes
+at once.
 
 ---
 
@@ -184,7 +208,8 @@ real, hardware-tested NPLN reimplementation) doing the same; see
 
 ### 2.1 Asset conversion: images → game-ready textures — **P2, large, texture piece built**
 
-**This is the rewrite the dashboard currently points at.**
+**The pipeline is built; the converter is not, and probably should not be
+written here.**
 
 `internal/bcat` takes assets that are *already* in the game's formats
 (`.bfres`, `.byaml`, `.sarc.zs`), assembles them into a SARC archive and
@@ -272,8 +297,8 @@ place.
 What was previously written down: Nintendo's delivery container carries an
 RSA-2048 signature, therefore the console verifies it, therefore serving BCAT
 means forging a Nintendo signature. **The middle step was never established.**
-switchbrew documents the signature *field*; it says nothing about a
-verification step or what happens on failure.
+switchbrew documents the signature *field*; it says nothing about a verification
+step or what happens on failure.
 
 And a console running SwitchNet already has **sigpatches** — bypassing Nintendo
 signature checks is the normal state of a CFW console, and `ROADMAP.md` §3.3

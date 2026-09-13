@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/n-popescu/switchnet/internal/bcat"
 )
 
 // Config is what the handler needs to run.
@@ -28,21 +30,30 @@ type Config struct {
 	// an unimplemented endpoint is being asked for; far too chatty to leave on.
 	LogBodies bool
 
-	// BCATProbe answers the bcat-* hosts, logging each request in full, instead
-	// of leaving them to the null route. An experiment, not a service --
-	// see bcatprobe.go and TODO.md 2.4.
-	BCATProbe bool
+	// BCATRecordDir is where the BCAT probe writes its transcript.
+	//
+	// The three bcat-* hosts are null-routed by default, so nothing reaches the
+	// probe until an operator flips them in internal/nintendo/hosts.go -- see
+	// internal/bcat.Probe and TODO.md §2.4. Setting this without flipping them
+	// does nothing; flipping them without setting this still logs every request,
+	// which is enough to answer "did the console reach us at all".
+	BCATRecordDir string
 }
 
 // Handler serves the stub endpoints.
 type Handler struct {
-	cfg Config
-	log *slog.Logger
+	cfg  Config
+	log  *slog.Logger
+	bcat http.Handler
 }
 
 // New returns a stub handler.
-func New(cfg Config, log *slog.Logger) *Handler {
-	return &Handler{cfg: cfg, log: log}
+func New(cfg Config, log *slog.Logger) (*Handler, error) {
+	probe, err := bcat.NewProbe(log, cfg.BCATRecordDir, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Handler{cfg: cfg, log: log, bcat: probe}, nil
 }
 
 // maxLoggedBody caps how much of a body is read for logging, so LogBodies
@@ -79,13 +90,6 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 	case isConnectionTest(host, path):
 		h.connectionTest(w)
 
-	case h.cfg.BCATProbe && isBCATHost(host):
-		// Only when the operator turned it on. Without the flag a BCAT host
-		// should not be reaching this server at all -- it is null-routed on the
-		// console -- and if one does, the default empty object below is a
-		// safer answer than a deliberate 200.
-		h.bcatProbe(w, r)
-
 	case strings.Contains(host, ".frs.srv.nintendo.net"):
 		// Friend recommendations. An empty list is the correct answer: there is
 		// nobody to recommend on a private network.
@@ -105,6 +109,14 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// Game server availability. Everything is up; if it were not, the
 		// console finding out from here would not help.
 		h.serviceStatus(w)
+
+	case strings.HasPrefix(host, "bcat-"):
+		// Unreachable until an operator flips the three bcat-* hosts away from
+		// ServiceBlackhole. Wired up in advance because the experiment those
+		// hosts exist for is a five-minute job once a console is available and
+		// weeks of nothing if the server has to be written first -- see
+		// internal/bcat.Probe.
+		h.bcat.ServeHTTP(w, r)
 
 	case strings.Contains(host, ".dragons.nintendo.net"):
 		// eLicenses. Most paths here are a fine empty object; one is not.

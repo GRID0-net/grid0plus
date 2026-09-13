@@ -470,7 +470,7 @@ func TestAllocateIceServerSetReturnsWhatWasConfigured(t *testing.T) {
 	}
 
 	// Now with servers configured.
-	h.srv.iceServers = iceServersFrom([]config.ICEServer{
+	h.srv.iceServers = iceServersFrom([]config.IceServer{
 		{Kind: "stun", Host: "10.0.0.5", Port: 3478},
 		{Kind: "turn", Host: "10.0.0.5", Port: 3478, Protocol: "tcp",
 			Username: "switchnet", Password: "secret"},

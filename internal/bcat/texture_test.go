@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-// fakeConverter writes a tiny shell script that follows img2bntx's own CLI
+// fakeImg2BntxConverter writes a tiny shell script that follows img2bntx's own CLI
 // contract (<image> <out> -n <name>) closely enough to exercise
 // ConvertTextures' own plumbing -- argument passing, output placement,
 // error propagation -- without needing a real Rust toolchain in every
 // environment these tests run in. img2bntx's own texture math (swizzling,
 // the BNTX container shape) was verified separately, by building and
 // running the real tool; see texture.go's doc comment.
-func fakeConverter(t *testing.T) string {
+func fakeImg2BntxConverter(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-img2bntx.sh")
@@ -55,7 +55,7 @@ func TestConvertTexturesConvertsPNGAndCopiesEverythingElse(t *testing.T) {
 	writeFile(t, filepath.Join(src, "base", "Mals", "Msg.sarc.zs"), []byte("already game-ready"))
 
 	dst := t.TempDir()
-	converted, err := ConvertTextures(fakeConverter(t), src, dst)
+	converted, err := ConvertTextures(fakeImg2BntxConverter(t), src, dst)
 	if err != nil {
 		t.Fatalf("ConvertTextures: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestConvertTexturesOutputFeedsBuildPacksDirectly(t *testing.T) {
 	writeFile(t, filepath.Join(src, "base", "Mals", "Msg.sarc.zs"), []byte("already game-ready"))
 
 	dst := t.TempDir()
-	if _, err := ConvertTextures(fakeConverter(t), src, dst); err != nil {
+	if _, err := ConvertTextures(fakeImg2BntxConverter(t), src, dst); err != nil {
 		t.Fatalf("ConvertTextures: %v", err)
 	}
 
@@ -141,11 +141,11 @@ func TestConvertTexturesOutputFeedsBuildPacksDirectly(t *testing.T) {
 		t.Fatalf("BuildPacks on ConvertTextures' own output: %v", err)
 	}
 	if _, ok := packs[PackBase]; !ok {
-		t.Fatalf("got packs %v, want a %q pack", packNames(packs), PackBase)
+		t.Fatalf("got packs %v, want a %q pack", packNamesList(packs), PackBase)
 	}
 }
 
-func packNames(packs Packs) []string {
+func packNamesList(packs Packs) []string {
 	names := make([]string, 0, len(packs))
 	for name := range packs {
 		names = append(names, name)

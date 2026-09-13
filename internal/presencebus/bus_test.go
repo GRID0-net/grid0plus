@@ -233,3 +233,75 @@ func TestRedisIgnoresAMalformedMessage(t *testing.T) {
 
 // discardLogger keeps test output clean.
 func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+// TestAStatsSnapshotReplacesTheLastOneAndGoesStale.
+//
+// Stats is a GAUGE, not an event, and both halves of that matter. A freshly
+// loaded dashboard needs the current value rather than the next change, so it is
+// readable. And an expired snapshot must read as ABSENT rather than as zero: on
+// a tile, "nobody is queuing" and "the game server is not running" look
+// identical, and only one of them is worth acting on.
+func TestAStatsSnapshotReplacesTheLastOneAndGoesStale(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	bus := NewLocal()
+	bus.now = func() time.Time { return now }
+	defer bus.Close()
+
+	ctx := context.Background()
+
+	// With nothing published there is no data -- which is not the same as an
+	// empty queue.
+	if _, ok, err := bus.Stats(ctx); err != nil || ok {
+		t.Errorf("Stats before anything was published = ok %v, err %v", ok, err)
+	}
+
+	if err := bus.PublishStats(ctx, Stats{Matchmaking: map[string]int{"turf_war": 3}}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	got, ok, err := bus.Stats(ctx)
+	if err != nil || !ok {
+		t.Fatalf("Stats = ok %v, err %v", ok, err)
+	}
+	if got.Matchmaking["turf_war"] != 3 {
+		t.Errorf("matchmaking = %v", got.Matchmaking)
+	}
+	// The timestamp is filled in when absent, because the reader's staleness
+	// check depends on it and a zero time would read as permanently stale.
+	if got.At != now {
+		t.Errorf("At = %s, want the publish time", got.At)
+	}
+
+	// Replaced, not accumulated: two players leaving must be visible.
+	if err := bus.PublishStats(ctx, Stats{Matchmaking: map[string]int{"turf_war": 1}}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	got, _, _ = bus.Stats(ctx)
+	if got.Matchmaking["turf_war"] != 1 {
+		t.Errorf("matchmaking = %v, want the newer snapshot", got.Matchmaking)
+	}
+
+	// And past the TTL it is gone.
+	now = now.Add(2 * StatsTTL)
+	if _, ok, _ := bus.Stats(ctx); ok {
+		t.Error("a stale snapshot is still reported as current")
+	}
+}
+
+// TestAnEmptyQueueIsNotTheSameAsNoData is the distinction the dashboard tile is
+// built on.
+func TestAnEmptyQueueIsNotTheSameAsNoData(t *testing.T) {
+	bus := NewLocal()
+	defer bus.Close()
+	ctx := context.Background()
+
+	if err := bus.PublishStats(ctx, Stats{Matchmaking: map[string]int{}}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	got, ok, err := bus.Stats(ctx)
+	if err != nil || !ok {
+		t.Fatalf("an empty-but-present snapshot reads as absent: ok %v, err %v", ok, err)
+	}
+	if len(got.Matchmaking) != 0 {
+		t.Errorf("matchmaking = %v, want empty", got.Matchmaking)
+	}
+}

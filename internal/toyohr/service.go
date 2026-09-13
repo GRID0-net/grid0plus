@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -18,8 +19,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/n-popescu/switchnet/internal/bcat"
 	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/lobbymessaging"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
@@ -38,43 +39,109 @@ import (
 // and is not implemented there.
 type Service struct {
 	toyohrpb.UnimplementedFestServiceServer
-	toyohrpb.UnimplementedScheduleServer
 	toyohrpb.UnimplementedCloudSaveServer
-	toyohrpb.UnimplementedLobbyMessagingServer
 
 	store  db.Store
 	log    *slog.Logger
 	tenant string
 	now    func() time.Time
 
-	// lobbyMessages is internal/lobbymessaging's broadcast topic, one per
-	// lobby -- see that package's comment for what "lobby" means here.
-	lobbyMessages *lobbymessaging.Queue
+	// callerID resolves the authenticated player behind an RPC.
+	//
+	// A function rather than an import, because the identity lives in
+	// internal/npln's interceptor and internal/npln registers this service --
+	// importing it back would be a cycle. It returns only the user id, which is
+	// all any handler here needs.
+	//
+	// Nil is legitimate and fail-closed: the dashboard builds a Service to
+	// schedule fests and never serves an RPC through it, so a handler reached
+	// without a resolver refuses rather than guessing.
+	callerID func(context.Context) (string, bool)
+
+	// rotation is the operator's configured stage and rule rotation. Empty
+	// means the schedule handlers answer with nothing, which is a state the
+	// game has a reading for.
+	rotation Rotation
+
+	// messages delivers lobby messages between connected players. In memory:
+	// a lobby message is worth nothing to a player who was not connected.
+	messages *messageHub
+
+	// noRotation remembers which schedule kinds have already been reported as
+	// unconfigured, so a console asking on a timer does not fill the log.
+	noRotation sync.Map
+}
+
+// Options configures the Splatoon 3 service set.
+type Options struct {
+	Store  db.Store
+	Log    *slog.Logger
+	Tenant string
+
+	// CallerID resolves the authenticated player behind an RPC. See the field
+	// comment; leaving it nil makes every player-scoped handler refuse.
+	CallerID func(context.Context) (string, bool)
+
+	// Rotation is the stage and rule rotation to serve. Empty is legitimate.
+	Rotation Rotation
+
+	Now func() time.Time
 }
 
 // NewService builds the Splatoon 3 service set.
-func NewService(store db.Store, log *slog.Logger, tenant string, now func() time.Time) *Service {
-	if now == nil {
-		now = time.Now
+func NewService(opts Options) *Service {
+	if opts.Now == nil {
+		opts.Now = time.Now
 	}
 	return &Service{
-		store: store, log: log, tenant: tenant, now: now,
-		lobbyMessages: lobbymessaging.New(now),
+		store:    opts.Store,
+		log:      opts.Log,
+		tenant:   opts.Tenant,
+		now:      opts.Now,
+		callerID: opts.CallerID,
+		rotation: opts.Rotation,
+		messages: newMessageHub(),
 	}
 }
 
-// Register attaches the services to a gRPC server.
+// Register attaches every Splatoon 3 service to a gRPC server.
+//
+// **All of them, including the ones with no handlers yet**, and that is the
+// point. An RPC on a registered service answers Unimplemented and
+// internal/npln's interceptor logs it once; an RPC on a service that was
+// never registered fails the same way with no log line. ROADMAP §2.4 says to
+// let the console drive the order of this backlog -- which only works if the
+// console's asking is recorded. See backlog.go's package comment for what is
+// and is not implemented there, and Service's own doc comment above for why
+// several of these get their own adapter type instead of being embedded here
+// directly.
 func (s *Service) Register(srv *grpc.Server) {
 	toyohrpb.RegisterFestServiceServer(srv, s)
-	toyohrpb.RegisterScheduleServer(srv, s)
 	toyohrpb.RegisterCloudSaveServer(srv, s)
-	toyohrpb.RegisterLobbyMessagingServer(srv, s)
+	toyohrpb.RegisterScheduleServer(srv, &scheduleService{s: s})
+	toyohrpb.RegisterLobbyMessagingServer(srv, &lobbyMessagingService{s: s})
+	toyohrpb.RegisterUserScreeningServer(srv, &userScreeningService{s: s})
 	toyohrpb.RegisterCanolaServer(srv, canolaService{Service: s})
 	toyohrpb.RegisterLockerServer(srv, lockerService{Service: s})
 	toyohrpb.RegisterCoopScenarioServer(srv, coopScenarioService{Service: s})
 	toyohrpb.RegisterReplayServer(srv, replayService{Service: s})
-	toyohrpb.RegisterUserScreeningServer(srv, userScreeningService{Service: s})
 	toyohrpb.RegisterGameRecordServer(srv, gameRecordService{Service: s})
+}
+
+// caller returns the authenticated player's id, or false.
+//
+// Fail-closed: no resolver, or a resolver that cannot name a player, means the
+// handler refuses. There is no default player and no fallback -- that is the
+// bug this repository is shaped around.
+func (s *Service) caller(ctx context.Context) (string, bool) {
+	if s.callerID == nil {
+		return "", false
+	}
+	id, ok := s.callerID(ctx)
+	if !ok || id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 // tenantPath is the resource-name prefix every fest resource hangs off.
@@ -183,29 +250,30 @@ func (s *Service) GetFestDecryptionKey(
 
 // assignPackKeys fills the key fields from an ordered list.
 //
-// A key that is absent is left absent rather than filled with an empty string.
-// Nintendo omits the key for a phase that has not happened yet, and an empty
-// string is a key the console would try to use.
+// The order is bcat.KeyFields, which is the order the message declares its
+// fields in. A key that is absent is left absent rather than filled with an
+// empty string: Nintendo omits the key for a phase that has not happened yet,
+// and an empty string is a key the console would try to use.
+//
+// The reference implementation this protocol knowledge came from caps its
+// response at three fields, on the grounds that the game never asks for more --
+// which is plausibly true of the phases it was tested against and is not a
+// property of the protocol, since the schema declares six and the request
+// carries a show_all_keys flag. All six are filled when they are supplied.
 func assignPackKeys(dst *toyohrpb.FestDecryptionKey, keys []string) {
-	// The seven slots the message declares, in order. The reference
-	// implementation this protocol knowledge came from stops at three, on the
-	// grounds that the game never asks for more -- but the schema has seven and
-	// the request carries a show_all_keys flag, so that is a property of the
-	// phases they tested rather than of the protocol. All seven are filled when
-	// they are supplied.
-	set := []func(string){
-		func(v string) { dst.NoticeKey = v },
-		func(v string) { dst.StartKey = v },
-		func(v string) { dst.ResultWinningTeamKey = v },
-		func(v string) { dst.TeamAlphaKey = v },
-		func(v string) { dst.TeamBravoKey = v },
-		func(v string) { dst.TeamCharlieKey = v },
+	set := map[string]func(string){
+		bcat.KeyNotice:            func(v string) { dst.NoticeKey = v },
+		bcat.KeyStart:             func(v string) { dst.StartKey = v },
+		bcat.KeyResultWinningTeam: func(v string) { dst.ResultWinningTeamKey = v },
+		bcat.KeyTeamAlpha:         func(v string) { dst.TeamAlphaKey = v },
+		bcat.KeyTeamBravo:         func(v string) { dst.TeamBravoKey = v },
+		bcat.KeyTeamCharlie:       func(v string) { dst.TeamCharlieKey = v },
 	}
 	for i, k := range keys {
-		if i >= len(set) || k == "" {
+		if i >= len(bcat.KeyFields) || k == "" {
 			continue
 		}
-		set[i](k)
+		set[bcat.KeyFields[i]](k)
 	}
 }
 
@@ -333,8 +401,18 @@ func (s *Service) SaveFest(ctx context.Context, f Fest, enabled bool, packKeys [
 		return err
 	}
 	for i, k := range packKeys {
+		// An EMPTY key is legitimate and means "this pack does not exist", which
+		// is how the remaining keys stay in their declared positions --
+		// assignPackKeys returns them positionally and skips the empty ones. A
+		// two-team fest has no wc, and requiring 32 characters for its slot
+		// would mean either inventing a key for a pack nobody built or shifting
+		// every later key by one, which hands the console the wrong key for the
+		// wrong phase.
+		if k == "" {
+			continue
+		}
 		if len(k) != 32 {
-			return fmt.Errorf("pack key %d is %d characters, want 32 (a 16-byte AES-128 key in hex)", i, len(k))
+			return fmt.Errorf("pack key %d is %d characters, want 32 (a 16-byte AES-128 key in hex) or empty for a pack that does not exist", i, len(k))
 		}
 	}
 	return s.store.UpsertFest(ctx, RowFromFest(f, enabled, packKeys))

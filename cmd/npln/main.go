@@ -1,17 +1,30 @@
 // Command npln is the NPLN game server for Splatoon 3 (phase 2).
 //
-// It serves gRPC. nginx must reach it with grpc_pass over cleartext HTTP/2, not
-// proxy_pass — see internal/nintendo/hosts.go for what happens otherwise.
+// It runs three listeners, and they are not interchangeable:
+//
+//   - the gRPC gateway, which nginx must reach with grpc_pass over cleartext
+//     HTTP/2;
+//   - the JSON front end, which nginx must reach with proxy_pass over HTTP/1.1;
+//   - gamesync, gRPC again, on its own port because Splatoon 3 reaches it
+//     directly rather than through the tenant host.
+//
+// One process because gamesync verifies tokens the gateway signs -- splitting
+// them would mean inventing a protocol between the two -- and because they share
+// the title's configuration. Separate listeners because crossing the nginx
+// blocks completes the TLS handshake and then fails with nothing in either log.
+// See internal/nintendo/hosts.go.
 package main
 
 import (
 	"errors"
 	"flag"
 	"net"
+	"net/http"
 	"time"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/gamesync"
 	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/npln"
@@ -59,9 +72,10 @@ func main() {
 	// This is a SEPARATE PROCESS from baas, so the in-process bus delivers
 	// nothing to it -- silently. Without redis.url, Friends and
 	// PresenceService's streams still work, just refreshed only on their own
-	// keep-alive timer rather than the moment a friend's presence changes.
-	// Same tradeoff internal/dashboard makes for the same reason -- see
-	// cmd/dashboard/main.go.
+	// keep-alive timer rather than the moment a friend's presence changes --
+	// and the dashboard's matchmaking gauge honestly reports no data rather
+	// than a zero that reads as "nobody is queuing". Same tradeoff
+	// internal/dashboard makes for the same reason -- see cmd/dashboard/main.go.
 	var bus presencebus.Bus
 	if cfg.Redis.URL != "" {
 		r, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel, log)
@@ -72,9 +86,9 @@ func main() {
 		bus = r
 	} else {
 		log.Warn("npln: redis.url is not set, so Friends and PresenceService only refresh " +
-			"on their own keep-alive timer rather than the moment a friend's presence changes. " +
-			"The in-process bus does not cross a process boundary: set redis.url for both baas " +
-			"and npln to get live pushes.")
+			"on their own keep-alive timer rather than the moment a friend's presence changes, " +
+			"and the dashboard cannot see the matchmaking queue. The in-process bus does not " +
+			"cross a process boundary: set redis.url for both baas and npln to get live pushes.")
 	}
 
 	srv, err := npln.New(npln.Options{
@@ -127,27 +141,73 @@ func main() {
 				"would not be served anywhere -- Splatoon 3 cannot reach the gRPC "+
 				"gateway above without them"))
 	}
-	rest := nplnrest.New(nplnrest.Options{Log: log})
-	go func() {
-		log.Info("npln: rest front end listening", "addr", cfg.NPLN.RestListen)
-		if err := service.ServeHTTP(ctx, log, cfg.NPLN.RestListen, rest.Handler()); err != nil {
-			log.Error("npln: rest front end stopped", "error", err)
-		}
-	}()
+	rest, err := nplnrest.New(nplnrest.Options{
+		Log:           log.With("listener", "rest"),
+		FrontlineHost: cfg.NPLN.FrontlineHost,
+		RecordDir:     cfg.NPLN.RestRecordDir,
+	})
+	if err != nil {
+		service.Fatal(log, "build json front end", err)
+	}
+	if cfg.NPLN.RestRecordDir != "" {
+		log.Warn("npln: recording every JSON front-end request",
+			"dir", cfg.NPLN.RestRecordDir)
+	}
+
+	// gamesync verifies the matchmaking id tokens the gateway signs. The same
+	// key, in the same process: there is nothing to distribute, and the
+	// audience is what stops an access token being accepted here.
+	sync, err := gamesync.New(gamesync.Options{
+		Log:           log.With("listener", "gamesync"),
+		VerifyIDToken: srv.VerifyMatchmakingIDToken,
+	})
+	if err != nil {
+		service.Fatal(log, "build gamesync", err)
+	}
 
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)
 	if err != nil {
 		service.Fatal(log, "listen", err)
 	}
+	syncLis, err := net.Listen("tcp", cfg.NPLN.GamesyncListen)
+	if err != nil {
+		service.Fatal(log, "listen gamesync", err)
+	}
+
+	// The JSON front end runs alongside, on its own listener, with NO write or
+	// read timeout: the frontline connection is held open by the console for as
+	// long as it wants it, and a timeout here severs it. Only the header
+	// timeout is kept, which bounds a client that connects and says nothing.
+	restErr := make(chan error, 1)
+	go func() {
+		restErr <- service.Serve(ctx, log.With("listener", "rest"), &http.Server{
+			Addr:              cfg.NPLN.RestListen,
+			Handler:           rest.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		})
+	}()
+
+	syncErr := make(chan error, 1)
+	go func() { syncErr <- sync.Serve(syncLis) }()
 
 	go func() {
 		<-ctx.Done()
 		log.Info("npln: shutting down")
 		srv.Stop()
+		sync.Stop()
 	}()
 
-	log.Info("npln: listening", "addr", cfg.NPLN.Listen, "tenant", cfg.NPLN.Tenant)
+	log.Info("npln: listening", "addr", cfg.NPLN.Listen, "tenant", cfg.NPLN.Tenant,
+		"rest", cfg.NPLN.RestListen, "gamesync", cfg.NPLN.GamesyncListen,
+		"frontline", cfg.NPLN.FrontlineHost)
 	if err := srv.Serve(lis); err != nil {
 		service.Fatal(log, "serve", err)
+	}
+	if err := <-restErr; err != nil {
+		service.Fatal(log, "serve json front end", err)
+	}
+	if err := <-syncErr; err != nil {
+		service.Fatal(log, "serve gamesync", err)
 	}
 }

@@ -30,7 +30,7 @@ func main() {
 		"path to config.yaml")
 	bcatProbe := flag.Bool("bcat-probe", false,
 		"hosts: point the bcat-* hosts at SwitchNet instead of null-routing them, "+
-			"for the TODO.md 2.4 experiment. Needs stubs.bcat_probe on as well.")
+			"for the TODO.md 2.4 experiment.")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -101,19 +101,6 @@ func main() {
 			os.Exit(2)
 		}
 
-	case "fest":
-		if flag.NArg() < 2 {
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n")
-			os.Exit(2)
-		}
-		switch flag.Arg(1) {
-		case "build":
-			festBuild(cfg, flag.Args()[2:])
-		default:
-			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n")
-			os.Exit(2)
-		}
-
 	case "coop":
 		if flag.NArg() < 2 {
 			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|generate|list|delete|stages|weapons|bosses> ...\n")
@@ -138,6 +125,14 @@ func main() {
 			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl coop <schedule|generate|list|delete|stages|weapons|bosses> ...\n")
 			os.Exit(2)
 		}
+
+	case "fest":
+		if flag.NArg() < 2 || flag.Arg(1) != "build" {
+			fmt.Fprint(os.Stderr, "switchnetctl: usage: switchnetctl fest build ...\n\n")
+			fmt.Fprint(os.Stderr, festBuildUsage)
+			os.Exit(2)
+		}
+		festBuild(cfg, flag.Args()[2:])
 
 	default:
 		usage()
@@ -172,9 +167,9 @@ Commands:
             'switchnetctl account create -h', '... revoke-tokens -h',
             '... disable -h', '... enable -h', '... delete-user -h' and
             '... restore-user -h'.
-  fest      build a Splatfest's BCAT packs from game-ready assets and
-            register it, so its id, resource, revision and decryption keys
-            cannot drift apart. See 'switchnetctl fest build -h'.
+  fest      build a Splatfest's BCAT packs, write the seed folder and register
+            the fest, in one step so the four values that must agree cannot
+            drift apart. See 'switchnetctl fest build -h'.
   coop      schedule a Salmon Run or Big Run rotation shift by hand, or
             auto-fill a stretch of the normal rotation with 'coop generate';
             list or delete scheduled shifts, or print the real
@@ -207,7 +202,7 @@ func warn(cfg config.Config) {
 			"warning: keys.device_id_secret is empty. Device ids and the 'edi' claim "+
 				"will be derived from an empty secret, so they are predictable.")
 	}
-	if len(cfg.NPLN.ICEServers) == 0 {
+	if len(cfg.NPLN.IceServers) == 0 {
 		fmt.Fprintln(os.Stderr,
 			"warning: npln.ice_servers is empty. Splatoon 3 uses ICE rather than the "+
 				"NAT-check pair, so consoles behind different NATs will match and then "+
@@ -215,7 +210,7 @@ func warn(cfg config.Config) {
 				"looks like a matchmaking bug from the server side. Consoles on one LAN "+
 				"are unaffected.")
 	}
-	for i, s := range cfg.NPLN.ICEServers {
+	for i, s := range cfg.NPLN.IceServers {
 		if s.Kind == "turn" && s.Username == "" {
 			fmt.Fprintf(os.Stderr,
 				"warning: npln.ice_servers[%d] is a TURN server with no username. "+
@@ -306,12 +301,16 @@ func hostsFile(cfg config.Config, bcatProbe bool) string {
 		emit(ip, h)
 	}
 
+	// Every service with hosts must appear in some section here, or its hosts
+	// vanish from the file with no error -- see
+	// TestEveryHostReachesTheGeneratedHostsFile.
 	section("NPLN game servers (phase 2)")
-	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLNRest) {
-		emit(ip, h)
-	}
-	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLN) {
-		emit(ip, h)
+	for _, svc := range []nintendo.Service{
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
+	} {
+		for _, h := range nintendo.ServiceHosts(svc) {
+			emit(ip, h)
+		}
 	}
 
 	section("NAT check")
@@ -383,6 +382,7 @@ func nginxConf(cfg config.Config) string {
 		// silently.
 		nintendo.ServiceNPLN:     cfg.NPLN.Listen,
 		nintendo.ServiceNPLNRest: cfg.NPLN.RestListen,
+		nintendo.ServiceGamesync: cfg.NPLN.GamesyncListen,
 	}
 	names := map[nintendo.Service]string{
 		nintendo.ServiceDAuth:    "dauth",
@@ -391,6 +391,7 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceStubs:    "stubs",
 		nintendo.ServiceNPLN:     "npln",
 		nintendo.ServiceNPLNRest: "npln_rest",
+		nintendo.ServiceGamesync: "gamesync",
 	}
 
 	var b strings.Builder
@@ -414,12 +415,15 @@ func nginxConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
-	// cmd/npln implements the gRPC tenant gateway, so its upstream is live.
-	fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
-		names[nintendo.ServiceNPLN], upstreamAddr(backends[nintendo.ServiceNPLN]))
-	// internal/nplnrest, served by cmd/npln on NPLN.RestListen.
-	fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
-		names[nintendo.ServiceNPLNRest], upstreamAddr(backends[nintendo.ServiceNPLNRest]))
+	// Phase 2's upstreams. All three are served by cmd/npln, which exists now:
+	// the gRPC gateway on npln.listen, the JSON front end on npln.rest_listen,
+	// and gamesync on its own port (npln.gamesync_listen).
+	for _, svc := range []nintendo.Service{
+		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
+	} {
+		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
+			names[svc], upstreamAddr(backends[svc]))
+	}
 	b.WriteString("\n")
 
 	for _, svc := range nintendo.ProxiedServices {
@@ -454,20 +458,20 @@ func nginxConf(cfg config.Config) string {
 		}
 
 		fmt.Fprintf(&b, "# ---- %s ----\n", names[svc])
-		if svc == nintendo.ServiceNPLN {
+		if svc == nintendo.ServiceNPLN || svc == nintendo.ServiceGamesync {
 			b.WriteString("# NPLN is gRPC over HTTP/2, so it needs grpc_pass and http2, not\n")
 			b.WriteString("# proxy_pass. Routing it to an HTTP/1.1 backend completes the TLS\n")
 			b.WriteString("# handshake and then says nothing a gRPC client understands, which\n")
 			b.WriteString("# is the worst kind of failure: DNS resolves, the port is open, TLS\n")
 			b.WriteString("# succeeds, the game fails, and neither side logs anything.\n")
-			b.WriteString("#\n")
-			b.WriteString("# gamesync.npln.nintendo.net is grouped in here too (both are\n")
-			b.WriteString("# ServiceNPLN): internal/npln registers internal/gamesync's\n")
-			b.WriteString("# document/watch service on this same *grpc.Server, alongside Auth,\n")
-			b.WriteString("# MaintenanceSchedule, Matchmaker and GameSessionService -- see\n")
-			b.WriteString("# internal/gamesync's README for why it is reached here rather than on\n")
-			b.WriteString("# a separate port.\n")
-			b.WriteString(grpcServerBlock(cfg, grouped[variant{verifyClient: true, http2: true}]))
+			if svc == nintendo.ServiceGamesync {
+				b.WriteString("#\n")
+				b.WriteString("# On its OWN PORT: the console reaches gamesync directly on 7575\n")
+				b.WriteString("# rather than through the tenant host, so a block on the edge port\n")
+				b.WriteString("# would never match it.\n")
+			}
+			b.WriteString(grpcServerBlock(cfg, names[svc],
+				listenPort(cfg, hosts), grouped[variant{verifyClient: true, http2: true}]))
 			b.WriteString("\n")
 			continue
 		}
@@ -618,7 +622,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
 	return b.String()
 }
 
-func grpcServerBlock(cfg config.Config, serverNames []string) string {
+func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames []string) string {
 	return fmt.Sprintf(`server {
     listen %d ssl;
     http2 on;
@@ -628,10 +632,25 @@ func grpcServerBlock(cfg config.Config, serverNames []string) string {
     ssl_certificate_key /etc/switchnet/certs/edge.key;
 
     location / {
-        grpc_pass grpc://switchnet_npln;
+        grpc_pass grpc://switchnet_%s;
     }
 }
-`, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
+`, port, strings.Join(serverNames, "\n                "), upstream)
+}
+
+// listenPort returns the port a service's hosts are reached on.
+//
+// The edge port unless a host says otherwise. Only gamesync says otherwise, and
+// a mismatch here means a server block that never matches -- which on the
+// console looks like the game rejecting our implementation rather than like a
+// routing mistake.
+func listenPort(cfg config.Config, hosts []nintendo.Host) int {
+	for _, h := range hosts {
+		if h.TLSPort != 0 {
+			return h.TLSPort
+		}
+	}
+	return cfg.Network.EdgeTLSPort
 }
 
 // tlsNamesOf returns every concrete hostname in hosts that needs a server_name,

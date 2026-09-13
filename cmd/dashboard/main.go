@@ -57,6 +57,7 @@ func main() {
 		Bus:                bus,
 		Log:                log,
 		Tenant:             cfg.NPLN.Tenant,
+		SeedDir:            cfg.BCAT.SeedDir,
 		PresenceTTL:        time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
 		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,
 		Token:              cfg.Dashboard.Token,

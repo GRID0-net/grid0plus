@@ -1,10 +1,14 @@
 # Phase 2 implementation plan — NPLN, Splatoon 3, and the dashboard
 
-Status: **in progress.** Written 2026-08-28, status table last refreshed
-2026-09-04 — **for the current state of any row below, `TODO.md` is the one
-to trust**, not this table; this document's own job is the four corrections
-in [What the roadmap gets wrong](#what-the-roadmap-gets-wrong), not day-to-day
-status.
+Status: **complete, and folded back into the roadmap.** Written 2026-08-28,
+status table last refreshed 2026-09-13 — **for the current state of any row
+below, `TODO.md` is the one to trust**, not this table.
+
+[`ROADMAP.md`](ROADMAP.md) §2 now carries the corrections this document found,
+marked in place, with the subsection numbers preserved because source comments
+cite them. **This file stays as the record of how they were found**, and of the
+licensing boundary the reference study was conducted under — neither of which
+belongs in a roadmap.
 
 | Step | State |
 | --- | --- |
@@ -14,12 +18,13 @@ status.
 | gRPC gateway, and the phase-1 auth seam | done — `internal/npln`, `cmd/npln` |
 | Friends, presence, messaging (`Friends`, `PresenceService`, `Messaging`) | done — `internal/npln/friends.go`, `presence_service.go`, `messaging.go` |
 | The JSON front end (vermillion, penne, frontline) | done — `internal/nplnrest`, `cmd/npln`'s second listener; see `TODO.md` §1.3 for what within it is still honestly-empty rather than real |
-| `gamesync` (`nn.npln.gamesync.v1.Gamesync`) | done except `CreateRound` — `internal/gamesync`, `internal/gamesyncstore`; see `TODO.md` §1.5 |
+| `gamesync` (`nn.npln.gamesync.v1.Gamesync`) | done except `CreateRound` — `internal/gamesync`, its own listener on port 7575; see `TODO.md` §1.5 |
 | Splatfest scheduling | done — `internal/toyohr` |
 | `Schedule` (map/mode + Salmon Run rotation) | done — Vs answers "nothing scheduled" (undocumented game data), Coop is a real operator-schedulable/auto-fillable rotation; see `TODO.md` §1.4 |
 | The rest of `toyohr` (`LobbyMessaging`, `Canola`/`Locker`, `CoopScenario`/`Replay`, `UserScreening`) | mostly done, `GameRecord` and `LobbyMessaging.SendMessage` left `Unimplemented`; see `TODO.md` §1.4 |
 | Match queue and formation | done — `internal/matchmaking` |
 | Matchmaker/GameSession gRPC services | done — `internal/npln/matchmaking.go`, incl. `AllocateIceServerSet` and `SyncGameSession` |
+| Certificate pinning decision | settled: accepted, written up in `switch/README.md` part 3 |
 | Match history (`npln_matches`) | done — recorded by `matchmaking.go`/`admin.go`, read by the dashboard |
 | BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
 | BCAT serving | stage 1 (does the console reach us) built and needs an operator to run it; stage 2 (does it check the signature) not built — see `TODO.md` §2.4 |
@@ -30,10 +35,12 @@ this plan committed to while the certificate-pinning question is open. The
 store work is verified against a real PostgreSQL 16, not only the in-memory
 implementation.
 
-This plan revises [`ROADMAP.md`](ROADMAP.md) §2 in four places where the roadmap
-turns out to be wrong or incomplete. Those corrections are the reason this
-document exists; if you read nothing else, read
-[What the roadmap gets wrong](#what-the-roadmap-gets-wrong).
+This plan revised [`ROADMAP.md`](ROADMAP.md) §2 in four places where the roadmap
+turned out to be wrong or incomplete. Those corrections are the reason this
+document exists, and they are now **also** in the roadmap itself — so if you read
+nothing else, read
+[What the roadmap gets wrong](#what-the-roadmap-gets-wrong) for the reasoning,
+and the roadmap for the current state.
 
 ## Where the knowledge came from
 
@@ -53,12 +60,17 @@ Nextendo's server contributes only *behaviour* on top: timing constants, the
 pack encryption scheme, and the alignment rule. Nothing structural depends on it.
 
 Cross-checking the two found a place where the public schema is the better
-guide. `FestDecryptionKey` defines **seven** key fields — `notice_key`,
+guide. `FestDecryptionKey` defines **six** key fields — `notice_key`,
 `start_key`, `result_winning_team_key`, then `team_alpha_key`, `team_bravo_key`,
 `team_charlie_key` — and `GetFestDecryptionKeyRequest` carries a `show_all_keys`
 flag. The reference caps its response at three on the grounds that the game never
 asks for more, which is plausibly true of the phases it was tested against and
-not a property of the protocol. Implement all seven; let the request decide.
+not a property of the protocol. Implement all six; let the request decide.
+
+(An earlier version of this paragraph said seven, and then listed six. The
+miscount mattered: a seed folder holds **five** packs, and a positional mapping
+from packs to key fields therefore cannot be right in either count — see
+`internal/bcat`'s `PackForKeyField`, and the off-by-one it replaced.)
 
 The second is a study of NextendoNetwork's own Splatoon 3 server, which the
 operator supplied. It is **PolyForm Shield 1.0.0** — source-available, with a
@@ -300,9 +312,9 @@ not in it.
 
 | Unknown | What a capture settles | Where it would change |
 | --- | --- | --- |
-| vermillion request/response bodies | the JSON shapes for device init and account config | `internal/nplnrest/vermillion.go` |
-| penne login-ticket shape | what the game needs before it will open the frontline | `internal/nplnrest/penne.go` |
-| the frontline binary framing | what those frames mean; the reference logs them as opaque hex | `internal/nplnrest/frontline.go` |
+| vermillion request/response bodies | the JSON shapes for device init and account config | `internal/nplnrest`, `vermillion` |
+| penne login-ticket shape, and the field the frontline FQDN comes back under | what the game needs before it will open the frontline | `internal/nplnrest`, `penne` |
+| the frontline binary framing | what those frames mean; the reference logs them as opaque hex | `internal/nplnrest`, `frontline` |
 | the BCAT pack container | the archive layout and `summary.yml`, around known crypto | `internal/bcat/pack.go` |
 | tricolour stage numbering | which stages are valid, and what an invalid one does | `internal/toyohr/fest.go` |
 | whether a Phase 1 `id_token` satisfies S3 | the auth seam, end to end | `internal/npln/auth.go` |
@@ -310,6 +322,12 @@ not in it.
 Per CLAUDE.md: implement the most defensible reading, mark it, name the single
 function a capture would change. Do not invent a plausible-looking Nintendo
 internal.
+
+**The first three of those are now one operator action rather than six.** Set
+`npln.rest_record_dir`, put a console through one boot, and `internal/nplnrest`
+writes every request and response to disk — hexdumped, in order, credentials
+redacted. Building that recorder was the useful half of implementing a front end
+whose shapes nobody knows.
 
 ---
 
@@ -333,15 +351,24 @@ internal.
    deliberately preserved. It is also firmware-independent but game-version
    gated, so it silently stops applying after a title update.
 
-   Recommend accepting it for Splatoon 3 specifically, with the narrowness and
-   the version-gating written down where an operator will find them. But it is
-   the operator's call, and nothing in the first slice depends on it.
+   **Settled: accepted.** The narrowness and the version-gating are written up
+   in [`switch/README.md`](../switch/README.md#part-3-splatoon-3-pins-its-own-certificates),
+   along with the failure signature — the TLS handshake completes and the game
+   abandons the call before its first HEADERS frame, which looks identical to a
+   dozen unrelated bugs — and the note that a *game* update silently stops the
+   patch applying.
 2. **STUN/TURN.** ROADMAP §2.3 is right that Splatoon 3 uses ICE, not the Pia
    NAT-check pair, so `natcheck` is not involved and coturn becomes a deployment
-   dependency. Is standing that up in scope for this phase?
+   dependency. Is standing that up in scope for this phase? *Proceeded on
+   `npln.ice_servers`, empty by default, with a `switchnetctl check` warning —
+   consoles on one LAN reach each other without it. Still recorded in
+   `docs/QUESTIONS.md`.*
 3. **Where do custom fest assets come from?** The mechanism is understood; the
-   art is not something this repository can generate. Operator-supplied files, or
-   a small authoring tool?
+   art is not something this repository can generate. *Answered by
+   construction: `bcat.converter` is a command the operator points at their own
+   tool, and a source asset with no converter configured is a build error rather
+   than a PNG packed into the archive. SwitchNet deliberately does not convert
+   textures — see `internal/bcat`'s README.*
 4. **Dashboard authentication.** Nothing in Phase 1 authenticates a human — every
    credential so far belongs to a console. The dashboard needs its own answer.
 5. **`redis.url` must be set before the dashboard runs as its own process.** The

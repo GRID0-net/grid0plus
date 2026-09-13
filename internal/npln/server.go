@@ -17,20 +17,24 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/gamesyncstore"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
 	"github.com/n-popescu/switchnet/internal/messaging"
 	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/rpcauth"
+	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -57,19 +61,24 @@ type Server struct {
 	// process restarts, because the console that owned it has already given up
 	// and made a new one.
 	queue *matchmaking.Queue
+	// matchModes are the modes with a configured size, used only to decide
+	// whether an arriving mode is worth logging.
+	matchModes map[string]int
+	// unknownModes remembers which modes have already been logged, so a console
+	// re-queuing every thirty seconds does not fill the log with the same line.
+	unknownModes sync.Map
+	// unimplemented remembers which RPCs have already been reported as
+	// unanswered, for the same reason: the console retries.
+	unimplemented sync.Map
+
 	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
-	iceServers []config.ICEServer
+	iceServers []config.IceServer
 	// adminToken guards the operator API. Empty means it is not served at all.
 	adminToken string
 
 	// messages is every user's mailbox for the Messaging service. In memory,
 	// like queue above -- see internal/messaging's package doc for why.
 	messages *messaging.Queue
-
-	// gamesync is nn.npln.gamesync.v1.Gamesync's document store. In memory,
-	// like queue and messages above -- see internal/gamesyncstore's package
-	// doc for why.
-	gamesync *gamesyncstore.Store
 
 	// presence resolves a user's presence through the exact same TTL rules
 	// BAAS's HTTP endpoints do -- see internal/presence's package doc.
@@ -84,13 +93,21 @@ type Server struct {
 	// in-process bus variant delivers nothing across the boundary).
 	bus presencebus.Bus
 
+	// rotation is the stage and mode rotation internal/toyohr's Schedule
+	// service serves. Parsed in New, so a typo in config fails at startup
+	// rather than on the first request from a console.
+	rotation toyohr.Rotation
+
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
 
 	grpc *grpc.Server
 
-	// stopSweep ends the background sweeper. Closed by Stop.
-	stopSweep chan struct{}
+	// stop closes when the server is shutting down, ending the background
+	// sweeper. Separate from a request context because the sweeper outlives
+	// every request.
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 // Options configures a Server.
@@ -98,6 +115,14 @@ type Options struct {
 	Store  db.Store
 	Log    *slog.Logger
 	Config config.NPLN
+
+	// Bus carries the live matchmaking gauge to the dashboard, and delivers
+	// live presence changes for the Friends and PresenceService streams to
+	// push. Optional: nil means the dashboard's tile reports no data rather
+	// than a zero that reads as "nobody is queuing", and the streams still
+	// work, just refreshed only on their own keep-alive timer. See
+	// Server.bus's doc comment.
+	Bus presencebus.Bus
 
 	// AccessKey signs and verifies NPLN access tokens (ES256).
 	AccessKey sjwt.ECKey
@@ -108,10 +133,6 @@ type Options struct {
 	// Env selects how malformed metadata is refused. Production by default.
 	Env Environment
 
-	// Matchmaking tunes the queue. The zero value takes matchmaking's own
-	// defaults, which suit a small private network.
-	Matchmaking matchmaking.Config
-
 	// PresenceTTL and ConsolePresenceTTL apply the exact same TTL rules
 	// BAAS's presence read path does -- pass the same values as BAAS's own
 	// config (cfg.BAAS.PresenceTTL, cfg.BAAS.ConsolePresenceTTL), not a
@@ -120,11 +141,6 @@ type Options struct {
 	// disagree about who is online.
 	PresenceTTL        time.Duration
 	ConsolePresenceTTL time.Duration
-
-	// Bus delivers live presence changes for the Friends and PresenceService
-	// streams to push. Optional -- nil means the streams still work, refreshed
-	// only on their own keep-alive timer. See Server.bus's doc comment.
-	Bus presencebus.Bus
 
 	// Now is overridable in tests. Defaults to time.Now.
 	Now func() time.Time
@@ -148,6 +164,16 @@ func New(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("npln: no tenant configured")
 	}
 
+	rotation, err := toyohr.RotationFromStrings(
+		opts.Config.Rotation.RegularStages,
+		opts.Config.Rotation.BankaraRules,
+		opts.Config.Rotation.BankaraStages,
+		opts.Config.Rotation.StagesPerSlot,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Server{
 		store:          opts.Store,
 		log:            opts.Log,
@@ -158,19 +184,20 @@ func New(opts Options) (*Server, error) {
 		issuerName:     opts.Config.Issuer,
 		accessTokenTTL: opts.Config.AccessTokenTTL,
 		env:            opts.Env,
-		queue:          matchmaking.New(opts.Matchmaking, opts.Now),
-		iceServers:     iceServersFrom(opts.Config.ICEServers),
+		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),
+		matchModes:     opts.Config.ModePlayers,
+		iceServers:     iceServersFrom(opts.Config.IceServers),
 		adminToken:     opts.Config.AdminToken,
 		messages:       messaging.New(opts.Now),
-		gamesync:       gamesyncstore.New(opts.Now),
 		presence: presence.Resolver{
 			Store:      opts.Store,
 			ReportTTL:  opts.PresenceTTL,
 			ConsoleTTL: opts.ConsolePresenceTTL,
 		},
-		bus:       opts.Bus,
-		now:       opts.Now,
-		stopSweep: make(chan struct{}),
+		bus:      opts.Bus,
+		rotation: rotation,
+		now:      opts.Now,
+		stop:     make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(
@@ -178,30 +205,80 @@ func New(opts Options) (*Server, error) {
 		grpc.ChainStreamInterceptor(s.streamInterceptor),
 	)
 	s.register()
-	go s.sweep()
+	go s.sweepTickets()
 	return s, nil
 }
 
-// sweep times out tickets nobody matched, on a timer, until Stop.
+// statsInterval is how often the matchmaking gauge is republished.
 //
-// A timer rather than doing it on arrival: a queue nobody is joining is exactly
-// the one whose tickets need to expire, so the last player to give up would
-// otherwise wait forever.
-func (s *Server) sweep() {
+// Comfortably inside presencebus.StatsTTL, so a running server's gauge never
+// looks stale to the dashboard -- and a server that stops is noticed within one
+// TTL rather than reading as an empty queue forever.
+const statsInterval = 10 * time.Second
+
+// sweepInterval is how often expired matchmaking tickets are swept.
+//
+// Sweeping on a timer rather than when a ticket arrives, because a queue nobody
+// is joining is exactly the one whose tickets need to expire: doing it only on
+// arrival means the last player to give up waits forever.
+const sweepInterval = 15 * time.Second
+
+func (s *Server) sweepTickets() {
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-s.stopSweep:
+		case <-s.stop:
 			return
 		case <-ticker.C:
 			for _, t := range s.queue.Sweep() {
+				// Logged because a ticket that timed out is the visible half of
+				// "nobody else was queuing", and an operator reading this
+				// wants to know it happened rather than infer it.
 				s.log.Info("npln: matchmaking ticket timed out",
 					"ticket", t.ID, "user", t.UserID, "mode", t.Mode)
 			}
+			s.publishStats()
 		}
 	}
+}
+
+// publishStats republishes the matchmaking gauge.
+//
+// On a timer as well as on every change, because the gauge expires: a running
+// server with an idle queue has to keep saying "still nobody" or the dashboard
+// cannot tell it apart from a server that stopped.
+func (s *Server) publishStats() {
+	if s.bus == nil {
+		return
+	}
+	// A short bound rather than the caller's context, and the error is only
+	// logged: the gauge is cosmetic, and a dashboard tile must never be able to
+	// slow down or fail a console's request.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := s.bus.PublishStats(ctx, presencebus.Stats{
+		Matchmaking: s.queue.Waiting(),
+		At:          s.now(),
+	}); err != nil {
+		s.log.Debug("npln: publish matchmaking stats", "error", err)
+	}
+}
+
+// noteUnknownMode logs a mode with no configured size, once per mode.
+//
+// This log line has a job: nothing public documents the strings Splatoon 3 puts
+// in a ticket's matchmaking_config, so it is how an operator learns what to put
+// in npln.mode_players. Once per mode, because a console re-queues often enough
+// to bury everything else.
+func (s *Server) noteUnknownMode(mode string) {
+	if _, seen := s.unknownModes.LoadOrStore(mode, struct{}{}); seen {
+		return
+	}
+	s.log.Info("npln: matchmaking mode has no configured size, using npln.players_per_match",
+		"mode", mode, "players", s.queue.PlayersFor(mode))
 }
 
 // GRPCServer exposes the underlying server, for tests and for serving on a
@@ -217,10 +294,16 @@ func (s *Server) GRPCServer() *grpc.Server { return s.grpc }
 func (s *Server) Serve(l net.Listener) error { return s.grpc.Serve(l) }
 
 // Stop stops the server, waiting for in-flight RPCs.
+//
+// Idempotent: cmd/npln stops it on a signal and a test's cleanup stops it
+// again, and closing a closed channel panics.
 func (s *Server) Stop() {
-	close(s.stopSweep)
+	s.stopOnce.Do(func() { close(s.stop) })
 	s.grpc.GracefulStop()
 }
+
+// Queue exposes the match queue, for the dashboard's live view.
+func (s *Server) Queue() *matchmaking.Queue { return s.queue }
 
 // callerKey is the context key the interceptor stores the resolved caller
 // under. Unexported and of a private type, so nothing outside this package can
@@ -258,7 +341,9 @@ func (s *Server) unaryInterceptor(
 		return nil, err
 	}
 	sendNPLNHeader(ctx, s.log, info.FullMethod)
-	return handler(ctx, req)
+	resp, err := handler(ctx, req)
+	s.noteUnimplemented(info.FullMethod, err)
+	return resp, err
 }
 
 // sendNPLNHeader forces this call's HTTP/2 response headers out before the
@@ -299,7 +384,37 @@ func (s *Server) streamInterceptor(
 	if err != nil {
 		return err
 	}
-	return handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	err = handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	s.noteUnimplemented(info.FullMethod, err)
+	return err
+}
+
+// noteUnimplemented logs an RPC the console asked for and this server does not
+// answer, once per method.
+//
+// **This log is the to-do list**, which is why it is worth a mechanism rather
+// than a line in each handler. ROADMAP §2.4 says to let the console drive the
+// order of the remaining toyohr services; that only works if an unanswered RPC
+// says so, and it only says so if its service is registered. So: register
+// everything, and catch the refusals here.
+//
+// Matched on the generated message rather than on the code alone. codes
+// .Unimplemented is also what this server deliberately answers for a flow it
+// will not serve — a delegated matchmaking ticket, malformed metadata — and
+// those are decisions, not gaps. protoc-gen-go-grpc's stubs all say "method X
+// not implemented"; SwitchNet's own refusals never do.
+func (s *Server) noteUnimplemented(method string, err error) {
+	if status.Code(err) != codes.Unimplemented {
+		return
+	}
+	if !strings.HasSuffix(status.Convert(err).Message(), "not implemented") {
+		return
+	}
+	if _, seen := s.unimplemented.LoadOrStore(method, struct{}{}); seen {
+		return
+	}
+	s.log.Info("npln: the console asked for an RPC this server does not implement",
+		"method", method)
 }
 
 // enter parses and authenticates one call, returning the context the handler

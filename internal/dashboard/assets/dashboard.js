@@ -139,7 +139,6 @@ function ago(iso) {
 }
 
 let players = [];
-let matches = [];
 
 function renderPlayers() {
   const filter = ($("#player-filter").value || "").toLowerCase();
@@ -182,6 +181,28 @@ function renderOverview(o) {
   $("#stat-playing").textContent = o.playing;
   $("#stat-players").textContent = o.players;
 
+  // Null and zero mean different things here and are shown differently. Null is
+  // "the game server is not reporting" -- cmd/npln down, or redis.url unset in
+  // one of the two processes. Zero is "nobody is queuing". A tile that showed 0
+  // for both would have an operator debugging matchmaking when the problem is
+  // that nothing is publishing.
+  const queue = $("#stat-queue");
+  const note = $("#stat-queue-note");
+  if (!o.matchmaking) {
+    queue.textContent = "—";
+    note.textContent = "no report from the game server";
+    note.hidden = false;
+  } else {
+    queue.textContent = o.matchmaking.waiting;
+    const modes = Object.entries(o.matchmaking.byMode || {});
+    note.textContent = modes.length
+      ? modes.map(([m, n]) => `${m} ${n}`).join(" · ")
+      : `reported ${ago(o.matchmaking.reportAt)}`;
+    note.hidden = false;
+  }
+
+  renderSeed(o.seed);
+
   const banner = $("#fest-banner");
   if (!o.fest) {
     banner.classList.add("is-empty");
@@ -193,6 +214,44 @@ function renderOverview(o) {
     <div class="fid">${escape(o.fest.id)}</div>
     <div class="meta">${escape(o.fest.resource)} · ${o.fest.regions.join(" ")} · ${escape(o.fest.phase.replace(/_/g, " "))}</div>
     ${phaseTrack(o.fest.phase)}`;
+}
+
+function renderSeed(seed) {
+  const el = $("#seed-status");
+  if (!el) return;
+  if (!seed || !seed.configured) {
+    el.innerHTML = `<p class="empty">No <code>bcat.seed_dir</code> configured, so the installer has nothing to fetch.</p>`;
+    return;
+  }
+  if (!seed.built) {
+    el.innerHTML = `<p class="empty">Configured, but no seed has been built yet.</p>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="fid">${escape(seed.festId || "(unnamed)")}</div>
+    <div class="meta">${escape(seed.resourceId || "?")} · ${(seed.regions || []).join(" ")}</div>
+    <div class="meta mono">${escape(seed.revision || "")}</div>`;
+}
+
+let matches = [];
+
+function renderMatches() {
+  const tbody = $("#matches-table tbody");
+  if (!tbody) return;
+  tbody.replaceChildren(
+    ...matches.map((m) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="color:var(--fg-dim)">${ago(m.createdAt)}</td>
+        <td><code>${escape(m.mode)}</code>
+          ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
+        </td>
+        <td><strong>${escape(playerName(m.hostUserId))}</strong></td>
+        <td>${(m.playerIds || []).map((p) => escape(playerName(p))).join(", ")}</td>`;
+      return tr;
+    })
+  );
+  $("#matches-empty").hidden = matches.length > 0;
 }
 
 const PHASES = ["announced", "first_half", "second_half", "counting", "closed"];
@@ -696,51 +755,14 @@ $("#mm-modes").addEventListener("change", async (e) => {
   }
 });
 
-// ---- match history ----------------------------------------------------------
-
-function renderMatches(matches) {
-  $("#matches-empty").hidden = matches.length > 0;
-  $("#matches-summary").textContent = matches.length
-    ? `${matches.length} recorded`
-    : "";
-
-  $("#matches-list").replaceChildren(
-    ...matches.map((m) => {
-      const card = document.createElement("div");
-      card.className = "mm-session";
-      card.innerHTML = `
-        <div class="cols">
-          <div class="fid">${escape(m.mode)}
-            ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
-          </div>
-          <div class="meta">${m.playerIds.length} player${m.playerIds.length === 1 ? "" : "s"} ·
-            host ${escape(playerName(m.hostUserId))} ·
-            ${ago(m.createdAt)}</div>
-          <div class="meta">${m.playerIds.map((p) => escape(playerName(p))).join(", ")}</div>
-        </div>`;
-      return card;
-    })
-  );
-}
-
-async function loadMatches() {
-  try {
-    matches = await api("/api/matches");
-    renderMatches(matches);
-  } catch (e) {
-    $("#matches-summary").textContent = "could not read match history";
-  }
-}
-
 // ---- player detail ----------------------------------------------------------
 
 /**
  * Everything the click-through detail panel needs is already fetched
  * elsewhere: the player rows for state changes, /api/players/{id} for
  * friends and device accounts, and the match history already loaded for the
- * Matchmaking tab, filtered here rather than re-fetched. That last part is
- * why this waits on loadMatches() at least once before a click can show
- * anything -- refresh() always runs it before the page is interactive.
+ * Matches tab, filtered here rather than re-fetched -- refresh() always
+ * fetches it before the page is interactive.
  */
 async function openPlayerDetail(id) {
   const dialog = $("#player-detail");
@@ -1278,20 +1300,23 @@ function connect() {
 
 async function refresh() {
   try {
-    const [o, ps, fs, cs] = await Promise.all([
+    const [o, ps, fs, cs, ms] = await Promise.all([
       api("/api/overview"),
       api("/api/players"),
       api("/api/fests"),
       api("/api/coop-shifts"),
+      api("/api/matches"),
     ]);
     players = ps;
+    matches = ms;
     renderOverview(o);
     renderPlayers();
     renderFests(fs);
     renderCoopShifts(cs);
-    // After players, so a ticket or a match's host/players can be shown by
-    // nickname rather than by id.
-    await Promise.all([loadMatchmaking(), loadMatches()]);
+    // After players, so a match's host/players can be shown by nickname
+    // rather than by id.
+    renderMatches();
+    await loadMatchmaking();
   } catch (e) {
     setLive("down", "server unreachable");
   }

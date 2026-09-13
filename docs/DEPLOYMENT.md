@@ -98,8 +98,12 @@ unmatched hosts to the stub server, which logs them. That log is the to-do list.
 | --- | --- | --- | --- |
 | 53 | **UDP and TCP** | **the consoles** | DNS — how a console finds everything else |
 | 443 | TCP | **the consoles** | the nginx TLS edge |
-| 10025, 10125 | **UDP** | **the consoles** | NAT check |
-| 8081–8084 | TCP | localhost only | the services, behind nginx |
+| **7575** | TCP | **the consoles** | the nginx edge again, for NPLN's `gamesync` |
+| 10025, 10125 | **UDP** | **the consoles** | NAT check (phase 1 titles; **not** Splatoon 3) |
+| 3478 | UDP and TCP | **the consoles** | STUN/TURN, if you run one — Splatoon 3 uses ICE |
+| 8081–8084 | TCP | localhost only | phase 1's services, behind nginx |
+| 8085–8087 | TCP | localhost only | phase 2's: gateway, JSON front end, dashboard |
+| 8088, 8089 | TCP | localhost only | gamesync; npln's matchmaking admin API (off unless configured) |
 | 5432, 6379 | TCP | localhost only | Postgres, Redis |
 
 The UDP rules are the ones people forget. A firewall that only opens TCP gives
@@ -111,7 +115,39 @@ defaults (`dauth.listen`, `aauth.listen`, `stubs.listen` are all
 `127.0.0.1:<port>`) now that nothing publishes these ports for it — change
 one of those to bind-all and it is reachable from the LAN, not just this
 machine, so leave them as configured unless you have a specific reason not
-to.
+to. The same is true of `npln.listen`, `.rest_listen`, `.gamesync_listen` and
+`.admin_listen`.
+
+**7575 is the one that is easy to miss.** Splatoon 3 reaches `gamesync` on that
+port directly rather than through the tenant host on 443, so the edge needs a
+second listener and the firewall needs a second rule. Without it the game
+authenticates, opens its gRPC channel, and then cannot sync the lobby.
+
+**Note which NAT mechanism applies to which title.** Phase 1's titles use the Pia
+NAT-check pair on 10025/10125. **Splatoon 3 does not** — it uses ICE, so
+`natcheck` is not involved and `npln.ice_servers` is what matters. Those
+addresses have to be reachable *from the console*, not from the server; getting
+them wrong gives a lobby that fills and a match that never starts, which from the
+server side looks exactly like a matchmaking bug. `switchnetctl check` warns when
+the list is empty, and consoles on one LAN work without it.
+
+### Phase 2's processes
+
+| Service | Listens | Notes |
+| --- | --- | --- |
+| `npln` | 8085, 8086, 8088, and 8089 if `admin_listen` is set | four listeners, one process. gamesync verifies tokens the gateway signs, so splitting it out would mean inventing a protocol between them; the admin API is served only when `npln.admin_token` is set |
+| `dashboard` | 8087 | bound to `0.0.0.0`, like `baas`: it is a page for a person's browser on the LAN. **Set `dashboard.token`**, or anybody who can reach it can schedule and cancel Splatfests |
+
+**`redis.url` must be set for both**, and it is in `config.yaml`. The
+dashboard is a separate process from `npln` and `baas`, and the in-process
+presence bus delivers nothing across a process boundary — *silently*. Without it
+the live view never updates and the matchmaking tile reports no data. Both
+processes warn at start-up, and `switchnetctl check` does too.
+
+**Set `npln.rest_record_dir` before the first console test.** The JSON front end
+Splatoon 3 contacts first has undocumented request shapes; with this set, one boot
+writes the whole exchange to disk, hexdumped, with credentials redacted. It costs
+one line and it is the only record anyone would have.
 
 If port 53 is already taken on the machine (systemd-resolved is the usual
 culprit), either free it:

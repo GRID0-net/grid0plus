@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
   <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
   <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
-  <img src="https://img.shields.io/badge/phase%202-in%20progress-yellow" alt="Phase 2">
+  <img src="https://img.shields.io/badge/phase%202-code%20complete-brightgreen" alt="Phase 2 code complete">
   <img src="https://img.shields.io/badge/phase%203-not%20started-lightgrey" alt="Phase 3">
 </p>
 
@@ -60,10 +60,11 @@ Three phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
-| **2** | NPLN game server for Splatoon 3, web dashboard | in progress -- see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) for what's built |
+| **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | code complete, awaiting hardware verification |
 | **3** | eShop, served from local `.NSP` dumps of games you own | not started |
 
-Phase 1 is what this repository contains today.
+Phases 1 and 2 are what this repository contains today. Both are waiting on the
+same thing: a console.
 
 ```
 ┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
@@ -137,11 +138,54 @@ token, register, log in, friend code, friend request, accept, presence — and
 prints the resulting friend list. If it completes, everything except DNS and TLS
 is working.
 
+`make seed-phase2` does the same for the game server: it registers two accounts
+through BAAS, exchanges the id tokens BAAS hands out for NPLN sessions, queues
+both players, and checks that they are told about **the same** session — then
+drives `gamesync` and reads back the announced Splatfest. Two players told about
+different sessions is a lobby that never fills, and it looks fine from either
+side alone, which is why that is the assertion.
+
 Then: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the nginx edge and the
 address/port checklist, and [`switch/README.md`](switch/README.md) for pointing a
 console at it.
 
 `make help` lists every target.
+
+Phase 2 adds one command worth knowing about:
+
+```sh
+switchnetctl fest build -assets ./fest-assets -out ./seed -enable
+```
+
+That builds a Splatfest's BCAT packs, derives the revision from their bytes,
+writes the seed folder for the consoles, generates the pack keys, and registers
+the fest the schedule announces — in one step, because those four values appear
+in two places each and any path where a human types one of them twice eventually
+produces `BcatInvalid`, which the player sees as a generic communication error
+naming nothing.
+
+## Redeploying an existing install
+
+Once the stack is up (the Quickstart above), day-to-day operation is usually
+"pull and restart", not the full `make up` bring-up:
+
+```sh
+scripts/start.sh                 # (re)start everything -- same checks as make up,
+                                  # plus the cert/nginx-config generation and a
+                                  # config validation pass before anything starts
+scripts/update.sh                # pull, then restart only what the change reaches
+scripts/update.sh --dry-run      # say what would restart, change nothing
+```
+
+`update.sh` reads each service's own Go package graph (`go list -deps`), not
+directory names, so a change to `internal/db` restarts every service that
+imports it and a change to `internal/baas` restarts only `baas` — one rebuilt
+image, only the affected containers recreated. Neither script polls a health
+endpoint: none of the Go services expose one (only Postgres and Redis have a
+`docker-compose healthcheck:`), so "started"/"restarted" here means the
+containers are up, not that each one has confirmed it can serve a request —
+`docker compose ps` and `docker compose logs --tail=50 <service>` are how you
+check that.
 
 ## Contributing, or picking this up as an agent
 
@@ -262,19 +306,19 @@ internal/
                  talks to before it opens the gRPC channel
   matchmaking/   the match queue and session formation behind npln's gRPC
   gamesync/      nn.npln.gamesync.v1.Gamesync, a Firestore-shaped document/
-                 watch service
-  gamesyncstore/ the document store behind gamesync
+                 watch service -- its own port, its own listener
   toyohr/        Splatoon 3's own services: Splatfests, Schedule (incl. a
                  real Salmon Run rotation), CloudSave, and the rest
-  lobbymessaging/ per-lobby broadcast, behind toyohr's LobbyMessaging
   messaging/     per-user mailbox, behind npln's Messaging
   bcat/          builds and encrypts the BCAT packs custom Splatfest content
                  ships in
+  wirelog/       request transcripts, for the protocols nobody has documented
   dashboard/     the operator's web UI: players, matchmaking, Splatfests,
                  match history, a Debug tab
 switch/          console-side setup and the generated hosts file
 scripts/         start.sh, update.sh, install-systemd.sh, gen-certs.sh,
-                 seed-dev-data.sh, capture-baas.py, build-certstore.py
+                 seed-dev-data.sh, seed-phase2.sh, smoke-npln/,
+                 capture-baas.py, build-certstore.py
 docs/            roadmap, architecture, deployment, packet capture, captures
 ```
 

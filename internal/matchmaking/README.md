@@ -56,10 +56,18 @@ after its ticket already succeeded does not wait for a change that has happened.
 ## Players per match
 
 `DefaultConfig` is **2**, not 8. This is a server for a handful of consoles the
-operator owns, and waiting for eight players means never playing. The faithful
-mode sizes belong in a mode table driven by a capture; until there is one, a
-number that lets two friends start a match is more useful than one that is
-correct and idle.
+operator owns, and waiting for eight players means never playing.
+
+`Config.ModeSizes` overrides that for one mode, and is how an operator with
+enough consoles asks for the faithful sizes — Turf War and Anarchy are 4v4,
+Salmon Run is four, Tricolour is 4v2v2.
+
+**Those sizes are not hardcoded here, on purpose.** The key is the mode name the
+game puts in a ticket's `matchmaking_config`, and nothing public documents those
+strings. A built-in table of plausible-looking names would be an invented
+Nintendo internal, which is the one thing CLAUDE.md rule 6 rules out. So it is
+`npln.mode_players` in config, and every mode that arrives without an entry is
+logged once — that log line is how the names get discovered.
 
 ## Gameplay is peer-to-peer
 
@@ -101,3 +109,12 @@ match ended — the only honest signal is age. `Sweep` drops sessions and finish
 tickets older than `SessionTTL`, and skips any ticket that still has a watcher
 attached, because deleting one out from under an open stream strands the console
 on a stream that will never say anything again.
+
+`Join` is idempotent for a player already in the session, because the console
+joins the match it was just told it is in — answering that as a failure would
+strand it on the loading screen. A session with no room refuses rather than
+over-filling: the game rejects a ninth participant in an eight-player match on
+the console, with a generic error. Room is checked against `MaxPlayers`, the
+size the match was formed at, not against whatever `ModeSizes` says right now
+-- an operator changing a mode's size after formation must not retroactively
+shrink or grow a match that already has its players.

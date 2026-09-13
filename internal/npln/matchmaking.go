@@ -16,15 +16,6 @@ import (
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 )
 
-// sweepInterval is how often expired tickets are timed out and finished
-// sessions discarded.
-//
-// A ticket's TTL is the promise made to the console; this is the resolution
-// that promise is kept at, so it wants to be well under the TTL. Ten seconds
-// against a three-minute default means a player waits at most ten seconds past
-// the point the server had already given up on them.
-const sweepInterval = 10 * time.Second
-
 // ---- nn.npln.matchmaking.v1.Matchmaker ------------------------------------
 
 type matchmakerService struct {
@@ -553,8 +544,8 @@ func lastSegment(name string) string {
 // Defensive rather than redundant: a Server can be built without going through
 // config.Validate -- the tests do -- and a half-specified server handed to a
 // console is worse than one not offered at all, because the console tries it.
-func iceServersFrom(cfg []config.ICEServer) []config.ICEServer {
-	out := make([]config.ICEServer, 0, len(cfg))
+func iceServersFrom(cfg []config.IceServer) []config.IceServer {
+	out := make([]config.IceServer, 0, len(cfg))
 	for _, s := range cfg {
 		if (s.Kind != "stun" && s.Kind != "turn") || s.Host == "" || s.Port <= 0 {
 			continue
@@ -562,4 +553,19 @@ func iceServersFrom(cfg []config.ICEServer) []config.ICEServer {
 		out = append(out, s)
 	}
 	return out
+}
+
+// queueConfig builds the matchmaking queue's config from the NPLN section.
+func queueConfig(c config.NPLN) matchmaking.Config {
+	cfg := matchmaking.Config{
+		PlayersPerMatch: c.PlayersPerMatch,
+		TicketTTL:       time.Duration(c.TicketTTL) * time.Second,
+	}
+	if len(c.ModePlayers) > 0 {
+		cfg.ModeSizes = make(map[string]int, len(c.ModePlayers))
+		for mode, n := range c.ModePlayers {
+			cfg.ModeSizes[mode] = n
+		}
+	}
+	return cfg
 }

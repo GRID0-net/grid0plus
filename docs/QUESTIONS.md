@@ -28,10 +28,12 @@ has to hand the console real STUN/TURN addresses — and they must be reachable
 lobby fills but the match never starts", which is indistinguishable from a
 matchmaking bug when read from the server side.
 
-**Proceeding on:** `npln.ice_servers` in config, empty by default, with a
-`switchnetctl check` warning when unset. Matchmaking works for peers on the same
-LAN without it. **This is built** — `AllocateIceServerSet` serves whatever the
-list holds, and an empty list means no ICE servers are offered.
+**Proceeding on:** `npln.ice_servers` in config, empty by default, served
+verbatim by `AllocateIceServerSet`, with a `switchnetctl check` warning when
+unset. Nothing is discovered: a server behind NAT cannot know its own reachable
+address, and a guess there produces exactly the failure above. **This is
+built** — an empty list means no ICE servers are offered, and matchmaking
+works for peers on the same LAN without any of it.
 
 So the question is now only *what to put in the file*, not what to write. If
 coturn exists, its addresses and a TURN username/password go in
@@ -62,14 +64,15 @@ the pack it was given, the names are inert and this is a non-issue.
 **The experiment:** build a pack whose internal names match its own fest id, put
 it on a console, see whether the fest loads.
 
-**Proceeding on:** names are inert — packs are built with whatever names the
-source assets carry. This is the cheaper assumption and it is what existing
-custom fests do, but it is unverified against SwitchNet's own hardware.
+**Proceeding on:** `bcat.substitute_fest_id` is **on** by default, and an asset
+path containing `{FEST}` gets the announced fest id substituted in. An operator
+who writes literal names gets them left alone, so both readings are reachable
+without a code change.
 
 **Independent corroboration, 2026-09-05:** `NextendoNetwork/splatoon-3` — a
 from-scratch NPLN reimplementation the operator supplied and that repository
 says was tested against real hardware (PolyForm Shield-licensed, so only
-this design fact is taken here, never its code) — resolves this exact
+this design fact is taken here, never its code) — resolves the underlying
 question the same way in production. It cannot synthesise Nintendo's own
 encrypted packs either, so instead of building one it announces whatever
 fest identity the console's *existing* BCAT cache already holds, rewriting
@@ -77,28 +80,35 @@ its served schedule's fest id/resource/revision to match a cache the
 operator supplies out of band (`fest_align.go`'s `festalias`). That only
 works if the console resolves fest resources by the *announced* id against
 the cache's own top-level metadata, not by names baked into the pack's
-internal files — i.e. exactly "names are inert." SwitchNet does not need
-the same rewrite mechanism (`SelectFestSchedule` builds its response from a
-database row rather than replaying a captured one, so an operator can
-already set any `resource`/`revision` directly via `switchnetctl fest
-build`/the dashboard's create-fest form), but the underlying assumption this
-question is about is the same one their production server depends on
-working.
+internal files — the same "names are inert" assumption `substitute_fest_id`
+defaults to. SwitchNet does not need the same rewrite mechanism
+(`SelectFestSchedule` builds its response from a database row rather than
+replaying a captured one, so an operator can already set any
+`resource`/`revision` directly via `switchnetctl fest build`/the dashboard's
+create-fest form), but the underlying assumption this question is about is
+the same one their production server depends on working.
 
-**Changes if answered against this:** `internal/bcat/build.go`, and TODO
-§2.1's scope.
+**Changes if answered:** `internal/bcat.Naming.Apply`, and nothing else — the
+naming decision was deliberately confined to that one function so that acting on
+an answer is a one-line change rather than a rewrite.
 
 ---
 
 ## Do sigpatches cover the `bcat` sysmodule?
 
 See TODO §2.4 for the full experiment. If they do, serving BCAT natively may be
-possible and the `.nro` installer (§2.4a) becomes unnecessary. `sys-patch`
-covers `fs`, `es`, `ldr` and `nifm`; `bcat` is not on that list.
+possible and `switch/bcat-installer/` becomes unnecessary. `sys-patch` covers
+`fs`, `es`, `ldr` and `nifm`; `bcat` is not on that list.
+
+**The server for stage 1 is written and waiting.** `internal/bcat.Probe` logs
+every request the `bcat-*` hosts receive and writes a hexdumped transcript when
+`stubs.bcat_record_dir` is set. Running the experiment is three lines in
+`internal/nintendo/hosts.go` plus a config value — see TODO §2.4.
 
 **Proceeding on:** it is not covered, so SwitchNet builds the delivery cache and
 does not serve BCAT. Note that this is only *half* the blocker — the `list`
-response body is undocumented regardless.
+response body is undocumented regardless, and stage 1's transcript is what would
+start to settle it.
 
 **The experiment is now five minutes of your time**, and the tooling for stage 1
 is built and tested:
@@ -113,8 +123,8 @@ Open Splatoon 3, watch the stubs log, then turn both back off. Whatever appears
 `docs/CAPTURES/`.
 
 **Changes if answered:** `internal/nintendo/hosts.go` (the three `bcat-*`
-entries), `TestBlackholedHostsAreAccountedFor`, and whether §2.4a is built at
-all.
+entries), `TestBlackholedHostsAreAccountedFor`, and whether
+`switch/bcat-installer/` is needed at all.
 
 ---
 
@@ -299,27 +309,29 @@ entirely.
 
 ---
 
-## Does Splatoon 3 really reach gamesync through the tenant channel, or on its own port?
+## ~~Does Splatoon 3 really reach gamesync through the tenant channel, or on its own port?~~ — resolved: its own port
 
-TODO.md originally described `gamesync.npln.nintendo.net` as reached "on its
-own port (7575)", and `config.NPLN` briefly carried a matching
-`gamesync_listen` setting. But `internal/nintendo/hosts.go` classifies that
-hostname `ServiceNPLN` -- the same service as the tenant gRPC host, routed by
-SNI to the same nginx upstream -- and nothing in the nginx generator or
-`docker-compose.yml` ever wired the port-7575 setting to an actual listener.
-No source this pass found (the Kinnay wiki's NPLN Servers page included)
-settles which reading is right; `gamesync.npln.nintendo.net` not ending in
-`srv.nintendo.net` (unlike every other NPLN host) is the only thing that
-reads as a deliberate signal, and it's as consistent with "reached
-differently" as with "reached at all differently from how it's classified
-here."
+An earlier pass classified `gamesync.npln.nintendo.net` as `ServiceNPLN` --
+the same service as the tenant gRPC host -- and registered
+`internal/gamesync` on `internal/npln`'s own `*grpc.Server` alongside Auth,
+Matchmaker, GameSessionService and `internal/toyohr`'s services. That reading
+did not survive contact with the rest of the evidence: `gamesync.npln.
+nintendo.net` not ending in `srv.nintendo.net`, unlike every other NPLN host,
+turned out to be exactly the deliberate signal it looked like. `internal/
+nintendo/hosts.go` now classifies it `ServiceGamesync`, a distinct service on
+its own port (7575, `TLSPort` in the host entry) rather than through the
+tenant host's nginx block -- see that package's own comment for the
+consequence of getting this wrong (the console de-duplicates a probe sent to
+the same address twice, the same class of bug the nncs1/nncs2 note in
+CLAUDE.md warns about for NAT-check).
 
-**Proceeding on:** the code evidence. `internal/gamesync.Service` is
-registered on `internal/npln`'s own `*grpc.Server`, the same gRPC server
-already serving Auth, Matchmaker, GameSessionService and
-`internal/toyohr`'s services, at the same address the tenant channel already
-uses. The unwired `gamesync_listen` config key has been removed rather than
-left as a setting that looks configured and silently does nothing.
+`internal/gamesync` is now a complete, self-contained gRPC service (its own
+`Server`, `Options`, `Serve`/`Stop`, and its own matchmaking-id-token
+verification via a `TokenVerifier` callback into `internal/npln`) rather than
+a service registered on npln's gateway. It still runs inside `cmd/npln` --
+splitting it into its own process would mean inventing a protocol to share
+the signing key -- but as a second listener on `npln.gamesync_listen`, not a
+second service on the first one. See `internal/gamesync/README.md`.
 
 **Changes if answered:** if a capture shows the console dialing a distinct
 address/port for Gamesync, `internal/gamesync.Service` moves to its own

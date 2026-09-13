@@ -6,6 +6,7 @@ There are two separate problems here, and they have very different answers:
 | --- | --- | --- |
 | **1** | **Redirection** — making Nintendo's hostnames resolve to your server | **off the console, with DNS.** Nothing on the SD card. |
 | **2** | **Certificate trust** — making the console accept your certificate for a Nintendo hostname | **on the console.** There is no way around this; the options differ in how robust they are. |
+| **3** | **Splatoon 3's own certificate trust** — the game does not use the console's CA store | **on the console, and separately.** Part 2 does not cover it. |
 
 Most guides conflate the two and solve both with Atmosphère — a hosts file plus a
 firmware-gated exefs patch. Only the second half actually needs the console.
@@ -16,7 +17,9 @@ firmware-gated exefs patch. Only the second half actually needs the console.
 
 - [Part 1: redirection, with DNS](#part-1-redirection-with-dns)
 - [Part 2: certificate trust](#part-2-certificate-trust)
+- [Part 3: Splatoon 3 pins its own certificates](#part-3-splatoon-3-pins-its-own-certificates)
 - [Verify, in order](#verify-in-order)
+- [Verify Splatoon 3, in order](#verify-splatoon-3-in-order)
 - [Troubleshooting by symptom](#troubleshooting-by-symptom)
 - [Going back to Nintendo](#going-back-to-nintendo)
 
@@ -256,6 +259,55 @@ Nintendo**.
 
 ---
 
+## Part 3: Splatoon 3 pins its own certificates
+
+**Part 2 does not cover this, and finding that out the hard way is expensive.**
+
+Splatoon 3 carries its own statically linked gRPC and TLS stack and pins its own
+certificates, independently of the console's CA store. So a console that reaches
+BAAS perfectly — friend codes, friends, presence, all of part 1 and part 2
+working — will still not reach the game server.
+
+**Memorise the failure signature**, because it looks identical to a dozen
+unrelated bugs: the TLS handshake **completes**, and then the game abandons the
+call before sending a single HTTP/2 HEADERS frame. The game reports a generic
+communication error and **nothing useful appears in the server log** — you see a
+connection, and no request.
+
+### The route, and what it costs
+
+`kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch that
+disables TLS certificate verification in the game's main NSO. It was written for
+exactly this purpose: "if you want to capture traffic or write your own NPLN
+servers."
+
+**The operator has accepted this**, so it is a decision already taken rather than
+an open question. Two properties have to be written down where somebody will find
+them, because both differ from the position this project took in part 2:
+
+- **It *disables* verification rather than *adding* trust.** Part 2 rejects the
+  Prelude-style route partly on this ground. An NSO patch is meaningfully
+  narrower — one game's binary, not the system TLS stack — but it is the same
+  kind of change, and the console will accept any certificate for the hosts
+  Splatoon 3 talks to while it is installed.
+- **It is gated on the game version, not the firmware.** A title update silently
+  stops it applying. That is the same failure mode as `disable_ca_verification`
+  wearing different clothes: everything works, then a game update lands, and the
+  symptom is the signature above with nothing to say that a patch stopped
+  matching. **If Splatoon 3 stops connecting after an update, check this first.**
+
+The patch goes in `/atmosphere/exefs_patches/`. Regenerate it after every title
+update.
+
+### And it is the last thing to change
+
+Everything in phase 2 that can be verified without the console has been. If the
+game will not connect, the order to suspect things in is: this patch, then the
+JSON front end (`internal/nplnrest`, whose request shapes are the least
+documented part of the stack), then the gRPC gateway.
+
+---
+
 ## Verify, in order
 
 Each step rules out everything before it, which is what makes debugging on
@@ -329,6 +381,80 @@ console is registered.
 
 ---
 
+## Verify Splatoon 3, in order
+
+**Nothing in phase 2 has run against a console.** Every test is against a Go
+client, which was deliberate — it let the work proceed while part 3's decision
+was open — but it means no shape in phase 2 is confirmed against hardware. This
+checklist is what turns that from a worry into a list.
+
+Do part 1 and part 2 first, all the way to step 5 above. Then:
+
+**S1. Set `npln.rest_record_dir` before the first attempt.** The game's first
+contact is JSON over HTTPS to `vermillion` and `penne`, and **their request and
+response bodies are undocumented** — implemented as the most defensible reading
+and marked `TODO(capture-needed)`. With this set, one boot writes every request
+and response to disk, hexdumped, in order, credentials redacted. That transcript
+is worth more than any amount of guessing, and it costs one config line.
+
+**S2. Install part 3's patch**, and check `nncs1`/`nncs2` still resolve to two
+different addresses.
+
+**S3. Launch the game and watch for the JSON front end.**
+
+```
+service=npln listener=rest msg="request" host=gw.hac.lp1.vermillion… path=…
+service=npln listener=rest msg="request" host=val.hac.lp1.penne…      path=…
+service=npln listener=rest msg="frontline connection open" host=fro-3…
+```
+
+`frontline connection open` is the first real milestone: DNS, TLS, part 3's patch
+and the routing are all correct, and the console has held a connection open. If
+you see the first two lines and never the third, `penne`'s response did not name
+the frontline host in a field the game recognises — which is exactly what S1's
+transcript settles.
+
+**S4. Watch for the gRPC gateway.**
+
+```
+service=npln msg="npln: issued a session" user=…
+```
+
+This is the phase 1 → phase 2 seam: BAAS's id token was accepted and an NPLN
+session issued. If the front end worked and this never appears, part 3's patch is
+the suspect — the handshake completes and the game abandons the call.
+
+**S5. Read the unimplemented-RPC log. This is the to-do list.**
+
+```
+service=npln msg="npln: the console asked for an RPC this server does not implement" method=…
+```
+
+Every service is registered precisely so these lines exist. What the game asks
+for, in the order it asks, is the only reliable guide to what to build next.
+
+**S6. Watch for the matchmaking mode names.**
+
+```
+service=npln msg="npln: matchmaking mode has no configured size" mode=…
+```
+
+Nothing public documents the strings the game puts in a ticket's
+`matchmaking_config`. This line is how they are discovered; put them in
+`npln.mode_players`.
+
+**S7. Two consoles, one mode.** Both should be told about the same session with
+the same host, and the dashboard's Matches tab should show it. With
+`npln.players_per_match` at 2 this needs two consoles, not eight.
+
+**S8. A Splatfest.** `switchnetctl fest build`, install the seed with
+`switch/bcat-installer` or by hand, and open the game. If the fest does not
+appear, the announced id, resource and revision must match the `summary.yml` just
+installed — `fest build` makes them match by construction, so a mismatch means
+the seed on the console came from somewhere else.
+
+---
+
 ## Troubleshooting by symptom
 
 | Symptom | Almost certainly |
@@ -344,7 +470,12 @@ console is registered.
 | Friends show, but everybody is offline | Check whether `baas: presence reported` appears at all. |
 | A friend shows online but never "Playing X" | `appInfo:appId` is not arriving. `log.level: debug` and look at the presence patch. |
 | Matchmaking finds a match that never starts | NAT check. `nncs1` and `nncs2` must resolve to two different addresses. |
-| A game says it cannot connect | Expected in phase 1; game servers are phase 2. |
+| Splatoon 3 says it cannot connect, and the server log shows a connection but no request | Part 3. The game pins its own certificates and the TLS handshake completing tells you nothing. |
+| Splatoon 3 worked and stopped after a **game** update | Part 3's patch is gated on the game version and silently stopped applying. Regenerate it. |
+| The JSON front end is reached but the frontline connection never opens | `penne`'s response did not name the frontline host in a field the game recognises. Set `npln.rest_record_dir` and read the transcript. |
+| The lobby fills and the match never starts | `npln.ice_servers` — the addresses must be reachable *from the console*, not from the server. |
+| A Splatfest is announced and the game reports a communication error | The announced id, resource and revision do not match the seed on the console. `switchnetctl fest build` makes them match by construction. |
+| Another game says it cannot connect | Expected: only Splatoon 3 has a game server here. |
 | Non-Nintendo sites stop resolving on the console | `dns.upstream` is looping back to SwitchNet, or the upstreams are unreachable. |
 
 ---
@@ -354,6 +485,10 @@ console is registered.
 **Redirection**: undo whichever option you used — remove the DHCP DNS override,
 or set the console's DNS back to Automatic. That is it, and it takes effect on the
 next lease.
+
+**Splatoon 3's patch**: delete it from `/atmosphere/exefs_patches/`. Leaving it
+installed means the game talks to real Nintendo with certificate verification
+off, so anybody on the network can intercept it.
 
 **Certificate trust**: this is the part that matters.
 
@@ -371,3 +506,4 @@ next lease.
 | --- | --- |
 | `hosts.txt` | Generated by `make gen-hosts`. Only needed if you cannot control DNS on the network. Gitignored: it contains your addresses. |
 | `ca/rootCA.pem` | Generated by `make gen-certs`. Gitignored. |
+| `bcat-installer/` | A homebrew that fetches a Splatfest's delivery cache from SwitchNet and writes it into Splatoon 3's BCAT save data. **Not compiled or tested** — read its README before running it. |

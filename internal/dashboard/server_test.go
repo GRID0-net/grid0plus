@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
@@ -579,5 +580,222 @@ func TestAssetsAreServedWithoutAToken(t *testing.T) {
 		if rec.Code != 200 {
 			t.Errorf("%s: %d -- the page cannot style itself if assets need the token", path, rec.Code)
 		}
+	}
+}
+
+// TestTheMatchmakingTileTellsNoDataApartFromAnEmptyQueue.
+//
+// The whole reason this tile was left unwired rather than showing zero: on a
+// tile, "nobody is queuing" and "cmd/npln is not running, or redis.url is unset
+// in one of the two processes" look identical, and only one of them is worth
+// acting on. So the API returns null for the second and a number for the first.
+func TestTheMatchmakingTileTellsNoDataApartFromAnEmptyQueue(t *testing.T) {
+	now := time.Now().UTC()
+	srv, _ := newTestServer(t, "", now)
+	ctx := context.Background()
+
+	// No bus at all: the dashboard is a separate process and nothing is
+	// publishing.
+	var body map[string]any
+	getJSON(t, srv, "/api/overview", &body)
+	if body["matchmaking"] != nil {
+		t.Errorf("matchmaking = %v with no bus, want null", body["matchmaking"])
+	}
+
+	bus := presencebus.NewLocal()
+	defer bus.Close()
+	srv.bus = bus
+
+	// A bus with nothing published is still no data.
+	getJSON(t, srv, "/api/overview", &body)
+	if body["matchmaking"] != nil {
+		t.Errorf("matchmaking = %v with no snapshot, want null", body["matchmaking"])
+	}
+
+	// An empty queue is a number.
+	if err := bus.PublishStats(ctx, presencebus.Stats{Matchmaking: map[string]int{}}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	getJSON(t, srv, "/api/overview", &body)
+	mm, ok := body["matchmaking"].(map[string]any)
+	if !ok {
+		t.Fatalf("matchmaking = %v with an empty snapshot, want an object", body["matchmaking"])
+	}
+	if mm["waiting"] != float64(0) {
+		t.Errorf("waiting = %v, want 0", mm["waiting"])
+	}
+
+	// And a populated one is summed across modes, with the breakdown kept.
+	if err := bus.PublishStats(ctx, presencebus.Stats{
+		Matchmaking: map[string]int{"turf_war": 3, "salmon_run": 1},
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	getJSON(t, srv, "/api/overview", &body)
+	mm = body["matchmaking"].(map[string]any)
+	if mm["waiting"] != float64(4) {
+		t.Errorf("waiting = %v, want 4", mm["waiting"])
+	}
+	byMode := mm["byMode"].(map[string]any)
+	if byMode["turf_war"] != float64(3) {
+		t.Errorf("byMode = %v", byMode)
+	}
+}
+
+// TestTheMatchListOutlivesTheAccountsInIt guards the match log against being
+// tied to the users in it: nickname resolution happens client-side (dashboard.js's
+// playerName()), so a player id with no account still comes back rather than
+// being dropped or blanked -- history that disappears when somebody leaves is
+// not history.
+func TestTheMatchListOutlivesTheAccountsInIt(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	ctx := context.Background()
+
+	addUser(t, store, "alice", "Alice")
+	if err := store.CreateMatch(ctx, db.Match{
+		ID: "m1", Mode: "turf_war", HostUserID: "alice",
+		// "ghost" has no account.
+		PlayerIDs: []string{"alice", "ghost"}, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("create match: %v", err)
+	}
+
+	var rows []matchRow
+	getJSON(t, srv, "/api/matches", &rows)
+	if len(rows) != 1 {
+		t.Fatalf("got %d matches, want 1", len(rows))
+	}
+	if rows[0].HostUserID != "alice" {
+		t.Errorf("hostUserId = %q, want alice", rows[0].HostUserID)
+	}
+	if len(rows[0].PlayerIDs) != 2 || rows[0].PlayerIDs[1] != "ghost" {
+		t.Errorf("playerIds = %v", rows[0].PlayerIDs)
+	}
+}
+
+func TestThePlayerPageShowsThePresenceTimestampsSeparately(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	ctx := context.Background()
+
+	addUser(t, store, "alice", "Alice")
+	// Reported OFFLINE a while ago, but seen just now. That combination is the
+	// one an operator needs to be able to read: the effective state is ONLINE
+	// from the heartbeat while the console's own last word was OFFLINE, and
+	// showing only one of the three timestamps hides which case it is.
+	state := "OFFLINE"
+	reportedAt := now.Add(-2 * time.Hour)
+	if _, err := store.UpdatePresence(ctx, "alice", db.PresencePatch{
+		State:      &state,
+		ReportedAt: &reportedAt,
+	}); err != nil {
+		t.Fatalf("update presence: %v", err)
+	}
+	if err := store.TouchPresence(ctx, "alice", now); err != nil {
+		t.Fatalf("touch presence: %v", err)
+	}
+
+	var detail playerDetail
+	getJSON(t, srv, "/api/players/alice", &detail)
+
+	if detail.State != "ONLINE" {
+		t.Errorf("effective state = %q, want ONLINE from the heartbeat", detail.State)
+	}
+	if detail.ReportedState != "OFFLINE" {
+		t.Errorf("reported state = %q, want the console's own last word", detail.ReportedState)
+	}
+	if detail.ReportedAt == "" || detail.LastSeenAt == "" {
+		t.Error("both timestamps must be shown, or which case this is cannot be read")
+	}
+	if len(detail.DeviceAccounts) != 1 {
+		t.Fatalf("got %d device accounts, want 1", len(detail.DeviceAccounts))
+	}
+}
+
+func TestThePlayerPageListsFriendsFavouritesFirst(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	ctx := context.Background()
+
+	addUser(t, store, "alice", "Alice")
+	for _, who := range []string{"bob", "carol", "dave"} {
+		addUser(t, store, who, who)
+		if err := store.AddFriendship(ctx, "alice", who, now); err != nil {
+			t.Fatalf("add friendship: %v", err)
+		}
+	}
+	if err := store.SetFavorite(ctx, "alice", "dave", true); err != nil {
+		t.Fatalf("set favourite: %v", err)
+	}
+
+	var detail playerDetail
+	getJSON(t, srv, "/api/players/alice", &detail)
+
+	if len(detail.Friends) != 3 {
+		t.Fatalf("got %d friends, want 3", len(detail.Friends))
+	}
+	// What the operator is looking for should not be buried alphabetically.
+	if detail.Friends[0].ID != "dave" || !detail.Friends[0].Favorite {
+		t.Errorf("first friend = %+v, want the favourite", detail.Friends[0])
+	}
+}
+
+func TestAPlayerWhoDoesNotExistIsNotFound(t *testing.T) {
+	srv, _ := newTestServer(t, "", time.Now())
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/api/players/nobody", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// getJSON drives one endpoint and decodes its response.
+func getJSON(t *testing.T, srv *Server, path string, into any) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: status %d: %s", path, rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), into); err != nil {
+		t.Fatalf("%s: decode: %v", path, err)
+	}
+}
+
+// TestAConsoleThatHasNeverReportedDoesNotLookLikeOneThatReportedOffline.
+//
+// The stored state column defaults to OFFLINE while reported_at stays NULL, so a
+// freshly registered account has state=OFFLINE and has never said anything. This
+// page exists to tell those two apart -- claiming a report that never happened is
+// the same conflation that makes a friend list permanently offline.
+//
+// Found by running the dashboard against a real account, not by a test.
+func TestAConsoleThatHasNeverReportedDoesNotLookLikeOneThatReportedOffline(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+
+	addUser(t, store, "fresh", "Fresh")
+	// Request traffic only: registered, polling, never reported.
+	if err := store.TouchPresence(context.Background(), "fresh", now); err != nil {
+		t.Fatalf("touch presence: %v", err)
+	}
+
+	var detail playerDetail
+	getJSON(t, srv, "/api/players/fresh", &detail)
+
+	if detail.State != "ONLINE" {
+		t.Errorf("effective state = %q, want ONLINE from the heartbeat", detail.State)
+	}
+	if detail.ReportedState != "" {
+		t.Errorf("reportedState = %q, but this console has never reported", detail.ReportedState)
+	}
+	if detail.ReportedAt != "" {
+		t.Errorf("reportedAt = %q, but this console has never reported", detail.ReportedAt)
+	}
+	if detail.LastSeenAt == "" {
+		t.Error("lastSeenAt is empty, so there is nothing to explain the ONLINE")
 	}
 }

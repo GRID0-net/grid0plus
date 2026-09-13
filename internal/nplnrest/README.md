@@ -1,74 +1,89 @@
 # internal/nplnrest
 
-Splatoon 3's JSON front end: the ordinary HTTPS/JSON calls the game makes
-to vermillion and penne before it ever opens the NPLN gRPC channel
-`internal/npln` serves.
+NPLN's JSON front end: the hosts Splatoon 3 talks to **before** it opens a gRPC
+channel. This is earlier in the boot sequence than `internal/npln`, and a
+console that cannot get past it never reaches the gateway at all.
 
 | | |
 | --- | --- |
-| Reimplements | `val`/`gw` of [Penne](https://github.com/kinnay/NintendoClients/wiki/Penne-Servers) and [Vermillion](https://github.com/kinnay/NintendoClients/wiki/Vermillion-Server) |
-| Served by | `cmd/npln`, on `npln.rest_listen` -- a second listener in the same process as the gRPC gateway |
+| Reimplements | `gw.hac.lp1.vermillion.srv.nintendo.net`, `val.hac.lp1.penne.srv.nintendo.net`, `fro-N.hac.lp1.penne.srv.nintendo.net` |
+| Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
 | Needs a database | no |
 
-## One handler, told apart by Host
+| Host | What it does |
+| --- | --- |
+| `gw.hac.lp1.vermillion…` | device initialisation, account config |
+| `val.hac.lp1.penne…` | login tickets, and **the frontline FQDN** |
+| `fro-N.hac.lp1.penne…` | a persistent connection the console holds open |
 
-`internal/nintendo/hosts.go` routes every `ServiceNPLNRest` hostname --
-vermillion, penne's `val`, and the whole `fro-N` frontline family -- to the
-**same** nginx upstream, because none of them need the per-host TLS
-interop flags the rest of the stack sometimes does. So `Handler()` is one
-`http.ServeMux`, and the `Host` header is what tells a vermillion request
-from a penne one. `firstFrontlineHost`/`frontlineHosts` read the frontline
-family straight from `hosts.go` rather than naming a `fro-N` host here
-too -- the one-place-hostnames-live rule CLAUDE.md states for the whole
-project, not just the DNS/nginx/certificate generators.
+## Nothing here is confirmed against a capture, and that shapes the whole package
 
-## What is actually confirmed, and what is a placeholder
+The request and response bodies of all three hosts are undocumented. Kinnay's
+wiki names the hosts; no public implementation exists; and the reference server
+this project studied loads its captures at runtime from a directory the operator
+supplies, so its measured bytes are not in it either.
 
-Penne's `val` endpoints (`GET /v1/frontlines`, `POST /v1/login_tickets`)
-are the well-documented half of this package: the wiki gives a full field
-table for both, including the literal `persistent_connection_params_simple`
-values (`wait_sec: 3600`, `ignore_rst: true`, and so on) -- those are
-copied verbatim, not derived.
+CLAUDE.md rule 6 says what to do: implement the most defensible reading, mark
+it, name what a capture would settle. Here the most defensible reading of "we do
+not know what to say" is **to say as little as possible** — a well-formed empty
+answer rather than an invented Nintendo internal — and **to make the capture
+cheap**.
 
-Vermillion's two endpoints are not. The wiki names
-`GET /v1/accounts/config` and `GET /v1/accounts/devices` but documents no
-response fields for either, unlike every one of Penne's. Both answer with
-the most honestly-empty shape this server can claim (`{}`, and
-`{"devices":[]}`) rather than a guessed one — see each handler's own
-`TODO(capture-needed)`. Every other Vermillion endpoint the wiki lists
-(`notify`, `nearness-checks`, `vphym-borrowers`, device replace and so on)
-is left unanswered (404): they are write/action endpoints with real
-side-effect semantics this package is not willing to guess at.
+Hence `Options.RecordDir`, which is `internal/wirelog`. Point it at a directory,
+put a console through one boot, and every request and response lands on disk in
+the order it happened, hexdumped, with credentials redacted. That transcript is
+what turns every `TODO(capture-needed)` in this package into a one-commit
+reconciliation. It is off by default because it writes whatever the console
+sends.
 
-**Whether Splatoon 3's boot sequence needs anything from vermillion at
-all is itself unconfirmed** — see `docs/QUESTIONS.md`. The wiki describes
-vermillion as the *virtual game card* system (device-transfer licensing),
-a general Nintendo Switch feature with nothing Splatoon-specific about it,
-not a Splatoon 3 "device init" step. `internal/nintendo/hosts.go`'s
-existing classification calls it exactly that, from evidence this pass
-could not re-derive. Both readings are recorded; neither is asserted as
-settled.
+```yaml
+npln:
+  rest_record_dir: "/var/lib/switchnet/captures"
+```
 
-## `postLoginTickets` accepts an id it cannot verify
+## Three decisions worth not undoing
 
-The same rule `internal/dauth` and `internal/aauth` already apply to every
-other Nintendo-issued credential (CLAUDE.md's second ground rule): a Penne
-id and password are not something SwitchNet issued, so they are read and
-logged, never checked against anything. What is genuinely unknown is how a
-console gets one in the first place — the wiki marks the two endpoints
-that plausibly create one (`god`'s `POST /v1/immigrate` and
-`POST /v1/penne_ids`) with an unconfirmed HTTP method, and `god` is not
-served by this package at all (`hosts.go` still classifies it
-`ServiceStubs`).
+**An unknown host is answered, not refused.** A console that gets a transport
+error decides the network is broken, and that surfaces somewhere unrelated to
+the request that failed. The same reasoning `internal/stubs` gives.
 
-## Frontline is held open, not answered
+**The frontline connection sends nothing.** Not as an omission — as the answer.
+The frame format is unknown; the reference implementation logs these frames as
+opaque hex, so not even it knows what they mean. A console receiving nothing is
+a console waiting. A console receiving a malformed frame is one that has decided
+the server is broken. Silence is the only state that is certainly valid.
 
-`fro-N.hac.lp1.penne.srv.nintendo.net` is the long-lived connection
-`hosts.go`'s own comment already establishes, from a real error-code
-capture, that closing reads as a failure to the console
-(`2307-2103` on Splatoon 2, `2321-*` on Splatoon 3). Nothing publicly
-documents what it carries once open — not even whether it is a plain long
-HTTP response, a WebSocket upgrade, or something else. `serveFrontline`
-does the one thing confirmed safe: accept the connection and hold it open
-until the client goes away, rather than closing it or inventing a message
-format to send down it.
+The headers *are* flushed immediately, because a response that has not started
+is indistinguishable from a server that is not there.
+
+**And it is never closed from this side.** Closing is an error on the console —
+`2307-2103` on Splatoon 2, `2321-*` on Splatoon 3 — not a clean end. That is
+also why `cmd/npln` serves this listener with no read or write timeout, through
+`service.Serve` rather than `service.ServeHTTP`: the shared thirty-second write
+timeout that suits every other service would sever this one, and the player
+would see the game lose its connection for no reason.
+
+`Frontlines()` reports how many are open. It exists because it answers the first
+question anybody asks when Splatoon 3 will not connect: *did the console get
+that far?*
+
+## The frontline FQDN is the one value that must be right
+
+`penne` tells the console where to open its persistent connection. Two failure
+modes, both quiet:
+
+- **A field name the console cannot find** leaves it with no frontline at all.
+  The FQDN therefore goes out under several plausible spellings at once — extra
+  keys in a JSON object cost nothing, and a parser that wants none of them is no
+  worse off than with an empty object. This collapses to one field the moment a
+  capture shows which.
+- **A hostname SwitchNet does not redirect** sends that connection to real
+  Nintendo, where it *succeeds*. Nothing fails on this side, and the game then
+  misbehaves in a way that looks like SwitchNet's fault while its traffic goes
+  somewhere this deployment promises it will not. `New` refuses to start rather
+  than allow it, checking `npln.frontline_host` against
+  `internal/nintendo.Resolve`.
+
+`fro-N` is a family, not one host, and which member is named is the server's
+choice — `hosts.go` covers `fro-1` through `fro-4` in the certificate SANs for
+exactly that reason.

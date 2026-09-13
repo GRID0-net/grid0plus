@@ -200,10 +200,21 @@ clean-data:
 logs:
 	docker compose logs -f
 
+## fest-build: build a Splatfest's packs, seed folder and schedule in one step
+.PHONY: fest-build
+fest-build:
+	@test -n "$(ASSETS)" || { echo "usage: make fest-build ASSETS=./fest-assets OUT=./dev/seed"; exit 2; }
+	go run ./cmd/switchnetctl fest build -assets "$(ASSETS)" -out "$(OUT:=./dev/seed)"
+
 ## seed: create dev accounts, friendships and presence through the real API
 .PHONY: seed
 seed:
 	scripts/seed-dev-data.sh
+
+## seed-phase2: drive the phase 2 game server end to end (needs `make up` first)
+.PHONY: seed-phase2
+seed-phase2:
+	scripts/seed-phase2.sh
 
 ## capture: capture the real BAAS friends API from a PC (see docs/PACKET_CAPTURE.md)
 .PHONY: capture

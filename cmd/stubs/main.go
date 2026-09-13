@@ -23,11 +23,13 @@ func main() {
 	}
 	log = service.Logger(cfg.Log, "stubs")
 
-	handler := stubs.New(stubs.Config{
-		LogBodies: cfg.Stubs.LogBodies,
-		BCATProbe: cfg.Stubs.BCATProbe,
+	handler, err := stubs.New(stubs.Config{
+		LogBodies:     cfg.Stubs.LogBodies,
+		BCATRecordDir: cfg.Stubs.BCATRecordDir,
 	}, log)
-	stubs.LogBCATProbeState(log, cfg.Stubs.BCATProbe)
+	if err != nil {
+		service.Fatal(log, "build handler", err)
+	}
 
 	ctx, cancel := service.SignalContext()
 	defer cancel()

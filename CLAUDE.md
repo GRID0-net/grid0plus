@@ -19,7 +19,7 @@ Three phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | accounts + the stock friends list | code complete, **not yet verified on hardware** |
-| 2 | NPLN game server for Splatoon 3, and a dashboard | in progress — gateway, matchmaking, dashboard, `gamesync`, the JSON front end and most `toyohr` services are built; see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) and [`TODO.md`](TODO.md) for what's left |
+| 2 | NPLN game server for Splatoon 3, and a dashboard | code complete, **not yet verified on hardware** — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
 | 3 | eShop, served from local NSP dumps | not started |
 
 **Phase 1 has not been confirmed working on a real console.** Until it has, treat
@@ -147,9 +147,16 @@ Three details, each of which was a bug at some point:
 
 **All services must share one `keys.dir`.** `aauth` verifies `dauth`'s device
 tokens; `baas` verifies both. Different directories do not error — every request
-is rejected with "device token expired". Key generation uses `O_EXCL` so five
-services starting at once converge on one key; do not replace it with
-`os.WriteFile`.
+is rejected with "device token expired". Key generation writes a temporary file
+and `os.Link`s it into place so that five services starting at once converge on
+one key; do not replace it with `os.WriteFile`, and do not "simplify" it back to
+an `O_EXCL` create onto the final path.
+
+That last one is not hypothetical: it *was* an `O_EXCL` create, and it published
+the filename before the contents. The loser of the race saw `EEXIST`, read the
+file, and found it empty — "no PEM block" from a directory that visibly holds a
+key. RSA-2048 generation is slow enough to hide it; ES256 generation is fast
+enough that it showed up under `-race` within a handful of runs.
 
 **`nncs1` and `nncs2` must be different IP addresses.** Pia probes them as two
 servers and one NAT-check message type must be answered from a different address.

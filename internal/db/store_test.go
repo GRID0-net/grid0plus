@@ -47,7 +47,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts, npln_matches RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -1301,9 +1301,6 @@ func testFests(t *testing.T, s Store) {
 	}
 }
 
-// testCoopShifts exercises the coop shift store the same way testFests
-// exercises fests -- same ordering reasoning: ListCoopShifts backs
-// SelectCoopSchedules, and a map range in the in-memory store is random.
 func testCoopShifts(t *testing.T, s Store) {
 	ctx := t.Context()
 
@@ -1428,79 +1425,97 @@ func testCoopShifts(t *testing.T, s Store) {
 	}
 }
 
+// testFestEntries exercises the Splatfest vote store against both
+// implementations.
+//
+// The two properties that matter are the ones a divergence would corrupt a
+// result with: one row per player per fest, and votes not outliving the fest
+// they belong to.
 func testFestEntries(t *testing.T, s Store) {
 	ctx := t.Context()
-	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
 
-	alice := makeUser(t, s, "Alice")
-	bob := makeUser(t, s, "Bob")
+	// A real fest and real users: PostgreSQL has foreign keys to both, and the
+	// in-memory store does not -- which is exactly the kind of difference this
+	// contract exists to keep from mattering.
+	fest := Fest{
+		ID: "NXTD-00050", Resource: "nxtd-00050-fes",
+		Revision: "2222222222222222222222222222222222222222",
+		StartAt:  time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC),
+		Regions:  []string{"EU"}, Enabled: true,
+	}
+	if err := s.UpsertFest(ctx, fest); err != nil {
+		t.Fatalf("upsert fest: %v", err)
+	}
+	alice := makeUser(t, s, "alice")
+	bob := makeUser(t, s, "bob")
 
-	entry := FestEntry{
-		FestID: "NXTD-00042", UserID: alice.ID,
-		FestTeam: "wa", FestRegion: "JP", CreatedAt: now,
-	}
-	if err := s.CreateFestEntry(ctx, entry); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	got, err := s.GetFestEntry(ctx, "NXTD-00042", alice.ID)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got.FestTeam != "wa" || got.FestRegion != "JP" {
-		t.Errorf("round-tripped %+v, want team wa / region JP", got)
-	}
-
-	// A team choice is permanent: a second CreateFestEntry for the same
-	// fest/account conflicts rather than overwriting the first, even with a
-	// different team.
-	if err := s.CreateFestEntry(ctx, FestEntry{
-		FestID: "NXTD-00042", UserID: alice.ID, FestTeam: "wb", FestRegion: "JP", CreatedAt: now,
-	}); !errors.Is(err, ErrConflict) {
-		t.Errorf("re-entering the same fest returned %v, want ErrConflict", err)
-	}
-	still, err := s.GetFestEntry(ctx, "NXTD-00042", alice.ID)
-	if err != nil {
-		t.Fatalf("get after conflicting create: %v", err)
-	}
-	if still.FestTeam != "wa" {
-		t.Errorf("team changed to %q after a rejected re-entry, want it to stay wa", still.FestTeam)
-	}
-
-	// A different account entering the same fest is unaffected.
-	if err := s.CreateFestEntry(ctx, FestEntry{
-		FestID: "NXTD-00042", UserID: bob.ID, FestTeam: "wb", FestRegion: "JP", CreatedAt: now.Add(time.Minute),
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: alice.ID, Team: "alpha", Region: "EU",
 	}); err != nil {
-		t.Fatalf("create for a second account: %v", err)
+		t.Fatalf("upsert entry: %v", err)
 	}
-
-	list, err := s.ListFestEntries(ctx, "NXTD-00042")
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(list) != 2 {
-		t.Fatalf("got %d entries, want 2", len(list))
-	}
-	if list[0].UserID != alice.ID || list[1].UserID != bob.ID {
-		t.Errorf("list order = [%s %s], want alice's earlier entry first", list[0].UserID, list[1].UserID)
-	}
-
-	// The same account entering a DIFFERENT fest is a separate entry.
-	if err := s.CreateFestEntry(ctx, FestEntry{
-		FestID: "NXTD-00043", UserID: alice.ID, FestTeam: "wc", FestRegion: "US", CreatedAt: now,
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: bob.ID, Team: "bravo", Region: "EU",
 	}); err != nil {
-		t.Fatalf("create for a second fest: %v", err)
-	}
-	if list, err = s.ListFestEntries(ctx, "NXTD-00042"); err != nil || len(list) != 2 {
-		t.Errorf("entering a different fest changed NXTD-00042's list: %v, err %v", list, err)
+		t.Fatalf("upsert entry: %v", err)
 	}
 
-	if _, err := s.GetFestEntry(ctx, "NXTD-00042", "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("missing entry returned %v, want ErrNotFound", err)
+	got, err := s.GetFestEntry(ctx, fest.ID, alice.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if got.Team != "alpha" || got.Region != "EU" {
+		t.Errorf("entry = %+v, want alpha/EU", got)
+	}
+	if got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
+		t.Error("timestamps were not set")
 	}
 
-	if list, err := s.ListFestEntries(ctx, "NXTD-99999"); err != nil || len(list) != 0 {
-		t.Errorf("a fest with no entries returned %v (err %v), want an empty list", list, err)
+	// Changing team replaces the row. Two rows for one player would count them
+	// twice in the vote, and the tally is the whole point of this table.
+	if err := s.UpsertFestEntry(ctx, FestEntry{
+		FestID: fest.ID, UserID: alice.ID, Team: "charlie", Region: "EU",
+	}); err != nil {
+		t.Fatalf("change team: %v", err)
+	}
+	entries, err := s.ListFestEntries(ctx, fest.ID)
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2 -- changing team added a row", len(entries))
+	}
+	after, err := s.GetFestEntry(ctx, fest.ID, alice.ID)
+	if err != nil {
+		t.Fatalf("get entry: %v", err)
+	}
+	if after.Team != "charlie" {
+		t.Errorf("team = %q, want charlie", after.Team)
+	}
+	if !after.CreatedAt.Equal(got.CreatedAt) {
+		t.Errorf("created_at moved on update: %s -> %s", got.CreatedAt, after.CreatedAt)
+	}
+
+	if _, err := s.GetFestEntry(ctx, fest.ID, "nobody"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a player who never voted returned %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListFestEntries(ctx, "NXTD-99999"); err != nil {
+		t.Errorf("listing a fest with no entries errored: %v", err)
+	} else if len(list) != 0 {
+		t.Errorf("a fest that does not exist has %d entries", len(list))
+	}
+
+	// Deleting the fest takes its votes with it. Without that, recreating the
+	// same fest id inherits the old vote -- and PostgreSQL does it through ON
+	// DELETE CASCADE while the in-memory store has to do it by hand, which is
+	// precisely the divergence this contract catches.
+	if err := s.DeleteFest(ctx, fest.ID); err != nil {
+		t.Fatalf("delete fest: %v", err)
+	}
+	if list, err := s.ListFestEntries(ctx, fest.ID); err != nil {
+		t.Fatalf("list entries: %v", err)
+	} else if len(list) != 0 {
+		t.Errorf("%d votes outlived the fest they belonged to", len(list))
 	}
 }
 

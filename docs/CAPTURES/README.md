@@ -442,22 +442,18 @@ this version deliberately names no number to keep stale).
   console reads that as "the fest has not concluded yet" (leaving it
   running, the same as before this RPC existed) or as a valid but empty
   outcome is unconfirmed either way.
-- **Whether Gamesync is reached through the tenant channel or a separate
-  port** (`internal/gamesync/README.md`): `gamesync.npln.nintendo.net` is
-  classified `ServiceNPLN` (grouped with the tenant host) in
-  `internal/nintendo/hosts.go`, but it is the only NPLN hostname that does
-  not end in `srv.nintendo.net` -- the only thing that reads as a
-  deliberate signal, and consistent with more than one explanation. See
-  `docs/QUESTIONS.md`.
+- ~~**Whether Gamesync is reached through the tenant channel or a separate
+  port**~~ — resolved: its own port. `gamesync.npln.nintendo.net` not ending
+  in `srv.nintendo.net`, unlike every other NPLN host, turned out to be
+  exactly the deliberate signal it looked like: `internal/nintendo/hosts.go`
+  classifies it `ServiceGamesync`, a distinct service on its own port (7575),
+  and `internal/gamesync` is a complete, self-contained gRPC service rather
+  than one registered on `internal/npln`'s gateway. See `docs/QUESTIONS.md`.
 - **`FieldTransform`'s `LoadGlobalValue`/`StoreGlobalValue`/
-  `ClearGlobalValue`** (`internal/gamesyncstore/store.go`, `applyTransform`):
-  no Firestore equivalent and no public documentation of what a gamesync
-  "global value" is scoped to, or what loading one that was never stored
-  should return. Answered as a no-op null result.
-- **`DefermentOperation`** (`internal/gamesync/service.go`,
-  `logDeferments`): accepted on `WriteDocuments` and `CommitTransaction`,
-  logged, and never executed -- nothing found documents what a "deferment"
-  defers, or until when.
+  `ClearGlobalValue`, and `DefermentOperation`** (`internal/gamesync/
+  gamesync.go`): no Firestore equivalent and no public documentation of what
+  a gamesync "global value" is scoped to, what loading one that was never
+  stored should return, or what a "deferment" defers or until when.
 - **`Round`'s fields** (`proto/gamesync/v1/resources.pb.go`): named `Unk1`
   through `Unk4` in this project's own proto reversal, still uninterpreted.
   `CreateRound` no longer needs a capture to be safe, though: it echoes back
@@ -566,8 +562,10 @@ mitmproxy, and it does need the console.
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
 IPS patch generator that disables TLS verification *inside Splatoon 3
-specifically* — useful because the game verifies on top of the system, and it is
-narrower than the system-wide patch.
+specifically* — narrower than the system-wide patch, and what
+[`switch/README.md` part 3](../../switch/README.md#part-3-splatoon-3-pins-its-own-certificates)
+documents. Regenerate it after every title update: it is gated on the game
+version and stops applying silently.
 
 ## Phase 3 — the eShop
 

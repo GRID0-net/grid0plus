@@ -1040,6 +1040,59 @@ func (p *Postgres) DeleteFest(ctx context.Context, id string) error {
 	return mapErr(err)
 }
 
+// ---- splatfest entries ---------------------------------------------------
+
+const festEntryColumns = `fest_id, user_id, team, region, created_at, updated_at`
+
+func (p *Postgres) UpsertFestEntry(ctx context.Context, e FestEntry) error {
+	_, err := p.pool.Exec(ctx,
+		`INSERT INTO npln_fest_entries (fest_id, user_id, team, region)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (fest_id, user_id) DO UPDATE SET
+		     team       = EXCLUDED.team,
+		     region     = EXCLUDED.region,
+		     updated_at = now()`,
+		e.FestID, e.UserID, e.Team, e.Region)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error) {
+	return scanFestEntry(p.pool.QueryRow(ctx,
+		`SELECT `+festEntryColumns+` FROM npln_fest_entries
+		 WHERE fest_id = $1 AND user_id = $2`, festID, userID))
+}
+
+func (p *Postgres) ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error) {
+	// Oldest first, user id as the tiebreak: the in-memory store orders the same
+	// way and the contract test compares them.
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+festEntryColumns+` FROM npln_fest_entries
+		 WHERE fest_id = $1 ORDER BY created_at, user_id`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []FestEntry
+	for rows.Next() {
+		e, err := scanFestEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func scanFestEntry(row interface{ Scan(...any) error }) (FestEntry, error) {
+	var e FestEntry
+	err := row.Scan(&e.FestID, &e.UserID, &e.Team, &e.Region, &e.CreatedAt, &e.UpdatedAt)
+	if err != nil {
+		return FestEntry{}, mapErr(err)
+	}
+	return e, nil
+}
+
 func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 	var f Fest
 	err := row.Scan(&f.ID, &f.Resource, &f.Revision, &f.StartAt,
@@ -1048,51 +1101,6 @@ func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 		return Fest{}, mapErr(err)
 	}
 	return f, nil
-}
-
-// ---- fest entries -----------------------------------------------------------
-
-const festEntryColumns = `fest_id, user_id, fest_team, fest_region, created_at`
-
-func (p *Postgres) CreateFestEntry(ctx context.Context, e FestEntry) error {
-	// No ON CONFLICT clause, unlike CreateMatch: a team choice is permanent,
-	// so a second attempt for the same fest/account must surface as
-	// ErrConflict rather than be silently absorbed.
-	_, err := p.pool.Exec(ctx,
-		`INSERT INTO npln_fest_entries (`+festEntryColumns+`) VALUES ($1, $2, $3, $4, $5)`,
-		e.FestID, e.UserID, e.FestTeam, e.FestRegion, e.CreatedAt)
-	return mapErr(err)
-}
-
-func (p *Postgres) GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error) {
-	var e FestEntry
-	err := p.pool.QueryRow(ctx,
-		`SELECT `+festEntryColumns+` FROM npln_fest_entries WHERE fest_id = $1 AND user_id = $2`,
-		festID, userID,
-	).Scan(&e.FestID, &e.UserID, &e.FestTeam, &e.FestRegion, &e.CreatedAt)
-	if err != nil {
-		return FestEntry{}, mapErr(err)
-	}
-	return e, nil
-}
-
-func (p *Postgres) ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error) {
-	rows, err := p.pool.Query(ctx,
-		`SELECT `+festEntryColumns+` FROM npln_fest_entries WHERE fest_id = $1 ORDER BY created_at`, festID)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	defer rows.Close()
-
-	var out []FestEntry
-	for rows.Next() {
-		var e FestEntry
-		if err := rows.Scan(&e.FestID, &e.UserID, &e.FestTeam, &e.FestRegion, &e.CreatedAt); err != nil {
-			return nil, mapErr(err)
-		}
-		out = append(out, e)
-	}
-	return out, mapErr(rows.Err())
 }
 
 // ---- Salmon Run / Big Run schedule ---------------------------------------

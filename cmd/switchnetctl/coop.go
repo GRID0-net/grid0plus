@@ -86,7 +86,7 @@ func coopSchedule(cfg config.Config, args []string) {
 	}
 	defer func() { _ = store.Close() }()
 
-	svc := toyohr.NewService(store, slog.Default(), cfg.NPLN.Tenant, time.Now)
+	svc := toyohr.NewService(toyohr.Options{Store: store, Log: slog.Default(), Tenant: cfg.NPLN.Tenant, Now: time.Now})
 	if err := svc.SaveCoopShift(ctx, shift); err != nil {
 		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
 		os.Exit(1)
@@ -145,7 +145,7 @@ func coopGenerate(cfg config.Config, args []string) {
 	}
 	defer func() { _ = store.Close() }()
 
-	svc := toyohr.NewService(store, slog.Default(), cfg.NPLN.Tenant, time.Now)
+	svc := toyohr.NewService(toyohr.Options{Store: store, Log: slog.Default(), Tenant: cfg.NPLN.Tenant, Now: time.Now})
 	created, skipped, err := svc.GenerateAndSaveCoopShifts(ctx, from, *count, *duration, rng)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
@@ -179,7 +179,7 @@ func coopList(cfg config.Config, args []string) {
 	}
 	defer func() { _ = store.Close() }()
 
-	svc := toyohr.NewService(store, slog.Default(), cfg.NPLN.Tenant, time.Now)
+	svc := toyohr.NewService(toyohr.Options{Store: store, Log: slog.Default(), Tenant: cfg.NPLN.Tenant, Now: time.Now})
 	shifts, err := svc.ListCoopShiftsForOperator(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
@@ -214,7 +214,7 @@ func coopDelete(cfg config.Config, args []string) {
 	}
 	defer func() { _ = store.Close() }()
 
-	svc := toyohr.NewService(store, slog.Default(), cfg.NPLN.Tenant, time.Now)
+	svc := toyohr.NewService(toyohr.Options{Store: store, Log: slog.Default(), Tenant: cfg.NPLN.Tenant, Now: time.Now})
 	if err := svc.DeleteCoopShift(ctx, id); err != nil {
 		fmt.Fprintf(os.Stderr, "switchnetctl: %v\n", err)
 		os.Exit(1)

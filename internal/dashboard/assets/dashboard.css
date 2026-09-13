@@ -834,3 +834,12 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
 .debug-cell-bool input { accent-color: var(--ink-a); }
 
 .debug-table-grid tbody tr.just-changed td { animation: flash 1.1s ease-out; }
+
+/* The delivery cache's revision, which is 40 hex characters and unreadable in
+   the body face. */
+.meta.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+  word-break: break-all;
+}

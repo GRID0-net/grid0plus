@@ -924,23 +924,33 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.fests, id)
+	// The entries go with it, matching the ON DELETE CASCADE on the table.
+	// Without this a recreated fest of the same id would inherit the old votes.
+	delete(m.festEntries, id)
 	return nil
 }
 
 // ---- fest entries -----------------------------------------------------------
 
-func (m *Memory) CreateFestEntry(_ context.Context, e FestEntry) error {
+// UpsertFestEntry records or changes a player's team choice. An upsert, not
+// an insert: internal/toyohr allows changing team up until the fest opens,
+// which is a second call with the same fest/user pair.
+func (m *Memory) UpsertFestEntry(_ context.Context, e FestEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if byUser, ok := m.festEntries[e.FestID]; ok {
-		if _, ok := byUser[e.UserID]; ok {
-			return fmt.Errorf("%w: fest entry %s/%s", ErrConflict, e.FestID, e.UserID)
-		}
-	} else {
-		m.festEntries[e.FestID] = map[string]FestEntry{}
+	byUser, ok := m.festEntries[e.FestID]
+	if !ok {
+		byUser = map[string]FestEntry{}
+		m.festEntries[e.FestID] = byUser
 	}
-	m.festEntries[e.FestID][e.UserID] = e
+	if existing, ok := byUser[e.UserID]; ok {
+		e.CreatedAt = existing.CreatedAt
+	} else if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
+	e.UpdatedAt = time.Now().UTC()
+	byUser[e.UserID] = e
 	return nil
 }
 

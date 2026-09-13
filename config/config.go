@@ -34,6 +34,7 @@ type Config struct {
 	BAAS      BAAS      `yaml:"baas"`
 	Stubs     Stubs     `yaml:"stubs"`
 	NPLN      NPLN      `yaml:"npln"`
+	BCAT      BCAT      `yaml:"bcat"`
 	Dashboard Dashboard `yaml:"dashboard"`
 	NATCheck  NATCheck  `yaml:"natcheck"`
 
@@ -258,6 +259,14 @@ type NPLN struct {
 	// RestListen is the JSON front end: vermillion, penne, and the persistent
 	// frontline connection.
 	RestListen string `yaml:"rest_listen"`
+	// GamesyncListen is where the document/watch service listens INTERNALLY.
+	//
+	// Not 7575. The console reaches gamesync on 7575, and that port belongs to
+	// the nginx edge -- which terminates TLS there and grpc_passes to this
+	// address. Binding the backend to 7575 as well means nginx cannot start,
+	// and the two listeners racing for it is a much worse first symptom than a
+	// port that reads oddly in config.
+	GamesyncListen string `yaml:"gamesync_listen"`
 
 	// Tenant is the NPLN tenant id. Splatoon 3's is dce9377b.
 	Tenant string `yaml:"tenant"`
@@ -268,19 +277,62 @@ type NPLN struct {
 	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds.
 	AccessTokenTTL int `yaml:"access_token_ttl"`
 
-	// ICEServers are the STUN/TURN servers handed to a console for peer-to-peer
-	// connectivity. Empty means none are offered.
+	// PlayersPerMatch is how many players a match takes for any mode
+	// mode_players does not name.
 	//
-	// Splatoon 3 uses ICE rather than the Pia NAT-check pair, so internal/natcheck
-	// is not involved in this title and these addresses are what let two consoles
-	// behind different NATs reach each other. They must be reachable FROM THE
-	// CONSOLE, not merely from the server -- a server-side address here produces
-	// "the lobby fills but the match never starts", which is indistinguishable
-	// from a matchmaking bug when read from this side.
+	// Two, not eight. This is a server for a handful of consoles, and waiting
+	// for a faithful 4v4 means never playing.
+	PlayersPerMatch int `yaml:"players_per_match"`
+
+	// ModePlayers overrides players_per_match for one matchmaking mode.
 	//
-	// Peers on one LAN find each other without any of this, which is why an empty
-	// list is a warning rather than an error.
-	ICEServers []ICEServer `yaml:"ice_servers"`
+	// Keyed on the mode name the game sends in the ticket's matchmaking_config,
+	// which nothing public documents — so this is empty by default and every
+	// unknown mode is logged, and that log is how an operator learns the names
+	// to put here. Turf War and Anarchy are 4v4 (eight), Salmon Run is four.
+	ModePlayers map[string]int `yaml:"mode_players"`
+
+	// TicketTTL is how long a matchmaking ticket waits before giving up, in
+	// seconds. A ticket that never resolves shows the player a spinner with no
+	// way out.
+	TicketTTL int `yaml:"ticket_ttl"`
+
+	// IceServers are the STUN and TURN servers handed to a console for NAT
+	// traversal. Splatoon 3 uses ICE, not the Pia NAT-check pair, so
+	// internal/natcheck is not involved in this title.
+	//
+	// **The addresses must be reachable FROM THE CONSOLE**, not merely from
+	// this server. Wrong ones produce "the lobby fills but the match never
+	// starts", which is indistinguishable from a matchmaking bug when read from
+	// the server side. Empty is legitimate: peers on one LAN reach each other
+	// without ICE, and `switchnetctl check` warns rather than refuses.
+	IceServers []IceServer `yaml:"ice_servers"`
+
+	// FrontlineHost is the fro-N hostname the console is told to open its
+	// persistent connection to.
+	//
+	// It MUST be a hostname internal/nintendo/hosts.go redirects. Naming one it
+	// does not sends the console's frontline connection to real Nintendo, where
+	// it succeeds — and then fails in a way that looks like SwitchNet's fault.
+	// internal/nplnrest refuses to start rather than allow it.
+	FrontlineHost string `yaml:"frontline_host"`
+
+	// Rotation is the stage and mode rotation the Schedule service serves.
+	//
+	// Empty is legitimate: the schedule handlers then answer with no schedules,
+	// which is what the game sees between seasons on a real server, and the
+	// absence is logged once per kind.
+	Rotation Rotation `yaml:"rotation"`
+
+	// RestRecordDir, when set, is a directory the JSON front end writes every
+	// request and response to.
+	//
+	// This is how the undocumented vermillion, penne and frontline shapes get
+	// settled: point it somewhere, put a console through one boot, and the
+	// transcript is on disk. Off by default because it writes whatever the
+	// console sends, headers included — credentials are redacted, bodies are
+	// not.
+	RestRecordDir string `yaml:"rest_record_dir"`
 
 	// AdminListen is the operator API for the matchmaking controls: the queue,
 	// force-start, mode sizes, cancelling a ticket. The dashboard is a separate
@@ -301,24 +353,79 @@ type NPLN struct {
 	AdminToken string `yaml:"admin_token"`
 }
 
-// ICEServer is one STUN or TURN server offered to a console.
-type ICEServer struct {
+// Rotation is the stage and mode rotation Splatoon 3's lobby shows.
+//
+// **The identifiers are Splatoon 3's own internal numbering, and nothing public
+// documents them** — so they are operator input rather than a table in
+// SwitchNet's source. Given as strings so that a typo is reported with the
+// offending value: stage 0 is a plausible valid id, so a zero produced by a
+// failed parse would be indistinguishable from an intended one.
+//
+// The mechanics around them — two-hour slot alignment, windowing, ordering, the
+// etag — are SwitchNet's and live in internal/toyohr.
+type Rotation struct {
+	// RegularStages are the stage ids Turf War rotates through, in order.
+	RegularStages []string `yaml:"regular_stages"`
+	// BankaraRules are the rule ids Anarchy rotates through, in order.
+	BankaraRules []string `yaml:"bankara_rules"`
+	// BankaraStages are the stage ids Anarchy rotates through, in order.
+	BankaraStages []string `yaml:"bankara_stages"`
+	// StagesPerSlot is how many stages one slot offers. Zero means two, which
+	// is what a real rotation offers.
+	StagesPerSlot int `yaml:"stages_per_slot"`
+}
+
+// IceServer is one STUN or TURN server offered to a console.
+type IceServer struct {
 	// Kind is "stun" or "turn".
 	Kind string `yaml:"kind"`
-	// Host is the address the CONSOLE must be able to reach.
+	// Host is an address or hostname the CONSOLE can reach.
 	Host string `yaml:"host"`
 	Port int    `yaml:"port"`
-	// Protocol is "udp", "tcp" or "tls". Defaults to udp.
+	// Protocol is "udp", "tcp" or "tls". Empty means udp.
 	Protocol string `yaml:"protocol"`
-
 	// Username and Password are TURN's long-term credentials. Ignored for stun.
-	//
-	// A static credential rather than coturn's time-limited HMAC scheme: this is
-	// one operator's server for consoles they own, and the shared-secret variant
-	// would need the console to derive the same username, which nothing here can
-	// make it do.
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
+}
+
+// BCAT configures Splatfest content packs.
+type BCAT struct {
+	// Converter is a command that turns a source asset into a game format.
+	//
+	// SwitchNet does not convert textures itself, and that is deliberate: a
+	// BFRES texture in the wrong compression or the wrong Tegra swizzle LOADS
+	// and renders as garbage, on a console, with nothing on the server to look
+	// at. Switch Toolbox and the BinaryTextureLibrary family already do it
+	// correctly. See internal/bcat/convert.go for the contract this command
+	// has to meet.
+	//
+	// Empty means there is no converter, and a source asset is then a build
+	// error rather than a file packed as-is.
+	Converter string `yaml:"converter"`
+
+	// ConverterTimeout bounds one conversion, in seconds. A converter that
+	// hangs would otherwise hang the build — and on the dashboard, a request
+	// that never answers.
+	ConverterTimeout int `yaml:"converter_timeout"`
+
+	// SeedDir is where `switchnetctl fest build` writes its seed folders, and
+	// where the dashboard serves them from for the console-side installer.
+	//
+	// Empty means the seed endpoints answer 404. Doing the install by hand with
+	// JKSV works and does not scale past the second fest, which is why the
+	// installer exists -- see switch/bcat-installer/.
+	SeedDir string `yaml:"seed_dir"`
+
+	// SubstituteFestID rewrites {FEST} in an asset's in-pack path to the fest's
+	// own id.
+	//
+	// A real custom pack had every internal file named for the fest it was
+	// DERIVED from while announcing a different one, and nobody has established
+	// what the game keys on. On is the consistent choice; off keeps whatever
+	// names the source files carry. Either way the decision lives in one place
+	// — see internal/bcat.Naming and docs/QUESTIONS.md.
+	SubstituteFestID bool `yaml:"substitute_fest_id"`
 }
 
 // Dashboard configures the operator's web view.
@@ -352,19 +459,10 @@ type Stubs struct {
 	// what an unimplemented endpoint is being asked for.
 	LogBodies bool `yaml:"log_bodies"`
 
-	// BCATProbe answers the bcat-* hosts, logging every request in full, rather
-	// than leaving them null-routed on the console.
-	//
-	// An EXPERIMENT, not a service. SwitchNet cannot serve BCAT: the `list`
-	// response body is undocumented, and whether the console verifies the
-	// container's RSA signature is unknown. This establishes only whether the
-	// console reaches us at all and what it asks for, which is the first record
-	// anyone would have of either. See TODO.md 2.4.
-	//
-	// Off by default and it should stay that way outside the experiment:
-	// answering 200-empty to a console expecting content turns an immediate,
-	// legible failure into a hang.
-	BCATProbe bool `yaml:"bcat_probe"`
+	// BCATRecordDir is where the BCAT probe writes a transcript of what the
+	// console asked BCAT for. Empty means it only logs, and writes no
+	// transcript to disk. See internal/bcat.Probe.
+	BCATRecordDir string `yaml:"bcat_record_dir"`
 }
 
 // NATCheck configures the UDP NAT-check responder.
@@ -461,10 +559,22 @@ func Default() Config {
 		NPLN: NPLN{
 			Listen:         "127.0.0.1:8085",
 			RestListen:     "127.0.0.1:8086",
+			GamesyncListen: "127.0.0.1:8088",
 			Tenant:         "dce9377b",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
 			AccessTokenTTL: 10800,
+			// Two, so two friends can start a match. See the field comment.
+			PlayersPerMatch: 2,
+			TicketTTL:       180,
+			// fro-3 because that is the member the reference server resolves
+			// the frontline to. Any of fro-1..4 is redirected and carries a
+			// certificate SAN; this one is the least likely to surprise.
+			FrontlineHost: "fro-3.hac.lp1.penne.srv.nintendo.net",
+		},
+		BCAT: BCAT{
+			ConverterTimeout: 120,
+			SubstituteFestID: true,
 		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
@@ -549,6 +659,11 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_BAAS_LOGIN_WINDOW_SECONDS", &c.BAAS.LoginWindowSeconds)
 
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
+	envStr("SWITCHNET_STUBS_BCAT_RECORD_DIR", &c.Stubs.BCATRecordDir)
+
+	envStr("SWITCHNET_BCAT_CONVERTER", &c.BCAT.Converter)
+	envStr("SWITCHNET_BCAT_SEED_DIR", &c.BCAT.SeedDir)
+	envInt("SWITCHNET_BCAT_CONVERTER_TIMEOUT", &c.BCAT.ConverterTimeout)
 
 	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)
 	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)
@@ -560,10 +675,14 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_TENANT", &c.NPLN.Tenant)
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
+	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
+	envStr("SWITCHNET_NPLN_FRONTLINE_HOST", &c.NPLN.FrontlineHost)
+	envStr("SWITCHNET_NPLN_REST_RECORD_DIR", &c.NPLN.RestRecordDir)
+	envInt("SWITCHNET_NPLN_PLAYERS_PER_MATCH", &c.NPLN.PlayersPerMatch)
+	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)
 	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
 	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
-	envBool("SWITCHNET_STUBS_BCAT_PROBE", &c.Stubs.BCATProbe)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
 	envStr("SWITCHNET_NATCHECK_SECONDARY_LISTEN", &c.NATCheck.SecondaryListen)
@@ -668,12 +787,29 @@ func (c Config) Validate() error {
 				"aauth.title_overrides[%s].online_play_policy: %q is invalid", id, o.OnlinePlayPolicy))
 		}
 	}
-	for i, s := range c.NPLN.ICEServers {
+	if c.NPLN.PlayersPerMatch == 1 {
+		// One is not a small match, it is a match that starts the instant
+		// anybody queues and then has nobody to play against.
+		errs = append(errs, errors.New("npln.players_per_match must be at least 2"))
+	}
+	for mode, n := range c.NPLN.ModePlayers {
+		if n < 2 {
+			errs = append(errs, fmt.Errorf(
+				"npln.mode_players[%s] is %d; a match needs at least 2 players", mode, n))
+		}
+	}
+	for i, s := range c.NPLN.IceServers {
 		switch s.Kind {
 		case "stun", "turn":
 		default:
 			errs = append(errs, fmt.Errorf(
 				"npln.ice_servers[%d].kind: %q must be stun or turn", i, s.Kind))
+		}
+		switch s.Protocol {
+		case "", "udp", "tcp", "tls":
+		default:
+			errs = append(errs, fmt.Errorf(
+				"npln.ice_servers[%d].protocol: %q must be udp, tcp or tls", i, s.Protocol))
 		}
 		if s.Host == "" {
 			errs = append(errs, fmt.Errorf("npln.ice_servers[%d].host is required", i))
@@ -681,12 +817,6 @@ func (c Config) Validate() error {
 		if s.Port <= 0 || s.Port > 65535 {
 			errs = append(errs, fmt.Errorf(
 				"npln.ice_servers[%d].port: %d is not a port", i, s.Port))
-		}
-		switch s.Protocol {
-		case "", "udp", "tcp", "tls":
-		default:
-			errs = append(errs, fmt.Errorf(
-				"npln.ice_servers[%d].protocol: %q must be udp, tcp or tls", i, s.Protocol))
 		}
 	}
 

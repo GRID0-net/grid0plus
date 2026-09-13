@@ -29,6 +29,15 @@ const (
 	ServiceNATCheck Service = "natcheck"
 	// ServiceNPLN is the NPLN gRPC gateway (phase 2).
 	ServiceNPLN Service = "npln"
+	// ServiceGamesync is NPLN's document/watch service (phase 2).
+	//
+	// Separate from ServiceNPLN for one reason that matters: the console reaches
+	// it on PORT 7575, not 443. Grouping it with the tenant host would emit one
+	// nginx block on the edge port that grpc_passes both to the gateway --
+	// which answers, wrongly, with a service that does not implement gamesync's
+	// RPCs. That failure looks like the game being unhappy with our gamesync
+	// implementation rather than like a routing mistake.
+	ServiceGamesync Service = "gamesync"
 	// ServiceNPLNRest is NPLN's JSON front end (phase 2): the hosts Splatoon 3
 	// talks to over ordinary HTTPS *before* it opens a gRPC channel.
 	//
@@ -67,6 +76,13 @@ type Host struct {
 	// TLS is true if the console speaks HTTPS to this host, which means nginx
 	// needs a server block and the certificate needs the name in its SANs.
 	TLS bool
+
+	// TLSPort is the port the console connects to, when it is not the edge's.
+	// Zero means network.edge_tls_port.
+	//
+	// Only gamesync needs this today, and it needs it badly: the console reaches
+	// it on 7575, and a server block on 443 would never match.
+	TLSPort int
 
 	// Wildcard is true if Pattern is a DNS-MITM pattern rather than a literal
 	// hostname. Wildcard entries are skipped when generating certificate SANs
@@ -344,9 +360,12 @@ var Hosts = []Host{
 		Comment: "NPLN tenant: Splatoon 3",
 	},
 	{
+		// PORT 7575, not 443 -- the console reaches gamesync directly rather
+		// than through the tenant host. nginx therefore needs its own server
+		// block on that port; see ServiceGamesync.
 		Pattern: "gamesync.npln.nintendo.net",
-		Service: ServiceNPLN, TLS: true,
-		Comment: "NPLN game session host (Splatoon 3 lobby)",
+		Service: ServiceGamesync, TLS: true, TLSPort: 7575,
+		Comment: "NPLN game session host (Splatoon 3 lobby), on port 7575",
 	},
 
 	// ---- Telemetry: null-route ------------------------------------------
@@ -372,8 +391,19 @@ var Hosts = []Host{
 	// deployment's isolation policy (see CLAUDE.md and the
 	// emuMMC-never-talks-to-real-Nintendo rule) -- not a feature gap, since it
 	// is not needed for Phase 1: background content-delivery discovery.
-	// Null-routed rather than stubbed: there is nothing useful a stub
-	// response does for it.
+	//
+	// Null-routed rather than stubbed, and this is CONTINGENT rather than
+	// settled. Null-routing fails immediately, which is the right answer while
+	// SwitchNet cannot answer these usefully -- redirecting to a server that
+	// responds without delivering anything risks turning an immediate failure
+	// into a wait.
+	//
+	// TODO.md §2.4's experiment needs them flipped to ServiceStubs, where
+	// internal/bcat.Probe is already waiting: it logs every request and answers
+	// 200 with an empty body, which is how anybody first learns what the console
+	// asks BCAT for. Flipping them means amending
+	// TestBlackholedHostsAreAccountedFor too -- deliberately, in a commit that
+	// says why. It needs a console, so it is the operator's to run.
 	{
 		Pattern: "bcat-list-lp1.cdn.nintendo.net",
 		Service: ServiceBlackhole,
@@ -534,7 +564,10 @@ func TLSHostnames() []string {
 
 // ProxiedServices are the services that sit behind the nginx TLS edge, in the
 // order their server blocks should be emitted.
-var ProxiedServices = []Service{ServiceDAuth, ServiceAAuth, ServiceBAAS, ServiceNPLNRest, ServiceNPLN, ServiceStubs}
+var ProxiedServices = []Service{
+	ServiceDAuth, ServiceAAuth, ServiceBAAS,
+	ServiceNPLNRest, ServiceNPLN, ServiceGamesync, ServiceStubs,
+}
 
 // Resolution says what a DNS server should do with a query.
 type Resolution int

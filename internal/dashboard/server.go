@@ -46,6 +46,11 @@ type Options struct {
 	// Tenant is the NPLN tenant the fest controls act on.
 	Tenant string
 
+	// SeedDir is where `switchnetctl fest build` writes its seed folders. When
+	// set, the dashboard serves them to the console-side installer -- see
+	// seed.go and switch/bcat-installer/.
+	SeedDir string
+
 	// PresenceTTL and ConsolePresenceTTL apply the exact same rule BAAS does
 	// (internal/presence), so the two never disagree about who is online — a
 	// dashboard that says somebody is playing while their friends see them
@@ -92,6 +97,7 @@ type Server struct {
 	fests *toyohr.Service
 
 	tenant   string
+	seedDir  string
 	presence presence.Resolver
 	token    string
 	now      func() time.Time
@@ -132,11 +138,16 @@ func New(opts Options) (*Server, error) {
 	}
 
 	return &Server{
-		store:  opts.Store,
-		bus:    opts.Bus,
-		log:    opts.Log,
-		fests:  toyohr.NewService(opts.Store, opts.Log, opts.Tenant, opts.Now),
-		tenant: opts.Tenant,
+		store: opts.Store,
+		bus:   opts.Bus,
+		log:   opts.Log,
+		// No CallerID: the dashboard schedules fests and never serves an RPC
+		// through this service, so its player-scoped handlers stay fail-closed.
+		fests: toyohr.NewService(toyohr.Options{
+			Store: opts.Store, Log: opts.Log, Tenant: opts.Tenant, Now: opts.Now,
+		}),
+		tenant:  opts.Tenant,
+		seedDir: opts.SeedDir,
 		presence: presence.Resolver{
 			Store:      opts.Store,
 			ReportTTL:  opts.PresenceTTL,
@@ -164,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/overview", s.guard(s.handleOverview))
 	mux.HandleFunc("GET /api/players", s.guard(s.handlePlayers))
 	mux.HandleFunc("GET /api/players/{id}", s.guard(s.handlePlayerDetail))
+	mux.HandleFunc("GET /api/matches", s.guard(s.handleMatches))
 	mux.HandleFunc("GET /api/fests", s.guard(s.handleFests))
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
@@ -175,7 +187,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/coop-reference", s.guard(s.handleCoopReference))
 	mux.HandleFunc("GET /api/health", s.guard(s.handleHealth))
 	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))
-	mux.HandleFunc("GET /api/matches", s.guard(s.handleMatches))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))
 	mux.HandleFunc("POST /api/matchmaking/tickets/{id}/cancel", s.guard(s.handleCancelTicket))
@@ -190,6 +201,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/debug/tables/{table}", s.guard(s.handleDebugUpdateRow))
 
 	mux.HandleFunc("GET /api/events", s.guard(s.handleEvents))
+
+	// The BCAT delivery cache, for the console-side installer. Behind the same
+	// token as everything else; the installer is configured with it.
+	mux.HandleFunc("GET /api/seed/manifest", s.guard(s.handleSeedManifest))
+	mux.HandleFunc("GET /api/seed/file/{path...}", s.guard(s.handleSeedFile))
 
 	return mux
 }
@@ -456,8 +472,22 @@ type playerDeviceAccount struct {
 // the friends applet do.
 type playerDetail struct {
 	Player
-	CreatedAt      string                `json:"createdAt"`
-	LogoutAt       string                `json:"logoutAt,omitempty"`
+	Country   string `json:"country,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	LogoutAt  string `json:"logoutAt,omitempty"`
+
+	// ReportedState and ReportedAt are what the console itself last said, and
+	// when -- kept apart from the EFFECTIVE state on Player. "Reported
+	// OFFLINE" and "never reported" are different states, and conflating them
+	// is what makes a friend list permanently offline (see CLAUDE.md's
+	// "friends were never online"). Both are absent when the console has
+	// never reported: presence.reported_at is NULL until it does, and filling
+	// ReportedState unconditionally would claim a report that never happened.
+	ReportedState string `json:"reportedState,omitempty"`
+	ReportedAt    string `json:"reportedAt,omitempty"`
+
+	FriendCode string `json:"friendCode,omitempty"`
+
 	Friends        []playerFriend        `json:"friends"`
 	DeviceAccounts []playerDeviceAccount `json:"deviceAccounts"`
 }
@@ -489,6 +519,7 @@ func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	detail := playerDetail{
 		Player:    Player{ID: u.ID, Nickname: name, State: pres.State, AppID: pres.AppID},
+		Country:   u.Country,
 		CreatedAt: u.CreatedAt.UTC().Format(time.RFC3339),
 	}
 	if pres.AppID != "" {
@@ -499,6 +530,26 @@ func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if pres.LogoutAt != nil {
 		detail.LogoutAt = pres.LogoutAt.UTC().Format(time.RFC3339)
+	}
+
+	// The RAW reported state, separate from the effective one above. "Reported
+	// OFFLINE" and "never reported" are different states -- see playerDetail's
+	// doc comment -- and the stored state column defaults to OFFLINE, so
+	// filling ReportedState unconditionally would claim a report that never
+	// happened.
+	if raw, err := s.store.GetPresence(ctx, id); err == nil {
+		if !raw.ReportedAt.IsZero() {
+			detail.ReportedState = raw.State
+			detail.ReportedAt = raw.ReportedAt.UTC().Format(time.RFC3339)
+		}
+	} else if !errors.Is(err, db.ErrNotFound) {
+		s.log.Debug("dashboard: load raw presence", "user", id, "error", err)
+	}
+
+	if code, err := s.store.GetFriendCode(ctx, id); err == nil {
+		detail.FriendCode = code.Code
+	} else if !errors.Is(err, db.ErrNotFound) {
+		s.log.Debug("dashboard: load friend code", "user", id, "error", err)
 	}
 
 	friendships, err := s.store.ListFriends(ctx, id, 500)
@@ -540,15 +591,19 @@ func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		detail.Friends = append(detail.Friends, row)
 	}
-	// Online friends first, then by name -- the same ordering rationale the
-	// players list itself uses: what the operator is looking for is who is
-	// around, not an alphabetised roster.
+	// Favourites first, then online, then by name -- the same ordering
+	// instinct as the players list: what the operator is looking for should
+	// not be buried alphabetically.
 	rank := map[string]int{"PLAYING": 0, "ONLINE": 1, "OFFLINE": 2}
 	sort.SliceStable(detail.Friends, func(i, j int) bool {
-		if ri, rj := rank[detail.Friends[i].State], rank[detail.Friends[j].State]; ri != rj {
-			return ri < rj
+		a, b := detail.Friends[i], detail.Friends[j]
+		if a.Favorite != b.Favorite {
+			return a.Favorite
 		}
-		return strings.ToLower(detail.Friends[i].Nickname) < strings.ToLower(detail.Friends[j].Nickname)
+		if ra, rb := rank[a.State], rank[b.State]; ra != rb {
+			return ra < rb
+		}
+		return strings.ToLower(a.Nickname) < strings.ToLower(b.Nickname)
 	})
 
 	das, err := s.store.ListDeviceAccounts(ctx, id)
@@ -610,7 +665,46 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		"online":  online,
 		"playing": playing,
 		"fest":    live,
+		// Null when the game server is not reporting, NOT zero. A zero reads as
+		// "nobody is queuing", which is a different fact from "cmd/npln is not
+		// running or redis.url is unset" -- and only one of them is worth acting
+		// on. The page renders the two differently.
+		"matchmaking": s.matchmakingGauge(r.Context()),
+		"seed":        s.seedStatus(),
 	})
+}
+
+// matchmakingGauge reads the game server's live queue gauge. Named apart from
+// the Server.matchmaking field (the admin-API client the matchmaking
+// controls panel uses) -- same concept, different purpose.
+//
+// nil when there is no bus, no snapshot, or the last snapshot has gone stale.
+// The dashboard is a separate process from cmd/npln, so this is the seam between
+// them -- and it is a gauge rather than an event because a freshly-loaded page
+// needs the current value, not the next change.
+func (s *Server) matchmakingGauge(ctx context.Context) map[string]any {
+	if s.bus == nil {
+		return nil
+	}
+	stats, ok, err := s.bus.Stats(ctx)
+	if err != nil {
+		// Logged, not surfaced: a cosmetic tile must not take the page down.
+		s.log.Debug("dashboard: read matchmaking stats", "error", err)
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+
+	waiting := 0
+	for _, n := range stats.Matchmaking {
+		waiting += n
+	}
+	return map[string]any{
+		"waiting":  waiting,
+		"byMode":   stats.Matchmaking,
+		"reportAt": stats.At.UTC().Format(time.RFC3339),
+	}
 }
 
 // ---- splatfests -----------------------------------------------------------

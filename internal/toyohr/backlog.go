@@ -2,7 +2,6 @@ package toyohr
 
 import (
 	"context"
-	"strconv"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -118,74 +117,6 @@ func (s replayService) FulfillReservations(
 	_ context.Context, _ *toyohrpb.FulfillReservationsRequest,
 ) (*toyohrpb.FulfillReservationsResponse, error) {
 	return &toyohrpb.FulfillReservationsResponse{Timestamp: timestamppb.New(s.now())}, nil
-}
-
-// ---- nn.npln.toyohr.v1.UserScreening -----------------------------------------
-
-type userScreeningService struct {
-	*Service
-	toyohrpb.UnimplementedUserScreeningServer
-}
-
-// GetViolation reports whether an account has an active screening
-// violation. GetViolationResponse has no fields at all -- its entire
-// content is whether the call succeeds -- so there is nothing to guess at:
-// SwitchNet performs no screening, so no account has ever been found in
-// violation of anything, and NotFound is that answer, not a placeholder.
-func (userScreeningService) GetViolation(
-	context.Context, *toyohrpb.GetViolationRequest,
-) (*toyohrpb.GetViolationResponse, error) {
-	return nil, status.Error(codes.NotFound, "no violation")
-}
-
-// SelectSnapshot returns a stored copy of a piece of user content (a
-// screen name, most likely, given StringValue/Language) for a screener to
-// review. SwitchNet takes no such snapshots, so there is nothing to select.
-func (userScreeningService) SelectSnapshot(
-	context.Context, *toyohrpb.SelectSnapshotRequest,
-) (*toyohrpb.SelectSnapshotResponse, error) {
-	return nil, status.Error(codes.NotFound, "no snapshot")
-}
-
-// CreateReport accepts a player's report and logs it for the operator.
-//
-// This is deliberately the one write in this file that is not left
-// Unimplemented: a report is data the caller is handing over, not data
-// SwitchNet has to have already had, and there is no undocumented shape to
-// get wrong -- every field is passed straight through to the log. What is
-// NOT done is anything that would claim moderation actually happened
-// (banning, hiding content): SwitchNet has no screening system, so a report
-// is retained only as a log line an operator can read, not acted on.
-//
-// TODO(capture-needed): the resource-name shape returned in Name. No
-// capture shows what a real CreateReport response names a new report as;
-// this uses req.Parent + "/reports/<unix-nano timestamp>" as a defensible
-// placeholder, following the same tenants/<t>/... convention the rest of
-// this package uses elsewhere, not a confirmed one. Change: this function.
-func (u userScreeningService) CreateReport(
-	_ context.Context, req *toyohrpb.CreateReportRequest,
-) (*toyohrpb.Report, error) {
-	in := req.GetReport()
-	if in == nil {
-		return nil, status.Error(codes.InvalidArgument, "no report given")
-	}
-
-	now := u.now()
-	out := &toyohrpb.Report{
-		Name:                req.GetParent() + "/reports/" + strconv.FormatInt(now.UnixNano(), 10),
-		Category:            in.GetCategory(),
-		Reason:              in.GetReason(),
-		LanguageCode:        in.GetLanguageCode(),
-		CreateTime:          timestamppb.New(now),
-		ScreeningTarget:     in.GetScreeningTarget(),
-		Weight:              in.GetWeight(),
-		Context:             in.GetContext(),
-		ScreeningTargetType: in.GetScreeningTargetType(),
-	}
-	u.log.Info("toyohr: user screening report received",
-		"category", out.Category, "target", out.ScreeningTarget, "target_type", out.ScreeningTargetType,
-		"reason", out.Reason)
-	return out, nil
 }
 
 // ---- nn.npln.toyohr.v1.GameRecord --------------------------------------------

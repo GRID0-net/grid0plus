@@ -243,14 +243,60 @@ stubs:
   # and what does it ask for -- and the log is the first record anyone would
   # have of either.
   #
-  # It needs BOTH this and a hosts file generated with
-  # 'switchnetctl hosts -bcat-probe', which points the three bcat-* hosts here
-  # instead of null-routing them. Neither does anything alone.
+  # The probe itself is always registered; what gates it is a hosts file
+  # generated with 'switchnetctl hosts -bcat-probe', which points the three
+  # bcat-* hosts here instead of null-routing them. Regenerate without that
+  # flag afterwards: answering 200-with-no-body to a console that expected
+  # content turns an immediate, legible failure into a hang. See TODO.md 2.4.
   #
-  # Turn it back off afterwards: answering 200-with-no-body to a console that
-  # expected content turns an immediate, legible failure into a hang. See
-  # TODO.md 2.4.
-  bcat_probe: false
+  # Where the BCAT probe writes a transcript of what the console asked BCAT for.
+  # Empty means it only logs, and writes no transcript to disk.
+  bcat_record_dir: ""
+
+# ---------------------------------------------------------------------------
+# bcat -- Splatfest content packs (phase 2)
+# ---------------------------------------------------------------------------
+bcat:
+  # A command that turns a source asset into a game format.
+  #
+  # SWITCHNET DOES NOT CONVERT TEXTURES ITSELF, deliberately. A BFRES texture in
+  # the wrong compression or the wrong Tegra swizzle LOADS and renders as
+  # garbage -- on a console, with nothing on the server to look at. Switch
+  # Toolbox and the BinaryTextureLibrary family already do it correctly, and they
+  # exist because it is hard.
+  #
+  # The command is called as:
+  #
+  #     <command> <source> <destination> <kind> <target-extension>
+  #
+  # It must write <destination> and exit zero. A non-zero exit, a missing file or
+  # an empty one all stop the build with the command line that produced them.
+  #
+  # A source asset is named for what it must BECOME, with the source extension
+  # appended: UI/Splashart.bfres.png becomes UI/Splashart.bfres. So the target
+  # format is visible in a directory listing and nothing has to guess it.
+  #
+  # Empty means no converter -- and then a source asset is a BUILD ERROR rather
+  # than a file packed as-is. That refusal is the point: packing a PNG gives a
+  # fest that loads on the console with art the game cannot decode.
+  converter: ""
+
+  # Seconds one conversion may take. A converter that hangs would otherwise hang
+  # the build, and on the dashboard a request that never answers.
+  converter_timeout: 120
+
+  # Where `switchnetctl fest build -out` writes its seed folders, and where the
+  # dashboard serves them from for the console-side installer
+  # (switch/bcat-installer/). Empty means those endpoints answer 404.
+  seed_dir: ""
+
+  # Rewrite {FEST} in an asset's in-pack path to the fest's own id.
+  #
+  # A real custom pack had every internal file named for the fest it was DERIVED
+  # from while announcing a different one, and nobody has established what the
+  # game keys on. On is the consistent choice; off keeps whatever names the
+  # source files carry. See docs/QUESTIONS.md.
+  substitute_fest_id: true
 
 # ---------------------------------------------------------------------------
 # dashboard -- the operator's web view (phase 2)
@@ -262,7 +308,7 @@ dashboard:
   # must match npln.admin_listen and npln.admin_token above. Leave either empty
   # and the matchmaking panel says it is not configured -- deliberately, rather
   # than showing an empty queue that reads as "nobody is playing".
-  npln_admin_url: "127.0.0.1:8088"
+  npln_admin_url: "127.0.0.1:8089"
   npln_admin_token: ""
 
   # A shared secret required on every request. Empty means NO authentication:
@@ -289,9 +335,18 @@ npln:
   # handshake and then fails with nothing in either log -- the game reports a
   # generic communication error and the server never sees a request.
   #
-  # Both loopback only: nginx is the only thing that reaches either directly.
+  # All three loopback only: nginx is the only thing that reaches them directly.
   listen: "127.0.0.1:8085"
   rest_listen: "127.0.0.1:8086"
+
+  # gamesync is the document/watch service, and this is where it listens
+  # INTERNALLY -- deliberately not 7575.
+  #
+  # The console reaches gamesync on 7575, and that port belongs to the nginx
+  # edge: it terminates TLS there and grpc_passes to this address. Binding the
+  # backend to 7575 too means nginx cannot start, and two listeners racing for
+  # the port is a much worse first symptom than a port that reads oddly here.
+  gamesync_listen: "127.0.0.1:8088"
 
   # The NPLN tenant id. Splatoon 3's is dce9377b, which is where the tenant
   # hostname t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net comes from.
@@ -304,38 +359,94 @@ npln:
   jwks_url: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates"
   access_token_ttl: 10800
 
-  # STUN/TURN servers for peer-to-peer connectivity.
+  # How many players a match takes.
   #
-  # Splatoon 3 uses ICE, NOT the Pia NAT-check pair below -- natcheck is not
-  # involved in this title at all. Once a match starts, gameplay is between the
-  # consoles and SwitchNet is out of the path; these addresses are how two
-  # consoles behind different NATs find each other.
+  # TWO, not eight. This is a server for a handful of consoles, and waiting for
+  # a faithful 4v4 means never playing. Raise it once there are enough consoles
+  # to fill one.
+  players_per_match: 2
+
+  # Per-mode overrides of the above.
   #
-  # THE ADDRESSES MUST BE REACHABLE FROM THE CONSOLE. A server-side address
-  # here produces "the lobby fills but the match never starts", which is
-  # indistinguishable from a matchmaking bug when read from the server side --
-  # so this is one of the settings 'switchnetctl check' warns about.
+  # Keyed on the mode name the game sends in a ticket's matchmaking_config.
+  # Nothing public documents those strings, so this starts empty and every mode
+  # that arrives without an entry is logged once -- that log line is how you
+  # learn the names to put here. For reference when you do: Turf War and
+  # Anarchy are 4v4 (eight players), Salmon Run is four, Tricolour is 4v2v2.
+  mode_players: {}
+  #  regular: 8
+
+  # How long a matchmaking ticket waits before giving up, in seconds. A ticket
+  # that never resolves leaves the player on a spinner with no way back, so
+  # timing out is what lets the game offer to try again.
+  ticket_ttl: 180
+
+  # STUN and TURN servers for NAT traversal.
   #
-  # Leaving it empty is fine on a single LAN, where consoles connect directly.
-  # It is the default precisely because that is the common case for a private
-  # server, and running coturn for it would be work with nothing to show.
+  # Splatoon 3 uses ICE, not the Pia NAT-check pair, so the natcheck section
+  # below is not involved in this title at all.
   #
-  # ice_servers:
-  #   - kind: stun          # stun or turn
-  #     host: "192.168.1.50"
-  #     port: 3478
-  #     protocol: udp       # udp (default), tcp or tls
-  #   - kind: turn
-  #     host: "192.168.1.50"
-  #     port: 3478
-  #     protocol: udp
-  #     # TURN's long-term credentials, as configured in coturn. A static
-  #     # user rather than coturn's time-limited HMAC scheme: that variant
-  #     # needs the console to derive a matching username, and nothing here
-  #     # can make it do that.
-  #     username: "switchnet"
-  #     password: "change-me"
+  # THE ADDRESSES MUST BE REACHABLE FROM THE CONSOLE, not merely from this
+  # server. Wrong ones produce "the lobby fills but the match never starts",
+  # which from the server side is indistinguishable from a matchmaking bug.
+  #
+  # Empty is fine for consoles on one LAN: they reach each other directly.
+  # `switchnetctl check` warns so that the choice is a deliberate one.
   ice_servers: []
+  #  - kind: stun          # stun or turn
+  #    host: "192.168.1.50"
+  #    port: 3478
+  #    protocol: udp       # udp, tcp or tls
+  #  - kind: turn
+  #    host: "192.168.1.50"
+  #    port: 3478
+  #    protocol: udp
+  #    username: "switchnet"
+  #    password: "change-me"
+
+  # The fro-N host the console is told to open its persistent connection to.
+  #
+  # fro-N is a family and the server picks a member. It MUST be one the host
+  # list redirects -- naming one it does not sends that connection to real
+  # Nintendo, where it succeeds, and the game then misbehaves in a way that
+  # looks like SwitchNet's fault. The server refuses to start rather than allow
+  # it, so a typo here is caught immediately.
+  frontline_host: "fro-3.hac.lp1.penne.srv.nintendo.net"
+
+  # Record every JSON front-end request and response to this directory.
+  #
+  # The vermillion, penne and frontline shapes are undocumented, and this is how
+  # they get settled: point it somewhere, put a console through one boot, and the
+  # transcript is on disk -- hexdumped, in order, with credentials redacted.
+  # Then write it up under docs/CAPTURES/ and reconcile internal/nplnrest.
+  #
+  # Off by default: it writes whatever the console sends.
+  rest_record_dir: ""
+
+  # The stage and mode rotation the lobby shows.
+  #
+  # THE NUMBERS ARE SPLATOON 3'S OWN and nothing public documents them, so they
+  # are yours to supply rather than SwitchNet's to guess -- an invalid stage id's
+  # behaviour on the console is itself unknown. What SwitchNet does supply is
+  # everything around them: two-hour slot alignment, the rotation order, the
+  # window a client asked for, and the etag its conditional request compares.
+  #
+  # Empty is fine. The schedule handlers then answer with no schedules, which is
+  # what the game sees between seasons on a real server, and the absence is
+  # logged once so you can tell it from a broken server.
+  #
+  # Written as strings on purpose: stage 0 is a plausible id, so a typo has to
+  # be an error rather than quietly becoming zero.
+  rotation:
+    regular_stages: []
+    bankara_rules: []
+    bankara_stages: []
+    # How many stages one slot offers. Zero means two, which is what a real
+    # rotation offers.
+    stages_per_slot: 0
+    # regular_stages: ["1", "2", "3", "4"]
+    # bankara_rules: ["1", "2"]
+    # bankara_stages: ["5", "6", "7", "8"]
 
   # The matchmaking controls the dashboard drives: the live queue, force-start,
   # per-mode player counts, cancelling a ticket.
@@ -347,7 +458,7 @@ npln:
   # Served ONLY when admin_token is set. These controls start matches and change
   # how many players one takes, so there is no version of them that is safe to
   # hand to whoever can reach the port. Must match dashboard.npln_admin_token.
-  admin_listen: "127.0.0.1:8088"
+  admin_listen: "127.0.0.1:8089"
   admin_token: ""
 
 # ---------------------------------------------------------------------------

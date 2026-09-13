@@ -3,8 +3,10 @@ package presencebus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -74,6 +76,56 @@ func (r *Redis) Subscribe(ctx context.Context) (<-chan Event, error) {
 		}
 	}()
 	return out, nil
+}
+
+// statsKey is where the snapshot lives.
+//
+// Derived from the channel name so that two SwitchNet deployments sharing one
+// Redis do not read each other's gauge -- which would be a very confusing way to
+// find out the channels were shared.
+func (r *Redis) statsKey() string { return r.channel + ":stats" }
+
+// PublishStats replaces the current snapshot.
+//
+// SET with an expiry rather than a publish: this is a gauge, and a dashboard
+// that has just been opened needs the current value rather than the next
+// change. The expiry is what makes a game server that stopped read as absent
+// instead of as "nobody is queuing".
+func (r *Redis) PublishStats(ctx context.Context, s Stats) error {
+	if s.At.IsZero() {
+		s.At = time.Now().UTC()
+	}
+	buf, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	// Twice the TTL, so the reader's own staleness check is the one that
+	// decides -- rather than the key vanishing a moment before the check and
+	// the two disagreeing about why there is no data.
+	return r.client.Set(ctx, r.statsKey(), buf, 2*StatsTTL).Err()
+}
+
+// Stats returns the current snapshot, or false when there is none or it is stale.
+func (r *Redis) Stats(ctx context.Context) (Stats, bool, error) {
+	buf, err := r.client.Get(ctx, r.statsKey()).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return Stats{}, false, nil
+	}
+	if err != nil {
+		return Stats{}, false, err
+	}
+	var s Stats
+	if err := json.Unmarshal(buf, &s); err != nil {
+		// Something else is writing this key. Reported as absent rather than as
+		// an error, for the same reason a malformed event is discarded: a
+		// cosmetic tile must not take the page down.
+		r.log.Warn("presencebus: discarding malformed stats", "error", err)
+		return Stats{}, false, nil
+	}
+	if time.Since(s.At) > StatsTTL {
+		return Stats{}, false, nil
+	}
+	return s, true, nil
 }
 
 // Close closes the Redis client.
