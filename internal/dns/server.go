@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/nintendo"
@@ -108,8 +109,25 @@ func Listen(cfg Config, log *slog.Logger) (*Server, error) {
 	// independently per protocol and the two would land on different ports. A
 	// client falling back to TCP would then get connection refused, which looks
 	// like the server being down rather than a binding mistake.
+	//
+	// Retried a few times on EADDRINUSE: a socket that just released this same
+	// port (this process's own previous instance on a systemd restart, or --
+	// this is where it actually bites -- a sibling test in this package that
+	// picked the identical ephemeral UDP port a moment ago and is still a few
+	// milliseconds into closing its TCP side) can leave the port transiently
+	// unavailable. A fixed production port makes the restart case real, not
+	// hypothetical: systemd's RestartSec is far shorter than a lingering
+	// socket can take to clear.
 	bound := udp.LocalAddr().(*net.UDPAddr)
-	tcp, err := net.ListenTCP("tcp", &net.TCPAddr{IP: bound.IP, Port: bound.Port, Zone: bound.Zone})
+	tcpAddr := &net.TCPAddr{IP: bound.IP, Port: bound.Port, Zone: bound.Zone}
+	var tcp *net.TCPListener
+	for attempt := 0; ; attempt++ {
+		tcp, err = net.ListenTCP("tcp", tcpAddr)
+		if err == nil || !errors.Is(err, syscall.EADDRINUSE) || attempt >= 4 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	if err != nil {
 		_ = udp.Close()
 		return nil, fmt.Errorf("dns: listen tcp %s: %w", bound, err)
