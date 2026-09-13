@@ -22,7 +22,7 @@ for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY=1 ;;
         --all) ALL=1 ;;
-        -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "update.sh: unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -31,8 +31,13 @@ say()  { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-command -v docker >/dev/null || die "docker is not installed"
-command -v go >/dev/null || die "go is not installed (needed to work out what changed)"
+command -v go >/dev/null || die "go is not installed (needed to work out what changed, and to build it)"
+
+# The systemd units hardcode /opt/switchnet (see deploy/systemd/*.service). A
+# 'go build' from anywhere else would write a bin/ that systemctl restart
+# never looks at, restart the service, and leave the old binary running --
+# silently, since every step up to the restart itself would still succeed.
+[ "$(pwd)" = "/opt/switchnet" ] || die "this must be run from an /opt/switchnet checkout, not $(pwd)."
 
 # Uncommitted work would be silently reverted or would block the pull half way
 # through, leaving the tree in a state neither version.
@@ -62,8 +67,8 @@ fi
 
 # ---- which services does this change reach? -------------------------------
 
-# Every service that runs as a container. switchnetctl is a CLI, not a service,
-# so it is deliberately not here -- it is rebuilt with the image either way.
+# Every service that runs as a systemd unit. switchnetctl is a CLI, not a
+# service, so it is deliberately not here -- 'make build' always rebuilds it.
 SERVICES="dns dauth aauth baas stubs natcheck npln dashboard"
 
 CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
@@ -74,8 +79,8 @@ if [ "$ALL" -eq 1 ]; then
     restart="$SERVICES nginx"
     say "==> --all: restarting everything"
 else
-    # A change to the build itself, or to a dependency, affects every binary.
-    if echo "$CHANGED" | grep -qE '^(go\.mod|go\.sum|Dockerfile)$'; then
+    # A change to the build itself affects every binary.
+    if echo "$CHANGED" | grep -qE '^(go\.mod|go\.sum)$'; then
         say "==> the build inputs changed; every service is affected"
         restart="$SERVICES"
     else
@@ -140,39 +145,65 @@ if echo "$restart" | grep -q nginx; then
     go run ./cmd/switchnetctl -config config/config.yaml nginx > deploy/nginx.generated.conf
 fi
 
-# ---- rebuild and restart ---------------------------------------------------
+go_restart=$(echo "$restart" | tr ' ' '\n' | grep -v '^nginx$' | tr '\n' ' ')
 
-# One image serves every Go service, so a rebuild is one build regardless of how
-# many services are affected. Only the named containers are recreated.
-say "==> rebuilding"
-docker compose build $(echo "$restart" | tr ' ' '\n' | grep -v nginx | tr '\n' ' ')
+# ---- build and gate ---------------------------------------------------
 
-ADMIN_TOKEN=$(sed -n 's/^[[:space:]]*admin_token:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | head -1)
-[ -n "$ADMIN_TOKEN" ] && export SWITCHNET_NPLN_ADMIN_TOKEN="$ADMIN_TOKEN"
-DASH_TOKEN=$(sed -n 's/^[[:space:]]*token:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | tail -1)
-[ -n "$DASH_TOKEN" ] && export SWITCHNET_DASHBOARD_TOKEN="$DASH_TOKEN"
+# The replacement for the old Dockerfile's `go vet && go test` image-build
+# gate: with no image build in the loop at all, this is the only thing
+# standing between a broken commit and `systemctl restart` running it.
+# Restart=on-failure would otherwise just crash-loop it in production.
+if [ -n "$go_restart" ]; then
+    say "==> checking (fmt, vet, test)"
+    make check
+
+    say "==> building: $go_restart"
+    for svc in $go_restart; do
+        go build -o "bin/$svc" "./cmd/$svc"
+    done
+fi
+
+# ---- restart ----------------------------------------------------------
 
 say "==> restarting"
-# up, not restart: `docker compose restart` reuses the OLD container and would
-# run the previous image, which looks like the update silently not working.
-docker compose up -d --no-deps $restart
+for svc in $go_restart; do
+    sudo systemctl restart "switchnet-$svc.service"
+done
+if echo "$restart" | grep -q nginx; then
+    command -v docker >/dev/null || die "docker is not installed (needed for the nginx edge)"
+    # A reload, not a restart: nginx serves generated configuration and static
+    # files, and `docker compose restart` would drop in-flight connections a
+    # reload does not need to.
+    docker compose exec nginx nginx -s reload
+fi
 
-echo
-docker compose ps $restart
+if [ -n "$go_restart" ]; then
+    echo
+    # shellcheck disable=SC2046
+    systemctl status --no-pager --lines=0 $(printf 'switchnet-%s.service ' $go_restart) || true
+fi
 
 # ---- did they come back? ---------------------------------------------------
+
+# npln's /healthz only exists once npln.admin_token is set -- that is the
+# only thing that starts its admin listener at all (see cmd/npln) -- so
+# probing it on an install that has not set that token would always read as
+# "NOT healthy" for a reason that has nothing to do with this update.
+ADMIN_TOKEN=$(sed -n 's/^[[:space:]]*admin_token:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | head -1)
 
 say "==> waiting for services"
 sleep 2
 failed=""
-for svc in $restart; do
+for svc in $go_restart; do
     case "$svc" in
         baas)      port=8083 ;;
         dauth)     port=8081 ;;
         aauth)     port=8082 ;;
         stubs)     port=8084 ;;
         dashboard) port=8087 ;;
-        npln)      port=8088 ;;
+        npln)
+            [ -n "$ADMIN_TOKEN" ] || continue
+            port=8088 ;;
         *) continue ;;   # dns and natcheck are UDP; nginx has no /healthz
     esac
 
@@ -186,7 +217,7 @@ done
 
 if [ -n "$failed" ]; then
     warn "these did not come back healthy:$failed
-  docker compose logs --tail=50$failed"
+  journalctl -u switchnet-<name> -n 50 --no-pager, replacing <name> with one of:$failed"
     exit 1
 fi
 
