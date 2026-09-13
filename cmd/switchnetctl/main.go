@@ -336,8 +336,8 @@ func hostsFile(cfg config.Config, bcatProbe bool) string {
 		b.WriteString("# -bcat-probe is ON: the three bcat-* hosts below point at SwitchNet\n")
 		b.WriteString("# instead of 0.0.0.0. This is the TODO.md 2.4 experiment, NOT a working\n")
 		b.WriteString("# BCAT service -- SwitchNet logs what the console asks for and answers\n")
-		b.WriteString("# 200 with an empty body. Set stubs.bcat_probe as well, or the requests\n")
-		b.WriteString("# arrive and get the ordinary empty-object stub instead of a hexdump.\n")
+		b.WriteString("# 200 with an empty body via internal/bcat.Probe, which is always\n")
+		b.WriteString("# registered -- this flag only decides which hosts route to it.\n")
 		b.WriteString("# Regenerate WITHOUT the flag when the experiment is over: answering a\n")
 		b.WriteString("# console that expected content turns a clean failure into a hang.\n")
 	}

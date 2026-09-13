@@ -95,7 +95,7 @@ unanswered (404) rather than guessed at.
   `dragons.hac.lp1.dragons.nintendo.net`'s `POST /v2/penne_id` instead,
   which would mean the host and path guessed at are wrong, not just the
   shape — see `docs/CAPTURES/README.md`'s item 10.
-- What a frontline connection actually carries once open. `serveFrontline`
+- What a frontline connection actually carries once open. `frontline`
   accepts it and holds it open — confirmed safe from a real error-code
   capture — but sends nothing further, because no source found this pass
   documents the wire framing.
@@ -133,16 +133,13 @@ an account with no cloud save, not a stub); its other five RPCs
 are not attempted — nothing calls them this early, and actually writing save
 state is real player data this server has no legitimate way to have.
 
-The rest is `internal/toyohr/backlog.go` and `lobby_messaging.go` now:
+The rest is `internal/toyohr/backlog.go` and `messaging.go` now:
 
-- **`LobbyMessaging`**: `RecvMessage`/`SendLobbyMessage` are real, backed by
-  `internal/lobbymessaging`'s per-lobby broadcast topic (membership =
-  "currently subscribed", the same shape `internal/presencebus` and
-  `internal/matchmaking`'s ticket `Watch` already use, so nothing invents a
-  roster this codebase has no other record of). `SendMessage` stays
-  `Unimplemented`: it addresses specific users but carries no `Lobby`
-  field, and routing it would mean guessing at session-tracking no capture
-  confirms — see the `TODO(capture-needed)` on it.
+- **`LobbyMessaging`**: `RecvMessage`/`SendMessage`/`SendLobbyMessage` are all
+  real, backed by `internal/toyohr/messaging.go`'s per-lobby `messageHub`
+  (membership = "currently subscribed", the same shape `internal/presencebus`
+  and `internal/matchmaking`'s ticket `Watch` already use, so nothing invents
+  a roster this codebase has no other record of).
 - **`Canola`/`Locker`**: `SelectDocuments` answers empty and `IkasuDocument`
   answers `NotFound` — SwitchNet has no `internal/ugcstore`, so both are
   honest rather than guessed. `RegisterDocument` (the write) stays
@@ -168,39 +165,39 @@ the to-do list**.
 
 ### 1.5 `gamesync` — **P2, built**
 
-`internal/gamesync` (RPC layer) and `internal/gamesyncstore` (the document
-store) now implement all of `nn.npln.gamesync.v1.Gamesync`, `CreateRound`
-included -- `IssueToken`/`RefreshToken`, `GetDocument`/`ReadDocuments`/
-`ListDocuments`/`QueryCollectionIds`, `WriteDocuments`/`LazyWriteDocuments`,
+`internal/gamesync` implements almost all of `nn.npln.gamesync.v1.Gamesync`:
+`IssueToken`/`RefreshToken`, `GetDocument`/`ReadDocuments`/`ListDocuments`/
+`QueryCollectionIds`, `WriteDocuments`/`LazyWriteDocuments`,
 `BeginTransaction`/`CommitTransaction`/`RollbackTransaction`, and the
-`KeepUserSession` watch stream.
+`KeepUserSession` watch stream. `CreateRound` is left `Unimplemented`
+deliberately — see below.
 
-**Where it's reached turned out to differ from this section's original plan.**
-`gamesync.npln.nintendo.net` is classified `ServiceNPLN` in
-`internal/nintendo/hosts.go`, grouped with the tenant gRPC host by SNI --
-not routed to a separate port. Nothing in the nginx generator or
-`docker-compose.yml` ever wired the `npln.gamesync_listen: ":7575"` setting
-this section used to describe to anything, so it has been removed from
-`config/config.go` rather than left as a key that looks configured and does
-nothing (see CLAUDE.md's configuration rules). `internal/gamesync.Service` is
-registered on `internal/npln`'s own `*grpc.Server` instead, the same way
-`internal/toyohr`'s services are -- see `internal/gamesync`'s README for the
-evidence and `docs/QUESTIONS.md` for what would change this if a capture ever
-shows the "own port" reading was right.
+**Its own port, not the tenant channel.** `gamesync.npln.nintendo.net` not
+ending in `srv.nintendo.net`, unlike every other NPLN host, turned out to be
+exactly the deliberate signal it looked like: `internal/nintendo/hosts.go`
+classifies it `ServiceGamesync`, a distinct service on its own port (7575,
+`npln.gamesync_listen`) rather than grouped with the tenant host's nginx
+block. `internal/gamesync` is a complete, self-contained `*grpc.Server` with
+its own listener in `cmd/npln` — not a service registered on
+`internal/npln`'s gateway — verifying the matchmaking id token the gateway
+signs via a `TokenVerifier` callback rather than an import (which would be a
+cycle). See `internal/gamesync/README.md` and `docs/QUESTIONS.md`'s now-
+resolved entry on this.
 
-**What's simplified, not guessed at** (see `internal/gamesyncstore`'s README
-for the full reasoning): transactions are atomic but not isolated across
-concurrent transactions; `FieldTransform`'s `LoadGlobalValue`/
-`StoreGlobalValue`/`ClearGlobalValue` and `WriteDocuments`/
-`CommitTransaction`'s `DefermentOperation` have no Firestore equivalent and
-no public documentation, so they are accepted (logged, in the deferment
-case) rather than rejecting the whole call over a shape nothing here can
-interpret. `CreateRound`'s own `Round` message has fields named `Unk1`
-through `Unk4` in this project's own proto reversal, with nothing
-defensible to fill in server-side -- so it echoes back exactly the `Round`
-the caller submitted, confirmed safe by `NextendoNetwork/splatoon-3` (a
-real, hardware-tested NPLN reimplementation) doing the same; see
-`internal/gamesync/README.md`.
+**What's refused rather than guessed at:** `FieldTransform`'s
+`LoadGlobalValue`/`StoreGlobalValue`/`ClearGlobalValue` read and write a
+namespace shared across documents that nothing here models — treating them
+as no-ops would have a client store a value it later reads back as absent,
+so a transform batch containing one is refused whole (`codes.Unimplemented`)
+before any write in it applies, the same atomicity guarantee a transform
+this code understands gets. `WriteDocuments`/`CommitTransaction`'s
+`DefermentOperation` (a batch of writes to apply later, on a trigger nothing
+here models) is refused the same way — accepting one and silently dropping
+it would tell a client "done" for an effect that never arrives. `CreateRound`
+is left entirely to the embedded `Unimplemented`: `Round` has five fields,
+four of them named `Unk1` through `Unk4` in this project's own proto
+reversal, and answering would mean inventing values for fields whose meaning
+is unknown — worse than a logged `Unimplemented`.
 
 ---
 
@@ -308,17 +305,18 @@ listed. Unknown is not impossible.
 
 #### Stage 1 — does the console reach us at all? **Built. Needs an operator.**
 
-`internal/stubs/bcatprobe.go` logs every BCAT request in full — method, path,
-query, headers, a hexdump of the body — and answers 200 with an empty body. It
-is off by default and needs **both** halves to do anything:
+`internal/bcat.Probe` (`internal/stubs/handler.go` wires it in) logs every
+BCAT request in full — method, path, headers, a hexdump of the body — and
+answers 200 with an empty body, writing a transcript to `stubs.bcat_record_dir`
+when set. It is off by default and needs only the hosts flip, since the probe
+itself is always registered:
 
 ```sh
 switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
-# stubs.bcat_probe: true   (or SWITCHNET_STUBS_BCAT_PROBE=1)
+# stubs.bcat_record_dir: /some/path   (optional -- logs either way, writes a transcript with this set)
 ```
 
-Then open Splatoon 3 and watch the stubs log. `cmd/stubs` warns loudly at
-start-up when the probe is on, so a flag that did not take is obvious.
+Then open Splatoon 3 and watch the stubs log (or the transcript directory).
 
 If requests arrive, the paths are right and DNS and TLS work — and the log is
 the first record anyone has of what the console actually asks for. **Turn it

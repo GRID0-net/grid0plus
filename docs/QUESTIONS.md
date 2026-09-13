@@ -115,10 +115,9 @@ is built and tested:
 
 ```sh
 switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
-# stubs.bcat_probe: true
 ```
 
-Open Splatoon 3, watch the stubs log, then turn both back off. Whatever appears
+Open Splatoon 3, watch the stubs log, then turn the hosts flip back off. Whatever appears
 — including nothing at all — is the first record anyone has. Write it up under
 `docs/CAPTURES/`.
 
@@ -159,7 +158,7 @@ outcome. Nothing here can tell which without seeing it happen.
 **Proceeding on:** `IsValid: false` is what the proto's own field exists to
 say, so it is the defensible reading rather than inventing a plausible ratio.
 
-**Changes if answered:** `internal/toyohr/fest_entries.go`'s `GetFestResult`.
+**Changes if answered:** `internal/toyohr/entries.go`'s `GetFestResult`.
 If the console needs a genuinely valid result, the entry-count-derived ratio
 this pass rejected becomes the next thing to reconsider -- explicitly, in a
 commit that says why it is no longer considered misleading enough to avoid.
@@ -206,7 +205,7 @@ NPLN's other resource names (per `docs/CAPTURES/README.md`'s "already
 guessed" list) -- a wrong suffix costs a cosmetic mismatch, not a broken
 `Create`/`Get`.
 
-**Changes if answered:** `internal/toyohr/fest_entries.go`'s `festEntryProto`
+**Changes if answered:** `internal/toyohr/entries.go`'s `festEntryProto`
 and `festEntryIDsFromResourceName`.
 
 ---
@@ -291,7 +290,7 @@ above would target `internal/stubs`'s `dragons` handling instead of
 
 ## What does a frontline connection actually carry?
 
-`internal/nplnrest/server.go`'s `serveFrontline` accepts the `fro-N`
+`internal/nplnrest/nplnrest.go`'s `frontline` accepts the `fro-N`
 connection and holds it open — confirmed safe, since
 `internal/nintendo/hosts.go` already establishes from a real error-code
 capture that closing it reads as a failure to the console. What happens
@@ -304,7 +303,7 @@ risks a keep-alive timeout the console might not expect, but inventing a
 frame format risks the console rejecting it outright the moment it parses
 the first byte, which seemed the worse failure to court blind.
 
-**Changes if answered:** `internal/nplnrest/server.go`'s `serveFrontline`,
+**Changes if answered:** `internal/nplnrest/nplnrest.go`'s `frontline`,
 entirely.
 
 ---

@@ -166,26 +166,47 @@ naming nothing.
 
 ## Redeploying an existing install
 
-Once the stack is up (the Quickstart above), day-to-day operation is usually
-"pull and restart", not the full `make up` bring-up:
+The eight Go services run as native processes (via systemd in production, via
+`make run`/`switchnetctl run` when iterating) — Docker is only for Postgres,
+Redis and the nginx edge, none of which this repo builds. On the always-on
+box, install the units once:
 
 ```sh
-scripts/start.sh                 # (re)start everything -- same checks as make up,
-                                  # plus the cert/nginx-config generation and a
-                                  # config validation pass before anything starts
+scripts/install-systemd.sh       # from /opt/switchnet: creates the switchnet
+                                  # user, installs deploy/systemd/*.service,
+                                  # enables switchnet.target
+```
+
+Day-to-day operation from then on is usually "pull and restart", not the full
+bring-up:
+
+```sh
+scripts/start.sh                 # (re)start everything -- same preflight as
+                                  # make up (cert/nginx-config generation, a
+                                  # config validation pass), then
+                                  # `docker compose up -d` for postgres/redis/
+                                  # nginx and `systemctl start switchnet.target`
+                                  # for the Go services, then waits on baas's
+                                  # /healthz before printing next steps
 scripts/update.sh                # pull, then restart only what the change reaches
 scripts/update.sh --dry-run      # say what would restart, change nothing
+scripts/update.sh --all          # restart every service regardless
 ```
 
 `update.sh` reads each service's own Go package graph (`go list -deps`), not
 directory names, so a change to `internal/db` restarts every service that
-imports it and a change to `internal/baas` restarts only `baas` — one rebuilt
-image, only the affected containers recreated. Neither script polls a health
-endpoint: none of the Go services expose one (only Postgres and Redis have a
-`docker-compose healthcheck:`), so "started"/"restarted" here means the
-containers are up, not that each one has confirmed it can serve a request —
-`docker compose ps` and `docker compose logs --tail=50 <service>` are how you
-check that.
+imports it and a change to `internal/baas` restarts only `baas`. It refuses to
+run anywhere but an `/opt/switchnet` checkout (systemd's unit files hardcode
+that path) and refuses with uncommitted changes in the tree. Before
+restarting anything it runs `make check` — the replacement for the old
+Dockerfile's `go vet && go test` image-build gate, since there is no image
+build left in the loop to stop a broken commit from reaching
+`systemctl restart` (which would otherwise just crash-loop it, because the
+units set `Restart=on-failure`). nginx gets a config reload rather than a
+restart, since it serves generated configuration and static files and a
+reload does not drop in-flight connections. `journalctl -u switchnet-<svc> -n
+50 --no-pager` is how you read a native service's logs; `docker compose logs
+--tail=50 nginx` (or `postgres`/`redis`) for the three Dockerized pieces.
 
 ## Contributing, or picking this up as an agent
 
@@ -274,7 +295,7 @@ honestly-empty.
 | NPLN auth, friends, presence, messaging | `internal/npln` |
 | Matchmaking, sessions, ICE server allocation | `internal/matchmaking`, `internal/npln/matchmaking.go` |
 | Match history | `npln_matches`, read by the dashboard |
-| `gamesync` (Firestore-shaped document/watch service) | `internal/gamesync`, `internal/gamesyncstore` |
+| `gamesync` (Firestore-shaped document/watch service, on its own port) | `internal/gamesync` |
 | Splatfests, map/mode + Salmon Run schedules, cloud save lookups, the rest of `toyohr` | `internal/toyohr` |
 | BCAT pack building (not yet serving to a console) | `internal/bcat` |
 | Dashboard: players, matchmaking, Splatfests, match history, Debug tab | `internal/dashboard`, `cmd/dashboard` |
@@ -327,10 +348,30 @@ it reimplements and linking the wiki page it was built from.
 
 ## Development
 
+Iterating on one service — a `go build`, not a full rebuild — while the still-
+Dockerized Postgres/Redis keep running:
+
+```sh
+make up                     # Postgres, Redis and nginx, if not already up
+bin/switchnetctl run baas   # or: dauth, aauth, npln, dashboard, ...
+```
+
+`make run` (no args) does the same for all eight at once, in the foreground,
+with each service's output prefixed by name; Ctrl-C stops all of them. Unlike
+the systemd units used in production, this never restarts a crashed child —
+you want to see a crash immediately while coding, not have it silently come
+back.
+
+Before sending anything, run the whole verification suite:
+
 ```sh
 make check        # gofmt, go vet, go test -- what CI runs
-make test-race    # with the race detector
+make test-race    # the same tests, with the race detector -- the servers are
+                   #   concurrent by nature, so a data race is the more likely
+                   #   kind of bug in this codebase than a plain logic error
 make test-cover   # coverage per package
+make build        # compile every service into bin/, catching anything
+                   #   `go vet`'s more limited scope misses
 ```
 
 Tests run with no database and no Redis: the handler tests use an in-memory store
@@ -342,6 +383,47 @@ make test TEST_DATABASE_URL="postgres://…" TEST_REDIS_URL="redis://…"
 
 Both store implementations run the *same* contract test, so the in-memory one the
 handler tests use cannot drift from the PostgreSQL one that runs in production.
+
+None of the above starts a process or touches the network — they're static
+checks against the source. To confirm the whole thing actually *runs*, end to
+end (CLAUDE.md's "run it, do not just test it": several real bugs here were
+invisible to a green test suite and obvious within thirty seconds of starting
+the processes):
+
+```sh
+make up            # Postgres, Redis and nginx
+make run &         # the eight Go services, natively
+make seed          # exercises phase 1 over the real API -- device token,
+                    #   application token, anonymous token, register, log in,
+                    #   friend code, friend request, accept, presence -- and
+                    #   prints the resulting friend list
+make seed-phase2    # exercises phase 2 -- registers two accounts, exchanges
+                    #   their BAAS id tokens for NPLN sessions, queues both,
+                    #   checks they're told about the *same* match, then
+                    #   drives gamesync and reads back the announced Splatfest
+```
+
+Then check that the generated artefacts still generate (a hostname added
+anywhere other than `internal/nintendo/hosts.go` produces a failure with no
+useful error, so this is worth re-running after any change that touches
+hostnames):
+
+```sh
+SWITCHNET_PUBLIC_IP=192.168.1.50 SWITCHNET_NATCHECK_SECONDARY_IP=192.168.1.51 \
+  go run ./cmd/switchnetctl hosts | head
+```
+
+And that nothing that should not be tracked is:
+
+```sh
+git ls-files | grep -E '\.(pem|key|crt)$|^certs/|config/config\.yaml'   # must be empty
+```
+
+`make help` lists every target, including `gen-certs`/`gen-nginx`/`gen-dns`/
+`gen-hosts` (the generated artefacts above, run individually),
+`config-check` (validate `config.yaml` and warn about risky settings), and
+`install-systemd` (production only — see
+[Redeploying an existing install](#redeploying-an-existing-install)).
 
 ### Where the guesses are
 

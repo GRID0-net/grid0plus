@@ -72,7 +72,10 @@ answer from whichever service nginx happened to list first.
 
 ## The BCAT probe
 
-`bcatprobe.go` is an **instrument, not a service**, and it is off by default.
+`internal/bcat.Probe` (built there, wired into this package's `Handler` on the
+three `bcat-*` hosts) is an **instrument, not a service**. It is always
+registered, but reachable only when an operator flips those hosts away from
+their default null route.
 
 SwitchNet cannot serve BCAT. The `list` response body is undocumented, and
 whether the console verifies the delivery container's RSA-2048 signature has
@@ -80,27 +83,26 @@ never been established — switchbrew documents the *field* and says nothing abo
 a verification step. A console running SwitchNet already has sigpatches, so the
 check may well be bypassed; nobody has looked.
 
-The probe settles the cheap half of that. Turned on, it answers the three
-`bcat-*` hosts, logs each request in full — method, path, query, every header,
-a hexdump of the body — and replies `200` with an **empty body**. The empty body
-is deliberate: anything else would be an invented protocol shape. What the
-console does next is itself the finding.
+The probe settles the cheap half of that. Reached, it answers the three
+`bcat-*` hosts, logs each request — method, path, headers, a hexdump of the
+body — and replies `200` with an **empty body**. The empty body is deliberate:
+anything else would be an invented protocol shape. What the console does next
+is itself the finding. Setting `stubs.bcat_record_dir` also writes a hexdumped
+transcript to disk via `internal/wirelog`; leaving it empty still logs.
 
-Running it needs **both** halves, and neither does anything alone:
+Reaching it needs one flip, since the probe itself needs no configuration to
+exist:
 
 ```sh
-# 1. point the console's bcat-* hosts here instead of null-routing them
+# point the console's bcat-* hosts here instead of null-routing them
 switchnetctl hosts -bcat-probe > /path/to/sd/atmosphere/hosts/sysmmc.txt   # and emummc.txt
-
-# 2. turn the probe on
-#    stubs.bcat_probe: true   (or SWITCHNET_STUBS_BCAT_PROBE=1)
 ```
 
-Then open Splatoon 3 and watch the log. `cmd/stubs` prints a loud warning at
-start-up when the probe is on, so a flag that did not take is obvious.
+Then open Splatoon 3 and watch the log (or the transcript directory, if set).
 
-**Turn it back off afterwards.** Answering a console that expected content turns
-an immediate, legible failure into a hang — which is exactly why those hosts are
-null-routed the rest of the time. Write up whatever the console did under
-`docs/CAPTURES/`; either answer is worth having. See `TODO.md` §2.4 for the
-second stage, and §5.2 for why the null route is contingent rather than a rule.
+**Regenerate the hosts file without `-bcat-probe` afterwards.** Answering a
+console that expected content turns an immediate, legible failure into a
+hang — which is exactly why those hosts are null-routed the rest of the time.
+Write up whatever the console did under `docs/CAPTURES/`; either answer is
+worth having. See `TODO.md` §2.4 for the second stage, and §5.2 for why the
+null route is contingent rather than a rule.
