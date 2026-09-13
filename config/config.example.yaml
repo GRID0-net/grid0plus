@@ -123,7 +123,10 @@ keys:
 # dauth: device authentication
 # ---------------------------------------------------------------------------
 dauth:
-  listen: ":8081"
+  # Loopback only: nothing outside this machine calls dauth directly -- nginx
+  # is the only thing that reaches it, over the edge TLS listener. Bind-all
+  # would put it on the LAN unauthenticated with no reason to.
+  listen: "127.0.0.1:8081"
   # Keep Nintendo's values. The console does not check them, but tooling and
   # packet-capture diffs compare against them.
   issuer: "dauth-lp1.ndas.srv.nintendo.net"
@@ -147,7 +150,8 @@ dauth:
 # aauth: application authentication
 # ---------------------------------------------------------------------------
 aauth:
-  listen: ":8082"
+  # Loopback only, same reasoning as dauth.listen above.
+  listen: "127.0.0.1:8082"
   issuer: "aauth-lp1.ndas.srv.nintendo.net"
   jwks_url: "https://acert-lp1.ndas.srv.nintendo.net/keys"
   token_ttl: 86400
@@ -224,7 +228,8 @@ baas:
 # stubs: endpoints answered but not implemented
 # ---------------------------------------------------------------------------
 stubs:
-  listen: ":8084"
+  # Loopback only, same reasoning as dauth.listen above.
+  listen: "127.0.0.1:8084"
   # Log request bodies. Useful exactly once, while working out what an
   # unimplemented endpoint is being asked for. Far too chatty to leave on.
   log_bodies: false
@@ -283,8 +288,10 @@ npln:
   # `listen`, proxy_pass for `rest_listen`. Crossing them completes the TLS
   # handshake and then fails with nothing in either log -- the game reports a
   # generic communication error and the server never sees a request.
-  listen: ":8085"
-  rest_listen: ":8086"
+  #
+  # Both loopback only: nginx is the only thing that reaches either directly.
+  listen: "127.0.0.1:8085"
+  rest_listen: "127.0.0.1:8086"
 
   # The NPLN tenant id. Splatoon 3's is dce9377b, which is where the tenant
   # hostname t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net comes from.

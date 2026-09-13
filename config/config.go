@@ -417,7 +417,7 @@ func Default() Config {
 			GenerateIfMissing: true,
 		},
 		DAuth: DAuth{
-			Listen:              ":8081",
+			Listen:              "127.0.0.1:8081",
 			Issuer:              "dauth-lp1.ndas.srv.nintendo.net",
 			JWKSURL:             "https://dcert-lp1.ndas.srv.nintendo.net/keys",
 			TokenTTL:            86400,
@@ -426,7 +426,7 @@ func Default() Config {
 			ClientCertPEMHeader: "X-SwitchNet-Client-Cert-PEM",
 		},
 		AAuth: AAuth{
-			Listen:           ":8082",
+			Listen:           "127.0.0.1:8082",
 			Issuer:           "aauth-lp1.ndas.srv.nintendo.net",
 			JWKSURL:          "https://acert-lp1.ndas.srv.nintendo.net/keys",
 			TokenTTL:         86400,
@@ -453,14 +453,14 @@ func Default() Config {
 			LoginWindowSeconds:     300,
 		},
 		Stubs: Stubs{
-			Listen: ":8084",
+			Listen: "127.0.0.1:8084",
 		},
 		Dashboard: Dashboard{
 			Listen: ":8087",
 		},
 		NPLN: NPLN{
-			Listen:         ":8085",
-			RestListen:     ":8086",
+			Listen:         "127.0.0.1:8085",
+			RestListen:     "127.0.0.1:8086",
 			Tenant:         "dce9377b",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
