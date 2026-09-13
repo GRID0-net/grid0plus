@@ -184,6 +184,11 @@ $(BIN_DIR)/switchnetctl:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN_DIR)/switchnetctl ./cmd/switchnetctl
 
+## install-systemd: install and enable the systemd units for production (see scripts/install-systemd.sh). Run from /opt/switchnet
+.PHONY: install-systemd
+install-systemd:
+	scripts/install-systemd.sh
+
 ## clean-data: stop everything and DELETE the database and uploaded images
 .PHONY: clean-data
 clean-data:
