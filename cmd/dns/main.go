@@ -12,7 +12,10 @@
 //
 //	sudo setcap 'cap_net_bind_service=+ep' ./bin/dns
 //
-// or let the container do it, which is what docker-compose.yml does.
+// or let systemd do it: deploy/systemd/switchnet-dns.service sets
+// AmbientCapabilities=CAP_NET_BIND_SERVICE, which needs no setcap step and
+// nothing to reapply after every rebuild (unlike setcap, a file attribute
+// go build does not preserve).
 package main
 
 import (

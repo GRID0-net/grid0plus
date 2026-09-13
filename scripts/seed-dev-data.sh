@@ -53,7 +53,7 @@ api() {
 echo "seed: checking the servers are up"
 for url in "$DAUTH/keys" "$AAUTH/keys" "$BAAS/1.0.0/certificates"; do
     if ! curl -fsS -o /dev/null "$url"; then
-        echo "seed: $url is not answering. Is docker compose up?" >&2
+        echo "seed: $url is not answering. Is 'make run' (or 'systemctl start switchnet.target') up?" >&2
         exit 1
     fi
 done

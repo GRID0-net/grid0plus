@@ -1,8 +1,8 @@
 # SwitchNet configuration
 #
 # Copy this to config/config.yaml and edit it. Every value can also be set from
-# the environment as SWITCHNET_<SECTION>_<KEY>, which is how the containers in
-# docker-compose.yml are configured; the environment always wins over this file.
+# the environment as SWITCHNET_<SECTION>_<KEY> -- useful for a one-off override
+# without editing the file; the environment always wins over this file.
 #
 # Validate a config without starting anything:
 #

@@ -26,7 +26,7 @@ type Migration struct {
 //
 // The files use golang-migrate's naming (NNNN_name.up.sql), so an operator who
 // prefers the migrate CLI can point it at internal/db/migrations and get the
-// same result. The runner below exists so that a plain `docker compose up`
+// same result. The runner below exists so that just starting the services
 // needs no extra tool.
 func Migrations() ([]Migration, error) {
 	entries, err := fs.Glob(migrationFS, "migrations/*.up.sql")
@@ -65,8 +65,8 @@ func Migrations() ([]Migration, error) {
 // Each migration runs in its own transaction, together with the row recording
 // it, so a failure part-way leaves the schema at the last complete version
 // rather than half-applied. An advisory lock keeps two processes starting at
-// once from racing — which is exactly what happens when docker-compose brings
-// five services up together.
+// once from racing — which is exactly what happens when `switchnetctl run`
+// or `systemctl start switchnet.target` brings several services up together.
 func Migrate(ctx context.Context, conn *pgx.Conn) (applied int, err error) {
 	migrations, err := Migrations()
 	if err != nil {

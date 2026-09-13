@@ -25,8 +25,11 @@ import (
 
 // ConfigFlag registers the -config flag and returns a pointer to its value.
 //
-// An empty path is valid and means "defaults plus environment overrides", which
-// is how the containers in docker-compose.yml run.
+// An empty path is valid and means "defaults plus environment overrides" --
+// every service run through switchnetctl (`run`, or the systemd units under
+// deploy/systemd/) passes an explicit path instead, but a bare SWITCHNET_*
+// environment with no config file at all still works for anything invoking
+// a binary directly.
 func ConfigFlag() *string {
 	return flag.String("config", os.Getenv("SWITCHNET_CONFIG"),
 		"path to config.yaml (empty: defaults plus SWITCHNET_* environment overrides)")

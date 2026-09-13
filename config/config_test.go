@@ -43,8 +43,9 @@ func writeConfig(t *testing.T, body string) string {
 func TestDefaultsAreValid(t *testing.T) {
 	clearEnv(t)
 
-	// A first run with no config file at all has to work, because that is how
-	// the containers in docker-compose.yml start.
+	// A first run with no config file at all has to work: internal/service's
+	// ConfigFlag defaults to an empty path, so anything invoking a binary
+	// directly with no -config flag and no SWITCHNET_CONFIG set relies on this.
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("the defaults do not validate: %v", err)

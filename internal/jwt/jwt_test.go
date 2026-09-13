@@ -595,12 +595,13 @@ func assertString(t *testing.T, m map[string]any, key, want string) {
 // TestConcurrentKeyringsConvergeOnOneKey is the regression test for a race that
 // broke a real first run.
 //
-// Every SwitchNet service shares one key directory, and `docker compose up`
-// starts them all at once. On a fresh volume they all find the key missing. If
-// each generates its own, the last writer wins on disk while every process keeps
-// the one it made in memory — so dauth signs with one key and aauth verifies
-// with another. The console is then told "device token expired", which points
-// nowhere near the cause.
+// Every SwitchNet service shares one key directory, and starting them all at
+// once -- `switchnetctl run`, or `systemctl start switchnet.target` -- means
+// they all find the key missing on a fresh directory. If each generates its
+// own, the last writer wins on disk while every process keeps the one it made
+// in memory — so dauth signs with one key and aauth verifies with another.
+// The console is then told "device token expired", which points nowhere near
+// the cause.
 func TestConcurrentKeyringsConvergeOnOneKey(t *testing.T) {
 	dir := t.TempDir()
 

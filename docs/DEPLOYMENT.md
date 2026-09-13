@@ -13,19 +13,31 @@ Getting SwitchNet onto a machine your consoles can reach.
 
 ## Local, on one machine
 
+Postgres, Redis and the nginx TLS edge run in Docker (off-the-shelf images,
+never rebuilt from this repo). The eight Go services run natively: as
+systemd units on the box that actually serves your consoles, installed
+once with `scripts/install-systemd.sh`.
+
 ```sh
-git clone https://github.com/n-popescu/switchnet && cd switchnet
+git clone https://github.com/n-popescu/switchnet /opt/switchnet && cd /opt/switchnet
 
 cp config/config.example.yaml config/config.yaml
-$EDITOR config/config.yaml            # network.public_ip is the one you must set
-
-echo "SWITCHNET_DEVICE_ID_SECRET=$(openssl rand -hex 32)" > .env
+$EDITOR config/config.yaml            # network.public_ip and keys.device_id_secret
+                                       # (openssl rand -hex 32 for the latter) are the
+                                       # two you must set yourself
 
 make config-check                     # validates and warns about risky settings
-make up                               # Postgres, Redis and the five services
+make up                               # Postgres, Redis and nginx
 make gen-certs                        # the local CA and the edge certificate
 make gen-switch                       # switch/hosts.txt and the nginx config
+scripts/install-systemd.sh            # builds every service, installs the units
+sudo systemctl start switchnet.target # starts all eight
 ```
+
+The clone location matters: `deploy/systemd/*.service` hardcode
+`/opt/switchnet` (`WorkingDirectory=`, `ExecStart=`), since a static unit
+file can't discover an arbitrary checkout path at install time.
+`install-systemd.sh` refuses to run from anywhere else.
 
 `make config-check` is worth running first. It refuses a configuration that
 cannot work and warns about the ones that are valid but cause trouble — most
@@ -94,6 +106,13 @@ The UDP rules are the ones people forget. A firewall that only opens TCP gives
 you a friends list that works and games that never start a match — and, if it
 blocks UDP 53, a console that resolves nothing at all.
 
+`8081–8084`'s loopback confinement comes from `config.example.yaml`'s own
+defaults (`dauth.listen`, `aauth.listen`, `stubs.listen` are all
+`127.0.0.1:<port>`) now that nothing publishes these ports for it — change
+one of those to bind-all and it is reachable from the LAN, not just this
+machine, so leave them as configured unless you have a specific reason not
+to.
+
 If port 53 is already taken on the machine (systemd-resolved is the usual
 culprit), either free it:
 
@@ -144,13 +163,18 @@ natcheck:
 Running with one address works, but consoles report a stricter NAT type than
 their router really has, and some titles refuse to matchmake on that basis.
 
-### natcheck and Docker
+### natcheck runs natively, and that is load-bearing
 
-The `natcheck` container uses `network_mode: host`, not a port mapping. The
-protocol works by the console observing *which* address and port answered, and
-Docker's userland proxy rewrites the source address of the reply — so every
-message type would look like it came from the same place, and NAT classification
-would be wrong in a way that looks like a NAT problem rather than a Docker one.
+The protocol works by the console observing *which* address and port
+answered. That only works cleanly because `natcheck` is a native process
+talking directly on the two addresses it configures (`natcheck.primary_listen`,
+`.secondary_listen`, `.alternate_listen`) — there is no NAT or userland proxy
+of any kind between it and the network sitting in the way and rewriting the
+reply's source address. (This used to be a real footgun when natcheck ran in
+Docker: the userland proxy would make every message type look like it came
+from the same place, and NAT classification would silently come out wrong in
+a way that looked like a router problem. Running natively removes the
+failure mode entirely rather than working around it.)
 
 ## Checklist: from nothing to a console with a friend
 
@@ -246,13 +270,39 @@ also golang-migrate compatible if you prefer to run them yourself:
 migrate -path internal/db/migrations -database "$SWITCHNET_DATABASE_URL" up
 ```
 
-**Logs.** `make logs`. `log.level: debug` logs every NAT-check datagram, which is
-a lot, and is the right setting while bringing a console up. `stubs.log_bodies`
-logs what unimplemented endpoints are being asked for — invaluable exactly once,
-far too chatty to leave on.
+**Logs.** `make logs` follows Postgres/Redis/nginx. The Go services log to
+journald: `journalctl -u switchnet-baas -f` for one, `journalctl -u
+'switchnet-*' -f` for all eight together. `log.level: debug` logs every
+NAT-check datagram, which is a lot, and is the right setting while bringing
+a console up. `stubs.log_bodies` logs what unimplemented endpoints are being
+asked for — invaluable exactly once, far too chatty to leave on.
 
-**Upgrades.** `git pull && make up` rebuilds and restarts. The image build runs
-`go vet` and `go test`, so a broken commit cannot produce a deployable image.
+**Upgrades.** `scripts/update.sh`, from `/opt/switchnet`: pulls, works out
+which services the change actually reaches (by reading each binary's Go
+package graph, not by guessing from directory names), runs `make check` —
+the replacement for what a Docker image build's `go vet`/`go test` step used
+to gate on, now that there is no image build in the loop at all — builds
+only what changed, and restarts only those systemd units. `--dry-run` says
+what it would do without doing it; `--all` forces every service regardless.
+
+### systemd
+
+`scripts/install-systemd.sh` (from `/opt/switchnet`, once) creates a
+dedicated `switchnet` system user, builds every service, and installs
+`deploy/systemd/switchnet-*.service` plus a grouping `switchnet.target`.
+
+```sh
+sudo systemctl start switchnet.target     # start all eight
+sudo systemctl status switchnet.target    # is everything up
+sudo systemctl restart switchnet-baas     # restart just one
+journalctl -u switchnet-baas -f           # its logs
+```
+
+Each unit restarts on its own on a crash (`Restart=on-failure`, uncapped --
+see the comment on `switchnet-baas.service` for why the usual "5 failures in
+10s" throttle is deliberately disabled) without taking any other service
+down with it, the same per-service isolation the old Docker setup's
+separate containers gave for free.
 
 ## Security
 
@@ -275,6 +325,12 @@ cannot be verified here — and it is why nothing is authorised on the device id
 **Never expose Postgres or Redis.** The compose file binds them to 127.0.0.1.
 There is no authentication on Redis and the Postgres password is a development
 default.
+
+**dauth/aauth/stubs stay loopback-only by configuration, not by a container
+port mapping.** `config.example.yaml`'s defaults already bind them to
+`127.0.0.1`; changing one of those `listen` values to bind-all puts it on
+the LAN with nothing in front of it. nginx is the only thing that is meant
+to reach them.
 
 **`config/config.yaml`, `certs/` and `switch/hosts.txt` are gitignored.** They
 contain your addresses and your keys. Check `git status` before committing if you
