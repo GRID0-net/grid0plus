@@ -252,11 +252,15 @@ debugging on hardware tractable.
       dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <YOUR_IP>
       dig @<YOUR_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
       dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
-      dig @<YOUR_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> real Nintendo
+      dig @<YOUR_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> 0.0.0.0
       dig @<YOUR_IP> example.com                     A     +short   # -> a real address
       ```
       The AAAA and `atumn` checks are the ones people skip, and both are
-      misconfigurations that bite later rather than immediately.
+      misconfigurations that bite later rather than immediately. `atumn`
+      resolves to `0.0.0.0` (null-routed), not real Nintendo: this
+      deployment's emuMMC is permanently and exclusively SwitchNet's, so
+      there is no "switching back to real Nintendo" for the system-update
+      hosts to stay passthrough for — see `docs/ROADMAP.md`'s note on this.
 
 - [ ] **5. NAT check answers on UDP.**
       ```sh

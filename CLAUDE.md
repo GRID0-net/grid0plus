@@ -164,10 +164,18 @@ Same IP → the console de-duplicates the probe → NAT detection never complete
 matchmaking finds matches that will not start. The config validator refuses to
 let them be equal.
 
-**Do not redirect the `d4c` system-update hosts.** `nim` writes a persistent flag
-when the update check fails, and it survives switching back to Nintendo's
-servers. `internal/nintendo/hosts.go` marks them `ServicePassthrough` and there is
-a test asserting it.
+**Do not redirect the `d4c` system-update hosts to a SwitchNet endpoint.** `nim`
+writes a persistent flag when the update check fails, and it survives switching
+back to Nintendo's servers — the general-purpose reason to leave them
+`ServicePassthrough`. This deployment's own emuMMC is permanently and
+exclusively SwitchNet's, so that flag can never survive into a "switch back"
+that will never happen, and passthrough would only mean real Nintendo traffic
+leaving the console for no benefit: `internal/nintendo/hosts.go` marks `sun`/
+`atumn`/`aqua` `ServiceBlackhole` (null-routed to `0.0.0.0`) instead, with
+`TestSystemUpdateHostsAreNullRouted` guarding that choice and its reasoning. If
+you ever reuse this host list for a console that *does* move back and forth
+between SwitchNet and real Nintendo, put these back to `ServicePassthrough`
+first.
 
 **Redirection and certificate trust are separate problems.** Redirection is DNS
 and happens off the console — `internal/dns`, or the generated dnsmasq/unbound
