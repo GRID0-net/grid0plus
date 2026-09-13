@@ -11,11 +11,11 @@ import (
 )
 
 // This file is TODO.md §1.4's backlog: everything besides FestService,
-// Schedule, CloudSave.GetSaveRecord and LobbyMessaging (service.go,
-// lobby_messaging.go). Each service below gets its own adapter type rather
-// than being embedded on *Service directly -- see Service's doc comment in
-// service.go for why CanolaServer/LockerServer and
-// CoopScenarioServer/ReplayServer cannot both be satisfied by one type.
+// Schedule, CloudSave.GetSaveRecord and LobbyMessaging/UserScreening
+// (service.go, schedule.go, cloud_save.go, messaging.go). Each service below
+// gets its own adapter type rather than being embedded on *Service directly
+// -- see Service's doc comment in service.go for why CanolaServer/LockerServer
+// and CoopScenarioServer/ReplayServer cannot both be satisfied by one type.
 //
 // The rule applied throughout: a lookup or a query answers honestly with
 // what SwitchNet actually has, which for every one of these is nothing --
