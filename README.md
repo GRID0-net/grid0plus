@@ -370,8 +370,7 @@ make test-race    # the same tests, with the race detector -- the servers are
                    #   concurrent by nature, so a data race is the more likely
                    #   kind of bug in this codebase than a plain logic error
 make test-cover   # coverage per package
-make build        # compile every service into bin/, catching anything
-                   #   `go vet`'s more limited scope misses
+make build        # compile every service into bin/
 ```
 
 Tests run with no database and no Redis: the handler tests use an in-memory store
