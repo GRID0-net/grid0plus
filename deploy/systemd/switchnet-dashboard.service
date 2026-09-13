@@ -1,0 +1,18 @@
+[Unit]
+Description=SwitchNet dashboard
+PartOf=switchnet.target
+After=network-online.target docker.service switchnet-npln.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=switchnet
+Group=switchnet
+WorkingDirectory=/opt/switchnet
+ExecStart=/opt/switchnet/bin/dashboard -config /opt/switchnet/config/config.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=switchnet.target
