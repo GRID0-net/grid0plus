@@ -16,20 +16,35 @@
 
 ## Running it
 
+Postgres, Redis and the nginx TLS edge run in Docker (off-the-shelf images,
+never rebuilt from this repo); the eight Go services run as native processes,
+either in a terminal while you're working on them or as systemd units on the
+box that actually serves your consoles.
+
 ```sh
 cp config/config.example.yaml config/config.yaml   # then edit it
+scripts/install-systemd.sh                         # once, from /opt/switchnet
 scripts/start.sh                                   # start everything
 scripts/update.sh                                  # pull, restart only what changed
 ```
 
-`start.sh` generates the edge certificate and the nginx configuration if they
-are missing, validates the config, brings the stack up and waits until it is
-actually answering — `docker compose ps` saying "running" is not the same thing.
+`install-systemd.sh` builds every service and installs `deploy/systemd/` as
+systemd units, so `systemctl restart switchnet-baas` (etc.) works and a
+service that crashes gets restarted without you watching for it. `start.sh`
+generates the edge certificate and the nginx configuration if they are
+missing, validates the config, brings the stack up and waits until it is
+actually answering — a container or unit reporting "running" is not the
+same thing.
 
 `update.sh` works out which services a change reaches by reading each binary's
 Go package graph, so a change to `internal/baas` restarts only baas and a change
 to `internal/db` restarts everything that imports it. `--dry-run` says what it
 would do.
+
+Iterating on the code itself, instead of running the deployed box: `make up`
+(Postgres/Redis/nginx) then `make run` (every Go service, in one terminal,
+foreground, Ctrl-C to stop) or `bin/switchnetctl run baas` for just one. See
+[`CLAUDE.md`](CLAUDE.md) for the full loop.
 
 The dashboard's **Health** tab asks every service directly and shows what each
 one's own dependencies are doing.
@@ -106,14 +121,14 @@ against Nintendo's own servers.
 
 ```sh
 cp config/config.example.yaml config/config.yaml
-$EDITOR config/config.yaml               # set network.public_ip
-
-echo "SWITCHNET_DEVICE_ID_SECRET=$(openssl rand -hex 32)" > .env
+$EDITOR config/config.yaml               # set network.public_ip and keys.device_id_secret
+                                          #   (openssl rand -hex 32 for the latter)
 
 make config-check                        # validate, and warn about risky settings
-make up                                  # Postgres, Redis, DNS and the services
+make up                                  # Postgres, Redis and nginx
 make gen-certs                           # local CA and edge certificate
 make gen-nginx                           # the TLS edge configuration
+make run &                               # the eight Go services, natively
 make seed                                # exercise the whole chain over HTTP
 ```
 
@@ -258,8 +273,8 @@ internal/
   dashboard/     the operator's web UI: players, matchmaking, Splatfests,
                  match history, a Debug tab
 switch/          console-side setup and the generated hosts file
-scripts/         gen-certs.sh, seed-dev-data.sh, capture-baas.py,
-                 build-certstore.py
+scripts/         start.sh, update.sh, install-systemd.sh, gen-certs.sh,
+                 seed-dev-data.sh, capture-baas.py, build-certstore.py
 docs/            roadmap, architecture, deployment, packet capture, captures
 ```
 

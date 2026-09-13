@@ -47,7 +47,8 @@ anything under `internal/baas/friends.go` as provisional — see
 
 4. **Run it, do not just test it.** Three of the bugs fixed so far were invisible
    to a green test suite and obvious within thirty seconds of starting the
-   processes. `make up && make seed` is cheap.
+   processes. `make up`, then `make run` in one terminal and `make seed` in
+   another, is cheap.
 
 5. **One logical change per commit**, conventional messages (`feat:`, `fix:`,
    `docs:`, `test:`, `refactor:`). The body should say *why*, not restate the
@@ -64,7 +65,9 @@ anything under `internal/baas/friends.go` as provisional — see
 ```sh
 make help                 # every target
 make check                # gofmt, go vet, go test — what CI runs
-make up && make seed      # run the real stack and drive it over HTTP
+make up                   # Postgres, Redis and nginx (Docker)
+make run                  # the eight Go services, natively, foreground
+make seed                 # in another terminal: drive it over HTTP
 ```
 
 The tests need no database: the handler tests use an in-memory store and finish
@@ -77,12 +80,11 @@ make test TEST_DATABASE_URL="postgres://…" TEST_REDIS_URL="redis://…"
 Read in this order: `docs/ARCHITECTURE.md`, then `internal/baas/README.md`, then
 `internal/baas/router.go`.
 
-Iterating on `baas` itself: `make dev-baas` runs it natively (`go run`) against
-the still-Dockerized Postgres/Redis, instead of a full image rebuild +
-container recreate per change. It reads the exact same signing keys as the
-Dockerized services (`./dev/keys`, bind-mounted — see `docker-compose.yml`),
-not a separate set; do not point it at a different key directory, for the
-usual reason.
+Iterating on one service: `bin/switchnetctl run baas` (or `dauth`, `npln`, ...)
+builds and runs just that one natively against the still-Dockerized Postgres/
+Redis — a `go build`, not a full rebuild — instead of running all eight. Every
+service reads the same `certs/keys` directory `config.yaml` already points at;
+there is no separate dev-only key directory to keep in sync with it.
 
 ## The two bugs this codebase is shaped around
 
@@ -272,7 +274,9 @@ a `config.example.yaml` that is itself the documentation. Two rules:
 make check          # gofmt, vet, test
 make test-race      # the servers are concurrent by nature
 make build
-make up && make seed
+make up             # Postgres, Redis and nginx
+make run &          # the eight Go services
+make seed           # drive it over HTTP
 ```
 
 Then check that the generated artefacts still generate:
