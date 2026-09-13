@@ -165,22 +165,3 @@ jobs:
           # by go vet and the tests; this reports the rest without gating a merge
           # on style.
           args: --timeout=5m --issues-exit-code=0
-
-  docker:
-    name: docker build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # The image build runs go vet and go test itself, so this also proves the
-      # tests pass in a clean container with no host Go cache.
-      - name: build the image
-        run: docker build -t switchnet:ci .
-
-      - name: every binary is in the image and runs
-        run: |
-          for svc in dns dauth aauth baas stubs natcheck switchnetctl; do
-            docker run --rm switchnet:ci /usr/local/bin/$svc -h >/dev/null 2>&1 \
-              || docker run --rm switchnet:ci test -x /usr/local/bin/$svc \
-              || { echo "::error::$svc is missing from the image"; exit 1; }
-          done

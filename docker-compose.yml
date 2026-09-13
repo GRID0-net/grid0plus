@@ -1,70 +1,27 @@
-# SwitchNet, phase 1: accounts and the stock friends list.
+# SwitchNet's off-the-shelf infrastructure: Postgres, Redis, and the nginx
+# TLS edge. Nothing here is built from this repo's own code -- Docker was
+# never the slow part for these three -- so they stay containerized.
 #
-#   make up          start everything
-#   make seed        create dev accounts, friendships and presence
-#   make logs        follow the logs
-#   make clean-data  stop and DELETE the database
+# The eight Go services (dns, dauth, aauth, baas, stubs, natcheck, npln,
+# dashboard) do NOT run here. They run as native processes: 'make run' for
+# interactive use, or as systemd units (deploy/systemd/, installed with
+# scripts/install-systemd.sh) for the always-on box serving your consoles --
+# systemd units are also where the "restart baas without dropping a
+# console's dauth request" per-service isolation this file used to provide
+# now lives.
 #
-# One image is built and every service runs it with a different entrypoint. They
-# are separate processes rather than one because that is how they are deployed —
-# an operator can restart the BAAS server without dropping a console's dauth
-# request — and because it keeps each one's dependencies honest: dauth has no
-# database connection, so a database outage still lets a console reach a useful
-# error.
+#   make up          start Postgres, Redis and nginx
+#   make down         stop them, keeping the volumes
+#   make logs         follow their logs
+#   make clean-data   stop everything and DELETE the database
+#
+# For the Go services: 'make run' (foreground, dev), or
+# scripts/install-systemd.sh + 'sudo systemctl start switchnet.target'
+# (production). See CLAUDE.md and docs/DEPLOYMENT.md.
 
 name: switchnet
 
-x-service-defaults: &defaults
-  build:
-    context: .
-    dockerfile: Dockerfile
-  restart: unless-stopped
-  environment: &env
-    # Every service needs the same key directory: aauth verifies dauth's device
-    # tokens and baas verifies both. Pointing them at different directories does
-    # not error — it rejects every request with a confusing "token expired".
-    SWITCHNET_KEYS_DIR: /var/lib/switchnet/keys
-    SWITCHNET_KEYS_GENERATE_IF_MISSING: "true"
-    # Set this in a .env file next to this one. Any long random string:
-    #   echo "SWITCHNET_DEVICE_ID_SECRET=$(openssl rand -hex 32)" > .env
-    SWITCHNET_DEVICE_ID_SECRET: ${SWITCHNET_DEVICE_ID_SECRET:-dev-only-change-me}
-    SWITCHNET_LOG_LEVEL: ${SWITCHNET_LOG_LEVEL:-info}
-    SWITCHNET_LOG_FORMAT: ${SWITCHNET_LOG_FORMAT:-text}
-  volumes:
-    # A bind mount, not a named volume: this lets a natively-run service (e.g.
-    # `go run ./cmd/baas` during dev iteration) share the exact same signing
-    # keys as the containers still running in Docker. Pointing dauth/aauth/baas
-    # at different key directories does not error -- every request is
-    # rejected with a confusing "token expired". See CLAUDE.md.
-    - ./dev/keys:/var/lib/switchnet/keys
-
 services:
-  # ---------------------------------------------------------------------------
-  # dns: how a console finds SwitchNet
-  # ---------------------------------------------------------------------------
-  # This replaces the Atmosphere hosts file. Point the console at this server --
-  # either by handing it out over DHCP from the router, in which case the console
-  # needs no configuration at all, or by setting DNS manually in the console's
-  # own network settings.
-  #
-  # host networking, not a port mapping: it has to own port 53 on the address the
-  # consoles reach, and a mapped port would hide the client address from the log.
-  dns:
-    <<: *defaults
-    command: ["/usr/local/bin/dns"]
-    environment:
-      <<: *env
-      SWITCHNET_PUBLIC_IP: ${SWITCHNET_PUBLIC_IP:?set SWITCHNET_PUBLIC_IP in .env}
-      SWITCHNET_NATCHECK_SECONDARY_IP: ${SWITCHNET_NATCHECK_SECONDARY_IP:-}
-      SWITCHNET_DNS_LISTEN: "${SWITCHNET_DNS_LISTEN:-:53}"
-      SWITCHNET_DNS_UPSTREAM: ${SWITCHNET_DNS_UPSTREAM:-9.9.9.9:53,1.1.1.1:53}
-    network_mode: host
-    # Port 53 is privileged. The image already grants the binary
-    # cap_net_bind_service, so this only has to allow the capability rather than
-    # run the container as root.
-    cap_add:
-      - NET_BIND_SERVICE
-
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -98,155 +55,13 @@ services:
       timeout: 3s
       retries: 10
 
-  dauth:
-    <<: *defaults
-    command: ["/usr/local/bin/dauth"]
-    environment:
-      <<: *env
-      SWITCHNET_DAUTH_LISTEN: ":8081"
-    ports:
-      - "127.0.0.1:8081:8081"
-
-  aauth:
-    <<: *defaults
-    command: ["/usr/local/bin/aauth"]
-    environment:
-      <<: *env
-      SWITCHNET_AAUTH_LISTEN: ":8082"
-    ports:
-      - "127.0.0.1:8082:8082"
-    depends_on:
-      # Not a hard dependency at runtime — aauth only needs dauth's signing key
-      # from the shared volume, not the process — but starting in this order
-      # means the key exists before aauth looks for it on a first run.
-      dauth:
-        condition: service_started
-
-  baas:
-    <<: *defaults
-    command: ["/usr/local/bin/baas"]
-    environment:
-      <<: *env
-      SWITCHNET_BAAS_LISTEN: ":8083"
-      SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
-      SWITCHNET_DATABASE_AUTO_MIGRATE: "true"
-      SWITCHNET_REDIS_URL: "redis://redis:6379/0"
-      SWITCHNET_BAAS_IMAGE_DIR: /var/lib/switchnet/images
-    volumes:
-      - ./dev/keys:/var/lib/switchnet/keys
-      - images:/var/lib/switchnet/images
-    ports:
-      # Every other backend service is 127.0.0.1-only (operator debugging via
-      # curl); baas is the exception, because /register is a page for a
-      # PERSON's own browser on the LAN, not just this machine. It's plain
-      # HTTP on purpose: routing it through the nginx TLS edge instead would
-      # need a visiting device to trust SwitchNet's CA and use its DNS,
-      # neither of which a phone or laptop has by default.
-      - "0.0.0.0:8083:8083"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      dauth:
-        condition: service_started
-
-  stubs:
-    <<: *defaults
-    command: ["/usr/local/bin/stubs"]
-    environment:
-      <<: *env
-      SWITCHNET_STUBS_LISTEN: ":8084"
-      SWITCHNET_STUBS_LOG_BODIES: ${SWITCHNET_STUBS_LOG_BODIES:-false}
-    ports:
-      - "127.0.0.1:8084:8084"
-
-  natcheck:
-    <<: *defaults
-    command: ["/usr/local/bin/natcheck"]
-    environment:
-      <<: *env
-      SWITCHNET_PUBLIC_IP: ${SWITCHNET_PUBLIC_IP:-}
-      SWITCHNET_NATCHECK_PRIMARY_LISTEN: "${SWITCHNET_NATCHECK_PRIMARY_LISTEN:-:10025}"
-      SWITCHNET_NATCHECK_SECONDARY_LISTEN: "${SWITCHNET_NATCHECK_SECONDARY_LISTEN:-:10125}"
-      SWITCHNET_NATCHECK_ALTERNATE_LISTEN: "${SWITCHNET_NATCHECK_ALTERNATE_LISTEN:-}"
-    # host networking, not a port mapping.
-    #
-    # The NAT-check protocol works by the console observing WHICH address and
-    # port answered. Docker's userland proxy rewrites the source address of a
-    # reply, so every message type would appear to come from the same place and
-    # NAT classification would be wrong in a way that looks like a NAT problem
-    # rather than a networking one.
-    network_mode: host
-
   # ---------------------------------------------------------------------------
   # nginx: TLS edge; routes Nintendo hostnames to the right backend by SNI
   # ---------------------------------------------------------------------------
   # Runs with host networking so the upstream addresses in the generated config
-  # (127.0.0.1:808x) resolve directly to the mapped service ports. NET_BIND_SERVICE
-  # is needed to bind port 443 without running as root.
-  # ---- phase 2 -----------------------------------------------------------
-  # The Splatoon 3 game server and the operator's dashboard. Both are gated on
-  # configuration rather than on being present: npln needs no extra setup, and
-  # the dashboard's matchmaking panel says so when npln.admin_token is unset.
-  npln:
-    <<: *defaults
-    command: ["/usr/local/bin/npln"]
-    environment:
-      <<: *env
-      SWITCHNET_NPLN_LISTEN: ":8085"
-      SWITCHNET_NPLN_REST_LISTEN: ":8086"
-      SWITCHNET_NPLN_ADMIN_LISTEN: ":8088"
-      SWITCHNET_NPLN_ADMIN_TOKEN: "${SWITCHNET_NPLN_ADMIN_TOKEN:-}"
-      SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
-      SWITCHNET_DATABASE_AUTO_MIGRATE: "true"
-      SWITCHNET_REDIS_URL: "redis://redis:6379/0"
-    volumes:
-      - ./dev/keys:/var/lib/switchnet/keys
-    ports:
-      # Loopback only. The gRPC and REST-front-end ports are reached through
-      # the nginx edge, and the admin port starts matches -- none belong on
-      # the open network.
-      - "127.0.0.1:8085:8085"
-      - "127.0.0.1:8086:8086"
-      - "127.0.0.1:8088:8088"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  dashboard:
-    <<: *defaults
-    command: ["/usr/local/bin/dashboard"]
-    environment:
-      <<: *env
-      SWITCHNET_DASHBOARD_LISTEN: ":8087"
-      SWITCHNET_DASHBOARD_TOKEN: "${SWITCHNET_DASHBOARD_TOKEN:-}"
-      # Reached over the compose network by service name, not loopback: the
-      # dashboard is its own container and 127.0.0.1 there is itself.
-      SWITCHNET_DASHBOARD_NPLN_ADMIN_URL: "npln:8088"
-      SWITCHNET_DASHBOARD_NPLN_ADMIN_TOKEN: "${SWITCHNET_NPLN_ADMIN_TOKEN:-}"
-      # The health view probes its neighbours by service name for the same
-      # reason.
-      SWITCHNET_DAUTH_LISTEN: "dauth:8081"
-      SWITCHNET_AAUTH_LISTEN: "aauth:8082"
-      SWITCHNET_BAAS_LISTEN: "baas:8083"
-      SWITCHNET_STUBS_LISTEN: "stubs:8084"
-      SWITCHNET_NPLN_ADMIN_LISTEN: "npln:8088"
-      SWITCHNET_DNS_LISTEN: "dns:53"
-      SWITCHNET_DATABASE_URL: "postgres://switchnet:switchnet@postgres:5432/switchnet?sslmode=disable"
-      SWITCHNET_REDIS_URL: "redis://redis:6379/0"
-    ports:
-      # On the LAN, because it is a page a person opens. Set dashboard.token
-      # before exposing it -- the matchmaking controls can start matches.
-      - "0.0.0.0:8087:8087"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      npln:
-        condition: service_started
-
+  # (127.0.0.1:808x) resolve directly to where the Go services listen, whether
+  # they are running natively or (during a rolling restart) briefly not.
+  # NET_BIND_SERVICE is needed to bind port 443 without running as root.
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -258,19 +73,7 @@ services:
       - ./deploy/nginx.generated.conf:/etc/nginx/conf.d/switchnet.conf:ro
       - ./certs/edge.crt:/etc/switchnet/certs/edge.crt:ro
       - ./certs/edge.key:/etc/switchnet/certs/edge.key:ro
-    depends_on:
-      dauth:
-        condition: service_started
-      aauth:
-        condition: service_started
-      baas:
-        condition: service_started
-      stubs:
-        condition: service_started
-      npln:
-        condition: service_started
 
 volumes:
   postgres:
   redis:
-  images:

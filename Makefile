@@ -163,14 +163,14 @@ switchnet-mode:
 config-check:
 	$(GO) run ./cmd/switchnetctl $(if $(wildcard $(CONFIG)),-config $(CONFIG),) check
 
-## up: start Postgres, Redis and every phase 1 service
+## up: start Postgres, Redis and nginx (the Go services run natively -- see 'run' and 'install-systemd')
 .PHONY: up
 up:
-	docker compose up -d --build
+	docker compose up -d
 	@echo
 	@docker compose ps
 
-## down: stop everything, keeping the volumes
+## down: stop Postgres, Redis and nginx, keeping the volumes
 .PHONY: down
 down:
 	docker compose down
@@ -195,7 +195,7 @@ clean-data:
 	docker compose down -v
 	rm -rf data/images
 
-## logs: follow the logs of every service
+## logs: follow Postgres/Redis/nginx logs -- for the Go services: journalctl -u 'switchnet-*' -f (or their own output under 'make run')
 .PHONY: logs
 logs:
 	docker compose logs -f
