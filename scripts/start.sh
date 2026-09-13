@@ -1,62 +1,46 @@
 #!/usr/bin/env bash
 #
-# Start the whole SwitchNet stack.
+# Start the whole SwitchNet stack: Postgres, Redis and the nginx edge in
+# Docker (the off-the-shelf pieces this repo never rebuilds), the eight Go
+# services as systemd units. Run scripts/install-systemd.sh once first, from
+# /opt/switchnet, to install those units -- this script only starts them.
 #
-# Everything is a container, including the phase-2 services, so this is mostly a
-# wrapper around `docker compose up`. What it adds is the checks that turn a
-# silent misconfiguration into a message: the things this stack fails on are
-# almost never the containers not starting.
-#
-#   scripts/start.sh              start everything
-#   scripts/start.sh --no-build   skip the image build (faster, use after update.sh)
+#   scripts/start.sh
 #
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-BUILD=1
 for arg in "$@"; do
     case "$arg" in
-        --no-build) BUILD=0 ;;
-        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "start.sh: unknown option $arg" >&2; exit 2 ;;
     esac
 done
 
 source scripts/preflight.sh
 
-# The matchmaking controls live in npln and the dashboard reaches them over the
-# compose network. Both containers read the same variable, so exporting it here
-# is what keeps them in step.
-ADMIN_TOKEN=$(sed -n 's/^[[:space:]]*admin_token:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | head -1)
-if [ -n "$ADMIN_TOKEN" ]; then
-    export SWITCHNET_NPLN_ADMIN_TOKEN="$ADMIN_TOKEN"
-else
-    warn "npln.admin_token is not set, so the dashboard's matchmaking controls
-  will say they are not configured. Set it in config/config.yaml to enable them."
+if ! systemctl list-unit-files switchnet.target >/dev/null 2>&1; then
+    die "switchnet.target is not installed yet. Run this once, from /opt/switchnet:
+  scripts/install-systemd.sh"
 fi
 
-DASH_TOKEN=$(sed -n 's/^[[:space:]]*token:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | tail -1)
-if [ -n "$DASH_TOKEN" ]; then
-    export SWITCHNET_DASHBOARD_TOKEN="$DASH_TOKEN"
-fi
+say "==> starting Postgres, Redis and nginx"
+docker compose up -d
 
-# ---- start ----------------------------------------------------------------
-
-say "==> starting"
-if [ "$BUILD" -eq 1 ]; then
-    docker compose up -d --build
-else
-    docker compose up -d
-fi
+say "==> starting the Go services"
+sudo systemctl start switchnet.target
 
 echo
 docker compose ps
+echo
+systemctl status switchnet.target --no-pager --lines=0 || true
 
 # ---- did it actually come up? ---------------------------------------------
 #
-# `docker compose ps` says the containers are running, which is not the same as
-# the services working. Every HTTP service answers /healthz, so ask them.
+# systemd reporting the units active is not the same as the services working.
+# Every HTTP service answers /healthz, so ask baas -- the one every other
+# call in this script's own "next steps" depends on.
 
 say "==> waiting for services"
 DASHBOARD_PORT=$(sed -n 's/^[[:space:]]*listen:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | tail -1)
@@ -81,8 +65,7 @@ if [ "$healthy" -eq 1 ]; then
     echo "  go run ./cmd/switchnetctl -config config/config.yaml account create -h"
     echo "  go run ./cmd/switchnetctl -config config/config.yaml hosts"
 else
-    warn "baas did not become healthy within 30s. The containers may still be
-  starting, or something is wrong. Look at:
-    docker compose logs --tail=50 baas"
+    warn "baas did not become healthy within 30s. Look at:
+  journalctl -u switchnet-baas -n 50 --no-pager"
     exit 1
 fi
