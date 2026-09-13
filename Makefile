@@ -175,11 +175,14 @@ up:
 down:
 	docker compose down
 
-## dev-baas: run baas natively (go run) against the Dockerized Postgres/Redis, for fast iteration -- see scripts/dev-baas.sh
-.PHONY: dev-baas
-dev-baas:
-	docker compose stop baas
-	scripts/dev-baas.sh
+## run: build and run the Go services natively (foreground, Ctrl-C to stop). Needs postgres/redis already up -- see 'make up'. To run a subset: bin/switchnetctl run baas dauth
+.PHONY: run
+run: $(BIN_DIR)/switchnetctl
+	$(BIN_DIR)/switchnetctl -config $(CONFIG) run
+
+$(BIN_DIR)/switchnetctl:
+	@mkdir -p $(BIN_DIR)
+	$(GO) build -o $(BIN_DIR)/switchnetctl ./cmd/switchnetctl
 
 ## clean-data: stop everything and DELETE the database and uploaded images
 .PHONY: clean-data
