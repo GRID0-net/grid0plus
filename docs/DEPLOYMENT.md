@@ -99,11 +99,13 @@ unmatched hosts to the stub server, which logs them. That log is the to-do list.
 | 53 | **UDP and TCP** | **the consoles** | DNS — how a console finds everything else |
 | 443 | TCP | **the consoles** | the nginx TLS edge |
 | **7575** | TCP | **the consoles** | the nginx edge again, for NPLN's `gamesync` |
+| **8443** | TCP | **consoles running SwitchNet Toolbox** | the nginx edge again, for `toolbox` — see below |
 | 10025, 10125 | **UDP** | **the consoles** | NAT check (phase 1 titles; **not** Splatoon 3) |
 | 3478 | UDP and TCP | **the consoles** | STUN/TURN, if you run one — Splatoon 3 uses ICE |
 | 8081–8084 | TCP | localhost only | phase 1's services, behind nginx |
 | 8085–8087 | TCP | localhost only | phase 2's: gateway, JSON front end, dashboard |
 | 8088, 8089 | TCP | localhost only | gamesync; npln's matchmaking admin API (off unless configured) |
+| 8090 | TCP | localhost only | `toolbox` — see below |
 | 5432, 6379 | TCP | localhost only | Postgres, Redis |
 
 The UDP rules are the ones people forget. A firewall that only opens TCP gives
@@ -137,6 +139,29 @@ the list is empty, and consoles on one LAN work without it.
 | --- | --- | --- |
 | `npln` | 8085, 8086, 8088, and 8089 if `admin_listen` is set | four listeners, one process. gamesync verifies tokens the gateway signs, so splitting it out would mean inventing a protocol between them; the admin API is served only when `npln.admin_token` is set |
 | `dashboard` | 8087 | bound to `0.0.0.0`, like `baas`: it is a page for a person's browser on the LAN. **Set `dashboard.token`**, or anybody who can reach it can schedule and cancel Splatfests |
+
+### `toolbox`: the SwitchNet Toolbox homebrew app's own API
+
+**Step-by-step deployment checklist: [`docs/TOOLBOX_SETUP.md`](TOOLBOX_SETUP.md).**
+
+`toolbox` (`internal/toolbox`, listens on `127.0.0.1:8090`) is not a
+Nintendo endpoint and deliberately not in `internal/nintendo/hosts.go`'s
+redirect list — it answers the `switchnet-nro` homebrew app, on its own
+edge port (**8443**, `deploy/nginx.toolbox.conf`) rather than a slot in the
+generated SNI map, the same reasoning `gamesync` gets its own port instead
+of one. It needs no `redis.url`, no database, and no console credential:
+see `internal/toolbox`'s own README for why it is unauthenticated by
+design.
+
+Set `toolbox.github_owner`, `.github_repo`, `.github_token` (a fine-grained
+PAT, `Contents: Read-only`, scoped to only that one repository) and
+`.public_base_url` (this service's own `https://<public IP>:8443`, needed to
+build a `browser_download_url` a console can actually reach — it cannot be
+inferred from the request behind nginx's TLS-terminating proxy) to enable
+`/updates/latest` and `/updates/download` — the mechanism that lets
+`switchnet-nro`'s source stay a private repository while its homebrew app
+still auto-updates. Leave all four empty and `/status` still works;
+`/updates/*` answers 503 instead.
 
 **`redis.url` must be set for both**, and it is in `config.yaml`. The
 dashboard is a separate process from `npln` and `baas`, and the in-process

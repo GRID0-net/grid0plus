@@ -280,6 +280,64 @@ func TestRequiredFieldsAreEnforced(t *testing.T) {
 	}
 }
 
+// ---- toolbox --------------------------------------------------------------
+
+func TestToolboxSettingsAreAllOrNothing(t *testing.T) {
+	clearEnv(t)
+
+	for name, body := range map[string]string{
+		"owner only": "toolbox:\n  github_owner: n-popescu\n",
+		"missing public_base_url": "toolbox:\n" +
+			"  github_owner: n-popescu\n  github_repo: switchnet-nro\n  github_token: t\n",
+		"public_base_url only": "toolbox:\n  public_base_url: https://203.0.113.5:8443\n",
+	} {
+		if _, err := Load(writeConfig(t, body)); err == nil {
+			t.Errorf("%s: accepted a partially-configured toolbox section", name)
+		}
+	}
+
+	// All four together, or none at all, are both fine.
+	for name, body := range map[string]string{
+		"all four set": "toolbox:\n" +
+			"  github_owner: n-popescu\n  github_repo: switchnet-nro\n" +
+			"  github_token: t\n  public_base_url: https://203.0.113.5:8443\n",
+		"none set": "toolbox:\n  listen: \"127.0.0.1:8090\"\n",
+	} {
+		if _, err := Load(writeConfig(t, body)); err != nil {
+			t.Errorf("%s: rejected: %v", name, err)
+		}
+	}
+}
+
+// TestToolboxPublicBaseURLMustBeAnAbsoluteHTTPSURL guards the fix for a real
+// bug: this value used to be inferred from the incoming request instead of
+// configured, which behind the real deploy/nginx.toolbox.conf (TLS
+// terminated at nginx, proxied to this service over plain HTTP, Host header
+// forwarded without its port) always produced a browser_download_url with
+// the wrong scheme and a missing port. Requiring an absolute https:// URL
+// here is what makes that class of mistake a config-load error instead of a
+// response the console silently cannot use.
+func TestToolboxPublicBaseURLMustBeAnAbsoluteHTTPSURL(t *testing.T) {
+	clearEnv(t)
+
+	base := "toolbox:\n  github_owner: n-popescu\n  github_repo: switchnet-nro\n  github_token: t\n"
+	for name, url := range map[string]string{
+		"plain http, not https": "http://203.0.113.5:8443",
+		"no scheme at all":      "203.0.113.5:8443",
+		"has a path":            "https://203.0.113.5:8443/updates",
+	} {
+		body := base + "  public_base_url: " + url + "\n"
+		if _, err := Load(writeConfig(t, body)); err == nil {
+			t.Errorf("%s (%q): accepted", name, url)
+		}
+	}
+
+	valid := base + "  public_base_url: https://203.0.113.5:8443\n"
+	if _, err := Load(writeConfig(t, valid)); err != nil {
+		t.Errorf("a valid https public_base_url was rejected: %v", err)
+	}
+}
+
 // ---- DNS ----------------------------------------------------------------
 
 func TestDNSUpstreamValidation(t *testing.T) {

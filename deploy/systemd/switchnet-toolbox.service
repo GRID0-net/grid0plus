@@ -1,0 +1,18 @@
+[Unit]
+Description=SwitchNet toolbox (public API for the SwitchNet Toolbox homebrew app)
+PartOf=switchnet.target
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=switchnet
+Group=switchnet
+WorkingDirectory=/opt/switchnet
+ExecStart=/opt/switchnet/bin/toolbox -config /opt/switchnet/config/config.yaml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=switchnet.target

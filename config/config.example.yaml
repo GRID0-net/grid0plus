@@ -462,6 +462,51 @@ npln:
   admin_token: ""
 
 # ---------------------------------------------------------------------------
+# toolbox: the public API for the SwitchNet Toolbox homebrew app
+# ---------------------------------------------------------------------------
+toolbox:
+  # Loopback only, same reasoning as dauth.listen: nginx is the only thing
+  # that reaches this directly, over its own dedicated port (see
+  # deploy/nginx.toolbox.conf) rather than a slot in the Nintendo-hostname
+  # SNI map -- this answers a homebrew app, not a Nintendo endpoint.
+  listen: "127.0.0.1:8090"
+
+  # Identify the private switchnet-nro repository /updates/* reads releases
+  # from. Leave this and the other three toolbox.* keys below empty to serve
+  # /status only, with /updates/* answering 503 instead of 502ing on every
+  # request.
+  github_owner: "n-popescu"
+  github_repo: "switchnet-nro"
+
+  # A fine-grained personal access token (github.com/settings/personal-access-tokens),
+  # scoped to ONLY github_owner/github_repo, permission Contents: Read-only,
+  # nothing else. Never a classic token -- those cannot be scoped to one
+  # repository, and this one exists specifically so the scope stays that
+  # narrow.
+  #
+  # This is the one credential in all of SwitchNet that exists so a *client*
+  # binary never has to hold one: the console asks this service, never
+  # GitHub directly, and the token never leaves this box.
+  github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-switchnet-nro-contents-read-only"
+
+  # This service's own address as a console reaches it: the same public IP
+  # as network.public_ip, fixed port 8443 (deploy/nginx.toolbox.conf),
+  # always https -- that nginx block has no plain-http listener. Used to
+  # build /updates/latest's browser_download_url. Not inferred from the
+  # incoming request on purpose: nginx terminates TLS and proxies to this
+  # service over plain HTTP, so the request this service actually sees
+  # never carries the real scheme, and nginx's Host forwarding drops the
+  # port too -- see internal/toolbox's package comment. No path; leave that
+  # to handleUpdatesLatest. Required, with the three keys above, for
+  # /updates/* to answer anything but 503.
+  public_base_url: "https://203.0.113.5:8443"
+
+  # How long releases/latest is cached before calling GitHub again. Several
+  # consoles checking within this window cost one GitHub request, not one
+  # per console.
+  release_cache_ttl_seconds: 120
+
+# ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------
 natcheck:

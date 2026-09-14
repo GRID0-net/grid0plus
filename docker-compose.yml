@@ -59,10 +59,11 @@ services:
   # nginx: TLS edge; routes Nintendo hostnames to the right backend by SNI
   # ---------------------------------------------------------------------------
   # Runs with host networking so the upstream addresses in the generated config
-  # (127.0.0.1:808x, plus 7575 for gamesync) resolve directly to where the Go
-  # services listen, whether they are running natively or (during a rolling
-  # restart) briefly not. NET_BIND_SERVICE is needed to bind port 443 (and
-  # 7575) without running as root.
+  # (127.0.0.1:808x, plus 7575 for gamesync and 8443 for the toolbox API)
+  # resolve directly to where the Go services listen, whether they are
+  # running natively or (during a rolling restart) briefly not.
+  # NET_BIND_SERVICE is needed to bind port 443 (and 7575, and 8443) without
+  # running as root.
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -72,6 +73,7 @@ services:
     volumes:
       - ./deploy/nginx.params.conf:/etc/nginx/conf.d/00_params.conf:ro
       - ./deploy/nginx.generated.conf:/etc/nginx/conf.d/switchnet.conf:ro
+      - ./deploy/nginx.toolbox.conf:/etc/nginx/conf.d/switchnet-toolbox.conf:ro
       - ./certs/edge.crt:/etc/switchnet/certs/edge.crt:ro
       - ./certs/edge.key:/etc/switchnet/certs/edge.key:ro
 

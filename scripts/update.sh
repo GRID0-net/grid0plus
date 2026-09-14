@@ -69,7 +69,7 @@ fi
 
 # Every service that runs as a systemd unit. switchnetctl is a CLI, not a
 # service, so it is deliberately not here -- 'make build' always rebuilds it.
-SERVICES="dns dauth aauth baas stubs natcheck npln dashboard"
+SERVICES="dns dauth aauth baas stubs natcheck npln dashboard toolbox"
 
 CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
 
@@ -201,6 +201,7 @@ for svc in $go_restart; do
         aauth)     port=8082 ;;
         stubs)     port=8084 ;;
         dashboard) port=8087 ;;
+        toolbox)   port=8090 ;;
         npln)
             [ -n "$ADMIN_TOKEN" ] || continue
             port=8088 ;;
