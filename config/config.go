@@ -36,6 +36,7 @@ type Config struct {
 	NPLN      NPLN      `yaml:"npln"`
 	BCAT      BCAT      `yaml:"bcat"`
 	Dashboard Dashboard `yaml:"dashboard"`
+	Toolbox   Toolbox   `yaml:"toolbox"`
 	NATCheck  NATCheck  `yaml:"natcheck"`
 
 	Log Log `yaml:"log"`
@@ -465,6 +466,45 @@ type Stubs struct {
 	BCATRecordDir string `yaml:"bcat_record_dir"`
 }
 
+// Toolbox configures the public API the SwitchNet Toolbox homebrew app
+// (github.com/n-popescu/switchnet-nro) talks to. See internal/toolbox's
+// package comment for why this exists as its own service rather than a
+// route on stubs or dashboard: it is the one service any console reaches
+// with no credential at all, and it holds a GitHub token specifically so
+// that credential never has to live in a binary distributed to consoles.
+type Toolbox struct {
+	// Loopback only, same reasoning as dauth.listen: nginx is the only thing
+	// that reaches this directly, over its own dedicated TLS port (see
+	// deploy/nginx.toolbox.conf) rather than the Nintendo-hostname SNI map --
+	// this service answers a homebrew app, not a Nintendo endpoint, and does
+	// not belong in internal/nintendo/hosts.go's redirect list.
+	Listen string `yaml:"listen"`
+
+	// GitHubOwner and GitHubRepo identify the private switchnet-nro
+	// repository /updates/* reads releases from. Leave both empty to serve
+	// /status only and have /updates/* answer 503.
+	GitHubOwner string `yaml:"github_owner"`
+	GitHubRepo  string `yaml:"github_repo"`
+
+	// GitHubToken is a fine-grained personal access token scoped to ONLY
+	// github_owner/github_repo, permission Contents: Read-only, nothing
+	// else. Generate it at github.com/settings/personal-access-tokens --
+	// never a classic token, which cannot be scoped to one repository.
+	//
+	// This is the one credential in all of SwitchNet that exists specifically
+	// so a *client* binary never has to hold one. Put the real value in
+	// config/config.yaml (gitignored) or SWITCHNET_TOOLBOX_GITHUB_TOKEN, never
+	// here.
+	GitHubToken string `yaml:"github_token"`
+
+	// ReleaseCacheTTLSeconds bounds how often releases/latest is actually
+	// called on GitHub. Several consoles checking for an update within the
+	// same window should cost one request, not one per console. Zero means
+	// no caching -- fine at this traffic level, but every check then costs a
+	// real GitHub API call.
+	ReleaseCacheTTLSeconds int `yaml:"release_cache_ttl_seconds"`
+}
+
 // NATCheck configures the UDP NAT-check responder.
 type NATCheck struct {
 	// PrimaryListen is the main socket. Nintendo uses UDP 10025.
@@ -576,6 +616,10 @@ func Default() Config {
 			ConverterTimeout: 120,
 			SubstituteFestID: true,
 		},
+		Toolbox: Toolbox{
+			Listen:                 "127.0.0.1:8090",
+			ReleaseCacheTTLSeconds: 120,
+		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
 			SecondaryListen: ":10125",
@@ -683,6 +727,12 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
 	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
+
+	envStr("SWITCHNET_TOOLBOX_LISTEN", &c.Toolbox.Listen)
+	envStr("SWITCHNET_TOOLBOX_GITHUB_OWNER", &c.Toolbox.GitHubOwner)
+	envStr("SWITCHNET_TOOLBOX_GITHUB_REPO", &c.Toolbox.GitHubRepo)
+	envStr("SWITCHNET_TOOLBOX_GITHUB_TOKEN", &c.Toolbox.GitHubToken)
+	envInt("SWITCHNET_TOOLBOX_RELEASE_CACHE_TTL_SECONDS", &c.Toolbox.ReleaseCacheTTLSeconds)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
 	envStr("SWITCHNET_NATCHECK_SECONDARY_LISTEN", &c.NATCheck.SecondaryListen)
@@ -818,6 +868,20 @@ func (c Config) Validate() error {
 			errs = append(errs, fmt.Errorf(
 				"npln.ice_servers[%d].port: %d is not a port", i, s.Port))
 		}
+	}
+
+	// toolbox.github_token without both owner and repo (or vice versa) cannot
+	// work: latestReleaseBody would call
+	// "https://api.github.com/repos//" or similar and always fail. Silently
+	// serving /status while /updates/* mysteriously 502s is exactly the
+	// "fails much later with an unhelpful error" this function exists to
+	// catch instead.
+	tb := c.Toolbox
+	tbConfigured := tb.GitHubOwner != "" || tb.GitHubRepo != "" || tb.GitHubToken != ""
+	if tbConfigured && (tb.GitHubOwner == "" || tb.GitHubRepo == "" || tb.GitHubToken == "") {
+		errs = append(errs, errors.New(
+			"toolbox.github_owner, toolbox.github_repo and toolbox.github_token "+
+				"must all be set together, or all left empty to disable /updates/*"))
 	}
 
 	return errors.Join(errs...)

@@ -8,7 +8,7 @@ GO      ?= go
 CONFIG  ?= config/config.yaml
 BIN_DIR ?= bin
 
-SERVICES := dns dauth aauth baas stubs natcheck npln dashboard switchnetctl
+SERVICES := dns dauth aauth baas stubs natcheck npln dashboard toolbox switchnetctl
 
 # Set these to run the integration tests that need a real database and Redis.
 # Without them those tests skip, so `make test` works on any machine.
