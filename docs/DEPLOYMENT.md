@@ -142,6 +142,8 @@ the list is empty, and consoles on one LAN work without it.
 
 ### `toolbox`: the SwitchNet Toolbox homebrew app's own API
 
+**Step-by-step deployment checklist: [`docs/TOOLBOX_SETUP.md`](TOOLBOX_SETUP.md).**
+
 `toolbox` (`internal/toolbox`, listens on `127.0.0.1:8090`) is not a
 Nintendo endpoint and deliberately not in `internal/nintendo/hosts.go`'s
 redirect list — it answers the `switchnet-nro` homebrew app, on its own
