@@ -332,14 +332,27 @@ function populateCoopStageSelect() {
     .join("");
 }
 
+// updateCoopKindFields shows/hides the fields that only some Kinds carry on
+// the wire, rather than letting the operator fill in a value Validate will
+// only reject after a round trip to the server: CoopSchedule_TeamContest has
+// no boss and no reward_gear_id field, and only BigRun/TeamContest carry
+// rewards at all.
+function updateCoopKindFields() {
+  const kind = $('input[name="coop-kind"]:checked').value;
+  $("#coop-rewards-field").hidden = kind !== "big_run" && kind !== "team_contest";
+  $("#coop-boss-field").hidden = kind === "team_contest";
+  $("#coop-reward-gear-field").hidden = kind === "team_contest";
+}
+
 $$('input[name="coop-kind"]').forEach((radio) =>
   radio.addEventListener("change", () => {
     populateCoopStageSelect();
-    $("#coop-rewards-field").hidden = $('input[name="coop-kind"]:checked').value !== "big_run";
+    updateCoopKindFields();
   })
 );
 
 const COOP_STATUS_LABEL = { upcoming: "upcoming", live: "live", ended: "ended" };
+const COOP_KIND_LABEL = { big_run: "Big Run", team_contest: "Team Contest", normal: "Normal" };
 
 function renderCoopShifts(shifts) {
   $("#coop-empty").hidden = shifts.length > 0;
@@ -352,7 +365,7 @@ function renderCoopShifts(shifts) {
       card.innerHTML = `
         <div class="cols">
           <div class="fid">${escape(c.stageName)}
-            <span class="pill">${c.kind === "big_run" ? "Big Run" : "Normal"}</span>
+            <span class="pill">${COOP_KIND_LABEL[c.kind] || c.kind}</span>
             <span class="pill ${statusPill}">${COOP_STATUS_LABEL[c.status] || c.status}</span>
           </div>
           <div class="meta">${c.weaponNames.map(escape).join(" · ")}${
@@ -390,16 +403,23 @@ $("#coop-form").addEventListener("submit", async (e) => {
   const kind = $('input[name="coop-kind"]:checked').value;
   const rewardsRaw = $("#coop-rewards").value.trim();
 
+  // team_contest carries neither on the wire (CoopSchedule_TeamContest has no
+  // boss or reward_gear_id field), so a value left over from switching Kind
+  // away from normal/big_run is cleared here rather than submitted and
+  // rejected by Validate -- the field is only hidden, not disabled, so its
+  // old value is still sitting in the DOM.
+  const teamContest = kind === "team_contest";
+
   try {
     await api("/api/coop-shifts", {
       method: "POST",
       body: JSON.stringify({
         kind,
         stageId: Number($("#coop-stage").value),
-        boss: $("#coop-boss").value,
+        boss: teamContest ? "" : $("#coop-boss").value,
         weapons: $$(".coop-weapon").map((sel) => Number(sel.value)),
         kumaWeaponId: Number($("#coop-kuma").value),
-        rewardGearId: Number($("#coop-reward-gear").value || 0),
+        rewardGearId: teamContest ? 0 : Number($("#coop-reward-gear").value || 0),
         rewards: rewardsRaw
           ? rewardsRaw.split(",").map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n))
           : [],

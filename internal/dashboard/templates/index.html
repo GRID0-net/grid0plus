@@ -277,12 +277,13 @@
           <div class="chips" id="coop-kind-chips">
             <label><input type="radio" name="coop-kind" value="normal" checked> Normal</label>
             <label><input type="radio" name="coop-kind" value="big_run"> Big Run</label>
+            <label><input type="radio" name="coop-kind" value="team_contest"> Team Contest</label>
           </div>
         </label>
         <label>
           <span>Stage</span>
           <select name="stageId" id="coop-stage"></select>
-          <small>The list is filtered to Big Run stages, or normal-rotation stages, to match Kind above -- a real console never sees Big Run running on an ordinary stage.</small>
+          <small>The list is filtered to Big Run stages, or normal-rotation stages, to match Kind above -- a real console never sees Big Run running on an ordinary stage. Team Contest uses the normal-rotation stages too.</small>
         </label>
         <label>
           <span>Main weapons <em>four, in order</em></span>
@@ -297,7 +298,7 @@
           <span>Kuma (Grizzco) weapon</span>
           <select name="kumaWeaponId" id="coop-kuma"></select>
         </label>
-        <label>
+        <label id="coop-boss-field">
           <span>Xtrawave boss <em>optional</em></span>
           <select name="boss" id="coop-boss">
             <option value="">None scheduled</option>
@@ -312,13 +313,13 @@
           <span>Ends</span>
           <input type="datetime-local" name="endAt" id="coop-end">
         </label>
-        <label>
+        <label id="coop-reward-gear-field">
           <span>Reward gear id <em>optional</em></span>
           <input type="number" name="rewardGearId" id="coop-reward-gear" min="0" placeholder="0">
           <small>Not checked against a real gear table -- see internal/toyohr/coop_ids.go.</small>
         </label>
         <label id="coop-rewards-field" hidden>
-          <span>Big Run scale-tier rewards <em>optional</em></span>
+          <span>Scale-tier rewards <em>optional</em></span>
           <input type="text" name="rewards" id="coop-rewards" placeholder="100, 200, 300" autocapitalize="off" spellcheck="false">
         </label>
         <div class="form-actions">

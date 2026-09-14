@@ -25,13 +25,13 @@ import (
 // scheduling one shift IS the whole job.
 func coopSchedule(cfg config.Config, args []string) {
 	fs := flag.NewFlagSet("coop schedule", flag.ExitOnError)
-	kindStr := fs.String("kind", "normal", `"normal" or "big_run"`)
+	kindStr := fs.String("kind", "normal", `"normal", "big_run" or "team_contest"`)
 	stage := fs.Int("stage", 0, "real Salmon Run stage id -- see 'switchnetctl coop stages'")
-	boss := fs.String("boss", "", `king salmonid codename for this shift's Xtrawave, or "" for none -- see 'switchnetctl coop bosses'`)
+	boss := fs.String("boss", "", `king salmonid codename for this shift's Xtrawave, or "" for none (normal/big_run only -- team_contest has no boss) -- see 'switchnetctl coop bosses'`)
 	weaponsStr := fs.String("weapons", "", "exactly four comma-separated real weapon ids -- see 'switchnetctl coop weapons'")
 	kuma := fs.Int64("kuma", 0, "real Grizzco weapon id this shift's boss wave uses -- see 'switchnetctl coop weapons -kuma'")
-	rewardGear := fs.Int("reward-gear", 0, "gear reward id for this shift, or 0 for none (not validated -- see internal/toyohr/coop_ids.go)")
-	rewardsStr := fs.String("rewards", "", "big_run only: comma-separated scale-tier reward values")
+	rewardGear := fs.Int("reward-gear", 0, "gear reward id for this shift, or 0 for none (normal/big_run only -- team_contest has no reward_gear_id; not validated, see internal/toyohr/coop_ids.go)")
+	rewardsStr := fs.String("rewards", "", "big_run/team_contest only: comma-separated scale-tier reward values")
 	startStr := fs.String("start", "", "shift start time, RFC3339 -- rounded down to the nearest two-hour slot")
 	endStr := fs.String("end", "", "shift end time, RFC3339 -- rounded down to the nearest two-hour slot")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, coopScheduleUsage) }
@@ -289,7 +289,7 @@ func parseInt64List(s string) ([]int64, error) {
 	return out, nil
 }
 
-const coopScheduleUsage = `switchnetctl coop schedule -kind <normal|big_run> -stage <id> -weapons <id,id,id,id> -kuma <id> -start <RFC3339> -end <RFC3339> [-boss <codename>] [-reward-gear <id>] [-rewards <id,id,...>]
+const coopScheduleUsage = `switchnetctl coop schedule -kind <normal|big_run|team_contest> -stage <id> -weapons <id,id,id,id> -kuma <id> -start <RFC3339> -end <RFC3339> [-boss <codename>] [-reward-gear <id>] [-rewards <id,id,...>]
 
 Schedules one Salmon Run rotation shift and registers it, so the console's
 SelectCoopSchedules RPC starts serving it. Every id must be a real Nintendo
@@ -298,9 +298,12 @@ one -- 'switchnetctl coop stages', '... weapons', '... weapons -kuma' and
 than sent to a console that cannot resolve it against its own assets.
 
 -kind big_run requires a Big Run stage (coop stages marks which); -kind
-normal refuses one. Running this again with the same -kind and -start
-replaces the shift rather than creating a second one -- the id is derived
-from those two values, never typed.
+normal and -kind team_contest both refuse one -- team_contest runs on the
+normal rotation's stages, not Big Run's. -kind team_contest also refuses
+-boss and -reward-gear: CoopSchedule_TeamContest has no field for either on
+the wire, unlike normal and big_run. Running this again with the same -kind
+and -start replaces the shift rather than creating a second one -- the id is
+derived from those two values, never typed.
 
 Requires a reachable database -- see 'switchnetctl account create -h'.
 `

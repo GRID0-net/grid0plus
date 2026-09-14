@@ -240,8 +240,10 @@ usual blocker for a Vs/Coop rotation — no known wire shape — did not actuall
 apply here: `nn.npln.toyohr.v1.CoopSchedule`'s own decompiled proto
 (`proto/toyohr/v1/resources.pb.go`) already carries `Normal`, `BigRun` and
 `TeamContest` as three parallel sub-messages, each with real fields
-(`stage`, `boss`, `main_weapons`, `kuma_weapon`, `reward_gear_id`, and
-`BigRun`'s own `rewards`). Independently corroborated, not just read once:
+(`stage`, `main_weapons`, `kuma_weapon`) plus what only some of them carry:
+`boss` and `reward_gear_id` on `Normal`/`BigRun` but not `TeamContest`,
+`rewards` on `BigRun`/`TeamContest` but not `Normal`. Independently
+corroborated, not just read once:
 [`nintendoapis/splatnet3-types`](https://github.com/nintendoapis/splatnet3-types),
 a public typed schema of SplatNet 3's own GraphQL API, has the identical
 three-way split (`CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
@@ -292,9 +294,16 @@ exist:
   -- `switchnetctl coop generate` and the dashboard's "Auto-fill" panel are
   both thin wrappers over it.
 
-TeamContest (Eggstra Work) has no authoring OR generation path yet; adding
-one is the same shape of work Big Run was. Three fields on the wire message
-are an operator-local assumption rather than a confirmed shape —
+TeamContest (Eggstra Work) has an authoring path now too, the same shape of
+work Big Run was: `CoopShiftTeamContest`, validated against the normal
+rotation's stages (not Big Run's) and, unlike Normal/BigRun, refusing a boss
+or a reward gear id — `CoopSchedule_TeamContest` has no field for either, so
+a value there is an operator mistake to explain rather than a value
+`coopScheduleProto` would silently drop. No generation path, deliberately,
+the same reasoning `coop_generate.go` already gives for excluding Big Run:
+Eggstra Work is a calendar event with a small, real history to hand-schedule
+from, not a rotation to synthesize entries for. Three fields on the wire
+message are an operator-local assumption rather than a confirmed shape —
 `coopScheduleProto` documents which, and `docs/QUESTIONS.md` has the entry.
 
 ## `CloudSave.GetSaveRecord`: `NotFound` is the correct answer, not a stub

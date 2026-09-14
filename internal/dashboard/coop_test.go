@@ -135,6 +135,74 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 	}
 }
 
+// TestATeamContestCoopShiftCanBeScheduled mirrors
+// TestACoopShiftCanBeScheduledAndDeleted for team_contest specifically,
+// since it is the one Kind with fields (boss, reward gear id) the wire
+// message has no room for -- omitting both here is the happy path a real
+// operator's request looks like once dashboard.js clears them before
+// sending, per updateCoopKindFields/the coop-form submit handler.
+func TestATeamContestCoopShiftCanBeScheduled(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	h := srv.Handler()
+
+	start := toyohr.AlignToSlot(now.Add(2 * time.Hour))
+	end := toyohr.AlignToSlot(now.Add(10 * time.Hour))
+	body := `{
+		"kind": "team_contest",
+		"stageId": 1,
+		"weapons": [20000, 20010, 20020, 20030],
+		"kumaWeaponId": 20900,
+		"rewards": [50, 100],
+		"startAt": "` + start.Format(time.RFC3339) + `",
+		"endAt": "` + end.Format(time.RFC3339) + `"
+	}`
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/coop-shifts", strings.NewReader(body)))
+	if rec.Code != 200 {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	var created struct{ ID string }
+	json.Unmarshal(rec.Body.Bytes(), &created)
+
+	shift, err := store.GetCoopShift(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("shift was not stored: %v", err)
+	}
+	if got, want := shift.Kind, "team_contest"; got != want {
+		t.Errorf("stored kind = %q, want %q", got, want)
+	}
+}
+
+// TestATeamContestCoopShiftWithABossIsRefused checks the HTTP layer
+// actually goes through CoopShift.Validate for this kind's own rule
+// (CoopSchedule_TeamContest has no boss field), the same reasoning
+// TestCreatingACoopShiftWithAFakeIdIsRefused applies to a bad stage id.
+func TestATeamContestCoopShiftWithABossIsRefused(t *testing.T) {
+	now := time.Now().UTC()
+	srv, _ := newTestServer(t, "", now)
+	h := srv.Handler()
+
+	start := toyohr.AlignToSlot(now.Add(2 * time.Hour))
+	end := toyohr.AlignToSlot(now.Add(10 * time.Hour))
+	body := `{
+		"kind": "team_contest",
+		"stageId": 1,
+		"boss": "SakeJaw",
+		"weapons": [20000, 20010, 20020, 20030],
+		"kumaWeaponId": 20900,
+		"startAt": "` + start.Format(time.RFC3339) + `",
+		"endAt": "` + end.Format(time.RFC3339) + `"
+	}`
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/coop-shifts", strings.NewReader(body)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create with a boss on team_contest: %d %s, want 400", rec.Code, rec.Body)
+	}
+}
+
 // TestCreatingACoopShiftWithAFakeIdIsRefused checks that the dashboard
 // actually goes through CoopShift.Validate rather than storing whatever it
 // is handed -- the one property CLAUDE.md rule 6 makes matter for this

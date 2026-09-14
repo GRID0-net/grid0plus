@@ -125,8 +125,11 @@ rotation with real, randomly-picked ids (`switchnetctl coop generate`, or
 the dashboard's "Auto-fill" panel) — SwitchNet's own generator, not a
 recovered Nintendo algorithm, and additive: it never overwrites a slot a
 hand-scheduled shift or an earlier generate call already filled, so manual
-correction of any one slot always sticks. TeamContest (Eggstra Work) has no
-authoring OR generation path yet, CLI or dashboard. `CloudSave` is built
+correction of any one slot always sticks. TeamContest (Eggstra Work) has an
+authoring path too, `CoopShiftTeamContest`, the same as Big Run's; no
+generation path, deliberately, the same reason Big Run has none — a
+calendar event with a real history to hand-schedule from, not a rotation to
+synthesize. `CloudSave` is built
 only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
 an account with no cloud save, not a stub); its other five RPCs
 (`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)

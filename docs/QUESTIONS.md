@@ -167,26 +167,29 @@ commit that says why it is no longer considered misleading enough to avoid.
 
 ## What do `CoopSchedule`'s `Name`/`ScheduleSetId`/`ShiftId`/`RewardType` fields actually carry?
 
-`internal/toyohr/schedule.go`'s `coopScheduleProto` builds a real
+`internal/toyohr/coop_schedule.go`'s `coopScheduleProto` builds a real
 `nn.npln.toyohr.v1.CoopSchedule` message (see `internal/toyohr/README.md`'s
 "honest emptiness for Vs, a real rotation for Coop" section for why the
 message *shape* itself is well-confirmed) but four of its fields have no
 confirmed content: `Name`, `ScheduleSetId` and `ShiftId` are opaque
 identifier strings with no known real format, and `RewardType`
 (`CoopSchedule_Normal`/`_BigRun`'s own field) is presumably an enum-like
-string this project has not seen a real value for.
+string this project has not seen a real value for. `Name`/`ScheduleSetId`/
+`ShiftId` apply to `CoopSchedule_TeamContest` too, once that kind got an
+authoring path; `RewardType` does not, since `CoopSchedule_TeamContest` has
+no such field to leave unset in the first place.
 
 **Proceeding on:** `Name`/`ScheduleSetId`/`ShiftId` all reuse the derived
 shift id (`toyohr.CoopShift.ID()`) under the `tenants/<t>/coopSchedules/...`
 prefix `GetFestDecryptionKey` already confirms for a different resource —
 the same "lenient, consistency-over-invention" reasoning
 `festEntryIDsFromResourceName` uses below. `RewardType` is left `""`
-(unset) rather than guessed. Unlike `Fest.Resource`, nothing computationally
-depends on any of these four: no decryption IV is derived from them, so a
-wrong guess costs a cosmetic mismatch, not a broken RPC or a pack that fails
-to open.
+(unset) rather than guessed, on the two kinds that carry it. Unlike
+`Fest.Resource`, nothing computationally depends on any of these: no
+decryption IV is derived from them, so a wrong guess costs a cosmetic
+mismatch, not a broken RPC or a pack that fails to open.
 
-**Changes if answered:** `internal/toyohr/schedule.go`'s `coopScheduleProto`.
+**Changes if answered:** `internal/toyohr/coop_schedule.go`'s `coopScheduleProto`.
 
 ---
 

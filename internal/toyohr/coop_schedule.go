@@ -14,11 +14,6 @@ import (
 )
 
 // CoopShiftKind is which of Salmon Run's three modes a shift belongs to.
-//
-// TeamContest (Eggstra Work) has no authoring path here yet -- CoopSchedule
-// carries it (proto/toyohr/v1/resources.pb.go's CoopSchedule_TeamContest),
-// but nothing in this pass builds or validates one. Adding it is the same
-// shape of work as BigRun was; see TODO.md.
 type CoopShiftKind int
 
 const (
@@ -26,28 +21,34 @@ const (
 	CoopShiftNormal CoopShiftKind = iota
 	// CoopShiftBigRun is a Big Run event.
 	CoopShiftBigRun
+	// CoopShiftTeamContest is a Team Contest (Eggstra Work) event.
+	CoopShiftTeamContest
 )
 
 func (k CoopShiftKind) String() string {
 	switch k {
 	case CoopShiftBigRun:
 		return "big_run"
+	case CoopShiftTeamContest:
+		return "team_contest"
 	default:
 		return "normal"
 	}
 }
 
-// ParseCoopShiftKind parses "normal" or "big_run", the same strings
-// CoopShiftKind.String produces -- what the CLI and the store both use, so
-// there is exactly one place the two spellings are decided.
+// ParseCoopShiftKind parses "normal", "big_run" or "team_contest", the same
+// strings CoopShiftKind.String produces -- what the CLI and the store both
+// use, so there is exactly one place the three spellings are decided.
 func ParseCoopShiftKind(s string) (CoopShiftKind, error) {
 	switch s {
 	case "normal":
 		return CoopShiftNormal, nil
 	case "big_run":
 		return CoopShiftBigRun, nil
+	case "team_contest":
+		return CoopShiftTeamContest, nil
 	default:
-		return 0, fmt.Errorf("coop shift kind %q must be \"normal\" or \"big_run\"", s)
+		return 0, fmt.Errorf("coop shift kind %q must be \"normal\", \"big_run\" or \"team_contest\"", s)
 	}
 }
 
@@ -85,8 +86,9 @@ type CoopShift struct {
 	// comment for why.
 	RewardGearID int32
 
-	// Rewards are a Big Run's scale-tier reward values
-	// (CoopSchedule_BigRun.Rewards). Empty for CoopShiftNormal. Their exact
+	// Rewards are a Big Run or Team Contest's scale-tier reward values
+	// (CoopSchedule_BigRun.Rewards / CoopSchedule_TeamContest.Rewards). Empty
+	// for CoopShiftNormal, which has no such field on the wire. Their exact
 	// meaning is unconfirmed -- see docs/QUESTIONS.md -- so nothing here
 	// validates their contents, only that a Normal shift has none.
 	Rewards []int64
@@ -143,10 +145,31 @@ func (c CoopShift) Validate() error {
 		}
 		if len(c.Rewards) != 0 {
 			return fmt.Errorf("coop shift is normal but carries %d Big Run reward tier(s); "+
-				"Rewards only applies to a big_run shift", len(c.Rewards))
+				"Rewards only applies to a big_run or team_contest shift", len(c.Rewards))
+		}
+	case CoopShiftTeamContest:
+		// Team Contest runs on the normal rotation's stages, not Big Run's --
+		// the same restriction as CoopShiftNormal, and CoopSchedule_TeamContest
+		// has no unk1-style Big-Run-only field the way CoopSchedule_BigRun does.
+		if stage.BigRun {
+			return fmt.Errorf("coop shift is team_contest but stage %d (%s) is a Big Run stage",
+				c.StageID, stage.Name)
+		}
+		// CoopSchedule_TeamContest carries neither field: the console has
+		// nowhere on the wire to put a boss or a reward gear id for this
+		// kind, so a non-zero value here is an operator mistake to explain
+		// now rather than a value coopScheduleProto would silently drop.
+		if c.Boss != "" {
+			return fmt.Errorf("coop shift is team_contest but has a boss (%q); "+
+				"CoopSchedule_TeamContest has no boss field", c.Boss)
+		}
+		if c.RewardGearID != 0 {
+			return fmt.Errorf("coop shift is team_contest but has a reward gear id (%d); "+
+				"CoopSchedule_TeamContest has no reward_gear_id field", c.RewardGearID)
 		}
 	default:
-		return fmt.Errorf("coop shift kind %d is neither CoopShiftNormal nor CoopShiftBigRun", c.Kind)
+		return fmt.Errorf("coop shift kind %d is none of CoopShiftNormal, CoopShiftBigRun "+
+			"or CoopShiftTeamContest", c.Kind)
 	}
 
 	if !CoopBossValid(c.Boss) {
@@ -317,6 +340,16 @@ func (s *Service) coopScheduleProto(r db.CoopShift) *toyohrpb.CoopSchedule {
 			KumaWeapon:   int32(r.KumaWeaponID),
 			RewardGearId: r.RewardGearID,
 			Rewards:      append([]int64(nil), r.Rewards...),
+		}
+	case "team_contest":
+		// No Boss or RewardGearId: CoopSchedule_TeamContest carries neither
+		// field, and Validate refuses to store a shift with either set, so
+		// there is nothing to drop here.
+		out.TeamContest = &toyohrpb.CoopSchedule_TeamContest{
+			Stage:       r.StageID,
+			MainWeapons: append([]int64(nil), r.Weapons...),
+			KumaWeapon:  int32(r.KumaWeaponID),
+			Rewards:     append([]int64(nil), r.Rewards...),
 		}
 	default:
 		out.Normal = &toyohrpb.CoopSchedule_Normal{
