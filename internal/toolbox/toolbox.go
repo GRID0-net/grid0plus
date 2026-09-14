@@ -54,6 +54,17 @@ type Config struct {
 	// Required for /updates/* to answer anything but 503.
 	GitHubToken string
 
+	// PublicBaseURL is this service's own address as a console reaches it --
+	// e.g. "https://203.0.113.5:8443" -- used to build browser_download_url.
+	// Deliberately NOT derived from the incoming request (r.TLS, r.Host):
+	// this service sits behind nginx terminating TLS and proxying over plain
+	// HTTP (deploy/nginx.toolbox.conf), so r.TLS is always nil here, and
+	// nginx's Host forwarding drops the port nginx's $host variable never
+	// carries one. Either mistake alone breaks the URL the console is told
+	// to fetch; deriving it from config sidesteps trusting proxy headers to
+	// get both right. Required for /updates/* to answer anything but 503.
+	PublicBaseURL string
+
 	// ReleaseCacheTTL bounds how often releases/latest is actually called.
 	// Several consoles checking for an update within the same window should
 	// cost GitHub one request, not one per console. Zero means no caching.
@@ -203,14 +214,24 @@ type githubRelease struct {
 
 // nroAsset picks the .nro release asset out of a release's asset list. A
 // release is expected to carry exactly one; if it carries several (or
-// none), which one the updater would fetch must not be a silent guess.
-func (rel githubRelease) nroAsset() (id int64, size int64, ok bool) {
+// none), which one the updater would fetch must not be a silent guess, so
+// both are reported rather than the first match winning by accident of
+// GitHub's own ordering.
+func (rel githubRelease) nroAsset() (id int64, size int64, err error) {
+	var found bool
 	for _, a := range rel.Assets {
-		if len(a.Name) > 4 && a.Name[len(a.Name)-4:] == ".nro" {
-			return a.ID, a.Size, true
+		if len(a.Name) <= 4 || a.Name[len(a.Name)-4:] != ".nro" {
+			continue
 		}
+		if found {
+			return 0, 0, fmt.Errorf("release %q has more than one .nro asset", rel.TagName)
+		}
+		id, size, found = a.ID, a.Size, true
 	}
-	return 0, 0, false
+	if !found {
+		return 0, 0, fmt.Errorf("release %q has no .nro asset", rel.TagName)
+	}
+	return id, size, nil
 }
 
 // handleUpdatesLatest answers the same three JSON keys the console's
@@ -220,7 +241,7 @@ func (rel githubRelease) nroAsset() (id int64, size int64, ok bool) {
 // rewritten to this service's own /updates/download: the console must never
 // see, and cannot use, the token that made this answer possible.
 func (h *Handler) handleUpdatesLatest(w http.ResponseWriter, r *http.Request) {
-	if h.cfg.GitHubToken == "" || h.cfg.GitHubOwner == "" || h.cfg.GitHubRepo == "" {
+	if !h.updatesConfigured() {
 		http.Error(w, "updates not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -232,14 +253,14 @@ func (h *Handler) handleUpdatesLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, size, ok := rel.nroAsset()
-	if !ok {
-		h.log.Error("toolbox: latest release has no .nro asset", "tag", rel.TagName)
-		http.Error(w, "latest release has no .nro asset", http.StatusBadGateway)
+	id, size, err := rel.nroAsset()
+	if err != nil {
+		h.log.Error("toolbox: latest release's .nro asset", "tag", rel.TagName, "error", err)
+		http.Error(w, "latest release has no usable .nro asset", http.StatusBadGateway)
 		return
 	}
 
-	downloadURL := fmt.Sprintf("%s://%s/updates/download?asset=%d", schemeOf(r), r.Host, id)
+	downloadURL := fmt.Sprintf("%s/updates/download?asset=%d", strings.TrimSuffix(h.cfg.PublicBaseURL, "/"), id)
 	writeJSON(w, map[string]any{
 		"tag_name":             rel.TagName,
 		"browser_download_url": downloadURL,
@@ -247,11 +268,13 @@ func (h *Handler) handleUpdatesLatest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func schemeOf(r *http.Request) string {
-	if r.TLS != nil {
-		return "https"
-	}
-	return "http"
+// updatesConfigured reports whether /updates/* has everything it needs.
+// config.Config.Validate() already enforces these four all-or-nothing, so
+// this is defensive -- a Handler built directly (as the tests do) rather
+// than through cmd/toolbox/main.go has no such guarantee.
+func (h *Handler) updatesConfigured() bool {
+	return h.cfg.GitHubToken != "" && h.cfg.GitHubOwner != "" &&
+		h.cfg.GitHubRepo != "" && h.cfg.PublicBaseURL != ""
 }
 
 // latestRelease returns the cached release JSON, refreshing it from GitHub
@@ -315,7 +338,7 @@ func (h *Handler) latestReleaseBody(ctx context.Context) ([]byte, error) {
 // not a secret, only useful for fetching a public-shaped release binary that
 // happens to live in a private repository.
 func (h *Handler) handleUpdatesDownload(w http.ResponseWriter, r *http.Request) {
-	if h.cfg.GitHubToken == "" || h.cfg.GitHubOwner == "" || h.cfg.GitHubRepo == "" {
+	if !h.updatesConfigured() {
 		http.Error(w, "updates not configured", http.StatusServiceUnavailable)
 		return
 	}

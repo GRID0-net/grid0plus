@@ -153,11 +153,14 @@ of one. It needs no `redis.url`, no database, and no console credential:
 see `internal/toolbox`'s own README for why it is unauthenticated by
 design.
 
-Set `toolbox.github_owner`, `.github_repo` and `.github_token` (a
-fine-grained PAT, `Contents: Read-only`, scoped to only that one repository)
-to enable `/updates/latest` and `/updates/download` — the mechanism that
-lets `switchnet-nro`'s source stay a private repository while its homebrew
-app still auto-updates. Leave all three empty and `/status` still works;
+Set `toolbox.github_owner`, `.github_repo`, `.github_token` (a fine-grained
+PAT, `Contents: Read-only`, scoped to only that one repository) and
+`.public_base_url` (this service's own `https://<public IP>:8443`, needed to
+build a `browser_download_url` a console can actually reach — it cannot be
+inferred from the request behind nginx's TLS-terminating proxy) to enable
+`/updates/latest` and `/updates/download` — the mechanism that lets
+`switchnet-nro`'s source stay a private repository while its homebrew app
+still auto-updates. Leave all four empty and `/status` still works;
 `/updates/*` answers 503 instead.
 
 **`redis.url` must be set for both**, and it is in `config.yaml`. The

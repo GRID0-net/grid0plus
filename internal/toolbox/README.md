@@ -76,6 +76,18 @@ token that made the answer possible. The release's asset list is expected to
 carry exactly one `.nro`; if it carries several or none, that is reported as
 a `502` rather than guessed at.
 
+That rewritten URL is built from `toolbox.public_base_url`
+(`config.Toolbox.PublicBaseURL`), never from the incoming request. It looks
+like it should be derivable from `r.TLS`/`r.Host` — this service *does* know
+its own hostname and whether the connection is TLS — but behind the real
+`deploy/nginx.toolbox.conf` neither is true: nginx terminates TLS itself and
+proxies to this service over plain HTTP, so `r.TLS` is always `nil` here,
+and `proxy_set_header Host $host;` forwards the hostname without the port
+(`$host` never carries one). Both mistakes together used to produce
+`http://host/updates/download?...` — wrong scheme, missing `:8443` — a URL
+nothing listens on. `public_base_url` is required, alongside the three
+GitHub fields, for `/updates/*` to answer anything but `503`.
+
 `release_cache_ttl_seconds` bounds how often GitHub is actually asked:
 several consoles checking within the same window cost one request, not one
 per console.

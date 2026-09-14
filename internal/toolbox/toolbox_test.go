@@ -84,7 +84,16 @@ func TestStatusNeverGuessesAnUnprobedService(t *testing.T) {
 	}
 }
 
-func TestUpdatesLatestRewritesTheDownloadURLToItself(t *testing.T) {
+// TestUpdatesLatestBuildsTheDownloadURLFromConfig is the regression test for
+// the bug this shape replaced: browser_download_url used to come from the
+// incoming request (r.TLS, r.Host), which behind the real nginx.toolbox.conf
+// is always plain HTTP with the port stripped by nginx's $host -- so every
+// real response came back "http://host/..." instead of
+// "https://host:8443/...". PublicBaseURL removes the request from the
+// equation entirely; this test's httptest.NewRequest deliberately carries no
+// Host override, unlike the old version of this test, to prove the response
+// no longer depends on it.
+func TestUpdatesLatestBuildsTheDownloadURLFromConfig(t *testing.T) {
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("github request missing bearer token: got %q", got)
@@ -100,12 +109,12 @@ func TestUpdatesLatestRewritesTheDownloadURLToItself(t *testing.T) {
 
 	h := New(Config{
 		GitHubOwner: "n-popescu", GitHubRepo: "switchnet-nro", GitHubToken: "test-token",
+		PublicBaseURL: "https://toolbox.example:8443",
 	}, discardLogger())
 	// Point the handler at the fake GitHub server instead of the real one.
 	h.githubAPIBase = gh.URL
 
 	req := httptest.NewRequest(http.MethodGet, "/updates/latest", nil)
-	req.Host = "toolbox.example:8443"
 	rec := httptest.NewRecorder()
 	h.Handler().ServeHTTP(rec, req)
 
@@ -126,9 +135,46 @@ func TestUpdatesLatestRewritesTheDownloadURLToItself(t *testing.T) {
 	if out.Size != 400000 {
 		t.Errorf("size = %d, want 400000", out.Size)
 	}
-	want := "http://toolbox.example:8443/updates/download?asset=12345"
+	want := "https://toolbox.example:8443/updates/download?asset=12345"
 	if out.BrowserDownloadURL != want {
 		t.Errorf("browser_download_url = %q, want %q", out.BrowserDownloadURL, want)
+	}
+}
+
+// TestUpdatesLatestRequiresPublicBaseURL checks the fourth field joined the
+// existing all-or-nothing gate: GitHub credentials alone are not enough to
+// build a download URL a console can actually use.
+func TestUpdatesLatestRequiresPublicBaseURL(t *testing.T) {
+	h := New(Config{
+		GitHubOwner: "o", GitHubRepo: "r", GitHubToken: "t", // no PublicBaseURL
+	}, discardLogger())
+
+	req := httptest.NewRequest(http.MethodGet, "/updates/latest", nil)
+	rec := httptest.NewRecorder()
+	h.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d (updates not configured)", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+// TestNroAssetRejectsMultipleCandidates checks nroAsset actually refuses an
+// ambiguous release rather than silently taking the first match -- the
+// property its own doc comment claims.
+func TestNroAssetRejectsMultipleCandidates(t *testing.T) {
+	rel := githubRelease{
+		TagName: "v0.5.0",
+		Assets: []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+			Size int64  `json:"size"`
+		}{
+			{ID: 1, Name: "SwitchNet-Toolbox-v0.5.0.nro", Size: 1},
+			{ID: 2, Name: "SwitchNet-Toolbox-v0.5.0-debug.nro", Size: 2},
+		},
+	}
+	if _, _, err := rel.nroAsset(); err == nil {
+		t.Error("nroAsset() with two .nro assets returned no error, want one naming the ambiguity")
 	}
 }
 
@@ -144,7 +190,8 @@ func TestReleaseIsCachedWithinTTL(t *testing.T) {
 	defer gh.Close()
 
 	h := New(Config{
-		GitHubOwner: "o", GitHubRepo: "r", GitHubToken: "t", ReleaseCacheTTL: time.Minute,
+		GitHubOwner: "o", GitHubRepo: "r", GitHubToken: "t",
+		PublicBaseURL: "https://toolbox.example:8443", ReleaseCacheTTL: time.Minute,
 	}, discardLogger())
 	h.githubAPIBase = gh.URL
 

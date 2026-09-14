@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -497,6 +498,18 @@ type Toolbox struct {
 	// here.
 	GitHubToken string `yaml:"github_token"`
 
+	// PublicBaseURL is this service's own address as a console reaches it,
+	// e.g. "https://203.0.113.5:8443" -- the same public IP as
+	// network.public_ip, fixed port 8443 (deploy/nginx.toolbox.conf), always
+	// https (that nginx block has no plain-http listener). Used to build
+	// /updates/latest's browser_download_url. Deliberately not inferred from
+	// the incoming request: this service sits behind nginx terminating TLS
+	// and proxying over plain HTTP, so the request this handler actually
+	// sees never carries the real scheme, and nginx's Host forwarding drops
+	// the port too -- see internal/toolbox's package comment. Required, with
+	// the three fields above, for /updates/* to answer anything but 503.
+	PublicBaseURL string `yaml:"public_base_url"`
+
 	// ReleaseCacheTTLSeconds bounds how often releases/latest is actually
 	// called on GitHub. Several consoles checking for an update within the
 	// same window should cost one request, not one per console. Zero means
@@ -732,6 +745,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_TOOLBOX_GITHUB_OWNER", &c.Toolbox.GitHubOwner)
 	envStr("SWITCHNET_TOOLBOX_GITHUB_REPO", &c.Toolbox.GitHubRepo)
 	envStr("SWITCHNET_TOOLBOX_GITHUB_TOKEN", &c.Toolbox.GitHubToken)
+	envStr("SWITCHNET_TOOLBOX_PUBLIC_BASE_URL", &c.Toolbox.PublicBaseURL)
 	envInt("SWITCHNET_TOOLBOX_RELEASE_CACHE_TTL_SECONDS", &c.Toolbox.ReleaseCacheTTLSeconds)
 
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
@@ -870,18 +884,35 @@ func (c Config) Validate() error {
 		}
 	}
 
-	// toolbox.github_token without both owner and repo (or vice versa) cannot
-	// work: latestReleaseBody would call
-	// "https://api.github.com/repos//" or similar and always fail. Silently
-	// serving /status while /updates/* mysteriously 502s is exactly the
-	// "fails much later with an unhelpful error" this function exists to
-	// catch instead.
+	// toolbox.github_token without owner, repo and public_base_url (or any
+	// one of those four without the other three) cannot work:
+	// latestReleaseBody would call "https://api.github.com/repos//" or
+	// similar and always fail, or /updates/latest would hand out a
+	// browser_download_url nothing can resolve. Silently serving /status
+	// while /updates/* mysteriously 502s (or 200s with a broken URL) is
+	// exactly the "fails much later with an unhelpful error" this function
+	// exists to catch instead.
 	tb := c.Toolbox
-	tbConfigured := tb.GitHubOwner != "" || tb.GitHubRepo != "" || tb.GitHubToken != ""
-	if tbConfigured && (tb.GitHubOwner == "" || tb.GitHubRepo == "" || tb.GitHubToken == "") {
+	tbConfigured := tb.GitHubOwner != "" || tb.GitHubRepo != "" ||
+		tb.GitHubToken != "" || tb.PublicBaseURL != ""
+	if tbConfigured && (tb.GitHubOwner == "" || tb.GitHubRepo == "" ||
+		tb.GitHubToken == "" || tb.PublicBaseURL == "") {
 		errs = append(errs, errors.New(
-			"toolbox.github_owner, toolbox.github_repo and toolbox.github_token "+
-				"must all be set together, or all left empty to disable /updates/*"))
+			"toolbox.github_owner, toolbox.github_repo, toolbox.github_token and "+
+				"toolbox.public_base_url must all be set together, or all left empty "+
+				"to disable /updates/*"))
+	}
+	if tb.PublicBaseURL != "" {
+		u, err := url.Parse(tb.PublicBaseURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" {
+			errs = append(errs, fmt.Errorf(
+				"toolbox.public_base_url: %q must be an absolute https:// URL "+
+					"(e.g. \"https://203.0.113.5:8443\"), with no path", tb.PublicBaseURL))
+		} else if u.Path != "" {
+			errs = append(errs, fmt.Errorf(
+				"toolbox.public_base_url: %q must not have a path; "+
+					"handleUpdatesLatest appends /updates/download itself", tb.PublicBaseURL))
+		}
 	}
 
 	return errors.Join(errs...)

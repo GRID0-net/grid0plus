@@ -30,12 +30,24 @@ toolbox:
   github_owner: "n-popescu"
   github_repo: "switchnet-nro"
   github_token: "<the token from step 1>"
+  public_base_url: "https://<your public IP>:8443"
   release_cache_ttl_seconds: 120
 ```
 
+`public_base_url` is this service's own address as a console reaches it —
+same public IP as `network.public_ip`, fixed port **8443** (the nginx block
+in step 4 below), always `https`. It is not something `toolbox` can work out
+from the request it receives: nginx terminates TLS and proxies to it over
+plain HTTP, so the request it actually sees never carries the real scheme or
+port. Get this wrong and `/updates/latest` still answers `200`, just with a
+`browser_download_url` nothing can reach — see
+[`internal/toolbox/README.md`](../internal/toolbox/README.md#updateslatest-and-updatesdownload)
+for the exact failure mode this avoids.
+
 Or via environment instead of the file:
-`SWITCHNET_TOOLBOX_GITHUB_TOKEN=<token>` (see `applyEnv` in `config/config.go`
-for the other `SWITCHNET_TOOLBOX_*` overrides).
+`SWITCHNET_TOOLBOX_GITHUB_TOKEN=<token>` and
+`SWITCHNET_TOOLBOX_PUBLIC_BASE_URL=<url>` (see `applyEnv` in
+`config/config.go` for the other `SWITCHNET_TOOLBOX_*` overrides).
 
 Validate before going further:
 
@@ -43,8 +55,10 @@ Validate before going further:
 switchnetctl -config config/config.yaml check
 ```
 
-`config.Validate()` rejects `github_owner`/`github_repo`/`github_token` set
-partially — if you see that error, one of the three is missing or misspelled.
+`config.Validate()` rejects `github_owner`/`github_repo`/`github_token`/
+`public_base_url` set partially — if you see that error, one of the four is
+missing or misspelled — and rejects a `public_base_url` that isn't an
+absolute `https://` URL with no path.
 
 ## 3. Build and install the new binary
 
@@ -105,6 +119,11 @@ From outside (or from a console, once switchnet-nro's next release adds the
 curl -sk https://<your-public-ip>:8443/status
 curl -sk https://<your-public-ip>:8443/updates/latest
 ```
+
+Check the second response's `browser_download_url`: it must read
+`https://<your-public-ip>:8443/updates/download?asset=...`. If it comes back
+`http://` and/or missing `:8443`, `toolbox.public_base_url` is not set (or
+not the value this box's config actually loaded) — see step 2.
 
 (`-k`: the edge cert isn't issued for this IP/port combination specifically,
 and the console's own HTTPS client already skips verification entirely —

@@ -30,6 +30,7 @@ func main() {
 		GitHubOwner:     cfg.Toolbox.GitHubOwner,
 		GitHubRepo:      cfg.Toolbox.GitHubRepo,
 		GitHubToken:     cfg.Toolbox.GitHubToken,
+		PublicBaseURL:   cfg.Toolbox.PublicBaseURL,
 		ReleaseCacheTTL: time.Duration(cfg.Toolbox.ReleaseCacheTTLSeconds) * time.Second,
 		StatusTargets: map[string]string{
 			"dauth":     cfg.DAuth.Listen,
