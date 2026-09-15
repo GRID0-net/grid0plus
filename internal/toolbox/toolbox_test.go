@@ -66,7 +66,7 @@ func TestStatusReportsDownForAnUnreachableService(t *testing.T) {
 // earn.
 func TestStatusNeverGuessesAnUnprobedService(t *testing.T) {
 	h := New(Config{Unprobed: map[string]string{
-		"dns": "UDP, not HTTP: no /healthz to ask",
+		"natcheck": "UDP, not HTTP: no /healthz to ask",
 	}}, discardLogger())
 
 	req := httptest.NewRequest(http.MethodGet, "/status", nil)

@@ -78,8 +78,8 @@ type Config struct {
 	StatusTargets map[string]string
 
 	// Unprobed names one more service to list in /status without dialling it,
-	// each with the reason it cannot be. dns and natcheck are UDP, not HTTP,
-	// so there is no /healthz to ask; see internal/dashboard/servicehealth.go
+	// each with the reason it cannot be. natcheck is UDP, not HTTP, so there
+	// is no /healthz to ask; see internal/dashboard/servicehealth.go
 	// for the same honesty rule applied to a real protocol probe instead of a
 	// guess: a status that says "unknown, and here is why" is worth more to
 	// whoever is reading it than a green light this package never earned.
