@@ -8,7 +8,7 @@ GO      ?= go
 CONFIG  ?= config/config.yaml
 BIN_DIR ?= bin
 
-SERVICES := dns dauth aauth baas stubs natcheck npln dashboard toolbox switchnetctl
+SERVICES := dauth aauth baas stubs natcheck npln dashboard toolbox switchnetctl
 
 # Set these to run the integration tests that need a real database and Redis.
 # Without them those tests skip, so `make test` works on any machine.
@@ -146,8 +146,9 @@ gen-dns:
 	$(GO) run ./cmd/switchnetctl -config $(CONFIG) unbound > deploy/switchnet.unbound.conf
 	@echo "wrote deploy/switchnet.dnsmasq.conf and deploy/switchnet.unbound.conf"
 	@echo
-	@echo "Use these only if you would rather not run SwitchNet's own DNS server."
-	@echo "Either way, nothing goes on the console for redirection."
+	@echo "Add this to a resolver you already run (router, Pi-hole, Unbound)."
+	@echo "SwitchNet does not run its own DNS server; nothing goes on the console"
+	@echo "for redirection either way."
 
 ## gen-switch: gen-nginx, gen-dns and gen-hosts together
 .PHONY: gen-switch

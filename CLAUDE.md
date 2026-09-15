@@ -178,18 +178,21 @@ between SwitchNet and real Nintendo, put these back to `ServicePassthrough`
 first.
 
 **Redirection and certificate trust are separate problems.** Redirection is DNS
-and happens off the console — `internal/dns`, or the generated dnsmasq/unbound
-configuration. Certificate trust has to happen on the console, because the cert
-for `dauth-lp1.ndas.srv.nintendo.net` is signed by a private Nintendo CA. Do not
+and happens off the console, in a resolver the operator already runs — the
+generated dnsmasq/unbound configuration, never SwitchNet itself. Certificate
+trust has to happen on the console, because the cert for
+`dauth-lp1.ndas.srv.nintendo.net` is signed by a private Nintendo CA. Do not
 conflate them: a report of "nothing in the log at all" is almost always trust,
-because the connection never becomes a request, while "dns: redirected but nothing
-from dauth" is trust failing after DNS worked.
+because the connection never becomes a request, while DNS resolving correctly
+(check the resolver's own logs) but nothing arriving at dauth is trust failing
+after DNS worked.
 
-**Do not forward AAAA for a redirected name.** `internal/dns` answers NODATA. If
-it forwarded, a console on a network with IPv6 would resolve Nintendo's real
-address and bypass SwitchNet, intermittently — close to undiagnosable from the
-console side. Same reason the generated unbound config uses `local-zone ... static`
-rather than `transparent`.
+**Do not forward AAAA for a redirected name.** The generated dnsmasq/unbound
+configuration answers NODATA. If it forwarded, a console on a network with
+IPv6 would resolve Nintendo's real address and bypass SwitchNet,
+intermittently — close to undiagnosable from the console side. Same reason
+the generated unbound config uses `local-zone ... static` rather than
+`transparent`.
 
 **Hostnames live in exactly one place.** `internal/nintendo/hosts.go` generates
 the DNS answers, the dnsmasq and unbound configuration, the nginx map, the

@@ -2,8 +2,8 @@
 # TLS edge. Nothing here is built from this repo's own code -- Docker was
 # never the slow part for these three -- so they stay containerized.
 #
-# The eight Go services (dns, dauth, aauth, baas, stubs, natcheck, npln,
-# dashboard) do NOT run here. They run as native processes: 'make run' for
+# The eight Go services (dauth, aauth, baas, stubs, natcheck, npln, dashboard,
+# toolbox) do NOT run here. They run as native processes: 'make run' for
 # interactive use, or as systemd units (deploy/systemd/, installed with
 # scripts/install-systemd.sh) for the always-on box serving your consoles --
 # systemd units are also where the "restart baas without dropping a

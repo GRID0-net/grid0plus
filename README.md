@@ -69,8 +69,8 @@ same thing: a console.
 ```
 ┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
 │  Switch      │ ─────────────────────────────► │  nginx, TLS + SNI routing   │
-│  Home Menu   │   redirected by SwitchNet's     └────────────┬────────────────┘
-│  friends     │   DNS -- nothing on the SD card              │
+│  Home Menu   │   redirected by a resolver you  └────────────┬────────────────┘
+│  friends     │   already run -- nothing on SD               │
 └──────────────┘                          ┌───────────────────┼─────────────────┐
                                           ▼                   ▼                 ▼
                                   ┌───────────────┐   ┌───────────────┐  ┌──────────────┐
@@ -89,10 +89,6 @@ same thing: a console.
                                              └────────────┘      └────────────┘
 
                                   ┌──────────────────────────────────────────┐
-                                  │ dns (UDP/TCP 53)                         │
-                                  │ answers Nintendo's hostnames with your   │
-                                  │ address, forwards everything else        │
-                                  ├──────────────────────────────────────────┤
                                   │ natcheck (UDP)                           │
                                   │ so the consoles can find each other for  │
                                   │ peer-to-peer play                        │
@@ -220,10 +216,11 @@ Two separate problems, with very different answers — and most guides conflate 
 
 **Redirection happens off the console.** A Switch resolves hostnames through
 whatever DNS its network gives it, in stock firmware. So there is no hosts file,
-no `enable_dns_mitm`, and nothing on the SD card for this half. Either point your
-router's DHCP at SwitchNet's `dns` service — in which case the console needs *no
-configuration at all* — set DNS manually in the console's own network settings, or
-add the generated `dnsmasq`/`unbound` configuration to a resolver you already run.
+no `enable_dns_mitm`, and nothing on the SD card for this half. SwitchNet does
+not run its own DNS server: add the generated `dnsmasq`/`unbound` configuration
+to a resolver you already run (a router, Pi-hole, Unbound). Either that resolver
+is handed out over DHCP — in which case the console needs *no configuration at
+all* — or set DNS manually in the console's own network settings.
 
 **Certificate trust does need the console**, and there is no way around it: the
 console asks for `dauth-lp1.ndas.srv.nintendo.net`, whose certificate is signed by
@@ -280,7 +277,6 @@ Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
 | JWK sets, for game servers | `GET /1.0.0/certificates`, `/internal_certificates` |
 | NAT check | UDP 10025 / 10125, message types 1–5 and 101–103 |
 | Stubs | ctest, frs, five, op2, dragons, penne, npns, znc, service-status |
-| DNS redirection | UDP/TCP 53, with AAAA NODATA for redirected names |
 
 ## What phase 2 implements
 
@@ -306,9 +302,9 @@ honestly-empty.
 config/          configuration loading, and config.example.yaml
 cmd/             one directory per binary, plus switchnetctl
 internal/
-  nintendo/      the Nintendo host list — one source of truth for DNS, the
-                 nginx map, the certificate SANs and the hosts file
-  dns/           the DNS server: redirect Nintendo, forward everything else
+  nintendo/      the Nintendo host list — one source of truth for the
+                 dnsmasq/unbound generators, the nginx map, the certificate
+                 SANs and the hosts file
   jwt/           token issuance, verification and JWK sets
   db/            schema, the Store contract, PostgreSQL and in-memory stores
   dauth/         device authentication

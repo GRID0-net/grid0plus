@@ -94,9 +94,12 @@ unmatched hosts to the stub server, which logs them. That log is the to-do list.
 
 ## Addresses and ports
 
+SwitchNet does not run its own DNS server or listen on port 53 anywhere; a
+console finds it via a resolver you already run, configured with
+`make gen-dns` (see [`switch/README.md`](../switch/README.md#part-1-redirection-with-dns)).
+
 | Port | Protocol | Faces | What |
 | --- | --- | --- | --- |
-| 53 | **UDP and TCP** | **the consoles** | DNS — how a console finds everything else |
 | 443 | TCP | **the consoles** | the nginx TLS edge |
 | **7575** | TCP | **the consoles** | the nginx edge again, for NPLN's `gamesync` |
 | **8443** | TCP | **consoles running SwitchNet Toolbox** | the nginx edge again, for `toolbox` — see below |
@@ -109,8 +112,9 @@ unmatched hosts to the stub server, which logs them. That log is the to-do list.
 | 5432, 6379 | TCP | localhost only | Postgres, Redis |
 
 The UDP rules are the ones people forget. A firewall that only opens TCP gives
-you a friends list that works and games that never start a match — and, if it
-blocks UDP 53, a console that resolves nothing at all.
+you a friends list that works and games that never start a match. The same is
+true of UDP 53 on whichever machine runs your resolver — block that and a
+console resolves nothing at all.
 
 `8081–8084`'s loopback confinement comes from `config.example.yaml`'s own
 defaults (`dauth.listen`, `aauth.listen`, `stubs.listen` are all
@@ -173,18 +177,6 @@ processes warn at start-up, and `switchnetctl check` does too.
 Splatoon 3 contacts first has undocumented request shapes; with this set, one boot
 writes the whole exchange to disk, hexdumped, with credentials redacted. It costs
 one line and it is the only record anyone would have.
-
-If port 53 is already taken on the machine (systemd-resolved is the usual
-culprit), either free it:
-
-```sh
-sudo systemctl disable --now systemd-resolved
-# then point /etc/resolv.conf at a real resolver
-```
-
-or run SwitchNet's DNS on a different address, or use
-[option C](../switch/README.md#option-c--a-resolver-you-already-run) and add the
-generated configuration to the resolver that already owns the port.
 
 ### The two addresses
 

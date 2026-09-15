@@ -107,7 +107,6 @@ dauth request — and because it keeps their dependencies honest.
 
 | Service | Port | Reimplements | Needs a database |
 | --- | --- | --- | --- |
-| `dns` | 53 UDP+TCP | not a Nintendo service: it is how a console finds the others | no |
 | `dauth` | 8081 | `dauth-lp1.ndas.srv.nintendo.net`, `dcert-…` | no |
 | `aauth` | 8082 | `aauth-lp1.ndas.srv.nintendo.net`, `acert-…` | no |
 | `baas` | 8083 | `*.baas.nintendo.com` | yes |
@@ -120,7 +119,7 @@ still lets a console get far enough to see a useful error rather than a timeout.
 
 Everything HTTP sits behind one nginx TLS edge that routes by SNI.
 `switchnetctl nginx` generates that configuration from the same host list that
-drives the DNS server, so the two cannot disagree.
+drives the `dnsmasq`/`unbound` generators, so the two cannot disagree.
 
 ## Redirection and trust are separate problems
 
@@ -129,8 +128,11 @@ then solve both on the console.
 
 **Redirection** — making Nintendo's hostnames resolve to the operator's server —
 does not need the console at all. A Switch uses whatever DNS its network gives it,
-in stock firmware, so `internal/dns` replaces the Atmosphère hosts file entirely.
-Point the router's DHCP at it and the console needs no configuration whatsoever.
+in stock firmware, so `switchnetctl dnsmasq`/`unbound` write configuration for a
+resolver the operator already runs (a router, Pi-hole, Unbound), which replaces
+the Atmosphère hosts file entirely. Either that resolver is handed out over DHCP
+— in which case the console needs no configuration whatsoever — or the console's
+DNS is set manually.
 
 **Certificate trust** does need the console, and there is no way around it. The
 console asks for `dauth-lp1.ndas.srv.nintendo.net`; that certificate is signed by
@@ -146,13 +148,13 @@ has the detail, including which part of the better route is not yet confirmed.
 
 ### The AAAA trap
 
-`internal/dns` answers AAAA for a redirected name with NODATA rather than
-forwarding it. If it forwarded, a console on a network with IPv6 would resolve
-Nintendo's real address and bypass SwitchNet — intermittently, depending on the
-network, which is close to undiagnosable from the console side. The generated
-`dnsmasq` and `unbound` configurations are written to behave the same way; for
-unbound that means `local-zone ... static`, because `transparent` and `redirect`
-both leak AAAA upstream.
+The generated `dnsmasq` and `unbound` configurations answer AAAA for a
+redirected name with NODATA rather than forwarding it. If they forwarded, a
+console on a network with IPv6 would resolve Nintendo's real address and
+bypass SwitchNet — intermittently, depending on the network, which is close
+to undiagnosable from the console side. For unbound that means
+`local-zone ... static`, because `transparent` and `redirect` both leak AAAA
+upstream.
 
 ## Identity, and the bug this design exists to avoid
 

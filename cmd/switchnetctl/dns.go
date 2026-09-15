@@ -11,10 +11,10 @@ import (
 
 // DNS generators.
 //
-// These are for an operator who would rather not run SwitchNet's own DNS server:
-// their router, Pi-hole or Unbound already resolves for the whole network, so
-// adding these lines there redirects every console at once with no per-console
-// configuration and nothing at all on the SD card.
+// SwitchNet does not run its own DNS server. These generate configuration for
+// a resolver the operator already runs -- their router, Pi-hole or Unbound --
+// so adding these lines there redirects every console at once with no
+// per-console configuration and nothing at all on the SD card.
 //
 // Both generators read the same host list as everything else, so a hostname
 // cannot be redirected by one mechanism and missed by another.

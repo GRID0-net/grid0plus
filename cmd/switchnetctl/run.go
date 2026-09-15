@@ -32,7 +32,7 @@ import (
 // runServices is every service `run` knows how to build and start, in the
 // same order the Makefile and scripts/update.sh already use. switchnetctl
 // itself is a CLI, not a service, so it is not in this list.
-var runServices = []string{"dns", "dauth", "aauth", "baas", "stubs", "natcheck", "npln", "dashboard", "toolbox"}
+var runServices = []string{"dauth", "aauth", "baas", "stubs", "natcheck", "npln", "dashboard", "toolbox"}
 
 // shutdownGrace is how long a service gets to exit after SIGTERM before run
 // gives up and sends SIGKILL. internal/service's own shutdown timeout is
@@ -219,9 +219,9 @@ func streamPrefixed(out *prefixedOutput, name string, r io.Reader) {
 }
 
 // httpProbeAddr returns the loopback address to probe for a service's
-// /healthz, or "" for one that has none: dns and natcheck are UDP, and
-// npln's health endpoint only exists once npln.admin_token is set -- that is
-// the only thing that starts its admin listener at all (see cmd/npln).
+// /healthz, or "" for one that has none: natcheck is UDP, and npln's health
+// endpoint only exists once npln.admin_token is set -- that is the only
+// thing that starts its admin listener at all (see cmd/npln).
 func httpProbeAddr(cfg config.Config, service string) string {
 	switch service {
 	case "dauth":
@@ -241,7 +241,7 @@ func httpProbeAddr(cfg config.Config, service string) string {
 			return ""
 		}
 		return upstreamAddr(cfg.NPLN.AdminListen)
-	default: // dns, natcheck: no HTTP health endpoint to probe.
+	default: // natcheck: no HTTP health endpoint to probe.
 		return ""
 	}
 }

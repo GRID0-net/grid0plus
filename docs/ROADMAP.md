@@ -39,8 +39,8 @@ order — two (items 1 and 8) now partly settled by a real capture, each with a
 residual open sub-question.
 
 **Console-side work still open.** Redirection is solved off the console with DNS
-(`internal/dns`, or the generated dnsmasq/unbound configuration), so nothing goes
-on the SD card for that half. Certificate trust does need the console, and the
+(the generated dnsmasq/unbound configuration, added to a resolver the operator
+already runs), so nothing goes on the SD card for that half. Certificate trust does need the console, and the
 preferred route — extending the console's own CA store via a LayeredFS override of
 title `0100000000000800` — has one unverified step: whether Atmosphère's `fs.mitm`
 serves that file to the `ssl` sysmodule at all. `ShouldMitmProgramId` MITMs

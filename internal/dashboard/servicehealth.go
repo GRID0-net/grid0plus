@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -46,8 +45,8 @@ type ServiceHealth struct {
 	Status string `json:"status"`
 	// Detail explains anything that is not "ok".
 	Detail string `json:"detail,omitempty"`
-	// Kind is "http", "dns", or "none" -- how it was checked, so the page can
-	// say what "unknown" actually means.
+	// Kind is "http" or "none" -- how it was checked, so the page can say
+	// what "unknown" actually means.
 	Kind string `json:"kind"`
 	// UptimeSeconds comes from the service's own /healthz when it has one.
 	UptimeSeconds int `json:"uptimeSeconds,omitempty"`
@@ -80,7 +79,6 @@ func probes(cfg ServiceAddresses) []probe {
 		{name: "baas", addr: cfg.BAAS, kind: "http"},
 		{name: "stubs", addr: cfg.Stubs, kind: "http"},
 		{name: "npln", addr: cfg.NPLNAdmin, kind: "http"},
-		{name: "dns", addr: cfg.DNS, kind: "dns"},
 		{
 			name: "natcheck", addr: cfg.NATCheck, kind: "none",
 			// A real probe would have to speak Pia's NAT-check protocol and
@@ -106,7 +104,6 @@ type ServiceAddresses struct {
 	BAAS      string
 	Stubs     string
 	NPLNAdmin string
-	DNS       string
 	NATCheck  string
 }
 
@@ -118,7 +115,6 @@ func AddressesFrom(cfg config.Config) ServiceAddresses {
 		BAAS:      cfg.BAAS.Listen,
 		Stubs:     cfg.Stubs.Listen,
 		NPLNAdmin: cfg.NPLN.AdminListen,
-		DNS:       cfg.DNS.Listen,
 		NATCheck:  cfg.NATCheck.PrimaryListen,
 	}
 }
@@ -159,8 +155,6 @@ func (s *Server) probeOne(ctx context.Context, p probe) ServiceHealth {
 	switch p.kind {
 	case "http":
 		s.probeHTTP(ctx, p, &out)
-	case "dns":
-		s.probeDNS(ctx, p, &out)
 	default:
 		out.Status = "unknown"
 		out.Detail = p.why
@@ -215,37 +209,6 @@ func (s *Server) probeHTTP(ctx context.Context, p probe, out *ServiceHealth) {
 		}
 		sort.Strings(failed)
 		out.Detail = strings.Join(failed, "; ")
-	}
-}
-
-// probeDNS asks the resolver to resolve a name it is supposed to redirect.
-//
-// A real query rather than a TCP connect, because "the port is open" and "it
-// answers correctly for a Nintendo host" are different things, and the second
-// is what a console depends on.
-func (s *Server) probeDNS(ctx context.Context, p probe, out *ServiceHealth) {
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-
-	resolver := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, network, dialAddr(p.addr))
-		},
-	}
-
-	addrs, err := resolver.LookupHost(ctx, "dauth-lp1.ndas.srv.nintendo.net")
-	switch {
-	case err != nil:
-		out.Status = "down"
-		out.Detail = "did not answer a query for a redirected host: " + err.Error()
-	case len(addrs) == 0:
-		out.Status = "degraded"
-		out.Detail = "answered, but returned no address for a redirected host"
-	default:
-		out.Status = "ok"
-		out.Detail = "resolves dauth-lp1… to " + addrs[0]
 	}
 }
 

@@ -65,33 +65,14 @@ type Network struct {
 	EdgeTLSPort int `yaml:"edge_tls_port"`
 }
 
-// DNS configures the DNS server, which is how a console is pointed at SwitchNet
-// without modifying the console.
+// DNS configures the dnsmasq/unbound configuration generators
+// (`switchnetctl dnsmasq`/`unbound`). SwitchNet does not run its own DNS
+// server; redirection is done by a resolver the operator already runs.
 type DNS struct {
-	// Listen is the address to serve on. A console cannot be told to use a port
-	// other than 53, so this is ":53" in any real deployment.
-	Listen string `yaml:"listen"`
-
-	// Upstream resolvers for every name SwitchNet does not own, tried in order.
-	//
-	// Do NOT point these at a resolver that itself points back here, and do not
-	// use the router's own address if the router forwards to this server: that
-	// is a loop, and the symptom is every non-Nintendo lookup timing out while
-	// Nintendo's work fine.
-	Upstream []string `yaml:"upstream"`
-
 	// TTL of the answers SwitchNet synthesises, in seconds. Short on purpose:
 	// switching a console back to Nintendo should take effect in a minute, not
 	// after an hour of cached records.
 	TTL int `yaml:"ttl"`
-
-	// UpstreamTimeout bounds a forwarded query, in seconds.
-	UpstreamTimeout int `yaml:"upstream_timeout"`
-
-	// LogForwarded logs every name that was forwarded, not just the redirected
-	// ones. Useful once, to find a Nintendo host missing from the list; far too
-	// chatty otherwise, because a console resolves a lot of names.
-	LogForwarded bool `yaml:"log_forwarded"`
 }
 
 // Database is the PostgreSQL connection.
@@ -547,13 +528,7 @@ func Default() Config {
 			EdgeTLSPort: 443,
 		},
 		DNS: DNS{
-			Listen: ":53",
-			// Quad9 and Cloudflare. Neither is special; they are simply not the
-			// operator's router, which would be a loop if the router forwards
-			// here.
-			Upstream:        []string{"9.9.9.9:53", "1.1.1.1:53"},
-			TTL:             60,
-			UpstreamTimeout: 3,
+			TTL: 60,
 		},
 		Database: Database{
 			URL:         "postgres://switchnet:switchnet@localhost:5432/switchnet?sslmode=disable",
@@ -677,11 +652,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NATCHECK_SECONDARY_IP", &c.Network.NATCheckSecondaryIP)
 	envInt("SWITCHNET_EDGE_TLS_PORT", &c.Network.EdgeTLSPort)
 
-	envStr("SWITCHNET_DNS_LISTEN", &c.DNS.Listen)
-	envStrSlice("SWITCHNET_DNS_UPSTREAM", &c.DNS.Upstream)
 	envInt("SWITCHNET_DNS_TTL", &c.DNS.TTL)
-	envInt("SWITCHNET_DNS_UPSTREAM_TIMEOUT", &c.DNS.UpstreamTimeout)
-	envBool("SWITCHNET_DNS_LOG_FORWARDED", &c.DNS.LogForwarded)
 
 	envStr("SWITCHNET_DATABASE_URL", &c.Database.URL)
 	envBool("SWITCHNET_DATABASE_AUTO_MIGRATE", &c.Database.AutoMigrate)
@@ -772,10 +743,11 @@ func (c Config) Validate() error {
 			// Parsed IP equality, not a string compare: two different textual
 			// forms of the same address (an IPv4-mapped IPv6 form, non-canonical
 			// zero-padding, and so on) are the SAME mistake this check exists to
-			// catch. internal/dns.Listen enforces the identical invariant with
-			// net.IP.Equal for the same reason -- string equality here would give
-			// this a false pass that only surfaces later, at `make up`, when dns
-			// refuses to start.
+			// catch. There is no second line of defense once this passes:
+			// redirection happens off the console, in a resolver SwitchNet does
+			// not run, so a string-equality false pass here would not surface
+			// until a console tried peer-to-peer play and NAT detection quietly
+			// never completed.
 			errs = append(errs, errors.New(
 				"network.natcheck_secondary_ip is the same as network.public_ip: "+
 					"Pia will de-duplicate the second NAT probe and NAT detection will never "+
@@ -784,33 +756,6 @@ func (c Config) Validate() error {
 	}
 	if c.Database.URL == "" {
 		errs = append(errs, errors.New("database.url is required"))
-	}
-	if len(c.DNS.Upstream) == 0 {
-		errs = append(errs, errors.New(
-			"dns.upstream must list at least one resolver, or every name that is "+
-				"not Nintendo's stops resolving for the consoles"))
-	}
-	for _, upstream := range c.DNS.Upstream {
-		host, port, err := net.SplitHostPort(upstream)
-		if err != nil {
-			errs = append(errs, fmt.Errorf(
-				"dns.upstream: %q must be host:port, e.g. 9.9.9.9:53", upstream))
-			continue
-		}
-		if net.ParseIP(host) == nil {
-			// A hostname here cannot be resolved: this IS the resolver.
-			errs = append(errs, fmt.Errorf(
-				"dns.upstream: %q must be an IP address, not a hostname — this "+
-					"server is the resolver, so it cannot look one up", upstream))
-		}
-		if port == "" {
-			errs = append(errs, fmt.Errorf("dns.upstream: %q has no port", upstream))
-		}
-		if c.Network.PublicIP != "" && host == c.Network.PublicIP {
-			errs = append(errs, fmt.Errorf(
-				"dns.upstream: %q is this server's own address, which is a loop. "+
-					"Every non-Nintendo lookup would time out.", upstream))
-		}
 	}
 	if c.DNS.TTL < 0 {
 		errs = append(errs, errors.New("dns.ttl must not be negative"))
@@ -946,22 +891,6 @@ func envInt(key string, dst *int) {
 	if n, err := strconv.Atoi(v); err == nil {
 		*dst = n
 	}
-}
-
-// envStrSlice reads a comma-separated list, for settings that are a list in YAML
-// but have to be one environment variable.
-func envStrSlice(key string, dst *[]string) {
-	v, ok := os.LookupEnv(key)
-	if !ok {
-		return
-	}
-	var out []string
-	for _, part := range strings.Split(v, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	*dst = out
 }
 
 func envBool(key string, dst *bool) {

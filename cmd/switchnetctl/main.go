@@ -176,9 +176,9 @@ Commands:
             stage/weapon/boss id tables a shift is built from. See
             'switchnetctl coop schedule -h' and '... generate -h'.
 
-Redirection is best done off the console: run cmd/dns, or add the generated
-dnsmasq or unbound configuration to a resolver you already have. The hosts file
-is only needed when you cannot control DNS on the network.
+Redirection is best done off the console: add the generated dnsmasq or unbound
+configuration to a resolver you already have. The hosts file is only needed
+when you cannot control DNS on the network.
 
 `)
 	flag.PrintDefaults()

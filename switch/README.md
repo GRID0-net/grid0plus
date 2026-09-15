@@ -32,50 +32,37 @@ that is true in stock firmware with nothing modified. So redirection needs no
 hosts file, no `enable_dns_mitm`, no homebrew, and nothing that a firmware update
 or a tool rewriting your SD card can break.
 
-Pick whichever of these suits your network. They are equivalent; all three read
-the same host list, so they cannot disagree about which hosts are yours.
-
-### Option A — the router hands out SwitchNet's DNS (best)
-
-Set your router's DHCP to give out SwitchNet's address as the DNS server. **The
-console then needs no configuration at all**, and neither does any other console
-you add later.
+SwitchNet does not run its own DNS server. Instead it generates configuration for
+a resolver you already run (a router doing dnsmasq, Pi-hole, OpenWrt or Unbound):
 
 ```sh
-make up          # brings up the dns service, among others
+make gen-dns     # writes deploy/switchnet.dnsmasq.conf and .unbound.conf
 ```
 
-The `dns` service uses host networking and binds port 53. It answers Nintendo's
-hostnames with your address and forwards everything else to the upstream
-resolvers in `dns.upstream`.
+Both are generated from the same host list, so they cannot disagree about which
+hosts are yours. `deploy/switchnet.dnsmasq.conf` also works in Pi-hole
+(`/etc/dnsmasq.d/99-switchnet.conf`) and OpenWrt. Add the one that matches your
+resolver, then restart it.
 
-One thing to get right: **`dns.upstream` must not point back at SwitchNet**,
-directly or via a router that forwards here. That is a loop, and the symptom is
-every non-Nintendo lookup timing out while Nintendo's work fine. `make
-config-check` refuses that configuration.
+Once that resolver has the configuration, pick whichever of these suits your
+network:
+
+### Option A — the router hands it out over DHCP (best)
+
+If the resolver you just configured is (or is reachable from) your router's
+DHCP-advertised DNS server, **the console then needs no configuration at all**,
+and neither does any other console you add later.
 
 ### Option B — the console's own DNS setting
 
 If you would rather not change the router:
 
 **System Settings → Internet → Internet Settings →** your network **→ Change
-Settings → DNS Settings → Manual → Primary DNS =** SwitchNet's address.
+Settings → DNS Settings → Manual → Primary DNS =** your resolver's address.
 
-Leave Secondary DNS blank or set it to SwitchNet's address too. **Do not put a
-public resolver there as a fallback** — the console would use it whenever
-SwitchNet is briefly slow, and reach real Nintendo instead.
-
-### Option C — a resolver you already run
-
-If you have dnsmasq, Pi-hole, OpenWrt or Unbound doing DNS for your network,
-generate configuration for it instead of running another server:
-
-```sh
-make gen-dns     # writes deploy/switchnet.dnsmasq.conf and .unbound.conf
-```
-
-Both are generated from the same host list. `deploy/switchnet.dnsmasq.conf` also
-works in Pi-hole (`/etc/dnsmasq.d/99-switchnet.conf`) and OpenWrt.
+Leave Secondary DNS blank or set it to your resolver's address too. **Do not put
+a public resolver there as a fallback** — the console would use it whenever your
+resolver is briefly slow, and reach real Nintendo instead.
 
 ### What the DNS layer does, and one thing to know about it
 
@@ -319,14 +306,16 @@ hardware tractable.
 curl -fsS localhost:8081/keys | head -c 80
 ```
 
-**2. DNS redirects.** From any machine on the console's network:
+**2. DNS redirects.** From any machine on the console's network, against your
+resolver (the router, Pi-hole or Unbound you added the generated configuration
+to — not SwitchNet, which does not answer DNS itself):
 
 ```sh
-dig @<SWITCHNET_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <SWITCHNET_IP>
-dig @<SWITCHNET_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
-dig @<SWITCHNET_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
-dig @<SWITCHNET_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> 0.0.0.0 (see note below)
-dig @<SWITCHNET_IP> example.com                     A     +short   # -> a real address
+dig @<RESOLVER_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <SWITCHNET_IP>
+dig @<RESOLVER_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
+dig @<RESOLVER_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
+dig @<RESOLVER_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> 0.0.0.0 (see note below)
+dig @<RESOLVER_IP> example.com                     A     +short   # -> a real address
 ```
 
 The third and fourth are the ones people skip. An AAAA answer here is a
@@ -343,11 +332,12 @@ there's nothing to gain from letting it reach real Nintendo for these, and
 null-routing them keeps this emuMMC from ever contacting real Nintendo at
 all. See `internal/nintendo/hosts.go` and `TestSystemUpdateHostsAreNullRouted`.
 
-**3. The console is using that DNS.** Set `log.level: debug` and open anything
-online on the console. You should see `dns: redirected` lines with the console's
-address. **No lines at all means the console is not using your resolver** — the
-DHCP lease has not renewed (toggle the console's Wi-Fi off and on), or the manual
-DNS setting did not take.
+**3. The console is using that resolver.** Check your resolver's own query log
+(dnsmasq: `--log-queries`; Pi-hole: the Query Log in its web UI; Unbound:
+`verbosity: 2`) for the console's address querying `dauth-lp1.ndas.srv.nintendo.net`
+and getting your configured answer back. **Nothing there means the console is not
+using your resolver** — the DHCP lease has not renewed (toggle the console's
+Wi-Fi off and on), or the manual DNS setting did not take.
 
 **4. TLS answers on 443 with your certificate.**
 
@@ -459,8 +449,8 @@ the seed on the console came from somewhere else.
 
 | Symptom | Almost certainly |
 | --- | --- |
-| No `dns:` lines at all in the log | The console is not using your resolver. Renew its DHCP lease, or check the manual DNS setting. |
-| `dns: redirected` lines, but nothing from dauth or baas | DNS is working and TLS is not. Certificate trust (part 2) — and if you are using the exefs patch, check it matches your firmware. |
+| Nothing for the console in your resolver's query log | The console is not using your resolver. Renew its DHCP lease, or check the manual DNS setting. |
+| Your resolver's query log shows the console being redirected, but nothing from dauth or baas | DNS is working and TLS is not. Certificate trust (part 2) — and if you are using the exefs patch, check it matches your firmware. |
 | Nothing anywhere, and the console reports a network error | Same as above: cert trust failing produces total silence, because the connection never becomes a request. |
 | Everything works, then stops after a system update | An exefs patch that no longer matches the firmware build id. This is the failure the CertStore approach avoids. |
 | The eShop or browser stopped working | A `ssl_TrustedCerts.bdf` override that replaced the store instead of extending it. Delete it and rebuild with `--input`. |
@@ -476,15 +466,15 @@ the seed on the console came from somewhere else.
 | The lobby fills and the match never starts | `npln.ice_servers` — the addresses must be reachable *from the console*, not from the server. |
 | A Splatfest is announced and the game reports a communication error | The announced id, resource and revision do not match the seed on the console. `switchnetctl fest build` makes them match by construction. |
 | Another game says it cannot connect | Expected: only Splatoon 3 has a game server here. |
-| Non-Nintendo sites stop resolving on the console | `dns.upstream` is looping back to SwitchNet, or the upstreams are unreachable. |
+| Non-Nintendo sites stop resolving on the console | Your resolver's own upstream is misconfigured or unreachable — check its settings, not SwitchNet's. |
 
 ---
 
 ## Going back to Nintendo
 
-**Redirection**: undo whichever option you used — remove the DHCP DNS override,
-or set the console's DNS back to Automatic. That is it, and it takes effect on the
-next lease.
+**Redirection**: undo whichever option you used — remove the generated
+configuration from your resolver and the DHCP DNS override, or set the console's
+DNS back to Automatic. That is it, and it takes effect on the next lease.
 
 **Splatoon 3's patch**: delete it from `/atmosphere/exefs_patches/`. Leaving it
 installed means the game talks to real Nintendo with certificate verification

@@ -589,9 +589,10 @@ const (
 // Resolve decides what to do with a DNS query for name.
 //
 // This is the DNS counterpart of the hosts file, driven by the same list, so a
-// console pointed at SwitchNet's DNS server and a console using an Atmosphère
-// hosts file see the same redirects. Two mechanisms that disagree about which
-// hosts are ours would be very hard to debug from the console side.
+// console pointed at a resolver using the generated dnsmasq/unbound
+// configuration and a console using an Atmosphère hosts file see the same
+// redirects. Two mechanisms that disagree about which hosts are ours would be
+// very hard to debug from the console side.
 //
 // Matching is longest-suffix-wins, which is the DNS analogue of Atmosphère's
 // last-line-wins: a specific host beats a wildcard covering it.
