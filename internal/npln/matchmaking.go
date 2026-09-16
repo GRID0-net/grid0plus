@@ -202,6 +202,30 @@ func (g *gameSessionService) GetGameSession(
 	return g.s.sessionProto(sess), nil
 }
 
+// QueryGameSessions answers a browse-style search for public sessions.
+//
+// Always empty. SwitchNet forms every session through matchmaking tickets and
+// sessionProto always sets IsPublic false, so there is nothing a browse query
+// could ever turn up that GetGameSession/JoinGameSession's ticket-driven path
+// does not already cover. An empty page rather than leaving this Unimplemented
+// still matters: a real NPLN client that calls it at all reads Unimplemented as
+// a hard failure of whatever screen triggered the call, where an empty result
+// set reads as "nothing to show" -- which is always true here.
+//
+// TODO(capture-needed): whether Splatoon 3 ever calls QueryGameSessions, and
+// for what -- a private-battle room browser is the plausible candidate, since
+// ticket-based matchmaking never needs one. A capture of that flow would
+// settle it. Change: this function, and sessionProto's IsPublic if the answer
+// is that some SwitchNet-formed sessions should be browsable after all.
+func (g *gameSessionService) QueryGameSessions(
+	ctx context.Context, _ *mmpb.QueryGameSessionsRequest,
+) (*mmpb.QueryGameSessionsResponse, error) {
+	if _, ok := CallerFrom(ctx); !ok {
+		return nil, ErrUnauthenticated
+	}
+	return &mmpb.QueryGameSessionsResponse{}, nil
+}
+
 // JoinGameSession confirms the caller into a session they were matched into.
 //
 // Only that. SwitchNet forms every session through matchmaking, so the players

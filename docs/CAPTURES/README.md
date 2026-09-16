@@ -326,6 +326,13 @@ this version deliberately names no number to keep stale).
   supports one console queuing on behalf of a party; if the game uses it for a
   squad, everyone but the leader is currently dropped. A capture of a squad
   entering matchmaking together would settle it.
+- **Whether Splatoon 3 ever calls `QueryGameSessions`, and for what**
+  (`internal/npln/matchmaking.go`, `GameSessionService.QueryGameSessions`):
+  answered with an empty page rather than left `Unimplemented` -- see "What
+  `NextendoNetwork`'s source settled, 2026-09-16" below for why -- but nothing
+  confirms Splatoon 3 calls this RPC at all, or what a private-battle room
+  browser (the plausible candidate, since ticket-based matchmaking never needs
+  one) would expect back if it does.
 - **Whether Splatoon 3 dials `GameSession.Port` at all**
   (`internal/npln/matchmaking.go:394` area, `SyncGameSession`): gameplay is
   peer-to-peer over ICE, and a client that connects entirely through
@@ -542,6 +549,45 @@ items above and elsewhere in this repository:
     for them specifically -- recorded rather than spent speculatively,
     per CLAUDE.md's rule against inventing a plausible-looking Nintendo
     internal.
+
+### What `NextendoNetwork/splatoon-3`'s newer commits settled, 2026-09-16
+
+Two commits landed on `NextendoNetwork/splatoon-3` since the 2026-09-05 pass
+above (still PolyForm Shield 1.0.0 -- facts only, same rule as every entry
+above):
+
+- **`GameSessionService.QueryGameSessions` must not be left
+  `Unimplemented` — settled, and now implemented**
+  (`internal/npln/matchmaking.go`, `gameSessionService.QueryGameSessions`).
+  Their commit message documents a real console error (`2321-4224`) from a
+  different NPLN title (Nintendo Classics, "Nintendo 64") whose online lobby
+  would not open while this RPC answered `Unimplemented`; returning an empty
+  `QueryGameSessionsResponse{}` instead fixed it. SwitchNet's own
+  `GameSessionService` embedded `UnimplementedGameSessionServiceServer` and
+  never overrode this method, so any caller — regardless of title — got the
+  same hard failure. Whether Splatoon 3 itself ever calls this RPC is still
+  unconfirmed (ticket-based matchmaking, which is Splatoon 3's whole flow,
+  never needs it), so this is the same class of fix as item 10's
+  `elicenses/exercise` above: a defensible default for an RPC this server was
+  already answering badly, not a confirmed Splatoon 3 shape. See the
+  `TODO(capture-needed)` this leaves behind.
+- **A strict full-nominal-count matchmaking threshold can leave a real queue
+  permanently unfilled — checked against SwitchNet, not an issue found.**
+  Their commit measured this directly: requiring the full nominal player
+  count (8, for Turf War) produced 28 tickets, 12 cancellations and zero
+  matches formed over a night of real testing, fixed by relaxing the
+  threshold down to no less than half the nominal count as tickets wait.
+  SwitchNet was never exposed to this failure mode in the first place:
+  `matchmaking.DefaultConfig.PlayersPerMatch` is 2, not a title's real mode
+  size, specifically because "a number that lets two friends actually start
+  a match is more useful than one that is faithful and idle" (see
+  `internal/matchmaking/queue.go`'s own `DefaultConfig` comment and TODO.md
+  §5.3) — and an operator who does raise a mode's size at runtime has
+  `Queue.ForceMatch`, a manual escape hatch that forms a match from
+  whoever is waiting rather than an automatic time-based relaxation. Recorded
+  here because the empirical failure mode is worth knowing, not because it
+  changed anything: SwitchNet's design choice already avoids it by a
+  different route.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not

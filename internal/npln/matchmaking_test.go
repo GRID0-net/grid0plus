@@ -504,6 +504,28 @@ func TestAllocateIceServerSetReturnsWhatWasConfigured(t *testing.T) {
 	}
 }
 
+// TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented is the regression
+// test for the failure NextendoNetwork/splatoon-3 measured on real hardware
+// against a different NPLN title: a client that calls this RPC at all reads
+// Unimplemented as a hard failure of whatever screen triggered the call, where
+// an empty page reads as "nothing to show" and lets the console carry on.
+// SwitchNet forms every session through matchmaking tickets and never has a
+// public one to list, so the empty answer is also simply true here.
+func TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("browser", "device-browser")
+	ctx := h.ctx(h.sessionFor(t, "browser", "device-browser"), "")
+
+	got, err := mmpb.NewGameSessionServiceClient(h.conn).
+		QueryGameSessions(ctx, &mmpb.QueryGameSessionsRequest{})
+	if err != nil {
+		t.Fatalf("QueryGameSessions: %v", err)
+	}
+	if len(got.GetGameSessions()) != 0 || got.GetNextPageToken() != "" {
+		t.Errorf("expected an empty page, got %v", got)
+	}
+}
+
 // TestMatchmakingRequiresAToken is the allowlist working: a service added later
 // is authenticated unless somebody says otherwise.
 func TestMatchmakingRequiresAToken(t *testing.T) {
@@ -517,6 +539,12 @@ func TestMatchmakingRequiresAToken(t *testing.T) {
 
 	_, err = mmpb.NewGameSessionServiceClient(h.conn).
 		AllocateIceServerSet(h.ctx("", ""), &mmpb.AllocateIceServerSetRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("got %v, want Unauthenticated", err)
+	}
+
+	_, err = mmpb.NewGameSessionServiceClient(h.conn).
+		QueryGameSessions(h.ctx("", ""), &mmpb.QueryGameSessionsRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("got %v, want Unauthenticated", err)
 	}
