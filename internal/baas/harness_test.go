@@ -113,7 +113,7 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		PresenceTTL:        testPresenceTTL,
 		ConsolePresenceTTL: testConsoleAliveTTL,
 		ImageDir:           t.TempDir(),
-		ImageBaseURL:       "https://cdn-image.example.invalid/images",
+		ImageBaseURL:       "https://cdn-image.example.invalid",
 		MaxImageBytes:      1 << 20,
 		AllowRegistration:  true,
 	}

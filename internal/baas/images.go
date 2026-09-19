@@ -125,13 +125,14 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request, c *caller) 
 		return
 	}
 
-	url := strings.TrimSuffix(s.cfg.ImageBaseURL, "/") + "/" + relPath
+	thumb1, thumb2 := s.imageURLs(relPath)
 
 	// Point the user's thumbnail at the new image. Without this the upload
 	// succeeds and the profile picture never changes, which looks like the
 	// upload failing.
 	if _, err := s.store.UpdateUser(r.Context(), c.UserID, db.UserPatch{
-		ThumbnailURL:        &url,
+		ThumbnailURL:        &thumb1,
+		Thumbnail2URL:       &thumb2,
 		ThumbnailUploadedAt: &now,
 	}); err != nil {
 		writeInternalError(s.log, w, r, "update thumbnail", err)
@@ -152,7 +153,7 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request, c *caller) 
 			Width:        cfg.Width,
 			Height:       cfg.Height,
 			Format:       "jpg",
-			URL:          url,
+			URL:          thumb1,
 			URLExpiresAt: 2147483647,
 		},
 		CreatedAt: now.Unix(),
@@ -187,7 +188,9 @@ func decodeImageContent(s string) ([]byte, error) {
 // imageFileServer serves uploaded images.
 //
 // http.Dir refuses to escape its root, and only files this server wrote are in
-// there, so a request cannot reach outside the image directory.
+// there, so a request cannot reach outside the image directory. Registered at
+// both /1/{name} and /2/{name} (see router.go) -- SwitchNet stores one file
+// per image, not two sizes of it, so both paths serve the same bytes.
 func (s *Server) imageFileServer() http.Handler {
 	fs := http.FileServer(http.Dir(s.cfg.ImageDir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -203,24 +206,42 @@ func (s *Server) GetImagePath(relPath string) string {
 	return filepath.Join(s.cfg.ImageDir, relPath)
 }
 
+// imageURLs builds the two URLs a stored image is reachable at.
+//
+// A 2026-09-19 capture of a real, working Nintendo Account link -- the
+// console's very next request after a successful federation, immediately
+// fetching its own profile picture -- showed the console asking for
+// '/1/<etag>' and '/2/<etag>' at the root of the cdn-image host, not
+// '/images/<name>'. SwitchNet's own request log had never shown that
+// request at all, on any of the 17+ prior attempts at this same bug: the
+// shape mismatch meant the client's own URL validation rejected the field
+// before ever making the request, which is consistent with -- and the first
+// concrete explanation for -- the "succeeds through federation, then zero
+// further network activity" signature every one of those attempts shared.
+// See docs/CAPTURES/README.md and the 2124-0292 investigation notes.
+func (s *Server) imageURLs(relPath string) (thumb1, thumb2 string) {
+	base := strings.TrimSuffix(s.cfg.ImageBaseURL, "/")
+	return base + "/1/" + relPath, base + "/2/" + relPath
+}
+
 // defaultAvatarURLOrEmpty is ensureDefaultAvatar with the one error-handling
-// policy every caller wants: log and fall back to an empty thumbnailUrl
-// rather than fail the request a picture was never going to block.
-func (s *Server) defaultAvatarURLOrEmpty() string {
-	url, err := s.ensureDefaultAvatar()
+// policy every caller wants: log and fall back to empty thumbnail URLs rather
+// than fail the request a picture was never going to block.
+func (s *Server) defaultAvatarURLOrEmpty() (thumb1, thumb2 string) {
+	relPath, err := s.ensureDefaultAvatar()
 	if err != nil {
 		s.log.Warn("baas: could not create default avatar", "error", err)
-		return ""
+		return "", ""
 	}
-	return url
+	return s.imageURLs(relPath)
 }
 
 // defaultAvatarRelPath is the filename ensureDefaultAvatar writes and
 // naUsersMe (nalink.go) points a person with no uploaded thumbnail at.
 const defaultAvatarRelPath = "default-avatar.jpg"
 
-// ensureDefaultAvatar returns the URL of a default avatar, generating the
-// file the first time it is needed.
+// ensureDefaultAvatar returns the filename of a default avatar, relative to
+// ImageDir, generating the file the first time it is needed.
 //
 // A freshly registered person (website.go) has no uploaded thumbnail, and
 // real Nextendo's "add this user to this console" confirmation screen — the
@@ -230,10 +251,9 @@ const defaultAvatarRelPath = "default-avatar.jpg"
 // not exist yet on a fresh deployment, and this endpoint is low-traffic
 // enough that an os.Stat per request costs nothing worth avoiding.
 func (s *Server) ensureDefaultAvatar() (string, error) {
-	url := strings.TrimSuffix(s.cfg.ImageBaseURL, "/") + "/" + defaultAvatarRelPath
 	path := filepath.Join(s.cfg.ImageDir, defaultAvatarRelPath)
 	if _, err := os.Stat(path); err == nil {
-		return url, nil
+		return defaultAvatarRelPath, nil
 	}
 
 	if err := os.MkdirAll(s.cfg.ImageDir, 0o750); err != nil {
@@ -258,5 +278,5 @@ func (s *Server) ensureDefaultAvatar() (string, error) {
 	if err := os.WriteFile(path, buf.Bytes(), 0o640); err != nil {
 		return "", err
 	}
-	return url, nil
+	return defaultAvatarRelPath, nil
 }

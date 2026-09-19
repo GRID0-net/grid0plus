@@ -252,22 +252,22 @@ const (
 // in presence.go. fc may be nil if the user has no friend code yet. now is the
 // server's clock, passed in rather than read here so that the friend code's
 // 'regenerable' flag and the presence TTLs are decided by one consistent time.
-// defaultThumbnailURL fills in for a user with no uploaded picture -- see
-// ensureDefaultAvatar's comment for why this must never be blank. Every call
-// site should pass s.defaultAvatarURLOrEmpty(), not a literal "".
-func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence, das []db.DeviceAccount, vis visibility, defaultThumbnailURL string) UserResponse {
+// defaultThumb1/defaultThumb2 fill in for a user with no uploaded picture --
+// see ensureDefaultAvatar's comment for why this must never be blank. Every
+// call site should pass s.defaultAvatarURLOrEmpty(), not a literal "".
+func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence, das []db.DeviceAccount, vis visibility, defaultThumb1, defaultThumb2 string) UserResponse {
 	thumbnailURL := u.ThumbnailURL
 	thumbnail2URL := u.Thumbnail2URL
 	// A real capture (2026-08-27) of a working account always carries both
 	// sizes, even for the "no picture uploaded" case (".../1/default" and
 	// ".../2/default") -- SwitchNet has one default image, not two sizes of
-	// it, so both fields point at the same URL rather than leaving the large
-	// one blank.
+	// it, so both fields point at the same relative path under their own
+	// '/1/' and '/2/' prefixes rather than leaving the large one blank.
 	if thumbnailURL == "" {
-		thumbnailURL = defaultThumbnailURL
+		thumbnailURL = defaultThumb1
 	}
 	if thumbnail2URL == "" {
-		thumbnail2URL = defaultThumbnailURL
+		thumbnail2URL = defaultThumb2
 	}
 	out := UserResponse{
 		ID:               u.ID,

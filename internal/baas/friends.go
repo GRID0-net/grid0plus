@@ -273,7 +273,8 @@ func (s *Server) getRelationship(w http.ResponseWriter, r *http.Request, c *call
 		if !s.presenceVisibleTo(r.Context(), user, c.UserID) {
 			pres = db.Presence{UserID: other, State: db.StateOffline, Extras: db.EmptyExtras()}
 		}
-		u := userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), other), pres, nil, vis, s.defaultAvatarURLOrEmpty())
+		thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
+		u := userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), other), pres, nil, vis, thumb1, thumb2)
 		resp.User = &u
 	}
 
@@ -662,7 +663,8 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 		}
 		// A pending request is not a friendship, so the sender only sees
 		// stranger-visible fields — enough to decide whether to accept.
-		u := userResponse(s.now(), user, s.friendCodeOrNil(ctx, id), pres, nil, visStranger, s.defaultAvatarURLOrEmpty())
+		thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
+		u := userResponse(s.now(), user, s.friendCodeOrNil(ctx, id), pres, nil, visStranger, thumb1, thumb2)
 		return &u
 	}
 

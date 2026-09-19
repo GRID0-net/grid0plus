@@ -225,7 +225,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /1.0.0/users/{uid}/blocks/{other}", s.authenticated(s.removeBlock))
 
 	mux.Handle("POST /1.0.0/image_upload", s.authenticated(s.uploadImage))
-	mux.Handle("GET /images/{name}", http.StripPrefix("/images/", s.imageFileServer()))
+	// A 2026-09-19 capture shows the console requests images from the root of
+	// the cdn-image host as '/1/<etag>' and '/2/<etag>', not '/images/<name>'
+	// -- see images.go's imageURLs doc comment.
+	mux.Handle("GET /1/{name}", http.StripPrefix("/1/", s.imageFileServer()))
+	mux.Handle("GET /2/{name}", http.StripPrefix("/2/", s.imageFileServer()))
 
 	mux.Handle("POST /2.0.0/friend_requests", s.authenticated(s.createFriendRequest))
 	mux.Handle("PATCH /2.0.0/friend_requests/{rid}", s.authenticated(s.resolveFriendRequest))

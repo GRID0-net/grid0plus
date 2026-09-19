@@ -157,9 +157,10 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 
 	s.log.Info("baas: registered user", "user", userID, "device_account", deviceAccountID)
 
+	thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 	resp := userResponse(s.now(), user, nil, db.Presence{
 		UserID: userID, State: db.StateOffline, Extras: db.EmptyExtras(), ReportedAt: now,
-	}, nil, visSelf, s.defaultAvatarURLOrEmpty())
+	}, nil, visSelf, thumb1, thumb2)
 	// The one and only time the password is sent.
 	resp.DeviceAccounts = []DeviceAccountResponse{{ID: deviceAccountID, Password: password}}
 
@@ -451,9 +452,10 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 	}
 	s.log.Info("baas: login", "user", user.ID, "device_account", da.ID, "title", appID)
 
+	thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 	writeJSON(w, http.StatusOK, loginResponse{
 		ExpiresIn:   int(s.cfg.AccessTokenTTL.Seconds()),
-		User:        userResponse(s.now(), user, fc, pres, das, visSelf, s.defaultAvatarURLOrEmpty()),
+		User:        userResponse(s.now(), user, fc, pres, das, visSelf, thumb1, thumb2),
 		IDToken:     idToken,
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
@@ -644,8 +646,9 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 		return
 	}
 
+	thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 	writeJSON(w, http.StatusOK,
-		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), c.UserID), pres, das, visSelf, s.defaultAvatarURLOrEmpty()))
+		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), c.UserID), pres, das, visSelf, thumb1, thumb2))
 }
 
 // ---- GET /1.0.0/users ---------------------------------------------------
@@ -689,7 +692,7 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 		return
 	}
 
-	defaultThumbnail := s.defaultAvatarURLOrEmpty()
+	defaultThumb1, defaultThumb2 := s.defaultAvatarURLOrEmpty()
 	out := make([]UserResponse, 0, len(users))
 	for _, u := range users {
 		if u.ID == c.UserID {
@@ -712,7 +715,7 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 			writeInternalError(s.log, w, r, "load presence", err)
 			return
 		}
-		out = append(out, userResponse(s.now(), u, s.friendCodeOrNil(r.Context(), u.ID), pres, nil, visStranger, defaultThumbnail))
+		out = append(out, userResponse(s.now(), u, s.friendCodeOrNil(r.Context(), u.ID), pres, nil, visStranger, defaultThumb1, defaultThumb2))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -823,8 +826,9 @@ func (s *Server) writeSelf(w http.ResponseWriter, r *http.Request, user db.User)
 		writeInternalError(s.log, w, r, "load presence", err)
 		return
 	}
+	thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 	writeJSON(w, http.StatusOK,
-		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), user.ID), pres, das, visSelf, s.defaultAvatarURLOrEmpty()))
+		userResponse(s.now(), user, s.friendCodeOrNil(r.Context(), user.ID), pres, das, visSelf, thumb1, thumb2))
 }
 
 // friendCodeOrNil returns a user's friend code, or nil if they have none.

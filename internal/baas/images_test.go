@@ -62,7 +62,7 @@ func TestImageUploadStoresAndPointsTheThumbnailAtIt(t *testing.T) {
 	if body.Content.URLExpiresAt != 2147483647 {
 		t.Errorf("urlExpiresAt = %d, want 2147483647", body.Content.URLExpiresAt)
 	}
-	if !strings.HasPrefix(body.Content.URL, "https://cdn-image.example.invalid/images/") {
+	if !strings.HasPrefix(body.Content.URL, "https://cdn-image.example.invalid/1/") {
 		t.Errorf("url = %q, want it under the configured image base URL", body.Content.URL)
 	}
 
@@ -145,7 +145,8 @@ func TestImageUploadOwnerComesFromTheTokenNotTheBody(t *testing.T) {
 	// A user with no uploaded picture gets the shared default avatar, not a
 	// blank thumbnailUrl -- see ensureDefaultAvatar. "Unchanged" means still
 	// that default, not the attacker's image.
-	if got, want := h.self(t, victim).ThumbnailURL, h.srv.defaultAvatarURLOrEmpty(); got != want {
+	wantThumb1, _ := h.srv.defaultAvatarURLOrEmpty()
+	if got, want := h.self(t, victim).ThumbnailURL, wantThumb1; got != want {
 		t.Errorf("the victim's thumbnail was changed to %q, want the default %q", got, want)
 	}
 }
@@ -216,11 +217,14 @@ func TestUploadedImageIsServedBack(t *testing.T) {
 	var body imageUploadResponse
 	decode(t, resp, &body)
 
-	// The console fetches this for every friend on every friend-list draw.
-	resp = h.do(request{
-		method: "GET", path: "/images/" + body.ID + ".jpg", token: a.AccessToken,
-	})
-	requireStatus(t, resp, 200)
+	// The console fetches this for every friend on every friend-list draw, at
+	// both '/1/' and '/2/' -- see images.go's imageURLs doc comment.
+	for _, prefix := range []string{"/1/", "/2/"} {
+		resp = h.do(request{
+			method: "GET", path: prefix + body.ID + ".jpg", token: a.AccessToken,
+		})
+		requireStatus(t, resp, 200)
+	}
 }
 
 // TestImageFileServerCannotEscapeTheImageDirectory covers path traversal. The
@@ -236,10 +240,10 @@ func TestImageFileServerCannotEscapeTheImageDirectory(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		"/images/../secret.txt",
-		"/images/..%2Fsecret.txt",
-		"/images/%2e%2e/secret.txt",
-		"/images/....//secret.txt",
+		"/1/../secret.txt",
+		"/1/..%2Fsecret.txt",
+		"/1/%2e%2e/secret.txt",
+		"/1/....//secret.txt",
 	} {
 		resp := h.do(request{method: "GET", path: path, token: a.AccessToken})
 		if resp.StatusCode == 200 {

@@ -184,8 +184,11 @@ baas:
 
   image_dir: "data/images"
   # Where uploaded profile pictures are served from. It has to be a host in the
-  # redirect list, or the console cannot fetch them.
-  image_base_url: "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/images"
+  # redirect list, or the console cannot fetch them. No path suffix: a
+  # 2026-09-19 capture shows the console requests images at the root of this
+  # host, as '/1/<etag>' and '/2/<etag>' -- see internal/baas/images.go's
+  # imageURLs doc comment. Do not add '/images' back onto this.
+  image_base_url: "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com"
   max_image_bytes: 1048576
 
   # Whether an unknown console may create an account. Turn this off once every

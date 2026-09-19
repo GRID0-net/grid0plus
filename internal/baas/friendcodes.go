@@ -170,9 +170,10 @@ func (s *Server) listBlocks(w http.ResponseWriter, r *http.Request, c *caller) {
 		entry := BlockResponse{CreatedAt: b.CreatedAt.Unix()}
 		if user, err := s.store.GetUser(r.Context(), b.BlockedUserID); err == nil {
 			// A blocked user's presence is not shown, so it is not looked up.
+			thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 			u := userResponse(s.now(), user, nil,
 				db.Presence{UserID: user.ID, State: db.StateOffline, Extras: db.EmptyExtras()},
-				nil, visStranger, s.defaultAvatarURLOrEmpty())
+				nil, visStranger, thumb1, thumb2)
 			entry.User = &u
 		}
 		out = append(out, entry)

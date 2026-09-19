@@ -554,7 +554,7 @@ func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 
 	iconURI := user.ThumbnailURL
 	if iconURI == "" {
-		iconURI = s.defaultAvatarURLOrEmpty()
+		iconURI, _ = s.defaultAvatarURLOrEmpty()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
