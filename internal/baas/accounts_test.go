@@ -1139,6 +1139,22 @@ func TestNxAccountBlobMatchesTheRealCapturedShape(t *testing.T) {
 	}
 }
 
+// TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks pins the 6-byte
+// header confirmed 2026-09-20 by decompiling the operator's own console's
+// `account` sysmodule: federation is rejected with 2124-0292 unless these
+// exact bytes (base64 "01606150...") lead the blob. See nxAccountBlob's own
+// comment for the full writeup and what remains unconfirmed beyond this.
+func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
+	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
+	if err != nil {
+		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
+	}
+	want := []byte{0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}
+	if len(decoded) < len(want) || string(decoded[:len(want)]) != string(want) {
+		t.Errorf("nxAccountBlob header = %x, want %x", decoded[:min(len(decoded), len(want))], want)
+	}
+}
+
 func TestNxAccountBlobIsStablePerAccountAndDistinctAcrossAccounts(t *testing.T) {
 	a1 := nxAccountBlob("d63e6ad0809131f2")
 	a2 := nxAccountBlob("d63e6ad0809131f2")

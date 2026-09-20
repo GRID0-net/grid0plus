@@ -587,22 +587,54 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // login, but it is a placeholder shape, never a claim about what the real
 // bytes encode.
 //
-// TODO(capture-needed): whether the interior bytes matter to the console at
-// all. One data point exists and is suggestive but not conclusive: on real
-// hardware, the operator tried both another real account's literal captured
-// bytes and unformatted random data in place of this field, in separate
-// live federation attempts -- both still produced error 2124-0292, the same
+// 2026-09-20: offsets 0-5 are no longer just an inferred-fixed range. The
+// operator dumped their own console's `account` sysmodule (title
+// 010000000000001e, decrypted with their own prod.keys, off their own
+// hardware -- not redistributed) and reverse-engineered it. The function
+// that gates a successful federation (raising 0x2487c, i.e. 2124-0292, on
+// failure) checks exactly these 6 bytes before anything else:
+//
+//	if *(long *)(param_1 + 0x21) != 0x3035313630363130 { return false }
+//
+// 0x3035313630363130 read little-endian as ASCII is "01606150" -- the same
+// 6-byte header every capture has ever shown, but now confirmed as something
+// the console itself checks, not just a pattern across samples. See
+// docs/CAPTURES for the full decompile writeup (function addresses,
+// caller graph).
+//
+// This does not, on its own, settle the TODO below. A prior hardware test
+// (see below) fed the console another real account's literal captured bytes
+// -- which necessarily carried this same correct header -- and still got
+// 2124-0292. Two decompiled functions run immediately before this header
+// check (FUN_71000faed0, FUN_71000ccdb0 in the 2026-09-20 decompile) and
+// were not examined; either could impose a further requirement this blob
+// still does not meet. Implementing the header is a strictly more
+// evidence-backed placeholder than the old all-SHA256 one, not a claimed
+// fix.
+//
+// TODO(capture-needed): whether the remaining interior bytes (6-173) matter
+// to the console at all, and whether FUN_71000faed0/FUN_71000ccdb0 impose
+// requirements beyond this header. One data point exists and is suggestive
+// but not conclusive: on real hardware, the operator tried both another real
+// account's literal captured bytes (correct header included) and
+// unformatted random data in place of this field, in separate live
+// federation attempts -- both still produced error 2124-0292, the same
 // error this whole flow has shown through several previous, independently
 // capture-verified fixes (see docs/CAPTURES/nintendo-account-link.md's
-// "What is still open"). That is consistent with the console never checking
-// this field's content at all, but a content check keyed to per-request
-// context (so that even genuine bytes from a different request would also
-// read as wrong) predicts the identical result -- so it does not settle the
-// question either way. Change: this function, if a capture or a hardware
-// test ever ties specific interior bytes to specific console behaviour.
+// "What is still open"). That is consistent with the remaining interior
+// bytes never being checked at all, but a content check keyed to
+// per-request context (so that even genuine bytes from a different request
+// would also read as wrong) predicts the identical result -- so it does not
+// settle the question either way. Change: this function, if a capture or a
+// hardware test ever ties specific interior bytes, or FUN_71000faed0 /
+// FUN_71000ccdb0's requirements, to specific console behaviour.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
+	// Confirmed via decompile 2026-09-20 -- see the function comment above.
+	header := []byte{0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}
+
 	out := make([]byte, 0, blobLen)
+	out = append(out, header...)
 	seed := []byte(naID)
 	for len(out) < blobLen {
 		sum := sha256.Sum256(seed)
