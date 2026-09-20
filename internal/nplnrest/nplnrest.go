@@ -1,8 +1,23 @@
-// Package nplnrest is NPLN's JSON front end: the hosts Splatoon 3 talks to
-// BEFORE it opens a gRPC channel.
+// Package nplnrest is NPLN's JSON front end: the hosts a console talks to
+// BEFORE Splatoon 3 opens a gRPC channel.
 //
-// The game does not start with gRPC. It first speaks ordinary JSON over HTTPS
-// to two host families and then holds a third connection open indefinitely:
+// "The console", not "the game": a 2026-09-20 decompile of Splatoon 3
+// v11.3.0's own main found no literal "vermillion", "penne" or "frontline"
+// string anywhere in the binary, despite an exhaustive search that did find
+// every gRPC service Splatoon 3 itself calls later (see internal/npln's
+// "confirmed RPC surface" section). That rules out Splatoon 3's own code
+// making these requests directly. The 2026-08-27 tcpdump that established
+// these hosts are used at all (see vermillion's doc comment below) is still
+// good evidence -- a capture watches the wire, not the calling process -- it
+// just means the caller is almost certainly a shared system client (the same
+// npns sysmodule already cited for penne's ticket mechanism is the leading
+// candidate) acting on the console's behalf during account/network setup,
+// not Splatoon-3-specific code. Nothing here changes what SwitchNet needs to
+// answer, since the traffic still arrives at these hosts either way -- only
+// which binary would need decompiling to learn more from that side.
+//
+// The console first speaks ordinary JSON over HTTPS to two host families and
+// then holds a third connection open indefinitely:
 //
 //	gw.hac.lp1.vermillion.srv.nintendo.net   device initialisation, account config
 //	val.hac.lp1.penne.srv.nintendo.net       login tickets, and the frontline FQDN
