@@ -40,6 +40,11 @@ type Memory struct {
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
+
+	saveDataArchives map[string]SaveDataArchive
+	// componentFiles is keyed by archive id then component file id, the same
+	// shape friendships/festEntries use for their own per-parent maps.
+	componentFiles map[string]map[string]ComponentFile
 }
 
 // NewMemory returns an empty in-memory store.
@@ -57,6 +62,9 @@ func NewMemory() *Memory {
 		blocks:         map[string]map[string]Block{},
 		presence:       map[string]Presence{},
 		images:         map[string]Image{},
+
+		saveDataArchives: map[string]SaveDataArchive{},
+		componentFiles:   map[string]map[string]ComponentFile{},
 	}
 }
 
@@ -786,6 +794,165 @@ func (m *Memory) GetImage(_ context.Context, id string) (Image, error) {
 	return img, nil
 }
 
+// ---- OLSC save data archives (phase 4) -------------------------------------
+
+func (m *Memory) CreateSaveDataArchive(_ context.Context, a SaveDataArchive) (SaveDataArchive, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.saveDataArchives[a.ID]; ok {
+		return SaveDataArchive{}, fmt.Errorf("%w: save data archive %s exists", ErrConflict, a.ID)
+	}
+	if a.Status == "" {
+		a.Status = "uploading"
+	}
+	now := time.Now().UTC()
+	a.CreatedAt, a.UpdatedAt = now, now
+	m.saveDataArchives[a.ID] = a
+	return a, nil
+}
+
+func (m *Memory) GetSaveDataArchive(_ context.Context, id string) (SaveDataArchive, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	a, ok := m.saveDataArchives[id]
+	if !ok {
+		return SaveDataArchive{}, ErrNotFound
+	}
+	return a, nil
+}
+
+func (m *Memory) ListSaveDataArchives(_ context.Context, q SaveDataArchiveQuery) ([]SaveDataArchive, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []SaveDataArchive
+	for _, a := range m.saveDataArchives {
+		if a.NSAID != q.NSAID {
+			continue
+		}
+		if q.ApplicationID != "" && a.ApplicationID != q.ApplicationID {
+			continue
+		}
+		if q.DeviceID != "" && a.DeviceID != q.DeviceID {
+			continue
+		}
+		out = append(out, a)
+	}
+	// Most recently saved first, id as the tiebreak so the order is total —
+	// the same reasoning ListFests documents for its own sort.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SavedAt.Equal(out[j].SavedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].SavedAt.After(out[j].SavedAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) UpdateSaveDataArchive(_ context.Context, id string, p SaveDataArchivePatch) (SaveDataArchive, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.saveDataArchives[id]
+	if !ok {
+		return SaveDataArchive{}, ErrNotFound
+	}
+	if p.Status != nil {
+		a.Status = *p.Status
+	}
+	if p.EncodedDigest != nil {
+		a.EncodedDigest = *p.EncodedDigest
+	}
+	if p.FinishedAt != nil {
+		a.FinishedAt = p.FinishedAt
+	}
+	if p.DataSize != nil {
+		a.DataSize = *p.DataSize
+	}
+	if p.NumOfPartitions != nil {
+		a.NumOfPartitions = *p.NumOfPartitions
+	}
+	a.UpdatedAt = time.Now().UTC()
+	m.saveDataArchives[id] = a
+	return a, nil
+}
+
+func (m *Memory) DeleteSaveDataArchive(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.saveDataArchives[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.saveDataArchives, id)
+	delete(m.componentFiles, id)
+	return nil
+}
+
+func (m *Memory) CreateComponentFile(_ context.Context, f ComponentFile) (ComponentFile, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.componentFiles[f.ArchiveID][f.ID]; ok {
+		return ComponentFile{}, fmt.Errorf("%w: component file %s exists", ErrConflict, f.ID)
+	}
+	if f.Status == "" {
+		f.Status = "uploading"
+	}
+	now := time.Now().UTC()
+	f.CreatedAt, f.UpdatedAt = now, now
+	byArchive, ok := m.componentFiles[f.ArchiveID]
+	if !ok {
+		byArchive = map[string]ComponentFile{}
+		m.componentFiles[f.ArchiveID] = byArchive
+	}
+	byArchive[f.ID] = f
+	return f, nil
+}
+
+func (m *Memory) GetComponentFile(_ context.Context, id string) (ComponentFile, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, byArchive := range m.componentFiles {
+		if f, ok := byArchive[id]; ok {
+			return f, nil
+		}
+	}
+	return ComponentFile{}, ErrNotFound
+}
+
+func (m *Memory) ListComponentFiles(_ context.Context, archiveID string) ([]ComponentFile, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]ComponentFile, 0, len(m.componentFiles[archiveID]))
+	for _, f := range m.componentFiles[archiveID] {
+		out = append(out, f)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
+	return out, nil
+}
+
+func (m *Memory) UpdateComponentFile(_ context.Context, id string, p ComponentFilePatch) (ComponentFile, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for archiveID, byArchive := range m.componentFiles {
+		f, ok := byArchive[id]
+		if !ok {
+			continue
+		}
+		if p.Status != nil {
+			f.Status = *p.Status
+		}
+		if p.ArchiveSize != nil {
+			f.ArchiveSize = *p.ArchiveSize
+		}
+		if p.EncodedArchiveDigest != nil {
+			f.EncodedArchiveDigest = *p.EncodedArchiveDigest
+		}
+		f.UpdatedAt = time.Now().UTC()
+		m.componentFiles[archiveID][id] = f
+		return f, nil
+	}
+	return ComponentFile{}, ErrNotFound
+}
+
 // ---- operator debugging ----------------------------------------------------
 
 // Stats counts rows directly, holding the read lock for the whole pass — a
@@ -803,6 +970,8 @@ func (m *Memory) Stats(context.Context) (Stats, error) {
 		CoopShifts: len(m.coopShifts),
 		Matches:    len(m.matches),
 		Images:     len(m.images),
+
+		SaveDataArchives: len(m.saveDataArchives),
 	}
 	for _, u := range m.users {
 		if u.Deleted {
