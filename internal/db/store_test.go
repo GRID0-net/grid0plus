@@ -47,7 +47,8 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
-		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts, npln_matches RESTART IDENTITY CASCADE`)
+		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts, npln_matches,
+		          scsi_save_data_archives RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -73,6 +74,8 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"festEntries":               testFestEntries,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
+		"saveDataArchives":          testSaveDataArchives,
+		"componentFiles":            testComponentFiles,
 		"ping":                      testPing,
 		"stats":                     testStats,
 	}
@@ -1047,6 +1050,160 @@ func testImages(t *testing.T, s Store) {
 		t.Errorf("get missing image: err = %v, want ErrNotFound", err)
 	}
 }
+
+func testSaveDataArchives(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Alice")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	a := SaveDataArchive{
+		ID: "aa00000000000001", NSAID: u.ID, ApplicationID: "0100abcd00010000",
+		DeviceID: "dev0000000000001", DataSize: 0, Status: "uploading",
+		SavedAt: now,
+	}
+	created, err := s.CreateSaveDataArchive(ctx, a)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.Status != "uploading" {
+		t.Errorf("status = %q, want uploading (default)", created.Status)
+	}
+
+	if _, err := s.CreateSaveDataArchive(ctx, a); !errors.Is(err, ErrConflict) {
+		t.Errorf("duplicate id: err = %v, want ErrConflict", err)
+	}
+
+	got, err := s.GetSaveDataArchive(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ApplicationID != a.ApplicationID || got.DeviceID != a.DeviceID {
+		t.Errorf("archive = %+v", got)
+	}
+
+	if _, err := s.GetSaveDataArchive(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get missing: err = %v, want ErrNotFound", err)
+	}
+
+	// A second archive for a different title must not show up in a
+	// title-filtered listing.
+	other := a
+	other.ID = "aa00000000000002"
+	other.ApplicationID = "0100abcd00020000"
+	other.SavedAt = now.Add(time.Minute)
+	if _, err := s.CreateSaveDataArchive(ctx, other); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+
+	list, err := s.ListSaveDataArchives(ctx, SaveDataArchiveQuery{NSAID: u.ID, ApplicationID: a.ApplicationID})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != a.ID {
+		t.Errorf("filtered list = %+v, want just %s", list, a.ID)
+	}
+
+	all, err := s.ListSaveDataArchives(ctx, SaveDataArchiveQuery{NSAID: u.ID})
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	// Most recently saved first.
+	if len(all) != 2 || all[0].ID != other.ID || all[1].ID != a.ID {
+		t.Errorf("unfiltered list order = %+v", all)
+	}
+
+	digest := "ZGlnZXN0"
+	finishedAt := now.Add(time.Second)
+	updated, err := s.UpdateSaveDataArchive(ctx, a.ID, SaveDataArchivePatch{
+		Status: strPtr("fixed"), EncodedDigest: &digest, FinishedAt: &finishedAt,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.Status != "fixed" || updated.EncodedDigest != digest || updated.FinishedAt == nil {
+		t.Errorf("updated = %+v", updated)
+	}
+
+	if err := s.DeleteSaveDataArchive(ctx, a.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetSaveDataArchive(ctx, a.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get after delete: err = %v, want ErrNotFound", err)
+	}
+	if err := s.DeleteSaveDataArchive(ctx, a.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("delete missing: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testComponentFiles(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Alice")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	archive, err := s.CreateSaveDataArchive(ctx, SaveDataArchive{
+		ID: "cc00000000000001", NSAID: u.ID, ApplicationID: "0100abcd00010000",
+		DeviceID: "dev0000000000001", SavedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+
+	meta := ComponentFile{ID: "cf00000000000001", ArchiveID: archive.ID, Index: 0, Datatype: "meta", BlobKey: "blob-meta"}
+	save := ComponentFile{ID: "cf00000000000002", ArchiveID: archive.ID, Index: 1, Datatype: "save", BlobKey: "blob-save"}
+	if _, err := s.CreateComponentFile(ctx, meta); err != nil {
+		t.Fatalf("create meta: %v", err)
+	}
+	if _, err := s.CreateComponentFile(ctx, save); err != nil {
+		t.Fatalf("create save: %v", err)
+	}
+	if _, err := s.CreateComponentFile(ctx, meta); !errors.Is(err, ErrConflict) {
+		t.Errorf("duplicate id: err = %v, want ErrConflict", err)
+	}
+
+	got, err := s.GetComponentFile(ctx, save.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Datatype != "save" || got.BlobKey != "blob-save" {
+		t.Errorf("component file = %+v", got)
+	}
+	if _, err := s.GetComponentFile(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get missing: err = %v, want ErrNotFound", err)
+	}
+
+	list, err := s.ListComponentFiles(ctx, archive.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 2 || list[0].Index != 0 || list[1].Index != 1 {
+		t.Errorf("list order = %+v", list)
+	}
+
+	size := int64(4096)
+	digest := "ZmlsZWRpZ2VzdA"
+	updated, err := s.UpdateComponentFile(ctx, save.ID, ComponentFilePatch{
+		Status: strPtr("fixed"), ArchiveSize: &size, EncodedArchiveDigest: &digest,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.Status != "fixed" || updated.ArchiveSize != size || updated.EncodedArchiveDigest != digest {
+		t.Errorf("updated = %+v", updated)
+	}
+	if _, err := s.UpdateComponentFile(ctx, "missing", ComponentFilePatch{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("update missing: err = %v, want ErrNotFound", err)
+	}
+
+	// Deleting the parent archive takes its component files with it.
+	if err := s.DeleteSaveDataArchive(ctx, archive.ID); err != nil {
+		t.Fatalf("delete archive: %v", err)
+	}
+	if _, err := s.GetComponentFile(ctx, save.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get component after archive delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+func strPtr(s string) *string { return &s }
 
 // ---- lookups -------------------------------------------------------------
 

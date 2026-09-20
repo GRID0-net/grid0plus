@@ -21,7 +21,7 @@ Four phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | 1 | accounts + the stock friends list | code complete, **not yet verified on hardware** |
 | 2 | NPLN game server for Splatoon 3, and a dashboard | code complete, **not yet verified on hardware** — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
 | 3 | eShop, served from local NSP dumps | **out of this repository** — planned as a separate, optional module. Not started. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-3--the-eshop-a-separate-module) |
-| 4 | per-game cloud save backup (OLSC) | planned, **not started** — storage backend undecided. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) |
+| 4 | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet verified on hardware, storage backend now local disk**. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) and `internal/scsi/README.md` |
 
 **Phase 3 does not belong in this codebase.** If you're asked to start eShop
 work, the first question is where that code should live — not `internal/`
@@ -31,10 +31,14 @@ and content-delivery layers do not.
 
 **Phase 4 does belong here**, unlike phase 3 — it needs no game dumps and
 carries none of phase 3's copyrighted-content exposure, just real storage
-cost that grows with usage. The storage backend (local disk on the box
-already running SwitchNet vs. paid object storage) is an open decision, not
-a default to assume; see the roadmap section before writing code against
-one.
+cost that grows with usage. The storage backend decision is made: local disk
+on the box already running SwitchNet, under `scsi.storage_dir` and
+`scsi.per_user_quota_bytes` in `config.yaml` — see `internal/scsi/storage.go`.
+Most of `internal/scsi`'s request/response shapes are confirmed against
+Kinnay's public wiki page for OLSC; the two `generate_key_*package`
+endpoints are this project's own defensible placeholder, not a confirmed
+shape, and are the most likely reason a real console would still refuse a
+restore. No capture exists yet — see `internal/scsi/README.md`.
 
 **Phase 1 has not been confirmed working on a real console.** Until it has, treat
 anything under `internal/baas/friends.go` as provisional — see
@@ -80,7 +84,7 @@ anything under `internal/baas/friends.go` as provisional — see
 make help                 # every target
 make check                # gofmt, go vet, go test — what CI runs
 make up                   # Postgres, Redis and nginx (Docker)
-make run                  # the eight Go services, natively, foreground
+make run                  # the nine Go services, natively, foreground
 make seed                 # in another terminal: drive it over HTTP
 ```
 
@@ -307,7 +311,7 @@ make check          # gofmt, vet, test
 make test-race      # the servers are concurrent by nature
 make build
 make up             # Postgres, Redis and nginx
-make run &          # the eight Go services
+make run &          # the nine Go services
 make seed           # drive it over HTTP
 ```
 

@@ -33,6 +33,7 @@ type Config struct {
 	DAuth     DAuth     `yaml:"dauth"`
 	AAuth     AAuth     `yaml:"aauth"`
 	BAAS      BAAS      `yaml:"baas"`
+	SCSI      SCSI      `yaml:"scsi"`
 	Stubs     Stubs     `yaml:"stubs"`
 	NPLN      NPLN      `yaml:"npln"`
 	BCAT      BCAT      `yaml:"bcat"`
@@ -226,6 +227,35 @@ type BAAS struct {
 	// LoginWindowSeconds is the sliding window LoginAttemptsPerWindow counts
 	// over.
 	LoginWindowSeconds int `yaml:"login_window_seconds"`
+}
+
+// SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
+//
+// Reimplements storage.lp1.scsi.srv.nintendo.net and
+// permission.lp1.sata.srv.nintendo.net. See internal/scsi for the endpoints.
+type SCSI struct {
+	Listen string `yaml:"listen"`
+
+	// PublicURL is this service's own externally-reachable base URL, used to
+	// build the signed_uri a component-file upload/download is reached
+	// through. Must be a host in the redirect list (storage.lp1.scsi.srv.
+	// nintendo.net), the same requirement ImageBaseURL documents for BAAS's
+	// own profile images.
+	PublicURL string `yaml:"public_url"`
+
+	// StorageDir is where save data blobs are written, on the same box
+	// already running SwitchNet -- the default ROADMAP.md's phase 4 section
+	// picks: no new recurring cost, bounded by whatever disk the box has.
+	StorageDir string `yaml:"storage_dir"`
+
+	// PerUserQuotaBytes caps one BAAS user's total stored save data across
+	// every title and every archive. Zero means unlimited: Validate permits
+	// it rather than requiring a number, since a small private deployment
+	// the operator already trusts every console on may reasonably accept
+	// that risk -- but ROADMAP.md §4.2 is explicit that a hard cap should
+	// normally exist, so one console cannot fill the disk and take the rest
+	// of SwitchNet down with it. Set this in any real deployment.
+	PerUserQuotaBytes int64 `yaml:"per_user_quota_bytes"`
 }
 
 // NPLN configures the Splatoon 3 game server (phase 2).
@@ -578,6 +608,15 @@ func Default() Config {
 			LoginAttemptsPerWindow: 20,
 			LoginWindowSeconds:     300,
 		},
+		SCSI: SCSI{
+			Listen:     "127.0.0.1:8091",
+			PublicURL:  "https://storage.lp1.scsi.srv.nintendo.net",
+			StorageDir: "data/save-archives",
+			// 1 GiB: generous for save data (real Switch saves are almost
+			// always well under 100 MiB), small enough that even a handful of
+			// consoles cannot meaningfully dent a modern disk.
+			PerUserQuotaBytes: 1 << 30,
+		},
 		Stubs: Stubs{
 			Listen: "127.0.0.1:8084",
 		},
@@ -686,6 +725,11 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_BAAS_LOGIN_ATTEMPTS_PER_WINDOW", &c.BAAS.LoginAttemptsPerWindow)
 	envInt("SWITCHNET_BAAS_LOGIN_WINDOW_SECONDS", &c.BAAS.LoginWindowSeconds)
 
+	envStr("SWITCHNET_SCSI_LISTEN", &c.SCSI.Listen)
+	envStr("SWITCHNET_SCSI_PUBLIC_URL", &c.SCSI.PublicURL)
+	envStr("SWITCHNET_SCSI_STORAGE_DIR", &c.SCSI.StorageDir)
+	envInt64("SWITCHNET_SCSI_PER_USER_QUOTA_BYTES", &c.SCSI.PerUserQuotaBytes)
+
 	envStr("SWITCHNET_STUBS_LISTEN", &c.Stubs.Listen)
 	envStr("SWITCHNET_STUBS_BCAT_RECORD_DIR", &c.Stubs.BCATRecordDir)
 
@@ -771,6 +815,12 @@ func (c Config) Validate() error {
 	}
 	if c.BAAS.AccessTokenTTL <= 0 {
 		errs = append(errs, errors.New("baas.access_token_ttl must be positive"))
+	}
+	if c.SCSI.StorageDir == "" {
+		errs = append(errs, errors.New("scsi.storage_dir is required"))
+	}
+	if c.SCSI.PerUserQuotaBytes < 0 {
+		errs = append(errs, errors.New("scsi.per_user_quota_bytes must not be negative"))
 	}
 	switch c.AAuth.OnlinePlayPolicy {
 	case "FREE", "MEMBERSHIP_REQUIRED":
@@ -900,5 +950,15 @@ func envBool(key string, dst *bool) {
 	}
 	if b, err := strconv.ParseBool(v); err == nil {
 		*dst = b
+	}
+}
+
+func envInt64(key string, dst *int64) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		*dst = n
 	}
 }

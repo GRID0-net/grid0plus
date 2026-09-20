@@ -421,6 +421,99 @@ type Stats struct {
 	CoopShifts            int
 	Matches               int
 	Images                int
+	SaveDataArchives      int
+}
+
+// SaveDataArchive is one OLSC cloud-save backup for a single title on a
+// single device (phase 4). Mirrors storage.lp1.scsi.srv.nintendo.net's "save
+// data archive" object field-for-field where the shape is confirmed.
+//
+// Reference: https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers#save-data-archive
+// See internal/scsi/README.md for which parts of this are confirmed from
+// that page and which are this project's own defensible reading.
+type SaveDataArchive struct {
+	ID string
+
+	// NSAID is the BAAS user id ("nsa_id" in Nintendo's own field name).
+	NSAID         string
+	ApplicationID string
+	DeviceID      string
+	DeviceSerial  string
+
+	DataSize    int64
+	Description string
+	SeriesID    int
+	Datatype    int
+
+	// Status is "uploading" or "fixed" — see internal/scsi/models.go.
+	Status                    string
+	AutoBackup                bool
+	NumOfPartitions           int
+	LaunchRequiredVersion     int
+	PreviousSaveDataArchiveID string
+	// EncodedDigest is whatever the console sent, stored opaquely: SwitchNet
+	// never has the console's own encryption key, so it can neither compute
+	// nor verify this value.
+	EncodedDigest string
+
+	SavedAt time.Time
+	// FinishedAt is nil until finish_upload — restore must never see an
+	// archive that never finished uploading.
+	FinishedAt *time.Time
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// SaveDataArchiveQuery filters ListSaveDataArchives. NSAID is required —
+// every real request is scoped to the caller's own account; ApplicationID
+// and DeviceID are optional narrowing filters, matching the "datatype",
+// "device_id" and "application_id" query params the wiki documents for GET
+// /api/nx/v2/save_data_archives.
+type SaveDataArchiveQuery struct {
+	NSAID         string
+	ApplicationID string
+	DeviceID      string
+}
+
+// SaveDataArchivePatch applies a partial update to a SaveDataArchive. A nil
+// field leaves the column unchanged.
+type SaveDataArchivePatch struct {
+	Status          *string
+	EncodedDigest   *string
+	FinishedAt      *time.Time
+	DataSize        *int64
+	NumOfPartitions *int
+}
+
+// ComponentFile is one uploaded/downloadable part of a SaveDataArchive.
+//
+// Reference: same wiki page, "component file object".
+type ComponentFile struct {
+	ID        string
+	ArchiveID string
+	Index     int
+	// Datatype is "meta" or "save".
+	Datatype string
+	// Status is "uploading" or "fixed".
+	Status               string
+	ArchiveSize          int64
+	EncodedArchiveDigest string
+	// BlobKey is the key this component's raw bytes are stored under in the
+	// configured blob store (internal/scsi.BlobStore) — never exposed to the
+	// console directly.
+	BlobKey string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// ComponentFilePatch applies a partial update to a ComponentFile. A nil field
+// leaves the column unchanged.
+type ComponentFilePatch struct {
+	Status               *string
+	ArchiveSize          *int64
+	EncodedArchiveDigest *string
 }
 
 type Store interface {
@@ -612,6 +705,33 @@ type Store interface {
 	CreateImage(ctx context.Context, img Image) error
 	// GetImage returns an image by id, or ErrNotFound.
 	GetImage(ctx context.Context, id string) (Image, error)
+
+	// ---- OLSC save data archives (phase 4) ----
+
+	// CreateSaveDataArchive inserts a new archive, in "uploading" status if
+	// a.Status is left empty.
+	CreateSaveDataArchive(ctx context.Context, a SaveDataArchive) (SaveDataArchive, error)
+	// GetSaveDataArchive returns an archive by id, or ErrNotFound.
+	GetSaveDataArchive(ctx context.Context, id string) (SaveDataArchive, error)
+	// ListSaveDataArchives returns archives matching q, most recently saved
+	// first.
+	ListSaveDataArchives(ctx context.Context, q SaveDataArchiveQuery) ([]SaveDataArchive, error)
+	// UpdateSaveDataArchive applies a patch and returns the updated archive,
+	// or ErrNotFound.
+	UpdateSaveDataArchive(ctx context.Context, id string, p SaveDataArchivePatch) (SaveDataArchive, error)
+	// DeleteSaveDataArchive removes an archive and its component files.
+	DeleteSaveDataArchive(ctx context.Context, id string) error
+
+	// CreateComponentFile inserts a new component file, in "uploading"
+	// status if f.Status is left empty.
+	CreateComponentFile(ctx context.Context, f ComponentFile) (ComponentFile, error)
+	// GetComponentFile returns a component file by id, or ErrNotFound.
+	GetComponentFile(ctx context.Context, id string) (ComponentFile, error)
+	// ListComponentFiles returns an archive's component files, by index.
+	ListComponentFiles(ctx context.Context, archiveID string) ([]ComponentFile, error)
+	// UpdateComponentFile applies a patch and returns the updated component
+	// file, or ErrNotFound.
+	UpdateComponentFile(ctx context.Context, id string, p ComponentFilePatch) (ComponentFile, error)
 
 	// ---- operator debugging ----
 

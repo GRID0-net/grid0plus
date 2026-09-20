@@ -1220,6 +1220,200 @@ func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) 
 	return out, mapErr(rows.Err())
 }
 
+// ---- OLSC save data archives (phase 4) -------------------------------------
+
+const saveDataArchiveColumns = `id, nsa_id, application_id, device_id, device_serial,
+	data_size, description, series_id, datatype, status, auto_backup, num_of_partitions,
+	launch_required_version, previous_save_data_archive_id, encoded_digest,
+	saved_at, finished_at, created_at, updated_at`
+
+func (p *Postgres) CreateSaveDataArchive(ctx context.Context, a SaveDataArchive) (SaveDataArchive, error) {
+	if a.Status == "" {
+		a.Status = "uploading"
+	}
+	err := p.pool.QueryRow(ctx,
+		`INSERT INTO scsi_save_data_archives
+		     (id, nsa_id, application_id, device_id, device_serial, data_size, description,
+		      series_id, datatype, status, auto_backup, num_of_partitions,
+		      launch_required_version, previous_save_data_archive_id, encoded_digest, saved_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		 RETURNING created_at, updated_at`,
+		a.ID, a.NSAID, a.ApplicationID, a.DeviceID, a.DeviceSerial, a.DataSize, a.Description,
+		a.SeriesID, a.Datatype, a.Status, a.AutoBackup, a.NumOfPartitions,
+		a.LaunchRequiredVersion, a.PreviousSaveDataArchiveID, a.EncodedDigest, a.SavedAt,
+	).Scan(&a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		return SaveDataArchive{}, mapErr(err)
+	}
+	return a, nil
+}
+
+func (p *Postgres) GetSaveDataArchive(ctx context.Context, id string) (SaveDataArchive, error) {
+	return scanSaveDataArchive(p.pool.QueryRow(ctx,
+		`SELECT `+saveDataArchiveColumns+` FROM scsi_save_data_archives WHERE id = $1`, id))
+}
+
+func (p *Postgres) ListSaveDataArchives(ctx context.Context, q SaveDataArchiveQuery) ([]SaveDataArchive, error) {
+	// Most recently saved first, id as the tiebreak: the in-memory store
+	// orders the same way, and the contract test compares them.
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+saveDataArchiveColumns+` FROM scsi_save_data_archives
+		 WHERE nsa_id = $1
+		   AND ($2 = '' OR application_id = $2)
+		   AND ($3 = '' OR device_id = $3)
+		 ORDER BY saved_at DESC, id`, q.NSAID, q.ApplicationID, q.DeviceID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []SaveDataArchive
+	for rows.Next() {
+		a, err := scanSaveDataArchive(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) UpdateSaveDataArchive(ctx context.Context, id string, patch SaveDataArchivePatch) (SaveDataArchive, error) {
+	a, err := p.GetSaveDataArchive(ctx, id)
+	if err != nil {
+		return SaveDataArchive{}, err
+	}
+	if patch.Status != nil {
+		a.Status = *patch.Status
+	}
+	if patch.EncodedDigest != nil {
+		a.EncodedDigest = *patch.EncodedDigest
+	}
+	if patch.FinishedAt != nil {
+		a.FinishedAt = patch.FinishedAt
+	}
+	if patch.DataSize != nil {
+		a.DataSize = *patch.DataSize
+	}
+	if patch.NumOfPartitions != nil {
+		a.NumOfPartitions = *patch.NumOfPartitions
+	}
+	_, err = p.pool.Exec(ctx,
+		`UPDATE scsi_save_data_archives SET
+		     status = $2, encoded_digest = $3, finished_at = $4,
+		     data_size = $5, num_of_partitions = $6, updated_at = now()
+		 WHERE id = $1`,
+		id, a.Status, a.EncodedDigest, a.FinishedAt, a.DataSize, a.NumOfPartitions)
+	if err != nil {
+		return SaveDataArchive{}, mapErr(err)
+	}
+	return p.GetSaveDataArchive(ctx, id)
+}
+
+func (p *Postgres) DeleteSaveDataArchive(ctx context.Context, id string) error {
+	tag, err := p.pool.Exec(ctx, `DELETE FROM scsi_save_data_archives WHERE id = $1`, id)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func scanSaveDataArchive(row interface{ Scan(...any) error }) (SaveDataArchive, error) {
+	var a SaveDataArchive
+	err := row.Scan(&a.ID, &a.NSAID, &a.ApplicationID, &a.DeviceID, &a.DeviceSerial,
+		&a.DataSize, &a.Description, &a.SeriesID, &a.Datatype, &a.Status, &a.AutoBackup,
+		&a.NumOfPartitions, &a.LaunchRequiredVersion, &a.PreviousSaveDataArchiveID,
+		&a.EncodedDigest, &a.SavedAt, &a.FinishedAt, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		return SaveDataArchive{}, mapErr(err)
+	}
+	return a, nil
+}
+
+const componentFileColumns = `id, archive_id, index, datatype, status, archive_size,
+	encoded_archive_digest, blob_key, created_at, updated_at`
+
+func (p *Postgres) CreateComponentFile(ctx context.Context, f ComponentFile) (ComponentFile, error) {
+	if f.Status == "" {
+		f.Status = "uploading"
+	}
+	err := p.pool.QueryRow(ctx,
+		`INSERT INTO scsi_component_files
+		     (id, archive_id, index, datatype, status, archive_size, encoded_archive_digest, blob_key)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING created_at, updated_at`,
+		f.ID, f.ArchiveID, f.Index, f.Datatype, f.Status, f.ArchiveSize,
+		f.EncodedArchiveDigest, f.BlobKey,
+	).Scan(&f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return ComponentFile{}, mapErr(err)
+	}
+	return f, nil
+}
+
+func (p *Postgres) GetComponentFile(ctx context.Context, id string) (ComponentFile, error) {
+	return scanComponentFile(p.pool.QueryRow(ctx,
+		`SELECT `+componentFileColumns+` FROM scsi_component_files WHERE id = $1`, id))
+}
+
+func (p *Postgres) ListComponentFiles(ctx context.Context, archiveID string) ([]ComponentFile, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+componentFileColumns+` FROM scsi_component_files
+		 WHERE archive_id = $1 ORDER BY index`, archiveID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+
+	var out []ComponentFile
+	for rows.Next() {
+		f, err := scanComponentFile(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) UpdateComponentFile(ctx context.Context, id string, patch ComponentFilePatch) (ComponentFile, error) {
+	f, err := p.GetComponentFile(ctx, id)
+	if err != nil {
+		return ComponentFile{}, err
+	}
+	if patch.Status != nil {
+		f.Status = *patch.Status
+	}
+	if patch.ArchiveSize != nil {
+		f.ArchiveSize = *patch.ArchiveSize
+	}
+	if patch.EncodedArchiveDigest != nil {
+		f.EncodedArchiveDigest = *patch.EncodedArchiveDigest
+	}
+	_, err = p.pool.Exec(ctx,
+		`UPDATE scsi_component_files SET
+		     status = $2, archive_size = $3, encoded_archive_digest = $4, updated_at = now()
+		 WHERE id = $1`,
+		id, f.Status, f.ArchiveSize, f.EncodedArchiveDigest)
+	if err != nil {
+		return ComponentFile{}, mapErr(err)
+	}
+	return p.GetComponentFile(ctx, id)
+}
+
+func scanComponentFile(row interface{ Scan(...any) error }) (ComponentFile, error) {
+	var f ComponentFile
+	err := row.Scan(&f.ID, &f.ArchiveID, &f.Index, &f.Datatype, &f.Status, &f.ArchiveSize,
+		&f.EncodedArchiveDigest, &f.BlobKey, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return ComponentFile{}, mapErr(err)
+	}
+	return f, nil
+}
+
 // ---- operator debugging ----------------------------------------------------
 
 // Stats counts rows across the main tables in one query, so the numbers are
@@ -1237,8 +1431,10 @@ func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
 		(SELECT count(*) FROM npln_fests),
 		(SELECT count(*) FROM npln_coop_shifts),
 		(SELECT count(*) FROM npln_matches),
-		(SELECT count(*) FROM images)
+		(SELECT count(*) FROM images),
+		(SELECT count(*) FROM scsi_save_data_archives)
 	`).Scan(&s.Users, &s.DeletedUsers, &s.DeviceAccounts, &s.DeletedDeviceAccounts,
-		&s.Devices, &s.Friendships, &s.Fests, &s.CoopShifts, &s.Matches, &s.Images)
+		&s.Devices, &s.Friendships, &s.Fests, &s.CoopShifts, &s.Matches, &s.Images,
+		&s.SaveDataArchives)
 	return s, mapErr(err)
 }

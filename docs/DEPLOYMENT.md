@@ -14,7 +14,7 @@ Getting SwitchNet onto a machine your consoles can reach.
 ## Local, on one machine
 
 Postgres, Redis and the nginx TLS edge run in Docker (off-the-shelf images,
-never rebuilt from this repo). The eight Go services run natively: as
+never rebuilt from this repo). The nine Go services run natively: as
 systemd units on the box that actually serves your consoles, installed
 once with `scripts/install-systemd.sh`.
 
@@ -109,6 +109,7 @@ console finds it via a resolver you already run, configured with
 | 8085–8087 | TCP | localhost only | phase 2's: gateway, JSON front end, dashboard |
 | 8088, 8089 | TCP | localhost only | gamesync; npln's matchmaking admin API (off unless configured) |
 | 8090 | TCP | localhost only | `toolbox` — see below |
+| 8091 | TCP | localhost only | `scsi` — phase 4's OLSC cloud save |
 | 5432, 6379 | TCP | localhost only | Postgres, Redis |
 
 The UDP rules are the ones people forget. A firewall that only opens TCP gives
