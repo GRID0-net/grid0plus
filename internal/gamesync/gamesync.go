@@ -715,6 +715,16 @@ func send(out chan<- *syncpb.KeepUserSessionResponse, msg *syncpb.KeepUserSessio
 //
 // TODO(capture-needed): what a Round is and what those four fields carry.
 // Change: this method.
+//
+// A 2026-09-20 decompile of Splatoon 3 v11.3.0 confirms the game does link
+// against and call CreateRound (its gRPC path appears as a literal string,
+// referenced from real call sites), but settles nothing about Unk1..Unk4:
+// protobuf field names are reflection metadata the compiler strips under
+// optimize_for = LITE_RUNTIME, unlike the gRPC method path strings (a
+// separate mechanism, embedded unconditionally by the gRPC codegen for
+// routing) that confirmed the RPC lists elsewhere in this decompile. Static
+// analysis of this binary cannot recover field names that were never
+// compiled in. Only a capture settles this one.
 
 // ---- helpers -------------------------------------------------------------
 
