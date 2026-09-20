@@ -38,6 +38,11 @@ import (
 // interfaces on one *Server. See backlog.go's package comment for what is
 // and is not implemented there.
 type Service struct {
+	// UnimplementedFestServiceServer covers SelectFestBreakingNews too: a real
+	// RPC (confirmed in Splatoon 3 v11.3.0's own binary, see README.md's
+	// "confirmed RPC surface" section), reads as lower-stakes mid-fest
+	// announcement content, and its request/response shape is undocumented --
+	// left here rather than guessed at, same reasoning as backlog.go's writes.
 	toyohrpb.UnimplementedFestServiceServer
 	toyohrpb.UnimplementedCloudSaveServer
 

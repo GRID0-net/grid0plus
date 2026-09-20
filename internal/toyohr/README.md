@@ -23,6 +23,35 @@ from there, and battle results are the missing half of a fest verdict.
 | Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/{fest,schedule,cloud_save,messaging}.proto` |
 | Needs a database | yes, for fests and coop shifts -- the rest of `Schedule` and `GetSaveRecord` need none |
 
+## The package name is confirmed, not guessed
+
+A 2026-09-20 decompile of Splatoon 3 v11.3.0's own `main` (see
+`internal/npln/README.md`'s "confirmed RPC surface" section for how it was
+extracted) settles something this package's naming had been assuming:
+Nintendo's own build embeds the source path
+`bazel-out/arm64-v8a-opt/bin/proto/toyohr/v1/fest.pb.cc`, and every
+`FestService` RPC appears as a literal
+`/nn.npln.toyohr.v1.FestService/<Method>` path string. `toyohr` is Nintendo's
+real internal package name, not a guess carried over from `kinnay/NPLN-Protocols`.
+
+The same decompile gives the exhaustive RPC list this specific game links
+against (6 real RPCs, 5 implemented):
+
+| RPC | Implemented |
+| --- | --- |
+| `CreateFestEntry` | yes |
+| `GetFestEntry` | yes |
+| `GetFestResult` | yes |
+| `SelectFestSchedule` | yes |
+| `GetFestDecryptionKey` | yes |
+| `SelectFestBreakingNews` | **no** -- not registered as a handler; falls through the same `Unimplemented` path as the backlog in `backlog.go` |
+
+`SelectFestBreakingNews` reads, from the name alone, like mid-fest
+announcement content -- lower stakes than any of the six already implemented,
+and its request/response shape is undocumented, so it stays unimplemented
+rather than guessed at. Add it to `backlog.go` alongside `GameRecord` if the
+console is ever seen calling it.
+
 ## A Splatfest lives in two places, and they must agree
 
 This is the thing to understand before changing anything here.
