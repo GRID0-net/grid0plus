@@ -206,6 +206,31 @@ baas:
   login_window_seconds: 300
 
 # ---------------------------------------------------------------------------
+# scsi: OLSC cloud save backup (phase 4)
+# ---------------------------------------------------------------------------
+scsi:
+  # Loopback only, same reasoning as dauth.listen above.
+  listen: "127.0.0.1:8091"
+
+  # This service's own externally-reachable base URL. Must be a host in the
+  # redirect list (storage.lp1.scsi.srv.nintendo.net) -- see internal/scsi's
+  # signedURI doc comment for why it is used at all.
+  public_url: "https://storage.lp1.scsi.srv.nintendo.net"
+
+  # Where save data blobs are written, on this same box. See
+  # docs/ROADMAP.md's phase 4 section for why local disk is the default
+  # storage backend rather than object storage: no new recurring cost, and
+  # the operator already pays for this machine regardless.
+  storage_dir: "data/save-archives"
+
+  # Caps one BAAS user's total stored save data across every title. 0 means
+  # unlimited -- do not leave this at 0 in a real deployment: nothing else
+  # stops one console from filling the disk and taking the rest of SwitchNet
+  # down with it. 1 GiB is generous for save data (real Switch saves are
+  # almost always well under 100 MiB).
+  per_user_quota_bytes: 1073741824
+
+# ---------------------------------------------------------------------------
 # stubs: endpoints answered but not implemented
 # ---------------------------------------------------------------------------
 stubs:

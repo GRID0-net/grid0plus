@@ -49,6 +49,10 @@ const (
 	// ServiceEShop is the eShop: the storefront, the commerce API, the eLicense
 	// server and the content server (phase 3).
 	ServiceEShop Service = "eshop"
+	// ServiceSCSI is the OLSC (Online Save Cloud) cloud-save server (phase 4):
+	// storage.lp1.scsi.srv.nintendo.net's save data archives and
+	// permission.lp1.sata.srv.nintendo.net's save data sets / key package.
+	ServiceSCSI Service = "scsi"
 	// ServiceBlackhole means the host should be null-routed on the console
 	// rather than answered. Used for telemetry.
 	ServiceBlackhole Service = "blackhole"
@@ -337,9 +341,18 @@ var Hosts = []Host{
 		Comment: "eLicense JWK set",
 	},
 	{
+		// Phase 4: OLSC's real save-data-archive API. Full field-level shape
+		// confirmed at https://github.com/kinnay/NintendoClients/wiki/
+		// OLSC-Servers -- "GET /api/nx/v2/save_data_archives" and its
+		// siblings (start_upload, finish_upload, generate_key_seed_package,
+		// extend_upload_timeout) are all documented there, the same wiki
+		// this project already leans on for BAAS/dAuth/aAuth. See
+		// internal/scsi/README.md for exactly which endpoints are that
+		// confirmed versus this project's own defensible reading of an
+		// undocumented one.
 		Pattern: "storage.lp1.scsi.srv.nintendo.net",
-		Service: ServiceStubs, TLS: true,
-		Comment: "online save storage",
+		Service: ServiceSCSI, TLS: true,
+		Comment: "OLSC save data archives (phase 4)",
 	},
 	{
 		Pattern: "%.scsi.srv.nintendo.net",
@@ -429,29 +442,42 @@ var Hosts = []Host{
 	{
 		Pattern: "%.sata.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "OLSC's own host -- title 010000000000003E, decompiled 2026-09-20, " +
-			"implements nn::olsc (\"Online Save Cloud\", the OS-level per-game save " +
-			"backup tied to a Nintendo Switch Online subscription -- system-wide, " +
-			"not the same thing as any one game's own cloud-save RPCs, and not " +
-			"currently documented or planned anywhere in this project). No scsi " +
-			"string anywhere in this binary, so this -- not " +
-			"storage.lp1.scsi.srv.nintendo.net above -- looks like OLSC's actual " +
-			"backend. A second, unrelated purpose found 2026-09-20 in qlaunch's own " +
-			"decompile: \"pp.%.sata.srv.nintendo.net/noa/<locale>.html\" (\"pp\" " +
-			"almost certainly privacy policy; en_US/fr_CA/es_LA/pt_BR/de_DE/en_GB " +
-			"locale pages all referenced) -- the wildcard already covers this " +
-			"two-label \"pp.<region>.sata...\" form generically (matchesSuffix " +
-			"matches any subdomain depth), so no pattern change was needed, only " +
-			"this note that the same host serves two unrelated things. " +
-			"Referenced as \"...hac.%.sata.srv.nintendo.net\"; the wildcard " +
-			"is Nintendo's own environment placeholder (compare " +
+		Comment: "OLSC's own host family -- title 010000000000003E, decompiled " +
+			"2026-09-20, implements nn::olsc (\"Online Save Cloud\", the OS-level " +
+			"per-game save backup tied to a Nintendo Switch Online subscription -- " +
+			"system-wide, not the same thing as any one game's own cloud-save " +
+			"RPCs). Phase 4 (docs/ROADMAP.md) now implements the two specific " +
+			"hosts under this family with a confirmed shape -- see the literal " +
+			"permission.lp1.sata.srv.nintendo.net override just below, which MUST " +
+			"stay after this wildcard: Atmosphere applies the last matching line, " +
+			"and this broad entry would otherwise win back over it. Everything " +
+			"else under this wildcard remains stubbed, including a second, " +
+			"unrelated purpose found the same night in qlaunch's own decompile: " +
+			"\"pp.%.sata.srv.nintendo.net/noa/<locale>.html\" (\"pp\" almost " +
+			"certainly privacy policy; en_US/fr_CA/es_LA/pt_BR/de_DE/en_GB locale " +
+			"pages all referenced) -- matched generically by this same wildcard " +
+			"(matchesSuffix matches any subdomain depth), so no pattern change was " +
+			"needed for it, just this note that the family serves more than one " +
+			"purpose. Referenced as \"...hac.%.sata.srv.nintendo.net\"; the " +
+			"wildcard is Nintendo's own environment placeholder (compare " +
 			"receive-%.dg.srv.nintendo.net above), but there may be another " +
 			"variable segment before \"hac\" this pattern does not capture -- the " +
 			"DNS suffix match only needs the fixed tail, so a narrower prefix guess " +
-			"was not worth making. Implementing real save backup is out of scope " +
-			"the same way CloudSave.GetSaveRecord's neighbours are (ROADMAP.md " +
-			"phase 2.4): it would mean storing real player save data this server " +
-			"has no legitimate way to have. Stubbed, not designed against.",
+			"was not worth making.",
+	},
+	{
+		// Same wiki page as storage.lp1.scsi.srv.nintendo.net above: "SATA
+		// permission server". Its two endpoints (save_data_sets,
+		// save_data_sets/generate_key_package) are listed with no method or
+		// field shape at all -- generate_key_package is flagged in
+		// internal/scsi/handler.go as a likely hard blocker on equal footing
+		// with generate_key_seed_package, since it may carry real
+		// cryptographic material a console validates before trusting a
+		// restore. MUST stay after the %.sata.srv.nintendo.net wildcard
+		// above -- see that entry's own comment for why.
+		Pattern: "permission.lp1.sata.srv.nintendo.net",
+		Service: ServiceSCSI, TLS: true,
+		Comment: "OLSC save data sets / key package (phase 4)",
 	},
 	{
 		Pattern: "%.sprofile.srv.nintendo.net",
@@ -737,7 +763,7 @@ func TLSHostnames() []string {
 // ProxiedServices are the services that sit behind the nginx TLS edge, in the
 // order their server blocks should be emitted.
 var ProxiedServices = []Service{
-	ServiceDAuth, ServiceAAuth, ServiceBAAS,
+	ServiceDAuth, ServiceAAuth, ServiceBAAS, ServiceSCSI,
 	ServiceNPLNRest, ServiceNPLN, ServiceGamesync, ServiceStubs,
 }
 

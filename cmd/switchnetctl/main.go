@@ -301,6 +301,19 @@ func hostsFile(cfg config.Config, bcatProbe bool) string {
 		emit(ip, h)
 	}
 
+	// MUST come after the stubs section above: permission.lp1.sata.srv.
+	// nintendo.net is a literal host that overrides the broader
+	// %.sata.srv.nintendo.net wildcard emitted there, and Atmosphere applies
+	// the LAST matching line. internal/nintendo.Resolve gets this right on
+	// its own via longest-suffix-wins regardless of declaration order; this
+	// generated file has to get the same answer by physical line order
+	// instead, since Atmosphere's own DNS-MITM resolver has no such
+	// preference.
+	section("phase 4: OLSC cloud save")
+	for _, h := range nintendo.ServiceHosts(nintendo.ServiceSCSI) {
+		emit(ip, h)
+	}
+
 	// Every service with hosts must appear in some section here, or its hosts
 	// vanish from the file with no error -- see
 	// TestEveryHostReachesTheGeneratedHostsFile.
@@ -375,6 +388,7 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceDAuth: cfg.DAuth.Listen,
 		nintendo.ServiceAAuth: cfg.AAuth.Listen,
 		nintendo.ServiceBAAS:  cfg.BAAS.Listen,
+		nintendo.ServiceSCSI:  cfg.SCSI.Listen,
 		nintendo.ServiceStubs: cfg.Stubs.Listen,
 
 		// Two NPLN backends, deliberately. See config.NPLN: the JSON front and
@@ -388,6 +402,7 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceDAuth:    "dauth",
 		nintendo.ServiceAAuth:    "aauth",
 		nintendo.ServiceBAAS:     "baas",
+		nintendo.ServiceSCSI:     "scsi",
 		nintendo.ServiceStubs:    "stubs",
 		nintendo.ServiceNPLN:     "npln",
 		nintendo.ServiceNPLNRest: "npln_rest",
@@ -410,7 +425,7 @@ func nginxConf(cfg config.Config) string {
 	// would reshuffle the upstream blocks on every run and churn the diff.
 	for _, svc := range []nintendo.Service{
 		nintendo.ServiceDAuth, nintendo.ServiceAAuth,
-		nintendo.ServiceBAAS, nintendo.ServiceStubs,
+		nintendo.ServiceBAAS, nintendo.ServiceSCSI, nintendo.ServiceStubs,
 	} {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
@@ -524,7 +539,7 @@ func nginxConf(cfg config.Config) string {
 				b.WriteString("# full, sizeable, bidirectional TLS exchange nginx never logs as a\n")
 				b.WriteString("# completed HTTP request. See Host.NoHTTP2.\n")
 			}
-			b.WriteString(httpServerBlock(cfg, serverNames, "switchnet_"+names[svc], v.verifyClient, v.http2))
+			b.WriteString(httpServerBlock(cfg, serverNames, "switchnet_"+names[svc], v.verifyClient, v.http2, maxBodySizeFor(svc)))
 		}
 		b.WriteString("\n")
 	}
@@ -557,7 +572,22 @@ func nginxConf(cfg config.Config) string {
 	return b.String()
 }
 
-func httpServerBlock(cfg config.Config, serverNames []string, upstream string, verifyClient, http2 bool) string {
+// maxBodySizeFor is the nginx client_max_body_size for one proxied service's
+// server block. 4m is enough for everything except real save-data uploads:
+// scsi's component-file PUT (internal/scsi/handler.go's uploadComponentData)
+// carries the actual save bytes, and real Switch saves routinely exceed 4m
+// even though they are "almost always well under 100 MiB" (see
+// internal/scsi/README.md) -- nginx's own limit has to clear that bar or a
+// save large enough to matter fails at the edge before scsi's own quota
+// check (internal/scsi.LocalDisk.Put) ever runs.
+func maxBodySizeFor(svc nintendo.Service) string {
+	if svc == nintendo.ServiceSCSI {
+		return "200m"
+	}
+	return "4m"
+}
+
+func httpServerBlock(cfg config.Config, serverNames []string, upstream string, verifyClient, http2 bool, maxBodySize string) string {
 	var verifyClientDirective, clientCertHeader string
 	if verifyClient {
 		verifyClientDirective = `
@@ -607,7 +637,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
     ssl_certificate     /etc/switchnet/certs/edge.crt;
     ssl_certificate_key /etc/switchnet/certs/edge.key;
 %s
-    client_max_body_size 4m;
+    client_max_body_size %s;
 
     location / {
         proxy_pass http://%s;
@@ -618,7 +648,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
         proxy_set_header X-Forwarded-Proto $scheme;%s
     }
 }
-`, cfg.Network.EdgeTLSPort, http2Directive, strings.Join(serverNames, "\n                "), verifyClientDirective, upstream, clientCertHeader)
+`, cfg.Network.EdgeTLSPort, http2Directive, strings.Join(serverNames, "\n                "), verifyClientDirective, maxBodySize, upstream, clientCertHeader)
 	return b.String()
 }
 

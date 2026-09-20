@@ -524,3 +524,24 @@ func TestAMoreSpecificPenneHostStillBeatsTheFrontlineWildcard(t *testing.T) {
 			res, h.Service, ServiceNPLNRest)
 	}
 }
+
+func TestOLSCPermissionHostBeatsTheSataWildcard(t *testing.T) {
+	// permission.lp1.sata.srv.nintendo.net is phase 4's confirmed-shape OLSC
+	// endpoint; everything else under *.sata.srv.nintendo.net (including the
+	// privacy-policy pp.<region>.sata... pages) stays stubbed. Longest-suffix
+	// -wins in Resolve keeps this true regardless of declaration order in
+	// Hosts, but the generated Atmosphere hosts file needs the same outcome
+	// from physical line order instead (see switchnetctl's "phase 4: OLSC
+	// cloud save" section, which must be emitted after "stubs" for exactly
+	// this reason) -- this test only pins Resolve's own answer.
+	for name, want := range map[string]Service{
+		"permission.lp1.sata.srv.nintendo.net": ServiceSCSI,
+		"pp.lp1.sata.srv.nintendo.net":         ServiceStubs,
+		"hac.lp1.sata.srv.nintendo.net":        ServiceStubs,
+	} {
+		_, h, ok := Resolve(name)
+		if !ok || h.Service != want {
+			t.Errorf("%s resolved to %s, want %s", name, h.Service, want)
+		}
+	}
+}
