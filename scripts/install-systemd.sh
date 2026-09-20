@@ -40,8 +40,8 @@ else
 fi
 
 say "==> setting ownership"
-mkdir -p certs/keys data/images
-sudo chown -R switchnet:switchnet certs/keys data/images
+mkdir -p certs/keys data/images data/save-archives
+sudo chown -R switchnet:switchnet certs/keys data/images data/save-archives
 
 say "==> installing the systemd units"
 sudo cp deploy/systemd/switchnet-*.service deploy/systemd/switchnet.target /etc/systemd/system/
