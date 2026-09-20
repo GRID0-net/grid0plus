@@ -93,6 +93,13 @@ func (a *authService) IssueToken(
 			// the defensible reading rather than a fabricated one. A capture of
 			// a real session lasting past the access token's TTL would settle
 			// it. Change: this function and RefreshToken below.
+			//
+			// A 2026-09-20 decompile of Splatoon 3 v11.3.0 confirms
+			// "/nn.npln.auth.v1.Auth/RefreshToken" is a real, compiled-in RPC
+			// this client links against -- the mechanism this TODO asks about
+			// does exist on the wire. That narrows "does it exist" but not
+			// "does this game actually call it instead of just re-authenticating
+			// from BAAS"; only a capture answers that.
 		},
 	}, nil
 }
