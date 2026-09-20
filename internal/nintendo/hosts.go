@@ -243,6 +243,26 @@ var Hosts = []Host{
 			"are both TODO(capture-needed)",
 	},
 
+	// ---- Found 2026-09-20: parental controls (nsd's own decompile) --------
+	// nsd (title 010000000000002E, the OS's own Network Server Discovery
+	// resolver) references exactly two hosts in its own code: this one and
+	// moon.nintendo.com below. Out of scope for a personal/private-network
+	// deployment the same way Phase 3's eShop is -- nobody is enforcing
+	// parental restrictions against themselves -- but both were previously
+	// invisible on the generic catch-all, same reasoning as the Pia entry
+	// above.
+	{
+		Pattern: "%.pctl.srv.nintendo.net",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Comment: "parental controls sync API",
+	},
+	{
+		Pattern: "moon.nintendo.com",
+		Service: ServiceStubs, TLS: true,
+		Comment: "\"Nintendo Switch Parental Controls\" companion app API " +
+			"(public codename \"moon\")",
+	},
+
 	// ---- Found 2026-09-20: a second, unrelated "vermillion" ---------------
 	// A decompile of nim.nso (the system update/install module) found
 	// "vermillionDeviceId" used throughout a local nearby-console-discovery
@@ -390,7 +410,14 @@ var Hosts = []Host{
 			"currently documented or planned anywhere in this project). No scsi " +
 			"string anywhere in this binary, so this -- not " +
 			"storage.lp1.scsi.srv.nintendo.net above -- looks like OLSC's actual " +
-			"backend. Referenced as \"...hac.%.sata.srv.nintendo.net\"; the wildcard " +
+			"backend. A second, unrelated purpose found 2026-09-20 in qlaunch's own " +
+			"decompile: \"pp.%.sata.srv.nintendo.net/noa/<locale>.html\" (\"pp\" " +
+			"almost certainly privacy policy; en_US/fr_CA/es_LA/pt_BR/de_DE/en_GB " +
+			"locale pages all referenced) -- the wildcard already covers this " +
+			"two-label \"pp.<region>.sata...\" form generically (matchesSuffix " +
+			"matches any subdomain depth), so no pattern change was needed, only " +
+			"this note that the same host serves two unrelated things. " +
+			"Referenced as \"...hac.%.sata.srv.nintendo.net\"; the wildcard " +
 			"is Nintendo's own environment placeholder (compare " +
 			"receive-%.dg.srv.nintendo.net above), but there may be another " +
 			"variable segment before \"hac\" this pattern does not capture -- the " +
