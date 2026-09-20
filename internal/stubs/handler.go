@@ -174,22 +174,37 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		w.WriteHeader(http.StatusOK)
 
 	case strings.HasSuffix(path, "/elicenses/migration_state"):
-		// TODO(capture-needed): field names match nx-dauth's; not independently
-		// confirmed against a Nintendo capture. Answered with the specific
-		// fields this path looks for rather than an empty object with neither,
-		// since "nothing to migrate" is a real, known answer and a safer
-		// default than an absent field the console has to guess a zero value
-		// for.
+		// The path and the "migration_state" field name are now independently
+		// confirmed, not just matched against nx-dauth: a 2026-09-20 decompile
+		// of the operator's own console's nim sysmodule found the literal path
+		// "/{version}/elicenses/migration_state" and the JSONPath
+		// "$.migration_state" the client reads out of the response. Still
+		// unconfirmed: whether "COMPLETED"/"NONE" are the right values as
+		// opposed to some other real state the console also accepts -- nim's
+		// binary has the field name, not its enum of valid values.
+		// TODO(capture-needed): the real "state"/"migration_state" values.
 		writeJSON(w, http.StatusOK, map[string]any{
 			"state": "COMPLETED", "migration_state": "NONE",
 		})
 
 	case strings.HasSuffix(path, "/elicense_archives/publish"),
 		strings.HasSuffix(path, "/rights/publish_device_linked_elicenses"):
-		// TODO(capture-needed): field name matches nx-dauth's for both paths;
-		// not independently confirmed. An empty list of archives to publish,
-		// under the key an archives-shaped response would actually carry,
-		// rather than an object with no such key at all.
+		// Same confirmation as migration_state above: the same nim decompile
+		// found the literal path "/{version}/elicense_archives/publish" and
+		// the "elicense_archives" key name is used elsewhere in the same
+		// binary for a real elicense-archive-shaped response, not just
+		// pattern-matched from nx-dauth. An empty list is still the right
+		// answer regardless -- SwitchNet has nothing to publish -- so nothing
+		// behavioral changes here.
+		//
+		// The same decompile also surfaced a much larger elicenses/rights
+		// schema this server does not and should not implement: full
+		// available_elicenses[]/elicenses[] field shapes, revoke/extend/prune
+		// paths, a nonce-signed elicenses request body. That is Phase 3's
+		// territory -- CLAUDE.md is explicit that "rights and content-delivery
+		// layers" belong to the separate, not-yet-started eShop module, not
+		// here. Knowing the shape now does not change the scope boundary;
+		// resist the temptation to build it just because it is now knowable.
 		writeJSON(w, http.StatusOK, map[string]any{"elicense_archives": []any{}})
 
 	default:
