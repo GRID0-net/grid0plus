@@ -198,10 +198,12 @@ else; everything else the request carries (participant counts, state, who
 the host is) is ignored in favour of what this server already knows, same
 as `AllocateIceServerSet` ignoring the request's tenant and user fields.
 
-Resource names (`tenants/<t>/matchmakingTickets/<id>` and friends) are
-`TODO(capture-needed)`. `lastSegment` parses whatever the console echoes back
-leniently, including a bare id, so a wrong prefix costs a cosmetic mismatch
-instead of making every `Track` and `Cancel` answer `NotFound`.
+Resource names (`tenants/<t>/matchmakingTickets/<id>`, `.../gameSessions/<id>`)
+are confirmed, not guessed -- see `ticketProto`'s doc comment in
+`matchmaking.go` for the decompile evidence. `lastSegment` still parses
+whatever the console echoes back leniently, including a bare id, so a wrong
+prefix elsewhere in this package costs a cosmetic mismatch rather than
+making every `Track` and `Cancel` answer `NotFound`.
 
 ### The confirmed RPC surface
 

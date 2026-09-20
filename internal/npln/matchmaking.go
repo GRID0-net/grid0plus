@@ -434,12 +434,17 @@ func (s *Server) tenantPath() string { return "tenants/" + s.tenant }
 
 // ticketProto renders a queue ticket as the wire message.
 //
-// TODO(capture-needed): the resource-name shape. Every NPLN resource name in
-// the definitions is a path, and this follows the AIP-style convention the rest
-// of them do, but nothing confirms what Splatoon 3 receives here. lastSegment
-// deliberately parses whatever comes back leniently, so a wrong prefix costs a
-// cosmetic mismatch rather than a broken Track or Cancel.
-// Change: this function and sessionProto.
+// The resource-name shape is confirmed, not guessed: a 2026-09-20 decompile
+// of Splatoon 3 v11.3.0 found the function that BUILDS a ticket resource
+// name (string-concatenating "tenants" + "/" + tenant + "/matchmakingTickets"
+// + "/" + id) and, separately, the function that PARSES one back apart
+// looking for that exact "tenants/<t>/matchmakingTickets/<id>" segment
+// sequence via literal comparison against "tenants" and "matchmakingTickets".
+// Round-trip agreement in the client's own code, not just one side of it.
+// The same evidence exists for "gameSessions" (see sessionProto). lastSegment
+// still parses leniently regardless, since a wrong prefix elsewhere in this
+// package would otherwise cost a cosmetic mismatch instead of a broken Track
+// or Cancel -- this confirmation does not change that defensive choice.
 func (s *Server) ticketProto(t matchmaking.Ticket) *mmpb.MatchmakingTicket {
 	out := &mmpb.MatchmakingTicket{
 		Name:              s.tenantPath() + "/matchmakingTickets/" + t.ID,
