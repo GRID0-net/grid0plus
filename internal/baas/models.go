@@ -172,6 +172,15 @@ type FriendResponse struct {
 	// Channels tracks per-channel authorization. In captures this contains
 	// {"FRIEND_CODE": {"authorizedAt": <unix>}}. SwitchNet does not track
 	// channel authorization separately, so this is always an empty map.
+	//
+	// A 2026-09-20 decompile of the operator's own console's friends
+	// sysmodule found the parser for these channel-name strings, and
+	// FRIEND_CODE is one of ten it recognises: NX_FACED, FRIEND_CODE, IN_APP,
+	// NINTENDO_ACCOUNT, 3DS, NNID, FACEBOOK, TWITTER, WECHAT, CAMPUS. That
+	// confirms the shape (a channel names HOW a friendship was authorized,
+	// and FRIEND_CODE means "by exchanging codes") without settling the
+	// trigger condition or what authorizedAt represents beyond its name.
+	//
 	// TODO(capture-needed): settle what triggers a FRIEND_CODE entry and what
 	// the authorizedAt timestamp represents. Change: listFriends in friends.go.
 	Channels   map[string]any   `json:"channels"`

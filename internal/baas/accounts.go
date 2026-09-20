@@ -687,24 +687,36 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 
 // findUsers looks a user up by friend code or nickname.
 //
-// TODO(capture-needed): the wiki lists GET /1.0.0/users as a friends-module
-// endpoint but documents neither its parameters nor its response. The friends
-// applet has to turn a typed-in friend code into a user somehow, and this is the
-// only endpoint that can plausibly do it, so SwitchNet accepts:
+// The real query parameter for a friend code, confirmed by a 2026-09-20
+// decompile of the operator's own console's friends sysmodule, is a
+// MongoDB-style filter: "filter.links.friendCode.id.$in=<code>" -- not the
+// plain "friendCode=<code>" this endpoint originally guessed. The response
+// shape guess needed no correction: the same decompile's JSONPath constants
+// ("$.links.friendCode.id", "$.links.friendCode.regenerableAt") match
+// UserResponse.Links.FriendCode's existing ID/RegenerableAt fields exactly.
+// "friendCode" is kept as an accepted alias -- cheap to support, and
+// tooling/future callers may already use it -- but the real console sends
+// the filter form.
 //
-//	GET /1.0.0/users?friendCode=7779-8151-4794
+//	GET /1.0.0/users?filter.links.friendCode.id.$in=7779-8151-4794  (real)
+//	GET /1.0.0/users?friendCode=7779-8151-4794                      (alias)
 //	GET /1.0.0/users?nickname=someone
 //	GET /1.0.0/users?ids=aaaa...,bbbb...
 //
 // and returns a JSON array of stranger-visibility user objects.
 //
-// Capture with: type a friend code into "Add Friend" on a real console and read
-// the request the friends sysmodule makes. If it turns out the code is resolved
-// inside POST /2.0.0/friend_requests instead, that path already accepts a
-// friendCode parameter and this endpoint can stay as a convenience for tooling.
+// TODO(capture-needed): whether $in ever carries more than one comma-separated
+// code in practice, and whether nickname/ids go through the same filter.*
+// convention rather than their own plain query keys -- this decompile only
+// resolved the friend-code lookup, the one the string search actually found
+// evidence for.
 func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
+	friendCode := r.URL.Query().Get("filter.links.friendCode.id.$in")
+	if friendCode == "" {
+		friendCode = r.URL.Query().Get("friendCode")
+	}
 	q := db.UserQuery{
-		FriendCode: normaliseFriendCode(r.URL.Query().Get("friendCode")),
+		FriendCode: normaliseFriendCode(friendCode),
 		Nickname:   r.URL.Query().Get("nickname"),
 		Limit:      50,
 	}

@@ -164,6 +164,30 @@ func TestFindUserByFriendCode(t *testing.T) {
 	}
 }
 
+// TestFindUserByFriendCodeRealQueryParam is TestFindUserByFriendCode's own
+// query, "?friendCode=", replaced with the real parameter name a 2026-09-20
+// decompile of the friends sysmodule found: the console filters on
+// "filter.links.friendCode.id.$in", a MongoDB-style filter, not a plain key.
+func TestFindUserByFriendCodeRealQueryParam(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	h.setNickname(b, "Bob")
+	code := h.generateFriendCode(b)
+
+	resp := h.do(request{
+		method: "GET", path: "/1.0.0/users?filter.links.friendCode.id.$in=" + url.QueryEscape(code),
+		token: a.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+
+	var found []UserResponse
+	decode(t, resp, &found)
+	if len(found) != 1 || found[0].ID != b.UserID {
+		t.Fatalf("lookup returned %+v, want just B", found)
+	}
+}
+
 func TestFindUsersRefusesAnUnfilteredQuery(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
