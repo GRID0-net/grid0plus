@@ -102,7 +102,9 @@ func TestTheDashboardForwardsTheAdminTokenAndThePlayersCount(t *testing.T) {
 	// The page needs one shape whether or not the controls are set up, so
 	// `configured` is added to whatever npln said.
 	var body map[string]any
-	json.Unmarshal(rec.Body.Bytes(), &body)
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
 	if body["configured"] != true {
 		t.Error("the response does not say it is configured")
 	}

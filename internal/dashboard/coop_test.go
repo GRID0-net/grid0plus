@@ -29,7 +29,9 @@ func TestCoopShiftsCanBeGeneratedAndNeverOverwriteAManualOne(t *testing.T) {
 		Weapons: [4]int64{20000, 20010, 20020, 20030},
 		Start:   from, End: from.Add(toyohr.DefaultCoopShiftDuration),
 	}
-	store.UpsertCoopShift(ctx, toyohr.RowFromCoopShift(manual))
+	if err := store.UpsertCoopShift(ctx, toyohr.RowFromCoopShift(manual)); err != nil {
+		t.Fatalf("seed manual shift: %v", err)
+	}
 
 	body := `{"fromAt":"` + from.Format(time.RFC3339) + `","count":3}`
 	rec := httptest.NewRecorder()
@@ -98,7 +100,9 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}
 	var created struct{ ID string }
-	json.Unmarshal(rec.Body.Bytes(), &created)
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
 	if created.ID == "" {
 		t.Fatal("no shift id returned")
 	}
@@ -164,7 +168,9 @@ func TestATeamContestCoopShiftCanBeScheduled(t *testing.T) {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}
 	var created struct{ ID string }
-	json.Unmarshal(rec.Body.Bytes(), &created)
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
 
 	shift, err := store.GetCoopShift(context.Background(), created.ID)
 	if err != nil {
@@ -251,7 +257,9 @@ func TestCoopShiftStatusReflectsWhereItIsInTime(t *testing.T) {
 		Start:   toyohr.AlignToSlot(now.Add(-48 * time.Hour)), End: toyohr.AlignToSlot(now.Add(-40 * time.Hour)),
 	}
 	for _, c := range []toyohr.CoopShift{upcoming, live, ended} {
-		store.UpsertCoopShift(ctx, toyohr.RowFromCoopShift(c))
+		if err := store.UpsertCoopShift(ctx, toyohr.RowFromCoopShift(c)); err != nil {
+			t.Fatalf("seed shift: %v", err)
+		}
 	}
 
 	rows, err := srv.coopShiftRows(ctx)
