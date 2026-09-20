@@ -300,6 +300,48 @@ var Hosts = []Host{
 		Comment: "smartphone app API (Coral)",
 	},
 
+	// ---- Found 2026-09-20: not previously listed at all -----------------
+	// A full sweep of every system title's decrypted executable (not just
+	// the account/friends/npns modules phase 1 already needed) for
+	// *.nintendo.net/*.nintendo.com strings turned up three hosts with no
+	// entry anywhere in this file. None leaked to real Nintendo regardless
+	// -- isNintendoOwnedDomain's catch-all already blackholes any unlisted
+	// *.nintendo.net host -- but they were invisible to anyone reading this
+	// list, and the catch-all doesn't answer requests, only refuses
+	// connections. Stubbed rather than left to the catch-all for the same
+	// reason as every other purpose-unconfirmed host here: an answer risks
+	// less than a refusal does. Purpose unconfirmed for all three; no
+	// capture.
+	{
+		Pattern: "api.sect.srv.nintendo.net",
+		Service: ServiceStubs, TLS: true,
+		Comment: "found in the title at 0100000000000012 (not otherwise identified). " +
+			"Path referenced: /v1/setting -- looks like cross-console settings sync, " +
+			"unconfirmed.",
+	},
+	{
+		Pattern: "%.sata.srv.nintendo.net",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Comment: "found in the title at 010000000000003E, alongside sprofile below " +
+			"(same binary implements nn::sprofile's IPC interfaces too). Referenced as " +
+			"\"...hac.%.sata.srv.nintendo.net\" -- the wildcard is Nintendo's own " +
+			"environment placeholder (compare receive-%.dg.srv.nintendo.net above), " +
+			"but there may be another variable segment before \"hac\" this pattern " +
+			"does not capture; the DNS suffix match below only needs the fixed tail, " +
+			"so a narrower prefix guess was not worth making.",
+	},
+	{
+		Pattern: "%.sprofile.srv.nintendo.net",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Comment: "found in the same title (010000000000003E) as sata above. Full path " +
+			"referenced: /v1/device/metadata -- sounds like device-level analytics/" +
+			"telemetry given the adjacency to erpt's sprofile interfaces, which would " +
+			"argue for null-routing like the telemetry hosts below instead of " +
+			"stubbing -- but that is a guess, not a confirmed read, so it gets the " +
+			"same conservative default as sata and sect until a capture says " +
+			"otherwise.",
+	},
+
 	// ---- NPLN, the JSON front (phase 2) ---------------------------------
 	// Splatoon 3 does NOT open with gRPC. It first talks ordinary JSON over
 	// HTTPS to vermillion and penne, and only then opens the gRPC channel to

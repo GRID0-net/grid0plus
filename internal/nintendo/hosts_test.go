@@ -280,6 +280,34 @@ func TestBAASImageCDNIsRouted(t *testing.T) {
 	t.Error("the BAAS image CDN host is not listed")
 }
 
+// TestHostsFoundBySweepingEveryTitleAreStubbedNotJustCaughtByTheFallback
+// guards the three hosts found 2026-09-20 by scanning every system title's
+// decrypted executable, not just the ones phase 1 already needed. All three
+// were already safe (isNintendoOwnedDomain blackholes any unlisted
+// *.nintendo.net host), but invisible to this list and to a console that
+// gets a refusal instead of an answer -- see the entries' own comments for
+// what was actually found in each title.
+func TestHostsFoundBySweepingEveryTitleAreStubbedNotJustCaughtByTheFallback(t *testing.T) {
+	names := []string{
+		"api.sect.srv.nintendo.net",
+		"anything.hac.sata.srv.nintendo.net",
+		"anything.sprofile.srv.nintendo.net",
+	}
+	for _, name := range names {
+		resolution, host, matched := Resolve(name)
+		if !matched {
+			t.Errorf("Resolve(%s): matched = false, want true", name)
+			continue
+		}
+		if resolution != ResolveRedirect || host.Service != ServiceStubs {
+			t.Errorf("Resolve(%s) = %v, %v, want ResolveRedirect/ServiceStubs", name, resolution, host.Service)
+		}
+		if !host.TLS {
+			t.Errorf("%s: TLS = false, want true", name)
+		}
+	}
+}
+
 // TestAccountsNintendoComIsRoutedToBAAS guards the Nintendo Account link
 // stub's routing: without this, a console reaching accounts.nintendo.com
 // gets null-routed instead of the login page in internal/baas/nalink.go.
