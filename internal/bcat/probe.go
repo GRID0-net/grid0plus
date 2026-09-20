@@ -35,21 +35,47 @@ import (
 // known. Building it from a guess would produce an experiment whose negative
 // result means nothing.
 //
-// TODO(capture-needed): the `/api/nx/v1/list/<name>` response body, and the
-// delivery container's header layout. Change: this file, and TODO.md §2.4's
-// second stage becomes writable.
+// The `/api/nx/v1/list/<name>` response body is now confirmed, not guessed:
+// predicted below (and in the git history of this comment) that settling it
+// would need decompiling `bcat.nso` directly rather than any single game,
+// since Splatoon 3 only calls the generic SDK
+// (`nn::bcat::MountDeliveryCacheStorage`, `RequestSyncDeliveryCache`,
+// `EnumerateDeliveryCacheDirectory`, `DeliveryCacheFile::Open`/`Read`) and
+// never anything resembling `/api/nx/v1/list` or a signature check -- that
+// whole exchange happens inside the OS's own `bcat` sysmodule. A 2026-09-20
+// decompile of `bcat.nso` itself (extracted from the SYSTEM partition of the
+// operator's own eMMC dump, title id `010000000000000C`) found the full
+// JSONPath field list its own response parser reads:
 //
-// This TODO cannot be settled by decompiling Splatoon 3 itself, and a
-// 2026-09-20 decompile of its v11.3.0 main confirms why: the game only calls
-// the generic SDK, `nn::bcat::MountDeliveryCacheStorage`,
-// `RequestSyncDeliveryCache`, `EnumerateDeliveryCacheDirectory`,
-// `DeliveryCacheFile::Open`/`Read` and friends (all present as mangled C++
-// symbols) — never anything that looks like `/api/nx/v1/list` or a signature
-// check. That whole exchange happens inside the OS's own `bcat` sysmodule,
-// which mounts the result as a plain directory before Splatoon 3 ever reads
-// from it. Settling this TODO needs either a capture of that sysmodule's own
-// traffic, or decompiling `bcat.nso` directly — not more RE on any single
-// game.
+//	{
+//	  "directories": [{
+//	    "name": "...", "mode": "...", "digest": "...",
+//	    "data_list": [{
+//	      "data_id": "...", "filename": "...", "digest": "...", "size": N,
+//	      "url": "...", "default_language": "...", "deletion_priority": N,
+//	      "publishing_time": N, "version": {"format": N, "semantics": N},
+//	      "conditions": {"serial": [...]},
+//	      "languages": [{
+//	        "language": "...", "data_id": "...", "size": N, "url": "...",
+//	        "overwrite": ..., "digest": "..."
+//	      }]
+//	    }]
+//	  }]
+//	}
+//
+// Field NAMES are confirmed; field SEMANTICS mostly are not -- what `mode`'s
+// values mean, what `deletion_priority` orders, what `conditions.serial[*]`
+// matches against, are all still open. `news_id` also appears alongside
+// `data_list`'s other fields in the same decompile, but that is System
+// News's own use of the same delivery-cache mechanism bleeding into the
+// same string table, not a Splatfest-relevant field.
+//
+// TODO(capture-needed): field semantics above, and the delivery container's
+// header layout (still only known as 0x120 bytes with an RSA-2048 signature
+// at offset 0x20) -- the JSON list response and the binary container it
+// points `url` at are two separate things this decompile did not equally
+// resolve. Change: this file, and TODO.md §2.4's second stage becomes
+// writable for the JSON half regardless.
 type Probe struct {
 	log *slog.Logger
 	rec *wirelog.Recorder
