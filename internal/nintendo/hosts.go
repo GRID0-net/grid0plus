@@ -315,31 +315,45 @@ var Hosts = []Host{
 	{
 		Pattern: "api.sect.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "found in the title at 0100000000000012 (not otherwise identified). " +
-			"Path referenced: /v1/setting -- looks like cross-console settings sync, " +
-			"unconfirmed.",
+		Comment: "title 0100000000000012, decompiled 2026-09-20: implements " +
+			"nn::anif (\"Assigned Network Interface\" -- Assign/GetUserInfo/" +
+			"GetStateChangedEvent/AddSession), connected to dns:priv, nsd and " +
+			"ifcfg. Network interface/connection-profile assignment, not account " +
+			"settings sync as the bare path (/v1/setting) first suggested -- " +
+			"corrected after actually decompiling it rather than guessing from " +
+			"the endpoint name alone.",
 	},
 	{
 		Pattern: "%.sata.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "found in the title at 010000000000003E, alongside sprofile below " +
-			"(same binary implements nn::sprofile's IPC interfaces too). Referenced as " +
-			"\"...hac.%.sata.srv.nintendo.net\" -- the wildcard is Nintendo's own " +
-			"environment placeholder (compare receive-%.dg.srv.nintendo.net above), " +
-			"but there may be another variable segment before \"hac\" this pattern " +
-			"does not capture; the DNS suffix match below only needs the fixed tail, " +
-			"so a narrower prefix guess was not worth making.",
+		Comment: "OLSC's own host -- title 010000000000003E, decompiled 2026-09-20, " +
+			"implements nn::olsc (\"Online Save Cloud\", the OS-level per-game save " +
+			"backup tied to a Nintendo Switch Online subscription -- system-wide, " +
+			"not the same thing as any one game's own cloud-save RPCs, and not " +
+			"currently documented or planned anywhere in this project). No scsi " +
+			"string anywhere in this binary, so this -- not " +
+			"storage.lp1.scsi.srv.nintendo.net above -- looks like OLSC's actual " +
+			"backend. Referenced as \"...hac.%.sata.srv.nintendo.net\"; the wildcard " +
+			"is Nintendo's own environment placeholder (compare " +
+			"receive-%.dg.srv.nintendo.net above), but there may be another " +
+			"variable segment before \"hac\" this pattern does not capture -- the " +
+			"DNS suffix match only needs the fixed tail, so a narrower prefix guess " +
+			"was not worth making. Implementing real save backup is out of scope " +
+			"the same way CloudSave.GetSaveRecord's neighbours are (ROADMAP.md " +
+			"phase 2.4): it would mean storing real player save data this server " +
+			"has no legitimate way to have. Stubbed, not designed against.",
 	},
 	{
 		Pattern: "%.sprofile.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "found in the same title (010000000000003E) as sata above. Full path " +
-			"referenced: /v1/device/metadata -- sounds like device-level analytics/" +
-			"telemetry given the adjacency to erpt's sprofile interfaces, which would " +
-			"argue for null-routing like the telemetry hosts below instead of " +
-			"stubbing -- but that is a guess, not a confirmed read, so it gets the " +
-			"same conservative default as sata and sect until a capture says " +
-			"otherwise.",
+		Comment: "same title (010000000000003E) as sata above, which also implements " +
+			"nn::sprofile (ISProfileBgAgentForSystemProcess, IBgAgentContoller) " +
+			"alongside olsc. Full path referenced: /v1/device/metadata -- sounds " +
+			"like device-level analytics/telemetry given the adjacency to erpt's " +
+			"own sprofile interfaces (see erpt's own title), which would argue for " +
+			"null-routing like the telemetry hosts below instead of stubbing -- but " +
+			"that is still a guess, not a confirmed read, so it gets the same " +
+			"conservative default as sata and sect until a capture says otherwise.",
 	},
 
 	// ---- NPLN, the JSON front (phase 2) ---------------------------------
