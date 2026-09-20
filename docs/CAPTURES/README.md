@@ -79,19 +79,44 @@ before accepting) would settle it.
 ### 3. `PATCH /2.0.0/friend_requests/<id>` — the body
 
 **What SwitchNet does:** accepts a JSON patch on `/state`, a plain
-`{"state":"ACCEPTED"}`, and `{"accept":true}`.
+`{"state":"..."}`, and `{"accept":true}`.
+
+**Partially settled by decompile, not a capture:** a 2026-09-20 decompile of
+the operator's own console's friends sysmodule found the real state enum --
+`PENDING`, `AUTHORIZED`, `REJECTED`, `CANCELED`, `EXPIRED` -- and this was a
+real, shipped bug until fixed the same day: SwitchNet's own pre-capture guess
+used `ACCEPTED`/`DENIED`/`CANCELLED`, which a real console's PATCH would
+never have matched, and accepting or declining a friend request would have
+failed outright. `requestStateFromWire`/`requestStateToWire` in
+`internal/baas/friends.go` now translate both directions; the old guessed
+spelling is kept working as an input alias. What a decompile cannot settle:
+whether the body shape itself (JSON patch array vs. plain object) is right,
+or whether `EXPIRED` is ever something a client sends rather than only reads.
 
 **How to capture:** accept a friend request on a real console.
 
-### 4. `GET /1.0.0/users` — the friends-module lookup
+### 4. `GET /1.0.0/users` — the friends-module lookup ~~the query parameter~~ **the friend-code case settled by decompile**
 
 The wiki lists this as a friends-module endpoint but documents neither parameters
-nor response. The applet has to turn a typed friend code into a user somehow, and
-this is the only endpoint that plausibly does it.
+nor response.
 
-**What SwitchNet does:** accepts `?friendCode=`, `?nickname=` and `?ids=`, and
-returns an array of stranger-visibility user objects. An unfiltered query is
-refused, because it would otherwise enumerate every account on the server to any
+**Settled, not a capture:** a 2026-09-20 decompile of the friends sysmodule
+found the exact request it builds for a friend-code lookup: a MongoDB-style
+filter, `?filter.links.friendCode.id.$in=<code>`, not the plain `friendCode=`
+SwitchNet originally guessed -- and the response's JSONPath constants
+(`$.links.friendCode.id`, `$.links.friendCode.regenerableAt`) confirm the
+response shape needed no correction. Fixed in `internal/baas/accounts.go`;
+`?friendCode=` is kept as a working alias.
+
+**Still open:** whether `nickname`/`ids` go through the same `filter.*`
+convention rather than their own plain query keys -- the decompile only
+found evidence for the friend-code case.
+
+**What SwitchNet does:** accepts `?filter.links.friendCode.id.$in=` (real) and
+`?friendCode=` (alias), plus `?nickname=` and `?ids=` (still guessed as plain
+keys). Returns an array of stranger-visibility user objects. An unfiltered
+query is refused, because it would otherwise enumerate every account on the
+server to any
 authenticated console.
 
 It is possible the code is resolved inside `POST /2.0.0/friend_requests` instead,
@@ -118,6 +143,12 @@ from a console whose account is banned, or has no membership, would show it.
 Stubbed with `{"active": true, "expiresAt": …}`. With
 `aauth.online_play_policy: FREE` (the default) the console never asks, which is
 why this has not blocked anything.
+
+A 2026-09-20 decompile of `nim.nso` confirms this host's real error-code
+convention (`500/op2_error`, `503/op2_maintenance`) and a distinct path this
+server's catch-all does not treat differently: `/v1/my/membership/free_trial_availability`.
+That is a different question from "is there an active membership," and this
+server has never seen either one actually asked for.
 
 ### 8. `accounts.nintendo.com` — the Nintendo Account link flow ~~the redirect mechanism~~ **CAPTURED**
 
