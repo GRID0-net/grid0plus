@@ -31,6 +31,8 @@
 package nplnrest
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -72,6 +74,7 @@ type Server struct {
 	log           *slog.Logger
 	frontlineHost string
 	rec           *wirelog.Recorder
+	now           func() time.Time
 
 	// frontlines counts the persistent connections currently held open, for the
 	// log line that says whether the console got that far.
@@ -116,6 +119,7 @@ func New(opts Options) (*Server, error) {
 		log:           opts.Log,
 		frontlineHost: opts.FrontlineHost,
 		rec:           rec,
+		now:           opts.Now,
 	}, nil
 }
 
@@ -174,28 +178,66 @@ func (s *Server) vermillion(w http.ResponseWriter, r *http.Request) {
 
 // penne answers the login-ticket exchange, and names the frontline host.
 //
-// TODO(capture-needed): the request shape, the response shape, and — most
-// importantly — THE FIELD NAME the frontline FQDN is returned under. That last
-// one is the reason this host matters more than vermillion: the console learns
-// where to open its persistent connection from this response, and a name it
-// cannot find leaves it with no frontline at all.
+// The field names below are no longer a blind guess for the FQDN alone. A
+// 2026-09-20 decompile of the operator's own console's `npns` sysmodule (a
+// system service that, per this package's own doc comment, shares the exact
+// same three-host "penne" mechanism with NPLN — same host family, same
+// ticket-then-frontline shape) found the literal JSON keys its client-side
+// parser looks for: "frontline_fqdn" (already one of the spellings sent
+// below — now confirmed, not guessed), "ticket", "issued_at", "wait_sec",
+// "rtt_max", "wowl_timeout", and "ignore_rst". Those last six were entirely
+// absent from this response before tonight, despite this host being
+// documented as a "login ticket exchange" — a response with no ticket field
+// at all was always the least defensible reading, once the field name was
+// known to exist somewhere in the real client.
 //
-// The FQDN is sent under several plausible spellings at once. That is not
-// hedging for its own sake: they are additional keys in a JSON object, a parser
-// that wants one of them finds it, and a parser that wants none of them is no
-// worse off than with an empty object. The alternative is picking one spelling
-// and having the console silently not find it — which is indistinguishable from
-// every other failure in this path.
+// The FQDN keeps going out under every plausible spelling: they are
+// additional keys in a JSON object, so a parser that wants one finds it and
+// a parser that wants none is no worse off. The new fields follow the same
+// "well-formed placeholder, not a fabricated Nintendo internal" rule this
+// package already uses for vermillion: a ticket is issued (an opaque random
+// value, since nothing here can construct or validate a real one) and the
+// session-config numbers are reasonable, permissive defaults chosen not to
+// trip whatever the console does with them, not reasoned-out Nintendo
+// constants.
 //
-// Change: this function, and it collapses to a single field the moment a
-// capture shows which one.
+// TODO(capture-needed): the request shape, and the real values for wait_sec/
+// rtt_max/wowl_timeout/ignore_rst, and whether the console actually
+// validates the ticket's shape at all. A capture with Options.RecordDir set
+// settles all of it in one pass. Change: this function.
 func (s *Server) penne(w http.ResponseWriter, r *http.Request) {
+	ticket, err := randomHex(32)
+	if err != nil {
+		s.log.Error("nplnrest: generate login ticket", "error", err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
 	s.answer(w, r, http.StatusOK, map[string]any{
 		"host":           s.frontlineHost,
 		"fqdn":           s.frontlineHost,
 		"frontline_fqdn": s.frontlineHost,
 		"frontlineFqdn":  s.frontlineHost,
+
+		"ticket":       ticket,
+		"issued_at":    now().Unix(),
+		"wait_sec":     30,
+		"rtt_max":      3000,
+		"wowl_timeout": 30,
+		"ignore_rst":   true,
 	})
+}
+
+// randomHex returns n random bytes, hex-encoded.
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // ---- fro-N: the persistent connection -------------------------------------

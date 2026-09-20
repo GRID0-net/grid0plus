@@ -87,6 +87,40 @@ func TestPenneNamesTheFrontlineHost(t *testing.T) {
 	}
 }
 
+// TestPenneIssuesATicketAndSessionConfig pins the fields added 2026-09-20 from
+// a decompile of the operator's own console's npns sysmodule, which shares
+// this exact ticket-then-frontline mechanism with NPLN: the field names are
+// evidence-backed, even though the values themselves are placeholders.
+func TestPenneIssuesATicketAndSessionConfig(t *testing.T) {
+	s := newServer(t, "")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/login", strings.NewReader(`{}`))
+	req.Host = penneHost
+	s.Handler().ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+
+	ticket, _ := body["ticket"].(string)
+	if ticket == "" {
+		t.Error("penne's response has no ticket")
+	}
+
+	issuedAt, ok := body["issued_at"].(float64)
+	if !ok || int64(issuedAt) != s.now().Unix() {
+		t.Errorf("issued_at = %v, want %d", body["issued_at"], s.now().Unix())
+	}
+
+	for _, key := range []string{"wait_sec", "rtt_max", "wowl_timeout", "ignore_rst"} {
+		if _, ok := body[key]; !ok {
+			t.Errorf("penne's response is missing %q: %v", key, body)
+		}
+	}
+}
+
 func TestVermillionAnswersRatherThanFailing(t *testing.T) {
 	s := newServer(t, "")
 
