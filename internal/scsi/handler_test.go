@@ -300,3 +300,68 @@ func TestQuotaExceededRefusesUpload(t *testing.T) {
 		t.Errorf("status = %d, want 507", uploadResp.StatusCode)
 	}
 }
+
+// TestReuploadingAComponentDoesNotDoubleCountItsOwnOldBytesAgainstQuota
+// guards against a bug where a component file's own previously-stored size
+// was counted as "already used" and then the new upload was checked against
+// the quota on top of that -- rejecting a same-size or smaller replacement
+// upload that would fit fine once the old bytes are actually replaced.
+func TestReuploadingAComponentDoesNotDoubleCountItsOwnOldBytesAgainstQuota(t *testing.T) {
+	h := newHarness(t)
+	blobs, err := NewLocalDisk(t.TempDir(), 5) // 5-byte quota
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	New(Config{PublicURL: "https://x"}, h.store, blobs,
+		sjwt.NewVerifier(h.issuer.Key()), slog.New(slog.DiscardHandler)).Routes(mux)
+	h.server.Close()
+	h.server = httptest.NewServer(mux)
+
+	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{DataSize: 5})
+	archiveID := decode[map[string]archiveView](t, resp)["save_data_archive"].ID
+	resp = h.do("POST", "/api/nx/v2/save_data_archives/"+archiveID+"/component_files/create",
+		createComponentFileRequest{Datatype: "save"})
+	compID := decode[map[string]componentView](t, resp)["component_file"].ID
+
+	upload := func(data []byte) int {
+		req, _ := http.NewRequest("PUT", h.server.URL+"/api/nx/v2/component_files/"+compID+"/data", bytes.NewReader(data))
+		req.Header.Set("Authorization", "Bearer "+h.accessToken())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// Fill the entire 5-byte quota once.
+	if status := upload([]byte("12345")); status != http.StatusNoContent {
+		t.Fatalf("first upload status = %d, want 204", status)
+	}
+	// Re-uploading the SAME 5 bytes to the SAME component must still fit --
+	// it replaces the old content, it does not add to it. The buggy version
+	// counted the component's existing 5 bytes as "used" and then rejected
+	// this because 5 (used) + 5 (new) > 5 (quota).
+	if status := upload([]byte("54321")); status != http.StatusNoContent {
+		t.Errorf("re-upload of the same size status = %d, want 204 (quota must not double-count the file being replaced)", status)
+	}
+	// A genuinely larger replacement that would exceed the quota must still
+	// be refused.
+	if status := upload([]byte("123456")); status != http.StatusInsufficientStorage {
+		t.Errorf("oversized re-upload status = %d, want 507", status)
+	}
+}
+
+func TestCustomerOperationsRequiresAuthentication(t *testing.T) {
+	h := newHarness(t)
+	req, _ := http.NewRequest("POST", h.server.URL+"/api/nx/v1/customer_operations", bytes.NewReader(nil))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 (unimplemented endpoints must still require a token, like every other endpoint here)", resp.StatusCode)
+	}
+}

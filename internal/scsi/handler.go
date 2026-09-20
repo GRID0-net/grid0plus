@@ -111,8 +111,8 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	// ---- permission.lp1.sata.srv.nintendo.net ------------------------------
 	mux.HandleFunc("GET /api/nx/v1/save_data_sets", s.authenticated(s.listSaveDataSets))
 	mux.HandleFunc("POST /api/nx/v1/save_data_sets/generate_key_package", s.authenticated(s.generateKeyPackage))
-	mux.HandleFunc("POST /api/nx/v1/customer_operations", s.unimplemented)
-	mux.HandleFunc("POST /api/nx/v1/customer_operations/update_action_completed", s.unimplemented)
+	mux.HandleFunc("POST /api/nx/v1/customer_operations", s.authenticated(s.unimplemented))
+	mux.HandleFunc("POST /api/nx/v1/customer_operations/update_action_completed", s.authenticated(s.unimplemented))
 
 	mux.HandleFunc("/", s.notFound)
 }
@@ -502,6 +502,16 @@ func (s *Server) uploadComponentData(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.writeInternalError(w, "compute usage", err)
 		return
+	}
+	// This upload replaces f's own existing bytes rather than adding to
+	// them (Put overwrites the blob at f.BlobKey), so its current recorded
+	// size must not count against the quota this write is checked against --
+	// otherwise re-uploading the same component (a retry, or a save that grew
+	// slightly) could be wrongly refused even though the account's real usage
+	// after the write would still fit.
+	used -= f.ArchiveSize
+	if used < 0 {
+		used = 0
 	}
 	n, err := s.blobs.Put(c.NSAID, f.BlobKey, r.Body, used)
 	if err != nil {
