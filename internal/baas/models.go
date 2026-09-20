@@ -182,6 +182,24 @@ type FriendResponse struct {
 	UpdatedAt  int64            `json:"updatedAt"`
 }
 
+// TODO(capture-needed): extras.self on this type (not FriendUserResponse's own
+// extras.self, which is the friend's -- this one, the relationship's) can
+// apparently also carry a boolean "isOnlineNotification" key. Found
+// 2026-09-20 in a decompile of the operator's own console's friends
+// sysmodule: the string "$.extras.self.isOnlineNotification" is a
+// JSONPath-style field the client reads out of a response, in the same
+// "$.extras.self.*" family as the already-confirmed route:sender/isConfirmed
+// keys above -- and it lines up exactly with the friends IPC command
+// ChangeFriendOnlineNotificationFlag (per-friend "notify me when this friend
+// comes online", distinct from the console's own online-status broadcast).
+// Not implemented: docs/CAPTURES/raw/03-friends.json's real, working capture
+// has no such key for a normal (default-state) friendship, which is
+// consistent with it only appearing once actually toggled away from
+// whatever the default is -- but there is no confirmed write path (which
+// endpoint persists the toggle, or what the default even is) to build
+// against yet. Change: friendUserResponse/listFriends in friends.go, once a
+// capture shows a relationship with this flag set.
+
 // FriendRequestResponse is one entry in the inbox or outbox.
 //
 // TODO(capture-needed): the inbox and outbox captures (04, 05) both returned
