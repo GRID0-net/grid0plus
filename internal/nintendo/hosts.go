@@ -342,6 +342,21 @@ var Hosts = []Host{
 		Comment: "online save storage",
 	},
 	{
+		Pattern: "%.scsi.srv.nintendo.net",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Comment: "found 2026-09-20, decompiling title 010000000000003A (nifm, " +
+			"\"nn::nifm::\" -- Network Interface Manager, not anything scsi/" +
+			"storage-related despite the host name): " +
+			"\"migration.%.scsi.srv.nintendo.net/api/nx/v1/account_migrations/" +
+			"{gen_key,get_key}\" -- Nintendo's console-to-console account " +
+			"migration flow. Genuinely account-adjacent (unlike Pia/pctl/moon " +
+			"above), but implementing real migration is a different, much " +
+			"larger feature than anything Phase 1 currently attempts; stubbed " +
+			"for visibility only. Overlaps storage.lp1.scsi... above only in " +
+			"domain, not host -- covered by the wildcard rather than folded into " +
+			"that entry since the subdomain differs.",
+	},
+	{
 		Pattern: "god.hac.lp1.penne.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
 		Comment: "push notifications (Penne) discovery",
