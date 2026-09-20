@@ -103,6 +103,15 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(host, ".op2.nintendo.net"):
 		// Nintendo Switch Online membership verification. Every registered user
 		// on a private network is entitled to play.
+		//
+		// A 2026-09-20 decompile of nim.nso confirms this host's real error-code
+		// convention (literal strings "500/op2_error", "503/op2_maintenance"),
+		// and a genuinely different membership-adjacent path this handler does
+		// not distinguish: "/v1/my/membership/free_trial_availability". Every
+		// path on this host answers the same membership() response regardless,
+		// which may be the wrong shape specifically for that one -- a free-trial
+		// eligibility check is a different question from "is there an active
+		// membership" and this server has never seen either one asked for.
 		h.membership(w)
 
 	case strings.Contains(host, "service-status"):
