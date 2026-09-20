@@ -6,15 +6,10 @@
 // string anywhere in the binary, despite an exhaustive search that did find
 // every gRPC service Splatoon 3 itself calls later (see internal/npln's
 // "confirmed RPC surface" section). That rules out Splatoon 3's own code
-// making these requests directly. The 2026-08-27 tcpdump that established
-// these hosts are used at all (see vermillion's doc comment below) is still
-// good evidence -- a capture watches the wire, not the calling process -- it
-// just means the caller is almost certainly a shared system client (the same
-// npns sysmodule already cited for penne's ticket mechanism is the leading
-// candidate) acting on the console's behalf during account/network setup,
-// not Splatoon-3-specific code. Nothing here changes what SwitchNet needs to
-// answer, since the traffic still arrives at these hosts either way -- only
-// which binary would need decompiling to learn more from that side.
+// making these requests directly. The caller is almost certainly a shared
+// system client acting on the console's behalf during account/network
+// setup, not Splatoon-3-specific code -- but the traffic still arrives at
+// these hosts either way, so it does not change what this server answers.
 //
 // The console first speaks ordinary JSON over HTTPS to two host families and
 // then holds a third connection open indefinitely:
@@ -26,28 +21,41 @@
 // So this package is EARLIER in the boot sequence than internal/npln, and a
 // console that cannot get past it never reaches the gRPC gateway at all.
 //
-// # Nothing here is confirmed against a capture
+// # Most of this is now confirmed, not guessed
 //
-// The request and response bodies of all three are undocumented. Kinnay's wiki
-// names the hosts; no public implementation exists; and the reference server
-// this project studied loads its captures at runtime from a directory the
-// operator supplies, so its measured bytes are not in it either.
+// NextendoNetwork's own public Splatoon 3 NPLN server (PolyForm Shield
+// licensed -- facts taken from their published, real-console-tested
+// findings, never their code, the same boundary this project already draws
+// for nx-dauth) documents exactly which parts of this handshake it verified
+// against real captures of a real console talking to real Nintendo, and
+// which parts remain its own untested guess -- labelled as such in its own
+// source. Every shape and value below marked "confirmed" reproduces a fact
+// stated there, reimplemented independently in this file; nothing here is
+// their code. Two real bugs their capture caught, both worth stating
+// plainly because either one silently strands a console at the ink loading
+// screen with no useful error:
 //
-// CLAUDE.md rule 6 says what to do about that: implement the most defensible
-// reading, mark it, and say what a capture would settle. The most defensible
-// reading of "we do not know what to say" is to say as little as possible —
-// a well-formed empty answer rather than a fabricated Nintendo internal — and
-// to make the capture cheap. Hence Options.RecordDir: point it at a directory,
-// put a console through one boot, and every request and response lands on disk
-// in the order it happened. That transcript is what turns every
-// TODO(capture-needed) in this package into a one-commit reconciliation.
+//   - GET .../vermillion-device-id's response key is camelCase
+//     ("vermillionDeviceId"), not snake_case. The wrong key means the
+//     console never receives a device id and loops this endpoint forever.
+//   - That id's value, base64-decoded, must not encode to a base64 string
+//     containing '/' or '+' -- Splatoon 3 uses it as a literal path segment
+//     and hard-crashes on either character.
+//
+// What remains genuinely unconfirmed (no capture of these specific bodies
+// exists anywhere, including theirs): the exact response shape for
+// GET /v1/accounts/<anything but config>, POST /v1/acds/search, and
+// GET /v1/nearness-checks. Each is answered with the same well-formed empty
+// envelope its neighbours use, not a fabricated one -- see each handler's
+// own comment.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers
 package nplnrest
 
 import (
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -164,6 +172,17 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 
+// vermillionEmptyPayload is the well-formed empty answer for every
+// vermillion sub-resource whose response shape is genuinely unconfirmed
+// (see the package doc comment). Wraps an empty JSON object in the same
+// {"payload": base64(...)} envelope GET /v1/accounts/config uses, since
+// every one of these paths lives under that same account/device-config
+// family and there is no evidence any of them differ in envelope shape --
+// only in what is inside it, which is exactly what is not known here.
+func vermillionEmptyPayload() map[string]string {
+	return map[string]string{"payload": base64.StdEncoding.EncodeToString([]byte("{}"))}
+}
+
 // Frontlines reports how many persistent connections are open. For the
 // dashboard, and for answering "did the console get that far".
 func (s *Server) Frontlines() int64 { return s.frontlines.Load() }
@@ -172,63 +191,191 @@ func (s *Server) Frontlines() int64 { return s.frontlines.Load() }
 
 // vermillion answers the device-initialisation handshake.
 //
-// TODO(capture-needed): every request and response body on this host. What is
-// known is that it is not telemetry: a 2026-08-27 tcpdump of a real, successful
-// Nintendo Account import showed 16.5KB exchanged here mid-flow, which is why
-// internal/nintendo/hosts.go reclassified it away from a stub. What it asks for
-// and what satisfies it are unknown.
-//
-// The most defensible answer is a 200 with an empty JSON object: the console
-// treats a transport failure as the network being broken, so an error is worse
-// than a well-formed answer it may not like — and an invented body would be a
-// plausible-looking Nintendo internal, which rule 6 rules out.
-//
-// A capture of one boot with Options.RecordDir set settles this host entirely.
-// Change: this function.
+// Routed by path -- unlike this package's other two hosts, vermillion is
+// genuinely a small REST API, not one shape repeated at every path, and the
+// confirmed pieces (see the package doc comment) only cover some of it.
 func (s *Server) vermillion(w http.ResponseWriter, r *http.Request) {
-	s.answer(w, r, http.StatusOK, map[string]any{})
+	switch {
+	case r.URL.Path == "/v1/devices/initialize":
+		s.vermillionDeviceInitialize(w, r)
+	case r.URL.Path == "/v1/devices/vermillion-device-id":
+		s.vermillionDeviceID(w, r)
+	case r.URL.Path == "/v1/devices/penne-id":
+		s.vermillionDevicePenneID(w, r)
+	case r.URL.Path == "/v1/accounts/config":
+		s.vermillionAccountsConfig(w, r)
+	case strings.HasPrefix(r.URL.Path, "/v1/accounts/"):
+		// Any account sub-resource OTHER than config -- see
+		// vermillionEmptyPayload's own comment for why this is the
+		// envelope rather than a guess at real content.
+		s.answer(w, r, http.StatusOK, vermillionEmptyPayload())
+	case r.URL.Path == "/v1/acds/search", r.URL.Path == "/v1/nearness-checks":
+		// TODO(capture-needed): no capture of either exists anywhere. The
+		// same empty envelope as the other unconfirmed account paths --
+		// not a fabricated shape -- since these were only ever seen
+		// (never captured) alongside the same bootstrap sequence.
+		s.answer(w, r, http.StatusOK, vermillionEmptyPayload())
+	default:
+		s.log.Warn("nplnrest: unhandled vermillion path", "path", r.URL.Path, "method", r.Method)
+		s.answer(w, r, http.StatusOK, vermillionEmptyPayload())
+	}
+}
+
+// vermillionDeviceInitialize answers POST /v1/devices/initialize.
+//
+// Confirmed: request body is {"penneId": "..."}; a real server answers 204
+// No Content for a console it already recognises. This server has no
+// concept of "not yet registered" to refuse in the first place -- every
+// device that reaches this endpoint at all gets the same answer.
+func (s *Server) vermillionDeviceInitialize(w http.ResponseWriter, r *http.Request) {
+	s.rec.Record(r, nil, http.StatusNoContent, "vermillion: device initialize")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// vermillionDeviceID answers GET /v1/devices/vermillion-device-id.
+//
+// Confirmed response shape: {"vermillionDeviceId": "<base64 of 16 bytes>"}.
+// The key is camelCase -- getting this wrong is not a cosmetic mismatch,
+// it is the console never receiving a device id at all and looping this
+// endpoint indefinitely, never reaching penne login. See the package doc
+// comment.
+//
+// Derived deterministically from the console's own device id (read out of
+// the "did:<id>" token the SDK places in its own User-Agent header, the
+// same convention this project's other services already parse device
+// identity from) rather than returned as one fixed value for every
+// console, so two consoles behind this server do not collide on one
+// identity. Re-derived up to 64 times with an incrementing counter if the
+// result's base64 contains '/' or '+', which is not cosmetic either:
+// Splatoon 3 uses this value as a literal path segment and hard-crashes on
+// either character. Falls back to a fixed, known-safe value only if no
+// attempt within that bound avoids them, which is astronomically unlikely
+// for a uniformly distributed 16-byte hash truncation.
+func (s *Server) vermillionDeviceID(w http.ResponseWriter, r *http.Request) {
+	id := vermillionDeviceIDFor(deviceIDFromUserAgent(r.Header.Get("User-Agent")))
+	s.answer(w, r, http.StatusOK, map[string]string{"vermillionDeviceId": id})
+}
+
+// vermillionFallbackDeviceID is used only if vermillionDeviceIDFor's search
+// space is exhausted without landing on a '/'- and '+'-free result, or if
+// no device id could be read from the request at all.
+const vermillionFallbackDeviceID = "QdbC8zfuKXqYMAKjmdQsXg=="
+
+// vermillionDeviceIDFor derives a per-device vermillion device id.
+func vermillionDeviceIDFor(deviceID string) string {
+	if deviceID == "" {
+		return vermillionFallbackDeviceID
+	}
+	for n := 0; n < 64; n++ {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("switchnet-vermillion:%s:%d", deviceID, n)))
+		v := base64.StdEncoding.EncodeToString(sum[:16])
+		if !strings.ContainsAny(v, "/+") {
+			return v
+		}
+	}
+	return vermillionFallbackDeviceID
+}
+
+// deviceIDFromUserAgent reads the "did:<id>" token the SDK places in its own
+// User-Agent, e.g. "NintendoSDK Firmware/22.5.0-1.0 (platform:NX;
+// did:63671daf59441c13; eid:lp1)".
+func deviceIDFromUserAgent(ua string) string {
+	i := strings.Index(ua, "did:")
+	if i < 0 {
+		return ""
+	}
+	rest := ua[i+len("did:"):]
+	if j := strings.IndexAny(rest, "; )"); j >= 0 {
+		rest = rest[:j]
+	}
+	return strings.TrimSpace(rest)
+}
+
+// vermillionDevicePenneID answers PUT /v1/devices/penne-id -- the console
+// associating this device with the penne login identity it just generated.
+//
+// Not itself confirmed by a capture of this exact body, but 204 No Content
+// is the same answer the confirmed devices/initialize gives, and an
+// unhandled path here was what left a console looping device
+// initialisation forever, never reaching penne login at all -- answering
+// something here matters far more than which 2xx it is.
+func (s *Server) vermillionDevicePenneID(w http.ResponseWriter, r *http.Request) {
+	s.rec.Record(r, nil, http.StatusNoContent, "vermillion: device penne-id")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// vermillionAccountsConfig answers GET /v1/accounts/config.
+//
+// Confirmed envelope: {"payload": base64(<json>)}. The inner JSON's
+// online_license.is_available must be true -- a console that reads false
+// here treats the account as unlicensed for online play and never leaves
+// the lobby, which reaches the player as a generic communication error
+// with nothing in this server's own log to explain it.
+func (s *Server) vermillionAccountsConfig(w http.ResponseWriter, r *http.Request) {
+	inner, err := json.Marshal(map[string]any{
+		"version":          map[string]int{"major": 1, "minor": 1, "micro": 0},
+		"online_license":   map[string]bool{"is_available": true},
+		"activity":         map[string]bool{"has_received_guidance": true, "has_inserted": true, "has_transferred_to_vphym": true},
+		"disabled_content": map[string]any{"content_meta_ids": []string{}},
+		"hidden_key":       map[string]any{"application_ids": []string{}},
+	})
+	if err != nil {
+		s.log.Error("nplnrest: encode accounts/config payload", "error", err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+	s.answer(w, r, http.StatusOK, map[string]string{"payload": base64.StdEncoding.EncodeToString(inner)})
 }
 
 // ---- penne: login tickets and the frontline FQDN --------------------------
 
 // penne answers the login-ticket exchange, and names the frontline host.
 //
-// The field names below are no longer a blind guess for the FQDN alone. A
-// 2026-09-20 decompile of the operator's own console's `npns` sysmodule (a
-// system service that, per this package's own doc comment, shares the exact
-// same three-host "penne" mechanism with NPLN — same host family, same
-// ticket-then-frontline shape) found the literal JSON keys its client-side
-// parser looks for: "frontline_fqdn" (already one of the spellings sent
-// below — now confirmed, not guessed), "ticket", "issued_at", "wait_sec",
-// "rtt_max", "wowl_timeout", and "ignore_rst". Those last six were entirely
-// absent from this response before tonight, despite this host being
-// documented as a "login ticket exchange" — a response with no ticket field
-// at all was always the least defensible reading, once the field name was
-// known to exist somewhere in the real client.
-//
-// The FQDN keeps going out under every plausible spelling: they are
-// additional keys in a JSON object, so a parser that wants one finds it and
-// a parser that wants none is no worse off. The new fields follow the same
-// "well-formed placeholder, not a fabricated Nintendo internal" rule this
-// package already uses for vermillion: a ticket is issued (an opaque random
-// value, since nothing here can construct or validate a real one) and the
-// session-config numbers are reasonable, permissive defaults chosen not to
-// trip whatever the console does with them, not reasoned-out Nintendo
-// constants.
-//
-// The same npns decompile found the literal path npns itself uses for this
-// exact mechanism: POST /v1/login_tickets. Circumstantial rather than a
-// direct capture of NPLN's own traffic (npns is a system service, not an
-// NPLN host, even though it shares the mechanism) -- routing here is by
-// host, not path (see Handler's own comment), so this doesn't change
-// behaviour, only what a future capture should expect to see.
-//
-// TODO(capture-needed): the request shape, and the real values for wait_sec/
-// rtt_max/wowl_timeout/ignore_rst, and whether the console actually
-// validates the ticket's shape at all. A capture with Options.RecordDir set
-// settles all of it in one pass. Change: this function.
+// Routed by path -- POST /v1/login_tickets and GET /v1/frontlines are two
+// different, confirmed responses (see below), not one shape for the whole
+// host.
 func (s *Server) penne(w http.ResponseWriter, r *http.Request) {
-	ticket, err := randomHex(32)
+	switch r.URL.Path {
+	case "/v1/login_tickets":
+		s.penneLoginTickets(w, r)
+	case "/v1/frontlines":
+		s.penneFrontlines(w, r)
+	default:
+		s.log.Warn("nplnrest: unhandled penne path", "path", r.URL.Path, "method", r.Method)
+		s.answer(w, r, http.StatusOK, map[string]any{})
+	}
+}
+
+// penneConnectionParams is persistent_connection_params_simple, confirmed
+// field-for-field and value-for-value against a real capture of a working
+// login (see the package doc comment for provenance). Both nested objects
+// (awake, sleep) were entirely absent from this project's own earlier guess
+// -- a response with a ticket and an FQDN but no session-keepalive
+// parameters at all was always the least defensible reading, once these
+// exact values were known to exist somewhere in a real response.
+func penneConnectionParams() map[string]any {
+	return map[string]any{
+		"awake":        map[string]any{"count": 2, "disable": false, "idle": 60, "interval": 10},
+		"ignore_rst":   true,
+		"retry_count":  2,
+		"rtt_max":      1000,
+		"sleep":        map[string]any{"count": 1440, "disable": true, "idle": 60, "interval": 10},
+		"wait_sec":     3600,
+		"wowl_timeout": 200,
+	}
+}
+
+// penneLoginTickets answers POST /v1/login_tickets.
+//
+// Confirmed request shape: {"id": "<penneId>", "password": "..."}. Confirmed
+// response shape and every value below except the ticket itself and the
+// two timestamps (necessarily per-request): expires_at is issued_at plus
+// 345600 seconds (four days), matching the delta a real capture showed
+// between the two. The ticket itself is an opaque random value, since
+// nothing here can construct or validate a real Nintendo-signed one, and
+// nothing found anywhere confirms the console validates its shape at all.
+func (s *Server) penneLoginTickets(w http.ResponseWriter, r *http.Request) {
+	ticket, err := randomToken(36)
 	if err != nil {
 		s.log.Error("nplnrest: generate login ticket", "error", err)
 		http.Error(w, "", http.StatusInternalServerError)
@@ -238,28 +385,42 @@ func (s *Server) penne(w http.ResponseWriter, r *http.Request) {
 	if s.now != nil {
 		now = s.now
 	}
+	issuedAt := now().Unix()
 	s.answer(w, r, http.StatusOK, map[string]any{
-		"host":           s.frontlineHost,
-		"fqdn":           s.frontlineHost,
-		"frontline_fqdn": s.frontlineHost,
-		"frontlineFqdn":  s.frontlineHost,
-
-		"ticket":       ticket,
-		"issued_at":    now().Unix(),
-		"wait_sec":     30,
-		"rtt_max":      3000,
-		"wowl_timeout": 30,
-		"ignore_rst":   true,
+		"expires_at":                          issuedAt + 345600,
+		"frontline_fqdn":                      s.frontlineHost,
+		"issued_at":                           issuedAt,
+		"persistent_connection_params_simple": penneConnectionParams(),
+		"ticket":                              ticket,
 	})
 }
 
-// randomHex returns n random bytes, hex-encoded.
-func randomHex(n int) (string, error) {
+// penneFrontlines answers GET /v1/frontlines, the same frontline FQDN and
+// session-config parameters as login_tickets but as a standalone refresh
+// (e.g. after the frontline connection drops) rather than tied to issuing a
+// new ticket.
+func (s *Server) penneFrontlines(w http.ResponseWriter, r *http.Request) {
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	s.answer(w, r, http.StatusOK, map[string]any{
+		"current_time":                        now().Unix(),
+		"frontline_fqdn":                      s.frontlineHost,
+		"persistent_connection_params_simple": penneConnectionParams(),
+	})
+}
+
+// randomToken returns n random bytes, base64url encoded without padding --
+// an opaque value in the same encoding family this project already uses
+// for its other generated tokens (see internal/baas/models.go's newHexID
+// sibling), not a confirmed real ticket encoding.
+func randomToken(n int) (string, error) {
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(buf), nil
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // ---- fro-N: the persistent connection -------------------------------------

@@ -152,6 +152,16 @@ func (s *Service) caller(ctx context.Context) (string, bool) {
 // tenantPath is the resource-name prefix every fest resource hangs off.
 func (s *Service) tenantPath() string { return "tenants/" + s.tenant }
 
+// FestService has one more real RPC than this file or its proto know about:
+// a 2026-09-21 decompile of Splatoon 3 v11.3.0 found
+// "/nn.npln.toyohr.v1.FestService/SelectFestBreakingNews" as a live,
+// called method (not just a compiled-in-but-unused stub -- see
+// internal/toyohr/backlog.go's GameRecord note for that distinction and why
+// it matters) in the same client-construction function as the five methods
+// already implemented here. Plausibly a Splatfest news/announcement feed,
+// by name, but nothing here confirms the request/response shape --
+// left unregistered rather than guessed at, same as GameRecord's five.
+
 // SelectFestSchedule announces the fest a region should be showing.
 //
 // The response carries only the fest's MECHANICS: which pack to load, its

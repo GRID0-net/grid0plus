@@ -221,6 +221,16 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		// elicense_archives/<id>/report paths: SwitchNet's aauth accepts
 		// whatever is in that field without looking at it, so an empty
 		// success is enough to get past those specifically.
+		//
+		// Also includes PUT /v2/penne_id -- confirmed real (not previously
+		// documented anywhere in this project) by NextendoNetwork's own
+		// public Splatoon 3 NPLN server, which found a real console PUTting
+		// its penne id here as part of NPLN's vermillion/penne bootstrap,
+		// before the console will attempt a penne login (see
+		// internal/nplnrest.go's package doc comment for the boundary on
+		// what is taken from their PolyForm-Shield-licensed project: facts,
+		// never code). This empty-object default already matches their own,
+		// independently-arrived-at answer for this exact path.
 		h.emptyObject(w)
 	}
 }

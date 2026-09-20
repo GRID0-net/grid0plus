@@ -382,13 +382,21 @@ var Hosts = []Host{
 	{
 		Pattern: "beach.hac.lp1.eshop.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "eshop recommendations/metadata, purpose unconfirmed — not previously " +
-			"listed at all, so it fell through to the domain-suffix blackhole " +
-			"fallback. A 2026-08-25 capture showed the Nintendo Account link flow " +
-			"reaches this host before accounts.nintendo.com on a real working " +
-			"private server; that server passes it through to real Nintendo, which " +
-			"this deployment's policy rules out, so it is stubbed instead. " +
-			"Untested; see docs/CAPTURES.",
+		Comment: "A 2026-08-25 capture showed the Nintendo Account link flow reaches " +
+			"this host before accounts.nintendo.com; a real working private server " +
+			"passes it through to real Nintendo, which this deployment's policy " +
+			"rules out, so it is stubbed instead. A second, unrelated purpose: " +
+			"NextendoNetwork's own public Splatoon 3 NPLN server (facts taken from " +
+			"their published findings, never their code -- see " +
+			"internal/nplnrest.go's package doc comment) documents this host also " +
+			"receiving \"POST /v1/devices/<id>/penne_id/register\" during NPLN's " +
+			"vermillion/penne bootstrap, which their real-console capture found " +
+			"had to succeed before the console would ever attempt a penne login. " +
+			"The generic empty-object answer every unmatched host on this server " +
+			"already gives (internal/stubs's default case) happens to match their " +
+			"own -- independently arrived at -- answer for this exact path, so no " +
+			"code change was needed, only this note that the path is real and " +
+			"already handled correctly.",
 	},
 	{
 		Pattern: "service-status-lp1.cdn.nintendo.net",

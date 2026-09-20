@@ -168,6 +168,15 @@ one:
 not appear anywhere in Splatoon 3's binary and stays unregistered -- no
 evidence this title uses it at all.
 
+`nn.npln.ikaros.v1.CompetitionService` and both `nn.npln.timber.v1`
+services (`CompetitionService`, `TradeBoxService`) join it: a 2026-09-21
+decompile of Splatoon 3 v11.3.0 found zero references to any of their RPCs
+anywhere in the binary (verified against the fully decompressed in-memory
+image, not just the raw NSO file, since NSO segments can be LZ4-compressed
+on disk and a naive `strings`/raw-byte search over the compressed file
+produces false negatives for strings that are genuinely present once
+loaded). None of the three are registered here.
+
 ## Matchmaking
 
 `matchmaking.go` serves the two services; the queue and its rules are

@@ -2,6 +2,7 @@ package nplnrest
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -61,7 +62,7 @@ func TestPenneNamesTheFrontlineHost(t *testing.T) {
 	s := newServer(t, "")
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/login", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/login_tickets", strings.NewReader(`{"id":"pz1","password":"x"}`))
 	req.Host = penneHost
 	s.Handler().ServeHTTP(rec, req)
 
@@ -73,29 +74,20 @@ func TestPenneNamesTheFrontlineHost(t *testing.T) {
 		t.Fatalf("response is not JSON: %v", err)
 	}
 
-	// The field name is unconfirmed, so the FQDN goes out under every plausible
-	// spelling. What this asserts is that the value is right and reachable
-	// under at least one of them -- not which one, because nobody knows.
-	found := false
-	for _, v := range body {
-		if v == frontlineHost {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("the frontline host is not in the response: %v", body)
+	if got := body["frontline_fqdn"]; got != frontlineHost {
+		t.Errorf("frontline_fqdn = %v, want %q", got, frontlineHost)
 	}
 }
 
-// TestPenneIssuesATicketAndSessionConfig pins the fields added 2026-09-20 from
-// a decompile of the operator's own console's npns sysmodule, which shares
-// this exact ticket-then-frontline mechanism with NPLN: the field names are
-// evidence-backed, even though the values themselves are placeholders.
+// TestPenneIssuesATicketAndSessionConfig pins the confirmed response shape
+// (see the package doc comment): a real capture of a working login showed
+// exactly these fields, including the two nested session-config objects
+// this project's own earlier guess was missing entirely.
 func TestPenneIssuesATicketAndSessionConfig(t *testing.T) {
 	s := newServer(t, "")
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/login", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/login_tickets", strings.NewReader(`{"id":"pz1","password":"x"}`))
 	req.Host = penneHost
 	s.Handler().ServeHTTP(rec, req)
 
@@ -113,11 +105,124 @@ func TestPenneIssuesATicketAndSessionConfig(t *testing.T) {
 	if !ok || int64(issuedAt) != s.now().Unix() {
 		t.Errorf("issued_at = %v, want %d", body["issued_at"], s.now().Unix())
 	}
+	if expiresAt, ok := body["expires_at"].(float64); !ok || int64(expiresAt) != s.now().Unix()+345600 {
+		t.Errorf("expires_at = %v, want issued_at + 345600", body["expires_at"])
+	}
 
-	for _, key := range []string{"wait_sec", "rtt_max", "wowl_timeout", "ignore_rst"} {
-		if _, ok := body[key]; !ok {
-			t.Errorf("penne's response is missing %q: %v", key, body)
+	params, ok := body["persistent_connection_params_simple"].(map[string]any)
+	if !ok {
+		t.Fatalf("persistent_connection_params_simple missing or wrong type: %v", body)
+	}
+	for _, key := range []string{"awake", "sleep", "ignore_rst", "retry_count", "rtt_max", "wait_sec", "wowl_timeout"} {
+		if _, ok := params[key]; !ok {
+			t.Errorf("persistent_connection_params_simple is missing %q: %v", key, params)
 		}
+	}
+	if params["rtt_max"] != float64(1000) || params["wait_sec"] != float64(3600) || params["wowl_timeout"] != float64(200) {
+		t.Errorf("confirmed session-config values changed: %v", params)
+	}
+}
+
+func TestPenneFrontlinesReturnsTheSameFQDNAndParams(t *testing.T) {
+	s := newServer(t, "")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/frontlines", nil)
+	req.Host = penneHost
+	s.Handler().ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+	if got := body["frontline_fqdn"]; got != frontlineHost {
+		t.Errorf("frontline_fqdn = %v, want %q", got, frontlineHost)
+	}
+	if _, ok := body["persistent_connection_params_simple"]; !ok {
+		t.Error("frontlines response has no persistent_connection_params_simple")
+	}
+	if _, ok := body["current_time"]; !ok {
+		t.Error("frontlines response has no current_time")
+	}
+}
+
+func TestVermillionDeviceIDIsCamelCaseAndSafeForAPathSegment(t *testing.T) {
+	s := newServer(t, "")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/devices/vermillion-device-id", nil)
+	req.Host = vermillionHost
+	req.Header.Set("User-Agent", "NintendoSDK Firmware/22.5.0-1.0 (platform:NX; did:63671daf59441c13; eid:lp1)")
+	s.Handler().ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+	id, ok := body["vermillionDeviceId"].(string)
+	if !ok || id == "" {
+		// The wrong (snake_case) key here is not a cosmetic mismatch -- it is
+		// the console never receiving a device id and looping this endpoint
+		// forever. See the confirmed-bug note in nplnrest.go.
+		t.Fatalf("response has no camelCase vermillionDeviceId: %v", body)
+	}
+	if strings.ContainsAny(id, "/+") {
+		// Splatoon 3 uses this value as a literal path segment and
+		// hard-crashes on either character.
+		t.Errorf("vermillionDeviceId %q contains '/' or '+'", id)
+	}
+
+	// Same device id (same User-Agent) must be stable across requests, and a
+	// different device must get a different id -- two consoles behind this
+	// server must not collide on one identity.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/v1/devices/vermillion-device-id", nil)
+	req2.Host = vermillionHost
+	req2.Header.Set("User-Agent", req.Header.Get("User-Agent"))
+	s.Handler().ServeHTTP(rec2, req2)
+	var body2 map[string]any
+	_ = json.Unmarshal(rec2.Body.Bytes(), &body2)
+	if body2["vermillionDeviceId"] != id {
+		t.Errorf("same device got a different id: %v vs %v", id, body2["vermillionDeviceId"])
+	}
+
+	rec3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest(http.MethodGet, "/v1/devices/vermillion-device-id", nil)
+	req3.Host = vermillionHost
+	req3.Header.Set("User-Agent", "NintendoSDK Firmware/22.5.0-1.0 (platform:NX; did:aaaaaaaaaaaaaaaa; eid:lp1)")
+	s.Handler().ServeHTTP(rec3, req3)
+	var body3 map[string]any
+	_ = json.Unmarshal(rec3.Body.Bytes(), &body3)
+	if body3["vermillionDeviceId"] == id {
+		t.Error("two different devices got the same vermillion device id")
+	}
+}
+
+func TestVermillionAccountsConfigGrantsOnlineLicense(t *testing.T) {
+	s := newServer(t, "")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/accounts/config", nil)
+	req.Host = vermillionHost
+	s.Handler().ServeHTTP(rec, req)
+
+	var envelope map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("response is not JSON: %v", err)
+	}
+	raw, err := base64.StdEncoding.DecodeString(envelope["payload"])
+	if err != nil {
+		t.Fatalf("payload is not base64: %v", err)
+	}
+	var inner map[string]any
+	if err := json.Unmarshal(raw, &inner); err != nil {
+		t.Fatalf("decoded payload is not JSON: %v", err)
+	}
+	license, ok := inner["online_license"].(map[string]any)
+	if !ok || license["is_available"] != true {
+		// A console that reads false here treats the account as unlicensed
+		// for online play and never leaves the lobby.
+		t.Errorf("online_license.is_available is not true: %v", inner["online_license"])
 	}
 }
 
