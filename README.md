@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
   <img src="https://img.shields.io/badge/phase%202-code%20complete-brightgreen" alt="Phase 2 code complete">
   <img src="https://img.shields.io/badge/phase%203-separate%20module%2C%20not%20started-lightgrey" alt="Phase 3">
-  <img src="https://img.shields.io/badge/phase%204-planned%2C%20not%20started-lightgrey" alt="Phase 4">
+  <img src="https://img.shields.io/badge/phase%204-code%20complete-brightgreen" alt="Phase 4 code complete">
 </p>
 
 ---
@@ -18,7 +18,7 @@
 ## Running it
 
 Postgres, Redis and the nginx TLS edge run in Docker (off-the-shelf images,
-never rebuilt from this repo); the eight Go services run as native processes,
+never rebuilt from this repo); the nine Go services run as native processes,
 either in a terminal while you're working on them or as systemd units on the
 box that actually serves your consoles.
 
@@ -63,11 +63,13 @@ Four phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
 | **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | code complete, awaiting hardware verification |
 | **3** | eShop, served from local `.NSP` dumps of games you own | planned as a **separate, optional module**, not started |
-| **4** | per-game cloud save backup (OLSC) | planned, not started — storage backend undecided |
+| **4** | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, awaiting hardware verification and a capture |
 
-Phases 1 and 2 are what this repository contains today. Both are waiting on the
-same thing: a console. Phase 4 stays in this repository too, unlike phase 3 —
-see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc).
+Phases 1, 2 and 4 are what this repository contains today. All three are
+waiting on the same thing: a console. Phase 4 stays in this repository too,
+unlike phase 3 — see
+[`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) and
+[`internal/scsi/README.md`](internal/scsi/README.md).
 
 Phase 3 is deliberately **not** going into this repository. It's a different
 kind of system — real game dumps, licensing/rights bookkeeping, a storefront
@@ -136,7 +138,7 @@ make config-check                        # validate, and warn about risky settin
 make up                                  # Postgres, Redis and nginx
 make gen-certs                           # local CA and edge certificate
 make gen-nginx                           # the TLS edge configuration
-make run &                               # the eight Go services, natively
+make run &                               # the nine Go services, natively
 make seed                                # exercise the whole chain over HTTP
 ```
 
@@ -173,7 +175,7 @@ naming nothing.
 
 ## Redeploying an existing install
 
-The eight Go services run as native processes (via systemd in production, via
+The nine Go services run as native processes (via systemd in production, via
 `make run`/`switchnetctl run` when iterating) — Docker is only for Postgres,
 Redis and the nginx edge, none of which this repo builds. On the always-on
 box, install the units once:
@@ -307,6 +309,27 @@ honestly-empty.
 | BCAT pack building (not yet serving to a console) | `internal/bcat` |
 | Dashboard: players, matchmaking, Splatfests, match history, Debug tab | `internal/dashboard`, `cmd/dashboard` |
 
+## What phase 4 implements
+
+OLSC (Online Save Cloud) — the OS-level per-game save-data backup tied to a
+Nintendo Switch Online subscription, **not** the same thing as Splatoon 3's
+own `CloudSave.GetSaveRecord` above. Not yet touched by a real console, and
+built against public documentation rather than a capture — see
+[`internal/scsi/README.md`](internal/scsi/README.md) for exactly which
+endpoints are confirmed versus this project's own defensible reading of an
+undocumented one, and `docs/CAPTURES/README.md`'s Phase 4 section for what a
+real capture would settle.
+
+| Feature | Endpoint |
+| --- | --- |
+| List / get a save data archive | `GET /api/nx/v2/save_data_archives`, `.../<id>` |
+| Start / finish a backup upload | `POST .../start_upload`, `.../<id>/finish_upload` |
+| Upload / finish one component file | this project's own `PUT .../component_files/<id>/data`, `POST .../finish_upload` |
+| Restore (start/finish download) | `GET .../<id>/start_download`, `POST .../<id>/finish_download` |
+| Delete an archive | `POST .../<id>/delete` |
+| Key material for a restore | `POST .../generate_key_seed_package`, `permission.lp1.sata…/generate_key_package` |
+| Local-disk storage, with a per-user quota | `internal/scsi/storage.go` |
+
 ## Repository layout
 
 ```
@@ -321,6 +344,7 @@ internal/
   dauth/         device authentication
   aauth/         application authentication
   baas/          accounts, friends, presence, blocks, images (phase 1)
+  scsi/          OLSC cloud save backup, local-disk storage (phase 4)
   presencebus/   presence pub/sub, in-process or Redis
   presence/      the shared TTL/visibility rules BAAS and NPLN presence both read
   stubs/         the catch-all
@@ -398,7 +422,7 @@ the processes):
 
 ```sh
 make up            # Postgres, Redis and nginx
-make run &         # the eight Go services, natively
+make run &         # the nine Go services, natively
 make seed          # exercises phase 1 over the real API -- device token,
                     #   application token, anonymous token, register, log in,
                     #   friend code, friend request, accept, presence -- and

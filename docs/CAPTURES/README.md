@@ -672,6 +672,32 @@ before it becomes a request.
 
 ---
 
+## Phase 4 — cloud save (OLSC)
+
+`internal/scsi` implements storage.lp1.scsi.srv.nintendo.net and
+permission.lp1.sata.srv.nintendo.net against Kinnay's wiki page for OLSC —
+most of the shape is confirmed there, the same kind of source this project
+already leans on for BAAS/dAuth/aAuth. What is not confirmed is marked
+`TODO(capture-needed)` at the exact function in `internal/scsi/handler.go`;
+see `internal/scsi/README.md` for the full list. Ranked by how blocking each
+is:
+
+| Capture | What it settles |
+| --- | --- |
+| **a real save backup, start to finish** | whether a console cryptographically validates `generate_key_seed_package`'s response before it will accept a restore — the single most likely hard blocker in this whole feature, the same category of unknown `nxAccountBlob`'s header prefix turned out to be for phase 1's account linking. If it does, no shape guessed here will pass, and the real wrapping format needs to come from this capture |
+| the same capture | `generate_key_package` (`permission.lp1.sata.srv.nintendo.net`) — not even a confirmed field name exists for this one, only the bare endpoint string (independently confirmed by decompile) |
+| the same capture | `component_files/create`'s request body and `signed_uri`'s response shape — both listed on the wiki with method `"?"` and no fields at all |
+| the same capture | whether `start_upload` really has no `application_id` field, or whether this project's own `X-SwitchNet-Application-Id` header workaround (see `applicationIDFrom`) is masking a real field name |
+| a restore on a console that already has a real backup | `start_download`/`finish_download`'s actual shape, currently answered as "the same as GET .../{id}" and "a bare acknowledgement" respectively with no evidence either way |
+| any real SCSI/SATA error response | confirms or replaces `internal/scsi/errors.go`'s BAAS-shaped guess |
+
+This needs a console that reaches a real, unmodified Nintendo server (or
+Nextendo's own working reference deployment) with cloud save actually
+enabled on the account — the same posture as every other phase's captures,
+see [`../PACKET_CAPTURE.md`](../PACKET_CAPTURE.md).
+
+---
+
 ## Documenting a capture
 
 Add one file per endpoint under `docs/CAPTURES/`, named after the path:

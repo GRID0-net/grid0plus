@@ -15,7 +15,7 @@ cost of the decision and is worth stating plainly.
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
 | [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | code complete, **awaiting hardware verification** |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
-| [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | planned, **not started** — storage backend undecided |
+| [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **awaiting hardware verification and a capture** |
 
 Phase 3 is scoped differently from 1 and 2: it is not going into `internal/`
 here at all. See its section below for why and what that means in practice.
@@ -678,17 +678,18 @@ to `dauth:0` for its own device token, and to `npns:s` directly, which means
 push notifications ("your backup finished", plausibly) are a real feature of
 this system, not a guess.
 
-The only host string found in this binary is `sata.srv.nintendo.net`
-(environment-prefixed, e.g. `...hac.lp1.sata.srv.nintendo.net`) — no `scsi`
-string anywhere in it, which is why `%.sata.srv.nintendo.net` rather than the
-already-listed `storage.lp1.scsi.srv.nintendo.net` is the current best guess
-for OLSC's actual backend host. Not settled: which of the two (or both, for
-different purposes) a real save-backup attempt actually talks to. That needs
-a capture — see phase 3's own
-[capture posture](#the-single-most-important-thing-to-know) for why a guess
-here would cost more than it's worth.
+**Both real backend hosts, not a guess between them.** Kinnay's public wiki
+has a dedicated [OLSC Servers](https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers)
+page — the same kind of public source this project already leans on heavily
+for BAAS/dAuth/aAuth — documenting `storage.lp1.scsi.srv.nintendo.net`'s
+`save_data_archives` API (v2, full field-level shape for the archive and
+component-file objects, `start_upload`/`finish_upload`/
+`generate_key_seed_package`/`extend_upload_timeout`) and
+`permission.lp1.sata.srv.nintendo.net`'s `save_data_sets`/
+`generate_key_package` (listed with no method or shape at all). Both are
+implemented in `internal/scsi`.
 
-### 4.2 The actual technical problem: where do the save files live
+### 4.2 The storage backend decision — made
 
 Everything in phases 1-3 either reimplements a *protocol* (phases 1, 2) or
 serves content the operator already owns and dumped themselves (phase 3).
@@ -696,43 +697,43 @@ Phase 4 is different in kind: a working implementation means **storing
 arbitrary player save data**, indefinitely, for every console in the group —
 real storage cost that grows with usage, not a one-time dump.
 
-Raised explicitly by the operator (2026-09-20): avoid paying for this if at
-all possible. Options, not yet decided between:
+Decided: **local disk on the box already running SwitchNet.** No new
+recurring cost — the operator already pays for this machine regardless.
+Configured via `scsi.storage_dir`; `scsi.per_user_quota_bytes` (default
+1 GiB) is the hard per-user cap this section originally called for, enforced
+in `internal/scsi.LocalDisk.Put` so one console's save data cannot fill the
+disk and take the rest of SwitchNet down with it. If disk space specifically
+becomes a real constraint, `internal/scsi.BlobStore` is the seam an
+object-storage implementation (Azure Blob, Backblaze B2, Cloudflare R2) would
+plug into without touching anything else in the package — see
+`internal/scsi/README.md`.
 
-- **Local disk on the box already running SwitchNet.** No new recurring
-  cost — the operator already pays for this machine regardless. Bounded by
-  whatever disk the box has; a hard cap (per-user or total) would need to
-  exist so one console's save data can't fill the disk and take the rest of
-  SwitchNet down with it. The simplest option to reason about and the
-  obvious default unless disk space specifically runs out.
-- **Object storage on the same Azure subscription SwitchNet's VPS already
-  runs on** (Azure Blob Storage or similar) — keeps everything under one
-  bill the operator is already paying, rather than a second unrelated
-  vendor, but is metered storage that grows with usage in a way local disk
-  on an already-paid-for box does not.
-- **A separate, cheaper object-storage provider** (e.g. Backblaze B2,
-  Cloudflare R2 — both have historically undercut the big three clouds on
-  storage pricing, particularly egress) — worth a real cost comparison
-  against the above once actual per-save-file sizes are known, not before.
+### 4.3 What's actually still open
 
-No decision recorded yet. Whoever picks this up should size a real save file
-first (per-game save sizes vary enormously) before comparing costs, since
-"how much data are we actually storing" changes which of the above is
-obviously cheapest.
+**No capture of real OLSC traffic exists yet.** Most of `internal/scsi` is
+built against the wiki's confirmed shape, but four things are this project's
+own defensible reading rather than a confirmed one — each marked
+`TODO(capture-needed)` at the exact function in
+[`internal/scsi/handler.go`](../internal/scsi/handler.go), and ranked by how
+blocking each is in
+[`docs/CAPTURES/README.md`](CAPTURES/README.md#phase-4--cloud-save-olsc):
 
-### 4.3 Suggested order
-
-1. **Capture a real save-backup attempt** against a working reference
-   server, the same way phase 1's BAAS captures and phase 2's NPLN captures
-   were what actually settled those phases rather than guesses. Settles the
-   request/response shapes for `IOlscServiceForApplication`'s 16 commands
-   and confirms which host (`sata`, `scsi`, or both) is actually live.
-2. **Pick a storage backend** using 4.2's real numbers, once save-file sizes
-   are known from the capture.
-3. **A minimal `internal/olsc`** answering just enough to let a console back
-   up and restore its own save data — mirroring how `internal/baas` grew
-   from the smallest working slice outward in phase 1, not built all at
-   once.
+1. **`generate_key_seed_package` and `generate_key_package`.** Confirmed to
+   exist; not confirmed whether a console cryptographically validates either
+   response before trusting a restore. If it does, this is the single most
+   likely hard blocker in the whole feature — the same category of unknown
+   `nxAccountBlob`'s header prefix turned out to be for phase 1's account
+   linking, and a capture is what actually settled that one.
+2. **`component_files/create` and `signed_uri`.** Listed on the wiki with no
+   method or field shape at all; SwitchNet answers with its own invented
+   same-server upload/download endpoint rather than real request signing,
+   since it controls both ends of the exchange anyway.
+3. **`start_download`/`finish_download`.** No documented shape at all;
+   answered as "the same as reading the archive" and "a bare
+   acknowledgement" respectively.
+4. **Where `application_id` comes from.** `start_upload`'s documented
+   request body has no title-id field. Read from a SwitchNet-invented
+   `X-SwitchNet-Application-Id` header for now.
 
 ### 4.4 Scope note
 

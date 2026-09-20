@@ -112,6 +112,7 @@ dauth request — and because it keeps their dependencies honest.
 | `dauth` | 8081 | `dauth-lp1.ndas.srv.nintendo.net`, `dcert-…` | no |
 | `aauth` | 8082 | `aauth-lp1.ndas.srv.nintendo.net`, `acert-…` | no |
 | `baas` | 8083 | `*.baas.nintendo.com` | yes |
+| `scsi` | 8091 | `storage.lp1.scsi…`, `permission.lp1.sata…` (phase 4) | yes |
 | `stubs` | 8084 | ctest, frs, five, op2, dragons, penne, npns, znc, … | no |
 | `natcheck` | 10025/10125 UDP | `nncs{1,2}-lp1.n.n.srv.nintendo.net` | no |
 
