@@ -63,12 +63,20 @@ import (
 //	  }]
 //	}
 //
-// Field NAMES are confirmed; field SEMANTICS mostly are not -- what `mode`'s
-// values mean, what `deletion_priority` orders, what `conditions.serial[*]`
-// matches against, are all still open. `news_id` also appears alongside
-// `data_list`'s other fields in the same decompile, but that is System
-// News's own use of the same delivery-cache mechanism bleeding into the
-// same string table, not a Splatfest-relevant field.
+// Field NAMES are confirmed; most field SEMANTICS are not, but
+// `deletion_priority` is a partial exception: the same decompile's System
+// News applet (which shares this delivery-cache mechanism -- see `news_id`
+// below) keeps its own local cache in a SQLite table with a
+// `deletion_priority` column, evicted `ORDER BY deletion_priority DESC,
+// received_at ASC` -- lower priority is evicted first, oldest-received
+// breaks ties. Whether Splatfest's own client-side cache eviction follows
+// the identical rule is not directly confirmed (News's schema is News's own
+// code, not bcat's), but it is the same field name feeding the same
+// mechanism, so this is a strong lead rather than a guess. `mode`'s values
+// and what `conditions.serial[*]` matches against are still fully open.
+// `news_id` appears alongside `data_list`'s other fields in the same
+// decompile because News shares this same string table -- not a
+// Splatfest-relevant field.
 //
 // One more open question the same decompile raises rather than settles: the
 // local cache path `bcat-dl:/applications/%016llx/list.msgpack.bafmeta`
