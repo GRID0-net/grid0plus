@@ -388,8 +388,19 @@ var Hosts = []Host{
 		Comment: "smartphone app API (Coral). A 2026-09-20 decompile of " +
 			"Splatoon 3 v11.3.0 confirms the game itself constructs " +
 			"api-<region>.znc.srv.nintendo.net URLs directly, not just the " +
-			"phone app -- likely the SplatNet 3 web view integration. Request " +
-			"shape unconfirmed.",
+			"phone app. A separate decompile of a system NSO-companion applet " +
+			"found a distinct \"web-%.znc.srv.nintendo.net\" host (below) -- " +
+			"likely the actual SplatNet 3 web-view backend, with this api- " +
+			"host doing structured API calls instead. Request shape for both " +
+			"is unconfirmed.",
+	},
+	{
+		Pattern: "%.znc.srv.nintendo.net",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Comment: "web- prefix confirmed by decompile (see api-lp1.znc above); " +
+			"wildcarded rather than a literal web-lp1 entry since the region " +
+			"code was seen as \"%\" (unsubstituted) in the binary, not a " +
+			"specific literal",
 	},
 
 	// ---- Found 2026-09-20: not previously listed at all -----------------
