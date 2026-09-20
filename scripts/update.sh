@@ -204,7 +204,7 @@ for svc in $go_restart; do
         toolbox)   port=8090 ;;
         npln)
             [ -n "$ADMIN_TOKEN" ] || continue
-            port=8088 ;;
+            port=8089 ;;
         *) continue ;;   # natcheck is UDP; nginx has no /healthz
     esac
 
