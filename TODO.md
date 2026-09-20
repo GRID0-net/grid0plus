@@ -85,7 +85,17 @@ unanswered (404) rather than guessed at.
   all — the wiki describes that host as the *virtual game card* system, a
   general Switch feature, not anything Splatoon-specific, which sits
   uneasily with `hosts.go`'s existing "NPLN device initialisation"
-  classification.
+  classification. **Update, 2026-09-20:** a decompile of Splatoon 3 v11.3.0's
+  own `main` found no literal "vermillion", "penne" or "frontline" string
+  anywhere in the binary, despite the same decompile finding every gRPC
+  service the game genuinely does call (see `internal/nplnrest/nplnrest.go`'s
+  package comment). That rules out Splatoon 3's own code making these
+  requests directly — a shared system client (`npns` is the leading
+  candidate) is doing it on the console's behalf during boot/account setup,
+  before the game itself is even running. Evidence the traffic exists
+  (the 2026-08-27 tcpdump) is unaffected; this only narrows which process
+  originates it, and answers "not the game itself" without yet answering
+  "does anything actually depend on the response."
 - How a console obtains a Penne id/password in the first place —
   `god.hac.lp1.penne.srv.nintendo.net`'s provisioning endpoints
   (`/v1/immigrate`, `/v1/penne_ids`) are undocumented past their path, and
@@ -338,10 +348,23 @@ Stage 1 has to run first, because its hexdumps are what say which path to answer
 and what the console sent. Do not build stage 2 against a guess when stage 1
 costs an operator five minutes.
 
-**Even a positive result does not finish it**: the `list` response *body* is
-still undocumented, and stage 1's hexdumps are how that gets chipped away. But a
-positive result turns "nobody has documented how" into a tractable
-reverse-engineering job instead of a closed door.
+**Update, 2026-09-20: the `list` response body's field names are no longer
+undocumented.** A decompile of `bcat.nso` itself (extracted from the
+operator's own SYSTEM partition, title id `010000000000000C`) found the
+complete JSONPath field list its response parser reads --
+`directories[].{name,mode,digest,data_list[]}` and
+`data_list[].{data_id,filename,digest,size,url,default_language,
+deletion_priority,publishing_time,version.{format,semantics},
+conditions.serial[],languages[]}` -- written up in
+`internal/bcat/probe.go`'s own doc comment. Field *names* are confirmed;
+most field *semantics* (what `mode`'s values mean, what `conditions.serial`
+matches) and whether the wire encoding is JSON or MessagePack (a local cache
+path, `list.msgpack.bafmeta`, suggests the latter but doesn't prove it) are
+still open, and the delivery container's binary header remains exactly as
+undocumented as before -- decompiling the *response parser* doesn't touch
+the *signature verification* stage 2 is about. Stage 1 is still the thing
+that needs an operator and a console; this only means stage 2's payoff, if
+run, would land on a server that already knows most of what to answer with.
 
 **Done when** there is a written record, under `docs/CAPTURES/`, of what the
 console requested and how it reacted. Either answer is worth having; right now
