@@ -70,12 +70,24 @@ import (
 // News's own use of the same delivery-cache mechanism bleeding into the
 // same string table, not a Splatfest-relevant field.
 //
-// TODO(capture-needed): field semantics above, and the delivery container's
-// header layout (still only known as 0x120 bytes with an RSA-2048 signature
-// at offset 0x20) -- the JSON list response and the binary container it
-// points `url` at are two separate things this decompile did not equally
-// resolve. Change: this file, and TODO.md §2.4's second stage becomes
-// writable for the JSON half regardless.
+// One more open question the same decompile raises rather than settles: the
+// local cache path `bcat-dl:/applications/%016llx/list.msgpack.bafmeta`
+// names the cached list as MessagePack, not JSON. The field names above are
+// still real regardless of encoding -- a msgpack map still has string keys,
+// and the JSONPath strings are the client's own generic field-lookup syntax,
+// not proof of wire format -- but whether the actual HTTP response body is
+// JSON text or msgpack-encoded is unconfirmed. `bcat-dl:` is a local mount,
+// not a network trace, so this decompile cannot tell the two apart; a
+// capture of the real HTTP exchange (Content-Type header alone would settle
+// it) is the only way to know which this server should actually answer.
+//
+// TODO(capture-needed): field semantics above, the JSON-vs-msgpack wire
+// encoding question, and the delivery container's header layout (still only
+// known as 0x120 bytes with an RSA-2048 signature at offset 0x20) -- the
+// list response's wire encoding and the binary container its `url` field
+// points at are two separate things this decompile did not equally resolve.
+// Change: this file, and TODO.md §2.4's second stage becomes writable for
+// the field-shape half regardless of which encoding turns out to be real.
 type Probe struct {
 	log *slog.Logger
 	rec *wirelog.Recorder
