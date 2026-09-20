@@ -183,11 +183,15 @@ func TestAModeSizeOnlyAffectsItsOwnMode(t *testing.T) {
 		t.Fatalf("SetModeSize: %v", err)
 	}
 
-	q.Enqueue("a", "salmon_run")
+	if _, _, err := q.Enqueue("a", "salmon_run"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
 	if _, sessions, _ := q.Enqueue("b", "salmon_run"); len(sessions) != 0 {
 		t.Error("salmon_run matched at two players; the override was not mode-scoped")
 	}
-	q.Enqueue("c", "turf_war")
+	if _, _, err := q.Enqueue("c", "turf_war"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
 	if _, sessions, _ := q.Enqueue("d", "turf_war"); len(sessions) != 1 {
 		t.Error("turf_war did not match at its own override of two")
 	}
@@ -198,7 +202,9 @@ func TestAModeSizeOnlyAffectsItsOwnMode(t *testing.T) {
 func TestClearingAModeSizeReturnsItToTheDefault(t *testing.T) {
 	q, _ := testQueue(t, 4)
 
-	q.SetModeSize("turf_war", 2)
+	if _, err := q.SetModeSize("turf_war", 2); err != nil {
+		t.Fatalf("SetModeSize: %v", err)
+	}
 	if _, err := q.SetModeSize("turf_war", 0); err != nil {
 		t.Fatalf("SetModeSize(0): %v", err)
 	}
@@ -208,7 +214,9 @@ func TestClearingAModeSizeReturnsItToTheDefault(t *testing.T) {
 			t.Fatal("matched at two after the override was cleared")
 		}
 	}
-	q.Enqueue("c", "turf_war")
+	if _, _, err := q.Enqueue("c", "turf_war"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
 	if _, sessions, _ := q.Enqueue("d", "turf_war"); len(sessions) != 1 {
 		t.Error("did not match at the default of four")
 	}
@@ -225,11 +233,19 @@ func TestClearingAModeSizeReturnsItToTheDefault(t *testing.T) {
 func TestASnapshotShowsTheQueueAndTheSessionsTogether(t *testing.T) {
 	q, clock := testQueue(t, 8)
 
-	q.Enqueue("alice", "turf_war")
+	if _, _, err := q.Enqueue("alice", "turf_war"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
 	*clock = clock.Add(90 * time.Second)
-	q.Enqueue("bob", "turf_war")
-	q.Enqueue("carol", "salmon_run")
-	q.SetModeSize("anarchy", 4)
+	if _, _, err := q.Enqueue("bob", "turf_war"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if _, _, err := q.Enqueue("carol", "salmon_run"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if _, err := q.SetModeSize("anarchy", 4); err != nil {
+		t.Fatalf("SetModeSize: %v", err)
+	}
 
 	snap := q.Snapshot()
 
@@ -296,8 +312,12 @@ func TestASnapshotShowsTheQueueAndTheSessionsTogether(t *testing.T) {
 func TestASnapshotDoesNotShowSomebodyAsQueuedAndMatchedAtOnce(t *testing.T) {
 	q, _ := testQueue(t, 2)
 
-	q.Enqueue("alice", "turf_war")
-	q.Enqueue("bob", "turf_war")
+	if _, _, err := q.Enqueue("alice", "turf_war"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if _, _, err := q.Enqueue("bob", "turf_war"); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
 
 	snap := q.Snapshot()
 
