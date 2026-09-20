@@ -243,6 +243,33 @@ var Hosts = []Host{
 			"are both TODO(capture-needed)",
 	},
 
+	// ---- Found 2026-09-20: a second, unrelated "vermillion" ---------------
+	// A decompile of nim.nso (the system update/install module) found
+	// "vermillionDeviceId" used throughout a local nearby-console-discovery
+	// mechanism -- $.candidates[*].vermillionDeviceIds[*], $.nearnessChecks[*]
+	// .srcDevice.vermillionDeviceId, /v1/devices/vermillion-device-id -- for
+	// what reads as console-to-console data transfer during setup, not
+	// anything NPLN-related. Nintendo reused the "vermillion" codename for
+	// two unrelated systems: this one, and internal/nplnrest's
+	// gw.hac.lp1.vermillion.srv.nintendo.net device-init host. They are NOT
+	// the same thing, and this decompile settles nothing about nplnrest's
+	// own vermillion TODO -- flagging the collision here specifically so a
+	// future reader does not conflate the two.
+	//
+	// The one concretely new fact: nim.nso reports failures from this
+	// mechanism to a host neither this file nor any capture had named
+	// ("vermillion-app-call-failed" is one of the literal error strings
+	// alongside it). Out of Phase 1/2 scope (console-to-console transfer,
+	// not accounts or Splatoon 3), stubbed for visibility rather than left
+	// invisible on the generic catch-all like the Pia host above.
+	{
+		Pattern: "problem-details.ennovate.srv.nintendo.net",
+		Service: ServiceStubs, TLS: true,
+		Comment: "nim's nearby-device-transfer error reporting (path seen: " +
+			"/vermillion-gw/) — unrelated to NPLN despite the shared codename; " +
+			"see the comment above this entry",
+	},
+
 	// ---- Connection test ------------------------------------------------
 	// The console (and the browser applet) refuse to consider themselves
 	// online if the connection test fails, which surfaces as "this feature is
