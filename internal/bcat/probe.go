@@ -38,6 +38,18 @@ import (
 // TODO(capture-needed): the `/api/nx/v1/list/<name>` response body, and the
 // delivery container's header layout. Change: this file, and TODO.md §2.4's
 // second stage becomes writable.
+//
+// This TODO cannot be settled by decompiling Splatoon 3 itself, and a
+// 2026-09-20 decompile of its v11.3.0 main confirms why: the game only calls
+// the generic SDK, `nn::bcat::MountDeliveryCacheStorage`,
+// `RequestSyncDeliveryCache`, `EnumerateDeliveryCacheDirectory`,
+// `DeliveryCacheFile::Open`/`Read` and friends (all present as mangled C++
+// symbols) — never anything that looks like `/api/nx/v1/list` or a signature
+// check. That whole exchange happens inside the OS's own `bcat` sysmodule,
+// which mounts the result as a plain directory before Splatoon 3 ever reads
+// from it. Settling this TODO needs either a capture of that sysmodule's own
+// traffic, or decompiling `bcat.nso` directly — not more RE on any single
+// game.
 type Probe struct {
 	log *slog.Logger
 	rec *wirelog.Recorder
