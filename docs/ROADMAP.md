@@ -160,9 +160,10 @@ production, 14 (`Unavailable`) on development.
 | `nn.npln.maintenance.v1.MaintenanceScheduleService` | always "no maintenance" | yes |
 | `nn.npln.matchmaking.v1.*` | see §2.3 | yes |
 | `nn.npln.friends.v1.Friends`, `PresenceService` | the console calls these right after boot, per §2.5 | yes — `internal/npln/friends.go`, `presence_service.go` |
-| `nn.npln.messaging.v1.Messaging` | opens the invite mailbox, also early in boot | yes — `internal/npln/messaging.go`, over `internal/messaging`'s in-memory mailbox |
-| `nn.npln.gamesync.v1.Gamesync` | the Firestore-shaped document/watch service for lobby and match state, on its own port (7575) | yes, except `CreateRound` — `internal/gamesync`; see `../TODO.md` §1.5 for where it turned out to actually be reached from |
-| `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no
+| `nn.npln.messaging.v1.Messaging` | **correction, 2026-09-21**: a decompile found zero references to any of its three RPCs anywhere in Splatoon 3 v11.3.0 — the earlier "opens the invite mailbox early in boot" line here was an assumption, not a confirmed one. Splatoon 3's real in-lobby messaging is the separate, toyohr-namespaced `LobbyMessaging` instead (already implemented, see §2.4). This package is a real, kept reimplementation for whichever other NPLN title does call it — just not this one | implemented but likely unused by Splatoon 3 — `internal/npln/messaging.go`, over `internal/messaging`'s in-memory mailbox |
+| `nn.npln.gamesync.v1.Gamesync` | the Firestore-shaped document/watch service for lobby and match state, on its own port (7575) | yes, except `CreateRound` and `LazyWriteDocuments` (the latter confirmed absent from the binary 2026-09-21 — `WriteDocuments` is the variant actually used) — `internal/gamesync`; see `../TODO.md` §1.5 for where it turned out to actually be reached from |
+| `nn.npln.hydro.v1.Datastore`, `leaderboard` | start with the minimum that does not crash the client | no |
+| `nn.npln.ikaros.v1.CompetitionService`, `nn.npln.timber.v1.*` | confirmed absent from Splatoon 3 v11.3.0 entirely (2026-09-21 decompile) — no RPC of either registered | no
 
 **NPLN access tokens use `ES256`, not `RS256`** — the only place in the stack that
 does, and `internal/jwt` has a separate EC path for it. Right about this.
@@ -228,14 +229,14 @@ Splatfests").
 
 | Service | State |
 | --- | --- |
-| `FestService` | done, end to end: schedule, decryption keys, team choice, results |
+| `FestService` | done, end to end: schedule, decryption keys, team choice, results — except `SelectFestBreakingNews`, a sixth real RPC found by decompile 2026-09-21 (see `internal/toyohr/service.go`), left unregistered since nothing confirms its shape |
 | `Schedule` | `SelectVsParams`/`SelectVsSchedules`/`SelectSeasonSchedules`/`SelectLeagueSchedules` answer "nothing scheduled" — the map/mode rotation content is Nintendo's own game design data, not something this server can fabricate. `SelectCoopSchedules` is **not** empty: every operator-scheduled, unended Salmon Run shift is served for real, backed by `SaveCoopShift`/`GenerateAndSaveCoopShifts` and `switchnetctl coop` — see [`../TODO.md`](../TODO.md) §1.4 |
 | `LobbyMessaging` | done, including `SendMessage` — in-memory delivery to connected players via a per-lobby hub |
 | `UserScreening` | done. `CreateReport` is logged for the operator (it is data the caller hands over, not data this server needs to already have); `GetViolation` always answers none |
 | `CloudSave.GetSaveRecord` | answers `NotFound` for every account — a fresh account genuinely has no cloud save on a real server either, so this is a correct answer rather than a placeholder. The other five `CloudSave` RPCs are left unimplemented: real player data this server has no legitimate way to have, see CLAUDE.md's "anything needing a game dump" boundary |
-| `Canola`/`Locker` | empty/`NotFound` reads; the writes are unimplemented — no `internal/ugcstore` exists to write into |
+| `Canola`/`Locker` | empty/`NotFound` reads; the writes are unimplemented — no `internal/ugcstore` exists to write into. `nn.npln.ugcstore.v1.Screening`'s two RPCs (`CreateReport`, and `CreateDocumentReport` — the latter a real method a 2026-09-21 decompile found with no current proto entry) are unregistered for the same reason |
 | `CoopScenario`/`Replay` | `NotFound` reads; `FulfillReservations` answers an empty valid list |
-| `GameRecord` | **the one that matters most, and left entirely `Unimplemented`.** Battle results come from here, and they are the missing half of a Splatfest verdict — `InitializeAttributes` alone carries per-mode X Power seed values with no defensible default |
+| `GameRecord` | **the one that matters most, and left entirely `Unimplemented`.** Battle results come from here, and they are the missing half of a Splatfest verdict — `InitializeAttributes` alone carries per-mode X Power seed values with no defensible default. A 2026-09-21 decompile found the service has five more real RPCs than any proto currently defines — `ResetUdemae`, `PrepareTag`, `PrepareBankaraPowerMeasurement`, `PrepareWeaponPowerMeasurement`, `PrepareLeaguePowerMeasurement` — see `internal/toyohr/backlog.go` |
 
 See [`../TODO.md`](../TODO.md) §1.4 for the file-by-file detail and what each
 remaining `TODO(capture-needed)` would settle. Log every unimplemented RPC

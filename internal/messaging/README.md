@@ -14,6 +14,22 @@ This package is the queue and the routing rules; it knows nothing about gRPC
 or protobuf, the same split `internal/matchmaking` has. `internal/npln`'s
 `messaging.go` is where a `Message` or `Ack` becomes a `RecvMessageResponse`.
 
+**Splatoon 3 does not appear to use this service at all.** A 2026-09-21
+decompile of Splatoon 3 v11.3.0 found zero references anywhere in the
+binary to `/nn.npln.messaging.v1.Messaging/{SendMessage,RecvMessage,
+SendAck}` (checked against the fully decompressed in-memory image, not the
+raw on-disk NSO — see `internal/npln/README.md`'s equivalent note for
+`hydro`/`ikaros`/`timber` on why that distinction matters). What Splatoon 3
+actually uses for in-lobby messages is a completely different, toyohr-
+namespaced service instead —
+`/nn.npln.toyohr.v1.LobbyMessaging/{SendLobbyMessage,SendMessage,
+RecvMessage}`, already implemented in `internal/toyohr/messaging.go`. This
+package and `internal/npln/messaging.go` remain a correct, real
+reimplementation of the documented generic `Messaging` service, worth
+keeping since other NPLN titles may use it, but any future work motivated
+specifically by Splatoon 3 (friend invites, in-game chat) should look at
+`internal/toyohr`'s `LobbyMessaging` first, not here.
+
 ## The mailbox is in memory, and that is deliberate
 
 Same tradeoff as `internal/matchmaking`'s queue, for the same reason: a

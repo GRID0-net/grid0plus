@@ -128,6 +128,34 @@ func (s replayService) FulfillReservations(
 // defensible default. Inventing initial values here is exactly the
 // plausible-looking-Nintendo-internal CLAUDE.md's first rule forbids, so
 // all three are left entirely to the embedded Unimplemented default.
+//
+// The real GameRecord service has more RPCs than this file, this package's
+// proto, and kinnay's public NPLN-Protocols repo all know about. A
+// 2026-09-21 decompile of Splatoon 3 v11.3.0's GameRecord client-stub
+// constructor (the code that builds one method-descriptor slot per RPC the
+// service defines -- present regardless of which methods the game's own
+// logic goes on to call, so this proves the methods are real, not that
+// Splatoon 3 invokes all of them) recovered five more full method paths,
+// none of them documented anywhere before tonight:
+//
+//	/nn.npln.toyohr.v1.GameRecord/PrepareTag                       (kinnay's proto already has this as a commented-out "rpc PrepareTag(?) returns (?);" placeholder -- the name was suspected, now confirmed real)
+//	/nn.npln.toyohr.v1.GameRecord/ResetUdemae
+//	/nn.npln.toyohr.v1.GameRecord/PrepareBankaraPowerMeasurement
+//	/nn.npln.toyohr.v1.GameRecord/PrepareWeaponPowerMeasurement
+//	/nn.npln.toyohr.v1.GameRecord/PrepareLeaguePowerMeasurement
+//
+// The "Prepare<Mode>PowerMeasurement" naming, alongside the already-known
+// CreateFestPowerMeasurement, suggests a Prepare-then-Create pattern per
+// game mode (Fest, Bankara/Anarchy, Weapon, League) -- but only Fest's
+// Create-side method path was found, so whether Bankara/Weapon/League
+// finalize through CreateBankaraChallenge, a not-yet-found method, or no
+// separate finalize call at all is still unknown. ResetUdemae plausibly
+// fires on a rank reset/season boundary. None of this settles field-level
+// request/response shapes -- LITE_RUNTIME strips the descriptor metadata
+// that would give those directly, unlike the method path itself, which has
+// to survive because gRPC dispatches over it at the HTTP/2 transport
+// level. Same CLAUDE.md rule as above applies just as hard to these: real
+// names, not real defaults to implement against.
 type gameRecordService struct {
 	*Service
 	toyohrpb.UnimplementedGameRecordServer
