@@ -201,6 +201,13 @@ func (s *Server) vermillion(w http.ResponseWriter, r *http.Request) {
 // trip whatever the console does with them, not reasoned-out Nintendo
 // constants.
 //
+// The same npns decompile found the literal path npns itself uses for this
+// exact mechanism: POST /v1/login_tickets. Circumstantial rather than a
+// direct capture of NPLN's own traffic (npns is a system service, not an
+// NPLN host, even though it shares the mechanism) -- routing here is by
+// host, not path (see Handler's own comment), so this doesn't change
+// behaviour, only what a future capture should expect to see.
+//
 // TODO(capture-needed): the request shape, and the real values for wait_sec/
 // rtt_max/wowl_timeout/ignore_rst, and whether the console actually
 // validates the ticket's shape at all. A capture with Options.RecordDir set

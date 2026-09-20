@@ -383,7 +383,13 @@ var Hosts = []Host{
 		Service: ServiceNPLNRest, TLS: true,
 		Comment: "NPLN login tickets, and the frontline FQDN the console is told " +
 			"to open its persistent connection to. Was listed as 'push " +
-			"notifications (Penne) validation'",
+			"notifications (Penne) validation'. The path is very likely " +
+			"POST /v1/login_tickets: found 2026-09-20 in a decompile of the " +
+			"operator's own console's npns sysmodule, which shares this exact " +
+			"ticket-then-frontline mechanism (confirmed by the shared field names " +
+			"-- see internal/nplnrest.go's penne() for the full citation) but is " +
+			"not itself an NPLN host, so this is strong circumstantial evidence " +
+			"for the path here rather than a direct capture of it.",
 	},
 	{
 		// fro-N is a family: the frontline host is whichever one penne names in
