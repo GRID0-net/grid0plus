@@ -445,26 +445,58 @@ this version deliberately names no number to keep stale).
   while the console was off has to still be there -- but nothing confirms it
   against a real client. Getting it backwards either loses an invite
   silently or replays a stale one on every reconnect.
-- **Vermillion's two response bodies**
-  (`internal/nplnrest/nplnrest.go`, `vermillion`):
-  the wiki names both endpoints but gives no field table for either, unlike
-  every one of Penne's -- both answer with the most honestly-empty JSON
-  this server can claim (`{}`, `{"devices":[]}`), not a guessed real shape.
-  Whether Splatoon 3's boot needs anything from vermillion at all is a
-  separate, recorded question -- see `docs/QUESTIONS.md`.
-- **How a console obtains a Penne id and password**
-  (`internal/nplnrest/nplnrest.go`, `penne`): accepted and logged
-  without verification (CLAUDE.md's second ground rule), because nothing
-  documents the provisioning step that would create one --
-  `god.hac.lp1.penne.srv.nintendo.net`'s two plausible endpoints have an
-  unconfirmed HTTP method on the wiki, and `god` is not served by this
-  package at all.
+- **~~Vermillion's response bodies~~ CAPTURED, 2026-09-21.**
+  NextendoNetwork's own public Splatoon 3 NPLN server documents real-console
+  capture evidence for most of this host -- `internal/nplnrest.go`'s
+  `vermillion` now implements every confirmed path
+  (`/v1/devices/initialize`, `/v1/devices/vermillion-device-id`,
+  `/v1/devices/penne-id`, `/v1/accounts/config`) with the real shapes and
+  values, plus the two bugs their capture caught that would otherwise
+  silently strand a console at the ink loading screen: the device-id
+  response key must be camelCase (`vermillionDeviceId`), and its
+  base64-decoded value must not contain `/` or `+` (Splatoon 3 uses it as a
+  literal path segment and hard-crashes on either). `/v1/accounts/<other>`,
+  `/v1/acds/search` and `/v1/nearness-checks` remain genuinely unconfirmed --
+  no capture of these exact bodies exists anywhere, including theirs -- and
+  are answered with a well-formed empty envelope rather than a guessed one.
+  See `internal/nplnrest.go`'s package doc comment for the full citation and
+  the code/facts boundary (PolyForm Shield licensed; facts taken, never
+  their code, same as nx-dauth).
+- **~~How a console obtains a Penne id and password~~ PARTIALLY SETTLED,
+  2026-09-21.** The same source's real-console capture shows the password
+  never appears in any server response at all -- the console generates both
+  the penne id and its password itself, then registers them on two hosts
+  this project already redirects (`POST beach.hac.lp1.eshop.nintendo.net
+  /v1/devices/<id>/penne_id/register` and `PUT dragons.hac.lp1.dragons
+  .nintendo.net/v2/penne_id`, both `{"penne_id":"..."}`) before attempting
+  `POST .../login_tickets`. Registration failing on either host is what
+  left their own server's console looping device initialisation forever,
+  never reaching a real penne login. Both hosts' existing generic
+  empty-object stub answer already matches their own (independently
+  reached, still capture-unconfirmed for the exact response body) answer
+  for this specific path -- see `internal/nintendo/hosts.go`'s `beach`
+  entry and `internal/stubs/handler.go`'s `dragons` default case. Still
+  open: `god.hac.lp1.penne.srv.nintendo.net`'s own two plausible endpoints,
+  not served by this project at all.
+- **Vermillion and penne's request bodies, and login_tickets'
+  ~~real values~~ CONFIRMED, 2026-09-21.** The same source's capture of a
+  working login pinned `persistent_connection_params_simple` completely --
+  `wait_sec: 3600`, `rtt_max: 1000`, `wowl_timeout: 200`, `ignore_rst: true`,
+  plus two nested `awake`/`sleep` objects this project's earlier guess had
+  no field for at all -- and the exact top-level response shape
+  (`expires_at`, `frontline_fqdn`, `issued_at`, `ticket`), now implemented
+  in `internal/nplnrest.go`'s `penneLoginTickets`/`penneFrontlines`. Still
+  open: whether the console validates the ticket's own shape (the value
+  itself is still an opaque placeholder, since nothing here can construct
+  or validate a real Nintendo-signed one).
 - **A frontline connection's wire framing**
   (`internal/nplnrest/nplnrest.go`, `frontline`): held open, nothing
   sent down it -- confirmed safe (closing it reads as a failure, per a real
   error-code capture already in `internal/nintendo/hosts.go`), but what a
   real server sends once the connection is open is undocumented anywhere
-  this pass could find.
+  this pass could find -- including in NextendoNetwork's own source, whose
+  own comment says their capture logs these frames as opaque hex, so not
+  even a real working server's own authors know what they mean.
 - **`FestEntry`'s resource-name shape**
   (`internal/toyohr/entries.go`, `festEntryProto`): follows the same
   `tenants/<t>/fests/<ID>/...` convention `GetFestDecryptionKey` already
