@@ -157,6 +157,21 @@ func (s *Server) consumeNARefreshToken(token string, now time.Time) (string, boo
 // private, operator-run server reachable only by consoles the operator
 // already controls DNS for, not a public OAuth provider guarding against
 // open-redirect abuse from arbitrary third parties.
+//
+// A 2026-09-20 decompile of the operator's own console's account sysmodule
+// found the complete set of authorize URLs it can construct, confirming
+// prompt/scope combinations beyond the ordinary link flow this file was
+// built around: prompt=login (plain re-auth), scope=phone_verification
+// with prompt=phone (2FA), and scope=transferNaToken with
+// prompt=email_transfer_upload/download (the account-email-transfer step
+// of console migration -- see internal/nintendo/hosts.go's migration.%.
+// scsi... entry for the rest of that flow). None of these change what this
+// page needs to do: scope/prompt are already accepted-and-discarded, and
+// nothing here observed depends on a specific prompt value rather than on
+// whether an Authorization header is present (see naAuthorizeSubmit's own
+// comment for why that is the one signal branched on). Recorded so a
+// future prompt value showing up on the wire is recognized rather than
+// mistaken for something new.
 func (s *Server) naAuthorizePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	writeHTML(w, http.StatusOK, naAuthorizeHTML(q.Get("client_id"), q.Get("redirect_uri"), q.Get("state"), q.Get("response_type"), q.Get("nonce"), ""))

@@ -75,6 +75,13 @@ type DeviceAccountResponse struct {
 
 // LinksResponse is the linked-accounts block. Only friendCode is ever populated
 // by SwitchNet: there is no Nintendo Account, Twitter or Facebook to link to.
+//
+// A 2026-09-20 decompile of the account sysmodule confirms a "google" entry
+// exists in this same block, shaped identically to AccountLink
+// ($.links.google.id, $.links.google.createdAt). Not added: this server has
+// no real Google OAuth integration to back it with, and a private server has
+// no legitimate way to acquire one -- the same boundary Phase 3's eShop
+// draws, not a gap to fill.
 type LinksResponse struct {
 	FriendCode *FriendCodeLink `json:"friendCode,omitempty"`
 	// NintendoAccount is present only if a /1.0.0/federation or /link request
