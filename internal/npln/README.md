@@ -178,6 +178,65 @@ Resource names (`tenants/<t>/matchmakingTickets/<id>` and friends) are
 leniently, including a bare id, so a wrong prefix costs a cosmetic mismatch
 instead of making every `Track` and `Cancel` answer `NotFound`.
 
+### The confirmed RPC surface
+
+A 2026-09-20 decompile of Splatoon 3 v11.3.0's own `main` (extracted from a
+real, user-owned base+update dump; see `docs/CAPTURES/README.md` for how) gives
+something no capture alone does: the exhaustive list of RPCs this specific
+game links against, as literal path strings in its own `.rodata` -- not just
+the ones it happened to call during whatever flow got captured.
+
+`Matchmaker` (4 real RPCs, 3 implemented):
+
+| RPC | Implemented |
+| --- | --- |
+| `CreateMatchmakingTicket` | yes |
+| `TrackMatchmakingTicket` | yes |
+| `CancelMatchmakingTicket` | yes |
+| `CreateAcceptance` | **no** -- answers `Unimplemented` |
+
+`GameSessionService` (15 real RPCs, 4 implemented):
+
+| RPC | Implemented |
+| --- | --- |
+| `GetGameSession` | yes |
+| `QueryGameSessions` | yes |
+| `JoinGameSession` | yes |
+| `AllocateIceServerSet` | yes |
+| `SyncGameSession` (this server's) | see below -- not one of the 15 |
+| `BatchGetGameSessions` | **no** |
+| `CancelGameSessionCreationTicket` | **no** |
+| `CreateGameSessionCreationTicket` | **no** |
+| `CreateGameSessionShortAlias` | **no** |
+| `GetGameSessionShortAlias` | **no** |
+| `GetUserSession` | **no** |
+| `IssueMatchmakingIdToken` | **no** |
+| `IssueUserDelegationToken` | **no** |
+| `ListLatencyMeasurementServers` | **no** |
+| `ListUserSessions` | **no** |
+| `TrackGameSessionCreationTicket` | **no** |
+
+Everything marked **no** falls through to the embedded
+`UnimplementedGameSessionServiceServer`, which is the existing, correct
+behaviour for an RPC of genuinely unknown shape -- see "Not yet implemented,
+and how you find out" above. What the decompile adds is knowing *in advance*
+which eleven method names to expect in that log on a real console, instead of
+being surprised by them one at a time. `CreateGameSessionCreationTicket` /
+`TrackGameSessionCreationTicket` / `GetGameSessionShortAlias` /
+`CreateGameSessionShortAlias` read as a private-room-by-code flow parallel to
+ticket-based matchmaking -- the same feature `QueryGameSessions`'s doc comment
+already guesses at -- but that is a reading of the names, not a confirmed
+shape, and implementing any of them from a guess would be the mistake
+CLAUDE.md warns against.
+
+`SyncGameSession` is a real RPC -- it is defined in the same upstream proto
+set as the rest of `GameSessionService` -- but its path string does not
+appear anywhere in Splatoon 3's binary, unlike all four RPCs this server does
+implement. See its doc comment in `matchmaking.go` for what that does and does
+not prove.
+
+`internal/toyohr`'s README has the equivalent table for `FestService`.
+
 ## Friends and presence
 
 **One friend graph, not two.** `friends.go` reads `internal/db`'s friendship

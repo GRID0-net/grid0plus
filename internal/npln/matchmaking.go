@@ -37,6 +37,13 @@ type matchmakerService struct {
 // for a squad, everyone but the leader is currently dropped. SwitchNet issues
 // no delegation tokens, so it cannot honour the field without inventing one.
 // A capture of a squad entering matchmaking would settle it.
+//
+// A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main confirms
+// GameSessionService.IssueUserDelegationToken is a real, compiled-in RPC the
+// client links against (see internal/npln/README.md's "confirmed RPC
+// surface" table) -- so the mechanism this TODO worries about does exist on
+// the wire. That is not proof the game calls it outside a squad flow; only a
+// capture of one would be.
 // Change: this function, and Queue.Enqueue's one-ticket-per-player rule.
 func (m *matchmakerService) CreateMatchmakingTicket(
 	ctx context.Context, req *mmpb.CreateMatchmakingTicketRequest,
@@ -271,6 +278,16 @@ func (g *gameSessionService) JoinGameSession(
 // does depend on -- but nothing here confirms which. A capture of a match
 // actually connecting would settle it. Change: this function and
 // matchmaking.Session's HostPort field.
+//
+// A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main leans further
+// toward "never": every other GameSessionService RPC this server implements
+// appears as a literal path string in the binary (proof this client links
+// against it), but "/nn.npln.matchmaking.v1.GameSessionService/SyncGameSession"
+// does not, despite SyncGameSession being defined in the same upstream proto
+// set as the rest of the service. That is evidence this specific game never
+// calls it, not proof the RPC itself is fictional or wrong -- other NPLN
+// titles may use it, and a string absent from .rodata is consistent with but
+// does not prove "never linked, never called". Still short of a capture.
 //
 // Only the port moves through here. Everything else GameSession carries
 // (participant counts, state, who the host is) is already authoritative on
