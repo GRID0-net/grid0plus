@@ -220,7 +220,18 @@ type FriendRequestResponse struct {
 	ID   string        `json:"id"`
 	From *UserResponse `json:"from,omitempty"`
 	To   *UserResponse `json:"to,omitempty"`
-	// State is PENDING, ACCEPTED, DENIED or CANCELLED.
+	// State's real values are confirmed, unlike the rest of this type: a
+	// 2026-09-20 decompile of the operator's own console's friends sysmodule
+	// found the actual enum -- PENDING, AUTHORIZED, REJECTED, CANCELED,
+	// EXPIRED -- and three of these are spelled differently from the
+	// pre-capture guess this comment used to carry (ACCEPTED, DENIED,
+	// CANCELLED). See requestStateFromWire in friends.go, which now
+	// translates the real spelling onto this server's own internal
+	// db.RequestAccepted/RequestDenied/RequestCancelled constants; this
+	// field always carries this server's spelling, not the console's.
+	// EXPIRED is not currently produced anywhere -- nothing here assigns a
+	// request that state -- so it never appears in a real response, only in
+	// the console's own enum.
 	State     string `json:"state"`
 	CreatedAt int64  `json:"createdAt"`
 	UpdatedAt int64  `json:"updatedAt"`

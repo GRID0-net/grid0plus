@@ -349,8 +349,9 @@ func TestCrossingFriendRequestsBecomeAFriendship(t *testing.T) {
 
 	var crossed FriendRequestResponse
 	decode(t, resp, &crossed)
-	if crossed.State != db.RequestAccepted {
-		t.Errorf("the crossing request state = %q, want ACCEPTED", crossed.State)
+	if crossed.State != requestStateToWire(db.RequestAccepted) {
+		t.Errorf("the crossing request state = %q, want %q (the console's own spelling)",
+			crossed.State, requestStateToWire(db.RequestAccepted))
 	}
 
 	if len(h.friends(a)) != 1 || len(h.friends(b)) != 1 {
@@ -484,6 +485,51 @@ func TestFriendRequestAcceptsThePlainStateObjectBodyToo(t *testing.T) {
 
 	if len(h.friends(a)) != 1 {
 		t.Error("the plain-object accept did not create the friendship")
+	}
+}
+
+// TestFriendRequestAcceptsTheRealConsoleStateSpelling is the actual bug this
+// project shipped before a 2026-09-20 decompile of the operator's own
+// console's friends sysmodule found the real enum: the console spells these
+// AUTHORIZED/REJECTED/CANCELED, not the pre-capture guess of ACCEPTED/
+// DENIED/CANCELLED this test file's other cases still use (kept working as
+// an alias, but never what a real console would actually send). Before
+// requestStateFromWire existed, a real console accepting a friend request
+// would have gotten errInvalidParams back -- not a cosmetic mismatch, a
+// completely broken core feature.
+func TestFriendRequestAcceptsTheRealConsoleStateSpelling(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	code := h.generateFriendCode(b)
+
+	resp := h.do(request{
+		method: "POST", path: "/2.0.0/friend_requests",
+		token: a.AccessToken, json: `{"friendCode":"` + code + `"}`,
+	})
+	requireStatus(t, resp, 201)
+	var sent FriendRequestResponse
+	decode(t, resp, &sent)
+
+	resp = h.do(request{
+		method: "PATCH", path: "/2.0.0/friend_requests/" + sent.ID,
+		token: b.AccessToken,
+		patch: `[{"op":"replace","path":"/state","value":"AUTHORIZED"}]`,
+	})
+	requireStatus(t, resp, 200)
+
+	if len(h.friends(a)) != 1 {
+		t.Error("PATCH with the console's real \"AUTHORIZED\" spelling did not create the friendship")
+	}
+
+	// The response the console reads back must use its own spelling too --
+	// requestStateToWire is the write path's mirror, and both directions
+	// have to agree or a console that successfully accepts still cannot
+	// make sense of its own confirmation.
+	var resolved FriendRequestResponse
+	decode(t, resp, &resolved)
+	if resolved.State != "AUTHORIZED" {
+		t.Errorf("PATCH response state = %q, want the console's own \"AUTHORIZED\" spelling", resolved.State)
 	}
 }
 

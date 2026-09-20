@@ -357,7 +357,7 @@ func (s *Server) createFriendRequest(w http.ResponseWriter, r *http.Request, c *
 			"user", c.UserID, "friend", target.ID)
 		writeJSON(w, http.StatusCreated, FriendRequestResponse{
 			ID:        incoming.ID,
-			State:     db.RequestAccepted,
+			State:     requestStateToWire(db.RequestAccepted),
 			CreatedAt: incoming.CreatedAt.Unix(),
 			UpdatedAt: s.now().Unix(),
 		})
@@ -557,7 +557,7 @@ func parseRequestState(r *http.Request) (string, error) {
 	// distinguishes them without guessing from the content type, which the
 	// console does not set consistently.
 	if state, ok := stateFromPatchArray(raw); ok {
-		return state, nil
+		return requestStateFromWire(state), nil
 	}
 
 	var obj struct {
@@ -569,7 +569,7 @@ func parseRequestState(r *http.Request) (string, error) {
 		return "", err
 	}
 	if obj.State != "" {
-		return strings.ToUpper(obj.State), nil
+		return requestStateFromWire(strings.ToUpper(obj.State)), nil
 	}
 	if obj.Accept != nil {
 		if *obj.Accept {
@@ -578,6 +578,60 @@ func parseRequestState(r *http.Request) (string, error) {
 		return db.RequestDenied, nil
 	}
 	return "", errors.New("baas: no state in friend request patch")
+}
+
+// requestStateToWire is requestStateFromWire's inverse: this server's
+// internal constant, translated to what the console's own parser actually
+// recognizes. Every place a FriendRequestResponse.State is set must go
+// through this -- sending "ACCEPTED" instead of "AUTHORIZED" would be as
+// unrecognizable to the console reading it as sending "AUTHORIZED" instead
+// of "ACCEPTED" used to be to this server's own PATCH parser before
+// requestStateFromWire existed. See that function's doc comment for the
+// decompile this is drawn from.
+func requestStateToWire(internal string) string {
+	switch internal {
+	case db.RequestAccepted:
+		return "AUTHORIZED"
+	case db.RequestDenied:
+		return "REJECTED"
+	case db.RequestCancelled:
+		return "CANCELED"
+	default:
+		return internal
+	}
+}
+
+// requestStateFromWire translates the console's own spelling onto this
+// server's internal state constants.
+//
+// A 2026-09-20 decompile of the operator's own console's friends sysmodule
+// found the real enum this PATCH body's "state" value is drawn from --
+// PENDING, AUTHORIZED, REJECTED, CANCELED, EXPIRED -- and three of the four
+// non-PENDING values are spelled differently from what this project first
+// guessed before any capture existed: AUTHORIZED, not ACCEPTED; REJECTED,
+// not DENIED; CANCELED (one L), not CANCELLED. Without this translation, a
+// real console accepting or declining a friend request would send a value
+// this server's switch in resolveFriendRequest does not recognize, fail
+// with errInvalidParams, and accepting a friend request would not work at
+// all -- not a cosmetic mismatch, a broken core feature. Both spellings are
+// still accepted below: the real one so a genuine console works, the old
+// guess so nothing already relying on it (tests, tooling) breaks.
+//
+// EXPIRED is deliberately not mapped to anything: nothing in this server
+// ever assigns it, a client has no reason to PATCH a request into it, and
+// unlike the other four it reads as a state the SERVER would set after a
+// timeout this project does not implement, not one a client requests.
+func requestStateFromWire(raw string) string {
+	switch raw {
+	case "AUTHORIZED":
+		return db.RequestAccepted
+	case "REJECTED":
+		return db.RequestDenied
+	case "CANCELED":
+		return db.RequestCancelled
+	default:
+		return raw
+	}
 }
 
 func stateFromPatchArray(raw []byte) (string, bool) {
@@ -644,7 +698,7 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request, c *caller,
 func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest, callerID string) FriendRequestResponse {
 	out := FriendRequestResponse{
 		ID:        req.ID,
-		State:     req.State,
+		State:     requestStateToWire(req.State),
 		CreatedAt: req.CreatedAt.Unix(),
 		UpdatedAt: req.UpdatedAt.Unix(),
 	}
