@@ -14,19 +14,27 @@ behind decisions that look arbitrary.
 A self-hosted replacement for the Nintendo servers a Switch talks to, for a
 private group of consoles the operator owns.
 
-Three phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
+Four phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | accounts + the stock friends list | code complete, **not yet verified on hardware** |
 | 2 | NPLN game server for Splatoon 3, and a dashboard | code complete, **not yet verified on hardware** — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
 | 3 | eShop, served from local NSP dumps | **out of this repository** — planned as a separate, optional module. Not started. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-3--the-eshop-a-separate-module) |
+| 4 | per-game cloud save backup (OLSC) | planned, **not started** — storage backend undecided. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) |
 
 **Phase 3 does not belong in this codebase.** If you're asked to start eShop
 work, the first question is where that code should live — not `internal/`
 here. This repo's own `nim`/dauth/BAAS work stays in scope for anything the
 eShop *depends on* (identity, device auth); the storefront, wallet, rights
 and content-delivery layers do not.
+
+**Phase 4 does belong here**, unlike phase 3 — it needs no game dumps and
+carries none of phase 3's copyrighted-content exposure, just real storage
+cost that grows with usage. The storage backend (local disk on the box
+already running SwitchNet vs. paid object storage) is an open decision, not
+a default to assume; see the roadmap section before writing code against
+one.
 
 **Phase 1 has not been confirmed working on a real console.** Until it has, treat
 anything under `internal/baas/friends.go` as provisional — see

@@ -15,9 +15,13 @@ cost of the decision and is worth stating plainly.
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
 | [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | code complete, **awaiting hardware verification** |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
+| [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | planned, **not started** — storage backend undecided |
 
 Phase 3 is scoped differently from 1 and 2: it is not going into `internal/`
 here at all. See its section below for why and what that means in practice.
+Phase 4 stays in this repository (unlike phase 3, it needs no game dumps and
+carries none of phase 3's distribution-of-copyrighted-content exposure), but
+depends on phase 1 the same way phase 3 does, for the same reason.
 
 ---
 
@@ -645,6 +649,97 @@ anything from Nintendo. A deployment reachable by anybody other than the operato
 would be a distribution service for copyrighted games, which is a different thing
 entirely and not what this is. Keep `baas.allow_registration` off and the firewall
 tight.
+
+---
+
+## Phase 4 — cloud save backup (OLSC)
+
+Reimplement per-game save data backup: the OS-level "back up your save data to
+the cloud" feature Nintendo ties to a Switch Online subscription. This is
+**not** the same thing as any one game's own cloud-save API — Splatoon 3's
+`CloudSave.GetSaveRecord` (phase 2, [2.4](#24-splatoon-3-services-nnnplntoyohrv1))
+is a completely different, game-specific RPC on a completely different
+protocol. OLSC is system-wide: every game with save data can use it, through
+one shared system service, independent of NPLN or any other game protocol.
+
+**Prerequisite: Phase 1 must be working on hardware**, same reason as phase 3 —
+identity comes from the account layer.
+
+### 4.1 What's confirmed, and how
+
+Found 2026-09-20 while sweeping every system title for Nintendo hostnames
+(see [`internal/nintendo/hosts.go`](../internal/nintendo/hosts.go)'s
+`%.sata.srv.nintendo.net` entry for the full citation). Title
+`010000000000003E` implements `nn::olsc`'s IPC interfaces —
+`IOlscServiceForApplication` (16 commands), `IAsyncListData`,
+`IAsyncTransferRequest`, `IForbiddenSaveDataIndication` — alongside
+`nn::sprofile`'s background-agent interfaces in the same binary. It connects
+to `dauth:0` for its own device token, and to `npns:s` directly, which means
+push notifications ("your backup finished", plausibly) are a real feature of
+this system, not a guess.
+
+The only host string found in this binary is `sata.srv.nintendo.net`
+(environment-prefixed, e.g. `...hac.lp1.sata.srv.nintendo.net`) — no `scsi`
+string anywhere in it, which is why `%.sata.srv.nintendo.net` rather than the
+already-listed `storage.lp1.scsi.srv.nintendo.net` is the current best guess
+for OLSC's actual backend host. Not settled: which of the two (or both, for
+different purposes) a real save-backup attempt actually talks to. That needs
+a capture — see phase 3's own
+[capture posture](#the-single-most-important-thing-to-know) for why a guess
+here would cost more than it's worth.
+
+### 4.2 The actual technical problem: where do the save files live
+
+Everything in phases 1-3 either reimplements a *protocol* (phases 1, 2) or
+serves content the operator already owns and dumped themselves (phase 3).
+Phase 4 is different in kind: a working implementation means **storing
+arbitrary player save data**, indefinitely, for every console in the group —
+real storage cost that grows with usage, not a one-time dump.
+
+Raised explicitly by the operator (2026-09-20): avoid paying for this if at
+all possible. Options, not yet decided between:
+
+- **Local disk on the box already running SwitchNet.** No new recurring
+  cost — the operator already pays for this machine regardless. Bounded by
+  whatever disk the box has; a hard cap (per-user or total) would need to
+  exist so one console's save data can't fill the disk and take the rest of
+  SwitchNet down with it. The simplest option to reason about and the
+  obvious default unless disk space specifically runs out.
+- **Object storage on the same Azure subscription SwitchNet's VPS already
+  runs on** (Azure Blob Storage or similar) — keeps everything under one
+  bill the operator is already paying, rather than a second unrelated
+  vendor, but is metered storage that grows with usage in a way local disk
+  on an already-paid-for box does not.
+- **A separate, cheaper object-storage provider** (e.g. Backblaze B2,
+  Cloudflare R2 — both have historically undercut the big three clouds on
+  storage pricing, particularly egress) — worth a real cost comparison
+  against the above once actual per-save-file sizes are known, not before.
+
+No decision recorded yet. Whoever picks this up should size a real save file
+first (per-game save sizes vary enormously) before comparing costs, since
+"how much data are we actually storing" changes which of the above is
+obviously cheapest.
+
+### 4.3 Suggested order
+
+1. **Capture a real save-backup attempt** against a working reference
+   server, the same way phase 1's BAAS captures and phase 2's NPLN captures
+   were what actually settled those phases rather than guesses. Settles the
+   request/response shapes for `IOlscServiceForApplication`'s 16 commands
+   and confirms which host (`sata`, `scsi`, or both) is actually live.
+2. **Pick a storage backend** using 4.2's real numbers, once save-file sizes
+   are known from the capture.
+3. **A minimal `internal/olsc`** answering just enough to let a console back
+   up and restore its own save data — mirroring how `internal/baas` grew
+   from the smallest working slice outward in phase 1, not built all at
+   once.
+
+### 4.4 Scope note
+
+Same boundary as phase 3's, for the same reason: this backs up save data for
+consoles the operator owns, on the operator's own network. It is not a
+general-purpose backup service and should never be reachable by anyone else's
+console.
 
 ---
 

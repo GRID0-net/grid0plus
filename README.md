@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
   <img src="https://img.shields.io/badge/phase%202-code%20complete-brightgreen" alt="Phase 2 code complete">
   <img src="https://img.shields.io/badge/phase%203-separate%20module%2C%20not%20started-lightgrey" alt="Phase 3">
+  <img src="https://img.shields.io/badge/phase%204-planned%2C%20not%20started-lightgrey" alt="Phase 4">
 </p>
 
 ---
@@ -55,16 +56,18 @@ Accounts, friend codes, friend requests, friend lists and presence — including
 "Playing Splatoon 3" — working through the **stock** Nintendo friends applet, on
 consoles you own, against a server you run.
 
-Three phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
+Four phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
 | **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | code complete, awaiting hardware verification |
 | **3** | eShop, served from local `.NSP` dumps of games you own | planned as a **separate, optional module**, not started |
+| **4** | per-game cloud save backup (OLSC) | planned, not started — storage backend undecided |
 
 Phases 1 and 2 are what this repository contains today. Both are waiting on the
-same thing: a console.
+same thing: a console. Phase 4 stays in this repository too, unlike phase 3 —
+see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc).
 
 Phase 3 is deliberately **not** going into this repository. It's a different
 kind of system — real game dumps, licensing/rights bookkeeping, a storefront
