@@ -166,6 +166,15 @@ func randomBase64(n int) (string, error) {
 }
 
 // ---- application token ---------------------------------------------------
+//
+// Every field name below is independently confirmed by a 2026-09-20
+// decompile of the operator's own console's account sysmodule: its own
+// response parser reads exactly $.expires_in, $.application_auth_token,
+// $.settings[0].nas:client_id, $.settings[0].nas:redirect_uri,
+// $.online_play_policy and $.policy_handler -- field for field, spelling
+// for spelling, against what this struct already emitted before that
+// decompile existed. No change needed; recorded here as confirmation this
+// shape is right, not a guess that happened to work.
 
 type appTokenResponse struct {
 	ExpiresIn            int        `json:"expires_in"`
