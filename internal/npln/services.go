@@ -11,6 +11,8 @@ import (
 	"github.com/n-popescu/switchnet/internal/toyohr"
 	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
+	globalcounterpb "github.com/n-popescu/switchnet/proto/globalcounter/v1"
+	leaderboardpb "github.com/n-popescu/switchnet/proto/leaderboard/v1"
 	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 	messagingpb "github.com/n-popescu/switchnet/proto/messaging/v1"
@@ -24,12 +26,23 @@ import (
 // fails the same way without the log line, so registering early is worth it.
 func (s *Server) register() {
 	authpb.RegisterAuthServer(s.grpc, &authService{s: s})
+	authpb.RegisterUserServiceServer(s.grpc, &userService{s: s})
 	maintpb.RegisterMaintenanceScheduleServiceServer(s.grpc, &maintenanceService{s: s})
 	mmpb.RegisterMatchmakerServer(s.grpc, &matchmakerService{s: s})
 	mmpb.RegisterGameSessionServiceServer(s.grpc, &gameSessionService{s: s})
 	friendspb.RegisterFriendsServer(s.grpc, &friendsService{s: s})
 	friendspb.RegisterPresenceServiceServer(s.grpc, &presenceService{s: s})
 	messagingpb.RegisterMessagingServer(s.grpc, &messagingService{s: s})
+
+	// Registered for log visibility only (see this function's own doc comment):
+	// a 2026-09-20 decompile of Splatoon 3 v11.3.0 confirms both are real,
+	// linked services, but each is a substantial subsystem (achievement-style
+	// counters and holders; leaderboard scores, charts and categories) with no
+	// capture or documentation to build real behaviour from. Implementing any
+	// method from the proto shape alone would be inventing the exact kind of
+	// plausible-looking Nintendo internal CLAUDE.md's first rule forbids.
+	globalcounterpb.RegisterGlobalCounterServiceServer(s.grpc, &globalcounterpb.UnimplementedGlobalCounterServiceServer{})
+	leaderboardpb.RegisterLeaderboardServiceServer(s.grpc, &leaderboardpb.UnimplementedLeaderboardServiceServer{})
 
 	// Splatoon 3's own services. They authenticate through the same
 	// interceptor as everything else -- a fest is announced to a console that

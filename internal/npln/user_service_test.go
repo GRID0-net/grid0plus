@@ -1,0 +1,50 @@
+package npln
+
+import (
+	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
+)
+
+func TestGetUserResolvesAnExistingUserByName(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("someone", "device-someone")
+	bearer := h.sessionFor(t, "someone", "device-someone")
+	ctx := h.ctx(bearer, "")
+
+	client := authpb.NewUserServiceClient(h.conn)
+	got, err := client.GetUser(ctx, &authpb.GetUserRequest{Name: userResourceName("someone")})
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if got.GetName() != userResourceName("someone") {
+		t.Errorf("Name = %q, want %q", got.GetName(), userResourceName("someone"))
+	}
+}
+
+func TestGetUserRefusesAMissingUser(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("someone", "device-someone")
+	bearer := h.sessionFor(t, "someone", "device-someone")
+	ctx := h.ctx(bearer, "")
+
+	client := authpb.NewUserServiceClient(h.conn)
+	_, err := client.GetUser(ctx, &authpb.GetUserRequest{Name: userResourceName("nobody")})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("err = %v, want NotFound", err)
+	}
+}
+
+func TestGetUserRefusesAnUnauthenticatedCaller(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("someone", "device-someone")
+
+	client := authpb.NewUserServiceClient(h.conn)
+	_, err := client.GetUser(h.ctx("", ""), &authpb.GetUserRequest{Name: userResourceName("someone")})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("err = %v, want Unauthenticated", err)
+	}
+}

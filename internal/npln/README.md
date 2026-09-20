@@ -143,6 +143,31 @@ known — resource-name shapes among them, collected in `names.go`/each
 service's own file so that one capture settles the lot — and whether the
 game ever calls `RefreshToken`.
 
+A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main found the full list
+of NPLN service *names* (not just methods) it links against, cross-checked
+against kinnay's `NPLN-Servers` wiki page for the complete list any NPLN
+title can use. That surfaced three services that were not registered here
+at all -- the silent failure mode this section warns about, not the logged
+one:
+
+- `nn.npln.auth.v1.UserService` -- confirmed real and linked. Now
+  registered with `GetUser` implemented (see `user_service.go`);
+  `QueryUserExternalIds`/`QueryUserShortIds` stay on the embedded
+  `Unimplemented` default, since nothing in this server has a consumer for
+  either id space they map onto.
+- `nn.npln.globalcounter.v1.GlobalCounterService` and
+  `nn.npln.leaderboard.v1.LeaderboardService` -- both confirmed real and
+  linked, both left entirely `Unimplemented` (now at least registered, so a
+  real call is logged). Each is a substantial subsystem — achievement-style
+  counters/holders, and leaderboard scores/charts/categories — with no
+  capture or documentation to build real behaviour from; implementing a
+  method from the proto shape alone would be inventing state, not reporting
+  it. TODO(capture-needed): what Splatoon 3 actually asks either for.
+
+`nn.npln.hydro.v1.Datastore`, also on the wiki's general-services list, does
+not appear anywhere in Splatoon 3's binary and stays unregistered -- no
+evidence this title uses it at all.
+
 ## Matchmaking
 
 `matchmaking.go` serves the two services; the queue and its rules are
