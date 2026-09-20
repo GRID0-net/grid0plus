@@ -250,13 +250,25 @@ type BAASTokenClaims struct {
 	// numeric ids rather than the strings the response body's own "scope"
 	// field carries. Only ever set by nalink.go, on the access_token.
 	//
-	// TODO(capture-needed): the string-to-id mapping is read off a single
-	// capture (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow),
-	// where twelve scope strings lined up one-for-one with twelve ids in the
-	// same order. That is enough to reproduce the observed list and no more:
-	// a scope outside those twelve has no known id, so nalink.go emits
-	// nothing rather than guessing one. A capture with a different scope set
-	// would settle the rest. Change: naScopeIDs in internal/baas/nalink.go.
+	// The string-to-id mapping is read off a single capture
+	// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow), where
+	// twelve scope strings lined up one-for-one with twelve ids in the same
+	// order. A 2026-09-20 decompile of the operator's own console's account
+	// sysmodule independently confirms this is the complete list, not a
+	// partial one: its own hardcoded OAuth scope request string is exactly
+	// "openid+offline+napps+urn:oauth:init-sso+user+user.birthday+
+	// user.email+user.links+user.links[].id+user.loginId+user.screenName+
+	// user.terms" -- the same twelve, same spelling, and the console never
+	// asks for a thirteenth. A different login flow (linking a second
+	// provider, say) could still use a scope this one doesn't -- that part
+	// of the original TODO stays open -- but the ordinary Nintendo Account
+	// link flow this capture covers is now settled, not just "enough to
+	// reproduce what was observed."
+	//
+	// TODO(capture-needed): whether any OTHER login flow (not the ordinary
+	// account-link this decompile and the capture both cover) ever sends a
+	// scope outside these twelve. Change: naScopeIDs in
+	// internal/baas/nalink.go.
 	ACScopes []int `json:"ac:scp,omitempty"`
 
 	// ATHash and CHash are the OIDC 'at_hash' and 'c_hash' claims: the
