@@ -217,6 +217,32 @@ var Hosts = []Host{
 		Comment: "NAT check, secondary — MUST be a different IP from nncs1",
 	},
 
+	// ---- Found 2026-09-20: Pia game-session host, previously invisible --
+	// A decompile of Splatoon 3 v11.3.0 found a second host family neither
+	// this file nor any capture had named: "g2122d301.<region>.p.srv."
+	// nintendo.net", built from Splatoon 3's own Pia game code
+	// ("g2122d301", the literal fallback in the function that constructs
+	// this string) rather than a shared prefix like nncs1/nncs2's. It was
+	// not leaking anywhere -- isNintendoOwnedDomain's catch-all already
+	// blackholed it like any unlisted *.nintendo.net host -- but it had no
+	// name here, so a real console reaching it would have produced no log
+	// line to find it by, the same invisibility problem the sect/sata/
+	// sprofile hosts had before their own entries were added.
+	//
+	// AllocateIceServerSet's own doc comment already establishes gameplay
+	// itself is ICE-based, not Pia-hosted, so this is unlikely to be on the
+	// connection-critical path -- but "unlikely" is a reading of one other
+	// function's behavior, not confirmation this host is dead. Stubbed
+	// rather than blackholed specifically, so if a console does reach it,
+	// what it asks for gets recorded instead of silently discarded.
+	{
+		Pattern: "%.p.srv.nintendo.net",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Comment: "Splatoon 3's own Pia game-session host (game code " +
+			"g2122d301) — purpose and whether it is ever actually reached " +
+			"are both TODO(capture-needed)",
+	},
+
 	// ---- Connection test ------------------------------------------------
 	// The console (and the browser applet) refuse to consider themselves
 	// online if the connection test fails, which surfaces as "this feature is
@@ -297,7 +323,11 @@ var Hosts = []Host{
 	{
 		Pattern: "api-lp1.znc.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "smartphone app API (Coral)",
+		Comment: "smartphone app API (Coral). A 2026-09-20 decompile of " +
+			"Splatoon 3 v11.3.0 confirms the game itself constructs " +
+			"api-<region>.znc.srv.nintendo.net URLs directly, not just the " +
+			"phone app -- likely the SplatNet 3 web view integration. Request " +
+			"shape unconfirmed.",
 	},
 
 	// ---- Found 2026-09-20: not previously listed at all -----------------
