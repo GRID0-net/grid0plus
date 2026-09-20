@@ -209,6 +209,43 @@ func (g *gameSessionService) GetGameSession(
 	return g.s.sessionProto(sess), nil
 }
 
+// BatchGetGameSessions is GetGameSession, batched.
+//
+// Confirmed real and linked by the same 2026-09-20 Splatoon 3 v11.3.0
+// decompile as every other RPC in this file's "confirmed RPC surface"
+// section (see internal/npln/README.md); unlike most of that list, this one
+// needs no new server-side concept to answer -- it is exactly
+// GetGameSession's own authorization and lookup, once per requested name.
+//
+// A name the caller cannot see (wrong session, or one that does not exist)
+// is silently omitted rather than failing the whole batch: the same
+// "partial visibility is not an error" reasoning ListFriendUsers already
+// applies when a friendship names a since-deleted user. Request.View is
+// ignored -- nothing here distinguishes detail levels, so every session
+// already comes back at full detail regardless of what a caller asked for.
+func (g *gameSessionService) BatchGetGameSessions(
+	ctx context.Context, req *mmpb.BatchGetGameSessionsRequest,
+) (*mmpb.BatchGetGameSessionsResponse, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+
+	out := make([]*mmpb.GameSession, 0, len(req.GetNames()))
+	for _, name := range req.GetNames() {
+		id := lastSegment(name)
+		if !g.s.queue.IsPlayer(id, caller.UserID) {
+			continue
+		}
+		sess, found := g.s.queue.Session(id)
+		if !found {
+			continue
+		}
+		out = append(out, g.s.sessionProto(sess))
+	}
+	return &mmpb.BatchGetGameSessionsResponse{GameSessions: out}, nil
+}
+
 // QueryGameSessions answers a browse-style search for public sessions.
 //
 // Always empty. SwitchNet forms every session through matchmaking tickets and
@@ -396,6 +433,67 @@ func (g *gameSessionService) AllocateIceServerSet(
 	return set, nil
 }
 
+// ListUserSessions returns every matched player's session for one game
+// session -- the same list GetGameSession already embeds in
+// GameSession.UserSessions, as its own paginated resource.
+//
+// Confirmed real and linked by the same Splatoon 3 v11.3.0 decompile as
+// BatchGetGameSessions above. Pagination is not implemented: a game session
+// here is exactly as large as its match size (SwitchNet's own
+// matchmaking.Session), which is small enough that a second page never
+// exists to ask for. PageSize/PageToken are accepted and ignored rather than
+// answered with an error, the same reasoning ListFriendUsers gives for
+// capping at one page instead of refusing a request for more.
+func (g *gameSessionService) ListUserSessions(
+	ctx context.Context, req *mmpb.ListUserSessionsRequest,
+) (*mmpb.ListUserSessionsResponse, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+
+	id := lastSegment(req.GetParent())
+	if !g.s.queue.IsPlayer(id, caller.UserID) {
+		return nil, ErrNotFound
+	}
+	sess, found := g.s.queue.Session(id)
+	if !found {
+		return nil, ErrNotFound
+	}
+	return &mmpb.ListUserSessionsResponse{UserSessions: g.s.userSessions(sess)}, nil
+}
+
+// GetUserSession returns one matched player's session within a game session.
+//
+// Confirmed real and linked by the same decompile as ListUserSessions above.
+// Built from the same userSessions() list rather than a separate lookup, so
+// the two RPCs can never disagree about one player's session.
+func (g *gameSessionService) GetUserSession(
+	ctx context.Context, req *mmpb.GetUserSessionRequest,
+) (*mmpb.UserSession, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+
+	name := req.GetName()
+	id := gameSessionIDFromPath(name)
+	if !g.s.queue.IsPlayer(id, caller.UserID) {
+		return nil, ErrNotFound
+	}
+	sess, found := g.s.queue.Session(id)
+	if !found {
+		return nil, ErrNotFound
+	}
+	target := lastSegment(name)
+	for _, us := range g.s.userSessions(sess) {
+		if lastSegment(us.GetName()) == target {
+			return us, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 // iceServerSetTTL is how long an allocated ICE server set is good for.
 //
 // SwitchNet's set does not actually expire -- it is read straight from a
@@ -571,17 +669,32 @@ func terminal(s matchmaking.State) bool {
 
 // lastSegment takes the id off the end of a resource name.
 //
-// Lenient on purpose. The exact name shapes are TODO(capture-needed), so this
-// accepts whatever the console echoes back rather than insisting on the one
-// this server happened to mint -- including a bare id. Getting the prefix wrong
-// then costs a cosmetic mismatch instead of every Track and Cancel answering
-// NotFound. Same reasoning as internal/toyohr's festIDFromResourceName.
+// Lenient on purpose, and kept that way even after ticketProto's doc comment
+// confirmed the exact name shape this server mints: a console that echoes
+// back some other prefix (a stale client, a name copied from a different
+// resource type) still gets a working Track/Cancel instead of a cosmetic
+// mismatch turning into NotFound. Same reasoning as internal/toyohr's
+// festIDFromResourceName.
 func lastSegment(name string) string {
 	name = strings.TrimSuffix(strings.TrimSpace(name), "/")
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		return name[i+1:]
 	}
 	return name
+}
+
+// gameSessionIDFromPath finds the id in a "gameSessions/<id>" segment pair
+// anywhere in a resource name -- a GameSession's own name, or a UserSession's
+// name nested one level under it. The only path in this package with two
+// variable segments rather than one, so lastSegment alone cannot answer it.
+func gameSessionIDFromPath(name string) string {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(name), "/"), "/")
+	for i := 0; i < len(parts)-1; i++ {
+		if parts[i] == "gameSessions" {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 // iceServersFrom copies the configured ICE servers, dropping any the validator

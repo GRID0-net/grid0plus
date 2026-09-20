@@ -222,7 +222,7 @@ the ones it happened to call during whatever flow got captured.
 | `CancelMatchmakingTicket` | yes |
 | `CreateAcceptance` | **no** -- answers `Unimplemented` |
 
-`GameSessionService` (15 real RPCs, 4 implemented):
+`GameSessionService` (15 real RPCs, 7 implemented):
 
 | RPC | Implemented |
 | --- | --- |
@@ -230,31 +230,34 @@ the ones it happened to call during whatever flow got captured.
 | `QueryGameSessions` | yes |
 | `JoinGameSession` | yes |
 | `AllocateIceServerSet` | yes |
+| `BatchGetGameSessions` | yes |
+| `ListUserSessions` | yes |
+| `GetUserSession` | yes |
 | `SyncGameSession` (this server's) | see below -- not one of the 15 |
-| `BatchGetGameSessions` | **no** |
 | `CancelGameSessionCreationTicket` | **no** |
 | `CreateGameSessionCreationTicket` | **no** |
 | `CreateGameSessionShortAlias` | **no** |
 | `GetGameSessionShortAlias` | **no** |
-| `GetUserSession` | **no** |
 | `IssueMatchmakingIdToken` | **no** |
 | `IssueUserDelegationToken` | **no** |
 | `ListLatencyMeasurementServers` | **no** |
-| `ListUserSessions` | **no** |
 | `TrackGameSessionCreationTicket` | **no** |
 
-Everything marked **no** falls through to the embedded
-`UnimplementedGameSessionServiceServer`, which is the existing, correct
-behaviour for an RPC of genuinely unknown shape -- see "Not yet implemented,
-and how you find out" above. What the decompile adds is knowing *in advance*
-which eleven method names to expect in that log on a real console, instead of
-being surprised by them one at a time. `CreateGameSessionCreationTicket` /
-`TrackGameSessionCreationTicket` / `GetGameSessionShortAlias` /
-`CreateGameSessionShortAlias` read as a private-room-by-code flow parallel to
-ticket-based matchmaking -- the same feature `QueryGameSessions`'s doc comment
-already guesses at -- but that is a reading of the names, not a confirmed
-shape, and implementing any of them from a guess would be the mistake
-CLAUDE.md warns against.
+`BatchGetGameSessions`, `ListUserSessions` and `GetUserSession` needed no new
+server-side concept to answer: each is exactly `GetGameSession`'s own
+authorization and lookup, or a slice of what `sessionProto` already builds,
+reused rather than duplicated (see `matchmaking.go`). The remaining eight
+fall through to the embedded `UnimplementedGameSessionServiceServer`, which
+is the existing, correct behaviour for an RPC of genuinely unknown shape --
+see "Not yet implemented, and how you find out" above. What the decompile
+adds is knowing *in advance* which eight method names to expect in that log
+on a real console, instead of being surprised by them one at a time.
+`CreateGameSessionCreationTicket` / `TrackGameSessionCreationTicket` /
+`GetGameSessionShortAlias` / `CreateGameSessionShortAlias` read as a
+private-room-by-code flow parallel to ticket-based matchmaking -- the same
+feature `QueryGameSessions`'s doc comment already guesses at -- but that is a
+reading of the names, not a confirmed shape, and implementing any of them
+from a guess would be the mistake CLAUDE.md warns against.
 
 `SyncGameSession` is a real RPC -- it is defined in the same upstream proto
 set as the rest of `GameSessionService` -- but its path string does not
