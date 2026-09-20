@@ -14,7 +14,10 @@ cost of the decision and is worth stating plainly.
 | --- | --- | --- |
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
 | [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | code complete, **awaiting hardware verification** |
-| [3](#phase-3--the-eshop) | eShop, served from local NSP dumps | not started |
+| [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
+
+Phase 3 is scoped differently from 1 and 2: it is not going into `internal/`
+here at all. See its section below for why and what that means in practice.
 
 ---
 
@@ -395,7 +398,7 @@ than any further server work, and
 [`switch/README.md`](../switch/README.md#verify-splatoon-3-in-order) is the
 sequence for it.
 
-## Phase 3 — the eShop
+## Phase 3 — the eShop, a separate module
 
 Reimplement the Nintendo eShop, initially serving `.NSP` dumps of games the
 operator owns, taken from their own console. With a wallet the operator controls,
@@ -404,6 +407,38 @@ so balance is whatever they say it is.
 **Prerequisite: Phase 1 must be working on hardware**, because the eShop depends
 on the account layer for identity, and it additionally needs a Nintendo Account
 server that Phase 1 does not provide (see [3.1](#31-nintendo-account-prerequisite)).
+
+### This phase lives outside the SwitchNet repository
+
+Everything below describes what Phase 3 needs, not code that belongs in
+`internal/` here. The decision, made 2026-09-20: the eShop is developed as a
+separate, optional module — its own repository/package, addable to a
+deployment later rather than bundled into core SwitchNet.
+
+Why it's a separate module and not another `internal/` package:
+
+- **It's a different kind of system.** Phases 1 and 2 reimplement protocol —
+  requests and responses, shapes settled by capture. The eShop additionally
+  needs a storefront web app, a wallet/ledger, and rights/ticket bookkeeping
+  tied to real game dumps the operator owns. That's a genuinely different
+  engineering surface, not more of the same kind of work.
+- **It's a different exposure profile.** Phase 1/2 talk protocol with
+  consoles the operator already owns. Phase 3 additionally handles real NSP
+  content, however narrowly scoped (see [3.8](#38-scope-note)) — an operator
+  who only wants accounts, friends and NPLN gets none of that surface area or
+  its considerations by not installing the module.
+- **It genuinely is separable.** Nothing in Phase 3 changes how Phase 1/2
+  work; it only *depends on* them (identity, device auth — see
+  [3.1](#31-nintendo-account-prerequisite)). A dependency that only points one
+  way is exactly what a module boundary is for.
+
+What this means in practice, for now: this document keeps describing Phase 3's
+scope and open questions, because that work is real and worth tracking — it
+just won't land as a PR against this repository. When Phase 3 work actually
+starts, expect a separate repository that imports or is added alongside this
+one (config wiring, `internal/nintendo/hosts.go`'s host table, and the
+account/dauth layer are the integration points), not a new `internal/eshop`
+here.
 
 ### The single most important thing to know
 

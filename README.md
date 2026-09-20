@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
   <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
   <img src="https://img.shields.io/badge/phase%202-code%20complete-brightgreen" alt="Phase 2 code complete">
-  <img src="https://img.shields.io/badge/phase%203-not%20started-lightgrey" alt="Phase 3">
+  <img src="https://img.shields.io/badge/phase%203-separate%20module%2C%20not%20started-lightgrey" alt="Phase 3">
 </p>
 
 ---
@@ -61,10 +61,18 @@ Three phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | --- | --- | --- |
 | **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
 | **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | code complete, awaiting hardware verification |
-| **3** | eShop, served from local `.NSP` dumps of games you own | not started |
+| **3** | eShop, served from local `.NSP` dumps of games you own | planned as a **separate, optional module**, not started |
 
 Phases 1 and 2 are what this repository contains today. Both are waiting on the
 same thing: a console.
+
+Phase 3 is deliberately **not** going into this repository. It's a different
+kind of system — real game dumps, licensing/rights bookkeeping, a storefront
+web app — with its own legal-exposure profile, and bundling it here would make
+every phase 1/2 user carry that weight whether they want the eShop or not. It's
+planned as a separate module a deployment can add later, not core scope. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md#phase-3--the-eshop-a-separate-module) for
+what that boundary means in practice.
 
 ```
 ┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐

@@ -6,7 +6,9 @@ online play, for a private group of consoles the operator owns.
 Phase 1 — this document's subject — is the account and friends layer: everything
 needed for the **stock** Nintendo friends applet to work.
 [`ROADMAP.md`](ROADMAP.md) covers phase 2 (the NPLN game server for Splatoon 3,
-and a dashboard) and phase 3 (the eShop, served from local `.NSP` dumps).
+and a dashboard) and phase 3 (the eShop, served from local `.NSP` dumps) — the
+latter scoped as a separate, optional module outside this repository, not
+part of what's described here.
 
 ## Contents
 
