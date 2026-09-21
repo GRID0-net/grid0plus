@@ -14,6 +14,10 @@
 #   scripts/rebuild.sh --dry-run    say what would restart, change nothing
 #   scripts/rebuild.sh --all        restart everything regardless
 #
+# Already on the latest commit? There is nothing to diff against to work out
+# which services a pull touched, so this rebuilds and restarts everything
+# rather than reporting "up to date" and exiting -- the same as --all.
+#
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -56,9 +60,13 @@ git pull --ff-only origin "$BRANCH"
 
 AFTER=$(git rev-parse HEAD)
 
-if [ "$BEFORE" = "$AFTER" ] && [ "$ALL" -eq 0 ]; then
-    say "==> already up to date; nothing to restart"
-    exit 0
+if [ "$BEFORE" = "$AFTER" ]; then
+    # Nothing new to diff against for affected-service detection -- rebuild
+    # and restart everything instead of doing nothing, since the point of
+    # running this at all is to end up with freshly-built binaries running,
+    # not to report that git had nothing to pull.
+    say "==> already on the latest commit; rebuilding and restarting everything anyway"
+    ALL=1
 fi
 
 if [ "$BEFORE" != "$AFTER" ]; then
