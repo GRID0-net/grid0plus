@@ -226,6 +226,49 @@ cdn-image-e0d67c...baas.nintendo.com        0.5 KB   (final)
 
 ### What is still open
 
+**`2124-0292` itself is confirmed fixed on real hardware, 2026-09-20** — see
+`internal/baas/accounts.go`'s `nxAccountBlob` and commit `99c9a61`:
+`extras.self.nxAccount` needs a fixed 6-byte header (base64 `01606150`,
+hex `d3 5e b4 eb 5e 74`) before the console will accept federation at all.
+The paragraphs below this note describe the investigation that led there
+and are kept for history; they no longer describe the current failure.
+
+**A new symptom past that point, reported 2026-09-20 (not yet capture-confirmed):**
+federation now succeeds, the console shows the confirmation screen with a
+generated default avatar instead of the profile picture, and pressing
+"add to console" reports "linking failed" while still committing an empty
+account locally. Two things came out of a first look, before any new
+capture:
+
+- A real, separate bug: `config.go`'s `Default()` still set
+  `baas.image_base_url` to the pre-`215d8af` shape
+  (`.../baas.nintendo.com/images`), while `config.example.yaml` was fixed to
+  drop the `/images` suffix in that same commit and never carried forward
+  into `Default()`. Fixed in the commit alongside this note, plus a
+  `switchnetctl check` warning for the same class of value. This only
+  matters if the operator's own `config.yaml` (gitignored, not visible from
+  here) either omits `image_base_url` or still carries the pre-`215d8af`
+  value — unconfirmed either way without seeing that file.
+- The default avatar itself may be a red herring: `ensureDefaultAvatar`
+  deliberately generates one for any account with no uploaded thumbnail
+  (a solid blue-gray square, `RGBA{0x4a,0x5a,0x8a}`) — a freshly-linked
+  account having no picture yet is expected, not a symptom, *if* that is
+  what was actually shown. Whether the console displayed that square or its
+  own placeholder silhouette (the fetch never landing) is the discriminator
+  and is still open.
+
+Per `naUsersMe`'s own doc comment, the final local commit step (writing
+`isNnLinked` and this profile data to System Save Data
+`8000000000000010`) is one SwitchNet's server side can influence but never
+observe failing — nothing here rules out a capture eventually being needed.
+The cheaper first step is nginx's own access log (`docker compose logs
+nginx`, already running, no MITM needed) around the failed attempt: the
+documented working tail after federation is token refresh →
+`GET /2.0.0/users/me` → image fetch(es) → `GET /api/1.0.0/users/{id}/qrcode_param`,
+and where that sequence stops in the log names what the console rejected.
+
+---
+
 `2124-0292` has persisted through every fix found by comparing SwitchNet's
 live traffic against the working Nextendo capture, including: the
 `vermillion` gap above, a `response_type` regression that wrongly omitted
