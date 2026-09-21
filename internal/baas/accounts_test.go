@@ -2,6 +2,8 @@ package baas
 
 import (
 	"encoding/base64"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -755,6 +757,149 @@ func TestLoginRefusesADeletedUser(t *testing.T) {
 		},
 	})
 	requireError(t, resp, 404, "deleted_user")
+}
+
+// registerWebsiteUser creates a person through the same path a real operator
+// uses (POST /register), for tests of POST /login (username/password) that
+// need one already to exist.
+func registerWebsiteUser(t *testing.T, h *harness, username, password string) {
+	t.Helper()
+	resp, err := http.PostForm(h.server.URL+"/register", url.Values{
+		"username": {username},
+		"password": {password},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, 200)
+}
+
+// TestLoginByUsernameIssuesTokensForAWebsiteRegisteredPerson is POST /login's
+// own definition of done: a person who registered on the website, with no
+// console and no device account of any kind, gets back the same shape of
+// tokens a real console would from /1.0.0/login -- and a device account now
+// exists for them, minted on the fly by deviceAccountForLogin.
+func TestLoginByUsernameIssuesTokensForAWebsiteRegisteredPerson(t *testing.T) {
+	h := newHarness(t)
+	registerWebsiteUser(t, h, "alice", "hunter2222")
+
+	// No Authorization header at all -- unlike /1.0.0/login, which needs an
+	// anonymous access token first. That is the whole simplification this
+	// endpoint exists for.
+	resp, err := http.PostForm(h.server.URL+"/login", url.Values{
+		"username": {"alice"},
+		"password": {"hunter2222"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	if body.IDToken == "" {
+		t.Error("no idToken in the response")
+	}
+	if body.User.Nickname == "" {
+		t.Error("no user in the response")
+	}
+
+	u, err := h.store.GetUserByLoginUsername(t.Context(), "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	das, err := h.store.ListDeviceAccounts(t.Context(), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(das) != 1 {
+		t.Fatalf("got %d device accounts after a username login, want exactly 1", len(das))
+	}
+}
+
+// TestLoginByUsernameReusesTheSameDeviceAccountEveryTime guards
+// deviceAccountForLogin's whole point: one persistent identity per person,
+// not a fresh device account minted on every login.
+func TestLoginByUsernameReusesTheSameDeviceAccountEveryTime(t *testing.T) {
+	h := newHarness(t)
+	registerWebsiteUser(t, h, "alice", "hunter2222")
+
+	login := func() loginResponse {
+		resp, err := http.PostForm(h.server.URL+"/login", url.Values{
+			"username": {"alice"},
+			"password": {"hunter2222"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		requireStatus(t, resp, 200)
+		var body loginResponse
+		decode(t, resp, &body)
+		return body
+	}
+
+	first := login()
+	second := login()
+	if first.User.ID != second.User.ID {
+		t.Errorf("two logins as the same person resolved to different users: %s vs %s",
+			first.User.ID, second.User.ID)
+	}
+
+	u, err := h.store.GetUserByLoginUsername(t.Context(), "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	das, err := h.store.ListDeviceAccounts(t.Context(), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(das) != 1 {
+		t.Errorf("got %d device accounts after two logins, want exactly 1 (no duplicate minted)", len(das))
+	}
+}
+
+// TestLoginByUsernameRefusesTheWrongPassword and
+// TestLoginByUsernameRefusesAnUnknownUsername must answer identically: a
+// caller who cannot tell "wrong password" from "no such account" cannot use
+// this endpoint to enumerate registered usernames.
+func TestLoginByUsernameRefusesTheWrongPassword(t *testing.T) {
+	h := newHarness(t)
+	registerWebsiteUser(t, h, "alice", "hunter2222")
+
+	resp, err := http.PostForm(h.server.URL+"/login", url.Values{
+		"username": {"alice"},
+		"password": {"wrong-password"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusUnauthorized)
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "invalid username or password") {
+		t.Errorf("body = %s, want a generic invalid-credentials message", body)
+	}
+}
+
+func TestLoginByUsernameRefusesAnUnknownUsername(t *testing.T) {
+	h := newHarness(t)
+
+	resp, err := http.PostForm(h.server.URL+"/login", url.Values{
+		"username": {"nobody"},
+		"password": {"hunter2222"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusUnauthorized)
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "invalid username or password") {
+		t.Errorf("body = %s, want a generic invalid-credentials message", body)
+	}
 }
 
 // TestATokenStopsWorkingAfterItsUserIsDeleted is the user-level sibling of

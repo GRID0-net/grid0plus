@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/service"
@@ -207,6 +209,137 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request, _ *caller) {
 	s.completeLogin(w, r, form, "", "")
 }
 
+// loginByUsername authenticates a person by the username and password they
+// chose at self-registration (website.go, GET/POST /register) and issues the
+// same tokens completeLogin would for a device account.
+//
+// For a client with no device account of its own to present -- an
+// emulator's own account client, which has no console-issued credential and
+// no way to get one, rather than a real console going through
+// dauth/aauth/device_auth_token. Not a Nintendo-documented endpoint and does
+// not try to look like one: no prior access token is required (unlike
+// /1.0.0/login, which needs the anonymous one from /1.0.0/application/token
+// -- there is nothing to be anonymous ABOUT here, the username already says
+// who is asking), and its error responses are plain JSON via
+// writePlainError, not a BAAS errorCode.
+//
+// Resolves to the person's own device account -- see
+// deviceAccountForLogin -- rather than inventing a new kind of token. The
+// password check below is what decides identity; everything after it is the
+// same issueLoginTokens completeLogin already uses; this function has no
+// device-account-shaped bytes of its own.
+func (s *Server) loginByUsername(w http.ResponseWriter, r *http.Request) {
+	form, err := parseForm(r)
+	if err != nil {
+		writeError(w, r, errInvalidParams)
+		return
+	}
+
+	username := strings.TrimSpace(form.Get("username"))
+	password := form.Get("password")
+	if username == "" || password == "" {
+		writeError(w, r, errInvalidParams)
+		return
+	}
+
+	// Same limiter /1.0.0/login uses. A chosen username is far easier to
+	// guess than a random device account id, so this needs the throttle at
+	// least as much.
+	if !s.loginLimiter.Allow(service.ClientIP(r), s.now()) {
+		s.log.Warn("baas: login rate limit exceeded", "client", service.ClientIP(r))
+		writeRateLimited(w, s.cfg.LoginWindow)
+		return
+	}
+
+	user, err := s.store.GetUserByLoginUsername(r.Context(), username)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		// Same answer as a wrong password below: telling the two apart would
+		// tell a guesser which usernames exist.
+		s.log.Warn("baas: login for unknown username")
+		writePlainError(w, http.StatusUnauthorized, "invalid username or password")
+		return
+	case err != nil:
+		writeInternalError(s.log, w, r, "load user by login username", err)
+		return
+	}
+
+	if user.LoginPasswordHash == "" ||
+		bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(password)) != nil {
+		s.log.Warn("baas: login with wrong password", "user", user.ID)
+		writePlainError(w, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+
+	if user.Deleted {
+		writePlainError(w, http.StatusForbidden, "account is deleted")
+		return
+	}
+
+	da, err := s.deviceAccountForLogin(r.Context(), user.ID)
+	if err != nil {
+		writeInternalError(s.log, w, r, "resolve device account for username login", err)
+		return
+	}
+
+	s.issueLoginTokens(w, r, form, da, "")
+}
+
+// deviceAccountForLogin returns a user's own device account for
+// loginByUsername to issue tokens against, minting one if they have none
+// yet -- the case for every person who registered on the website
+// (website.go's CreateUserWithLogin, deliberately with no device account at
+// all) and has never linked a real console since.
+//
+// The oldest one, when there is a choice: deterministic, so the same person
+// logging in twice gets tokens naming the same device account both times,
+// rather than whichever one a map happened to return first.
+//
+// Not guarded against two concurrent first-ever logins for the same brand
+// new user both seeing no device account and each minting their own: this
+// server is sized for a private group of consoles one operator runs, not a
+// public service, and the outcome is a harmless second device account for
+// the same person -- ListDeviceAccounts's ordering makes every login after
+// the race resolve to the same (oldest) one again -- not a security
+// problem or a wrong identity, so a lock to close it is not worth carrying.
+func (s *Server) deviceAccountForLogin(ctx context.Context, userID string) (db.DeviceAccount, error) {
+	das, err := s.store.ListDeviceAccounts(ctx, userID)
+	if err != nil {
+		return db.DeviceAccount{}, err
+	}
+	if len(das) > 0 {
+		return das[0], nil
+	}
+
+	deviceAccountID, err := newHexID(8)
+	if err != nil {
+		return db.DeviceAccount{}, err
+	}
+	// Generated and immediately discarded: nothing outside this function
+	// ever needs this device account's password, because it is only ever
+	// reached through the website username/password that got us here, never
+	// through /1.0.0/login's own id+password.
+	password, err := newDevicePassword()
+	if err != nil {
+		return db.DeviceAccount{}, err
+	}
+
+	now := s.now()
+	da := db.DeviceAccount{
+		ID:             deviceAccountID,
+		UserID:         userID,
+		PasswordSHA256: hashPassword(password),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := s.store.CreateDeviceAccountForUser(ctx, da); err != nil {
+		return db.DeviceAccount{}, err
+	}
+
+	s.log.Info("baas: minted a device account for a username login", "user", userID, "device_account", da.ID)
+	return da, nil
+}
+
 // federation is /1.0.0/login plus a Nintendo Account id token.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100federation
@@ -338,13 +471,24 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 		}
 	}
 
+	s.issueLoginTokens(w, r, form, da, nintendoAccountID)
+}
+
+// issueLoginTokens finishes a login once a device account's password has
+// already been proven: signs the access and id tokens and writes the
+// response. Shared by every path that gets here through a different
+// credential check — completeLogin's device-account-id+password (the real
+// protocol) and loginByUsername's username+password (SwitchNet's own,
+// for a person logging an emulator in directly) — so the actual token
+// shape only exists in one place.
+func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form form, da db.DeviceAccount, nintendoAccountID string) {
 	user, err := s.store.GetUser(r.Context(), da.UserID)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		// The device account points at a user that no longer exists. The row is
 		// inconsistent; say so in the log and refuse rather than inventing a user.
 		s.log.Error("baas: device account points at a missing user",
-			"device_account", deviceAccountID, "user", da.UserID)
+			"device_account", da.ID, "user", da.UserID)
 		writeError(w, r, errInvalidDeviceAccount)
 		return
 	case err != nil:

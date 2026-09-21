@@ -225,6 +225,19 @@ func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User) error {
 	return mapErr(err)
 }
 
+// CreateDeviceAccountForUser adds a device account to an existing user.
+func (p *Postgres) CreateDeviceAccountForUser(ctx context.Context, da DeviceAccount) error {
+	var deviceID any
+	if da.DeviceID != "" {
+		deviceID = da.DeviceID
+	}
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO device_accounts (id, user_id, password_sha256, device_id, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$5)`,
+		da.ID, da.UserID, da.PasswordSHA256, deviceID, da.CreatedAt)
+	return mapErr(err)
+}
+
 // GetUserByLoginUsername looks up a user by their login username.
 func (p *Postgres) GetUserByLoginUsername(ctx context.Context, username string) (User, error) {
 	return scanUser(p.pool.QueryRow(ctx,

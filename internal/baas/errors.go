@@ -123,6 +123,23 @@ func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
 	http.Error(w, "too many login attempts", http.StatusTooManyRequests)
 }
 
+// writePlainError sends a small JSON error body that is not shaped like a BAAS
+// APIError.
+//
+// For endpoints this server invented itself (loginByUsername) rather than
+// ones Nintendo documents: an errorCode from the vocabulary above would look
+// like a real BAAS error to anyone reading this server's behaviour later,
+// the same confusion writeRateLimited's own doc comment already avoids for
+// SwitchNet's rate limit. Nothing console-facing ever reaches this path, so
+// there is no wire shape to match here in the first place.
+func writePlainError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(struct {
+		Error string `json:"error"`
+	}{message})
+}
+
 // writeInternalError logs the cause and returns a generic error.
 //
 // The cause never reaches the console: a database error message in a response

@@ -553,6 +553,17 @@ type Store interface {
 
 	// UpsertDevice records that a console was seen.
 	UpsertDevice(ctx context.Context, d Device) error
+	// CreateDeviceAccountForUser adds a device account to a user that
+	// already exists, unlike CreateUser's bundled "new person and their
+	// first device account together". The third way a device account comes
+	// into being: registerUser's console-driven path makes one directly,
+	// CreateUserWithLogin makes a person with none at all, and this is what
+	// gives that person one afterward -- baas/accounts.go's
+	// deviceAccountForLogin, for a caller with login credentials but no
+	// device account of its own to present. da.UserID must already name a
+	// real user; this does not check that itself, matching CreateUser's own
+	// division of labour with its caller.
+	CreateDeviceAccountForUser(ctx context.Context, da DeviceAccount) error
 	// GetDeviceAccount returns a device account by id, or ErrNotFound. A
 	// deleted device account is returned with DeletedAt set rather than hidden,
 	// so the caller can tell "deleted" apart from "never existed".

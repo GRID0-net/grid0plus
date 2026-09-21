@@ -129,6 +129,18 @@ func (m *Memory) CreateUserWithLogin(_ context.Context, u User) error {
 	return nil
 }
 
+// CreateDeviceAccountForUser adds a device account to an existing user.
+func (m *Memory) CreateDeviceAccountForUser(_ context.Context, da DeviceAccount) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.deviceAccounts[da.ID]; ok {
+		return fmt.Errorf("%w: device account %s exists", ErrConflict, da.ID)
+	}
+	m.deviceAccounts[da.ID] = da
+	return nil
+}
+
 // GetUserByLoginUsername looks up a user by their login username.
 func (m *Memory) GetUserByLoginUsername(_ context.Context, username string) (User, error) {
 	m.mu.RLock()

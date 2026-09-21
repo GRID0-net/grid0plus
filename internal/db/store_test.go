@@ -274,6 +274,41 @@ func testUserLogin(t *testing.T, s Store) {
 		t.Errorf("got %d device accounts for a website-registered user, want 0", len(das))
 	}
 
+	// CreateDeviceAccountForUser is what gives a website-registered person
+	// one, on demand -- baas/accounts.go's deviceAccountForLogin, for a
+	// username/password login with no console-issued credential to present.
+	seq++
+	da := DeviceAccount{
+		ID:             hexID(seq),
+		UserID:         u.ID,
+		PasswordSHA256: "0000000000000000000000000000000000000000000000000000000000000000",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := s.CreateDeviceAccountForUser(ctx, da); err != nil {
+		t.Fatalf("create device account for user: %v", err)
+	}
+
+	gotDA, err := s.GetDeviceAccount(ctx, da.ID)
+	if err != nil {
+		t.Fatalf("get device account: %v", err)
+	}
+	if gotDA.UserID != u.ID {
+		t.Errorf("device account user = %s, want %s", gotDA.UserID, u.ID)
+	}
+
+	das, err = s.ListDeviceAccounts(ctx, u.ID)
+	if err != nil {
+		t.Fatalf("list device accounts after create: %v", err)
+	}
+	if len(das) != 1 || das[0].ID != da.ID {
+		t.Errorf("got device accounts %+v, want exactly [%s]", das, da.ID)
+	}
+
+	if err := s.CreateDeviceAccountForUser(ctx, da); !errors.Is(err, ErrConflict) {
+		t.Errorf("duplicate device account id: err = %v, want ErrConflict", err)
+	}
+
 	// Found by username, case-insensitively -- matches how the login page
 	// and the NA-link stub both look a person up.
 	byUsername, err := s.GetUserByLoginUsername(ctx, "BOB")

@@ -192,6 +192,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /register", s.registerPage)
 	mux.HandleFunc("POST /register", s.registerSubmit)
 
+	// The username/password login /register creates an account for. Not
+	// /1.0.0/login: that path is the real, Nintendo-shaped device-account
+	// protocol and stays exactly that shape. This one needs no prior access
+	// token, unlike /1.0.0/login -- see loginByUsername's own doc comment.
+	mux.HandleFunc("POST /login", s.loginByUsername)
+
 	// The Nintendo Account link stub. See nalink.go. /2.0.0/users/me is on
 	// api.accounts.nintendo.com rather than accounts.nintendo.com, but this
 	// mux does not route on Host, so one registration covers both.

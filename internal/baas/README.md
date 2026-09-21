@@ -18,7 +18,7 @@ to**, and the only place in SwitchNet where identity is decided.
 | File | What |
 | --- | --- |
 | `router.go` | routing, the authentication middleware, the access log |
-| `accounts.go` | `application/token`, `users`, `login`, `federation`, lookups |
+| `accounts.go` | `application/token`, `users`, `login`, `federation`, lookups, and `POST /login` (username/password, not Nintendo-shaped) |
 | `devices.go` | `push_channels`, `devices/snapshot` — real response shapes, not `acknowledge` |
 | `friends.go` | friend requests, friend list, favourites, relationships |
 | `friendcodes.go` | code generation with the cooldown, and blocks |
@@ -53,6 +53,22 @@ The tests in `accounts_test.go` named `TestLoginRefuses…`,
 `TestATokenWhoseSubjectDoesNotOwnItsDeviceAccountIsRefused` and
 `TestOneUserCannotReadOrChangeAnother` are the ones that hold that property. They
 are the most important tests in the repository.
+
+**`POST /login` (username/password) is a second, independent identity check,
+not a fallback bolted onto the one above.** It exists for a caller with no
+device account to present at all — an emulator's own account client, which
+has no console-issued credential and no way to get one, unlike a real
+console going through dauth/aauth — and it resolves identity entirely on its
+own: `GetUserByLoginUsername` plus a `bcrypt` compare against
+`LoginPasswordHash`, both already used by `nalink.go`'s login page. Once that
+succeeds, it hands off to `issueLoginTokens` — the same function
+`completeLogin` uses once *its* check succeeds — so the token shape is one
+piece of code, not two that could drift. `deviceAccountForLogin` finds or
+mints the device account those tokens name; see its own doc comment for why
+"finds the person's own oldest one, or makes one" is still fail-closed and
+not the process-wide-variable bug above wearing a new shape: the id and
+password below are never involved, so there is nothing for this path to
+guess about them.
 
 ### Presence takes the strongest fresh signal
 
