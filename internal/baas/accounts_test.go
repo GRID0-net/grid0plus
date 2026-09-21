@@ -1,7 +1,6 @@
 package baas
 
 import (
-	"bytes"
 	"encoding/base64"
 	"io"
 	"net/http"
@@ -1285,62 +1284,20 @@ func TestNxAccountBlobMatchesTheRealCapturedShape(t *testing.T) {
 	}
 }
 
-// TestNxAccountBlobHasTheHeaderTheConsoleChecksAtTheRightOffset pins the
-// 8-byte "01606150" header confirmed by decompiling the operator's own
-// console's `account` sysmodule: federation is rejected with 2124-0292
-// unless these exact bytes lead the blob -- and, corrected 2026-09-21, at
-// offset 0x21 (33), not offset 0 (see nxAccountBlob's own comment for the
-// full writeup, including the mis-transcription this test used to pin).
-func TestNxAccountBlobHasTheHeaderTheConsoleChecksAtTheRightOffset(t *testing.T) {
+// TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks pins the 6-byte
+// header at offset 0. A 2026-09-21 attempt to "correct" this to an 8-byte
+// ASCII header at offset 0x21 (matching a same-night decompile finding) was
+// deployed and directly regressed 2124-0292 on real hardware -- reverted.
+// See nxAccountBlob's own comment for the full writeup. Do not change this
+// without a fresh hardware confirmation.
+func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
 		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
 	}
-	const headerOffset = 0x21
-	want := []byte("01606150")
-	if len(decoded) < headerOffset+len(want) {
-		t.Fatalf("nxAccountBlob is too short to hold the header at offset 0x21: %d bytes", len(decoded))
-	}
-	got := decoded[headerOffset : headerOffset+len(want)]
-	if string(got) != string(want) {
-		t.Errorf("nxAccountBlob[0x21:0x29] = %x (%q), want %x (%q)", got, got, want, want)
-	}
-}
-
-// TestNxAccountBlobLeadsWithTheAccountID guards the other half of the
-// 2026-09-21 decompile finding: a NUL-terminated string -- believed to be
-// naID itself, per nxAccountBlob's own comment -- occupies offset 0 up to
-// the header at 0x21.
-func TestNxAccountBlobLeadsWithTheAccountID(t *testing.T) {
-	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
-	if err != nil {
-		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
-	}
-	nul := bytes.IndexByte(decoded[:0x21], 0)
-	if nul < 0 {
-		t.Fatal("no NUL terminator found in the first 0x21 bytes")
-	}
-	if got := string(decoded[:nul]); got != "d63e6ad0809131f2" {
-		t.Errorf("leading string = %q, want the account id %q", got, "d63e6ad0809131f2")
-	}
-}
-
-// TestNxAccountBlobHasAConfirmedZeroTail guards the 2026-09-13-capture-
-// confirmed 96-byte zero tail (offsets 78-173) -- the one part of the old
-// all-SHA256 placeholder that was never a guess, and was still wrong.
-func TestNxAccountBlobHasAConfirmedZeroTail(t *testing.T) {
-	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
-	if err != nil {
-		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
-	}
-	if len(decoded) != 174 {
-		t.Fatalf("nxAccountBlob is %d bytes, want 174", len(decoded))
-	}
-	tail := decoded[174-zeroTailLen:]
-	for i, b := range tail {
-		if b != 0 {
-			t.Fatalf("byte %d of the confirmed-zero tail is 0x%02x, want 0", 78+i, b)
-		}
+	want := []byte{0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}
+	if len(decoded) < len(want) || string(decoded[:len(want)]) != string(want) {
+		t.Errorf("nxAccountBlob header = %x, want %x", decoded[:min(len(decoded), len(want))], want)
 	}
 }
 

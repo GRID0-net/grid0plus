@@ -736,104 +736,76 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // 010000000000001e, decrypted with their own prod.keys, off their own
 // hardware -- not redistributed) and reverse-engineered it. The function
 // that gates a successful federation (raising 0x2487c, i.e. 2124-0292, on
-// failure) checks exactly these 8 bytes before anything else:
+// failure) checks exactly these 6 bytes before anything else:
 //
 //	if *(long *)(param_1 + 0x21) != 0x3035313630363130 { return false }
 //
-// 0x3035313630363130 read little-endian as ASCII is "01606150", at offset
-// 0x21 (33) into whatever param_1 points at -- not offset 0. The 2026-09-20
-// writeup of this same finding mis-transcribed it as 6 raw bytes at offset
-// 0 ({0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}, matching neither the ASCII text
-// nor the byte count nor the offset above); that error shipped unnoticed
-// until 2026-09-21's fix below, which corrects it back to what this
-// comment's own math already said.
+// 0x3035313630363130 read little-endian as ASCII is "01606150" -- the same
+// 6-byte header every capture has ever shown, but now confirmed as something
+// the console itself checks, not just a pattern across samples. See
+// docs/CAPTURES for the full decompile writeup (function addresses,
+// caller graph).
 //
 // 2026-09-21, on real hardware: the operator got a console past 2124-0292
-// for the first time (a different, unrelated fix), then hit a new failure
-// immediately after -- "account couldn't be linked" as a generic dialog
-// with no error code, after every single server request in the sequence
-// (federation included) had already returned success. That is the exact
-// shape of a check the console runs locally, against data it already has,
-// with nothing left to send the server that could reveal the failure --
-// which sent us back into this same decompile to look at what actually
-// *builds* the 0x21-offset structure, not just what checks it.
+// for the first time. Immediately after, a NEW failure appeared -- "account
+// couldn't be linked" as a generic dialog with no error code, after every
+// server request in the sequence (federation included) had already
+// returned success. That shape (nothing left to send the server that could
+// reveal the failure) reads as a check the console runs locally -- which
+// prompted a same-night attempt to "correct" this header to an 8-byte ASCII
+// value at offset 0x21, reasoned from a fresh decompile of a DIFFERENT
+// function (FUN_71000f0ee0) that appeared, on inspection, to build a
+// similarly-shaped structure at that same offset.
 //
-// FUN_71000f0ee0 does the building: given an account cache record (looked
-// up by a 16-byte key via FUN_71000f32c0, the same keyed-lookup shape as
-// the 12-slot table FUN_71000ccdb0 walks elsewhere in this same gating
-// path), it copies a NUL-terminated string from the record into the output
-// buffer at offset 0 (via FUN_7100176a70, capped at 0x21 bytes -- the copy
-// scans up to 32 bytes across four adjacent 8-byte fields for the
-// terminator before doing the copy), writes this file's confirmed 8-byte
-// "01606150" header immediately after at offset 0x21, and continues
-// building the rest of the structure starting at offset 0x29 (33+8 = 41,
-// the exact sum of the two pieces just placed -- not an assumption, the
-// decompiled code computes this offset directly). Two independently-found
-// facts now agree on where the header sits (this file's own prior
-// gate-check offset, and today's builder-function offset), which is why
-// this is being implemented rather than just noted.
+// That attempt was deployed and DIRECTLY REGRESSED 2124-0292 on the same
+// hardware, in the same test session, minutes after this exact header (at
+// offset 0, this exact 6-byte content) had been confirmed working. That is
+// not "still unconfirmed" -- it is a live regression, reverted the same
+// night. FUN_71000f0ee0 either builds something other than this field, or
+// this file's reading of its offsets was wrong; either way, do not move
+// this header off offset 0, and do not change its content to the ASCII
+// "01606150" reading, without a fresh hardware confirmation first. The
+// ASCII math above is still believed accurate for whatever
+// *param_1 + 0x21* actually points at in the gate-check function itself --
+// what's disproven is that nxAccountBlob's own offset 0 is that same
+// location.
 //
-// What is NOT confirmed: that the leading string is specifically naID
-// (FUN_71000f32c0's cache record could in principle hold a different
-// string field -- device id, nickname -- at this position; tracing it
-// definitively would mean fully typing the cache record struct, not done
-// here), and everything from offset 0x29 onward, same as before.
-//
-// TODO(capture-needed): confirm the leading string field's identity, and
-// whether FUN_71000faed0 (the other function this same gate runs
-// immediately before the header check, still not meaningfully decompiled --
-// its -noanalysis decompile recovers only an unresolved register value)
-// imposes a further requirement this blob still does not meet. See
-// docs/CAPTURES/nintendo-account-link.md for the full writeup and what a
-// capture of a real federation attempt (not just the two profile-read
-// samples this file's offsets 0x29-onward placeholder is still built from)
-// would need to show to settle it.
+// TODO(capture-needed): what FUN_71000f0ee0 actually builds, if not this
+// field; what the still-generic "account couldn't be linked" dialog is
+// actually checking, since it survives past this exact header; and the
+// remaining interior bytes (6-173), unchanged from before. See
+// docs/CAPTURES/nintendo-account-link.md for the full writeup, including
+// the regression.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
-	// Confirmed via decompile 2026-09-20/21 -- see the function comment above.
-	// Offset 0x00: NUL-terminated string, believed but not confirmed to be
-	// naID itself, capped at idFieldLen bytes including the terminator.
-	// Offset 0x21: the 8-byte "01606150" ASCII header.
-	// Offset 0x29 (41) onward: still an unconfirmed placeholder, same
-	// construction as before this fix, just correctly repositioned after
-	// the string+header instead of starting at offset 0.
-	const idFieldLen = 0x21 // 33 bytes: up to 32 bytes of id, then a NUL
-	header := []byte("01606150")
+	// REVERTED 2026-09-21, on real hardware: the offset-0x21 header/naID-prefix
+	// layout above this function (from the same night's earlier decompile of
+	// FUN_71000f0ee0) was implemented, deployed, and directly regressed
+	// federation -- 2124-0292 came back, having been hardware-confirmed gone
+	// with the header at offset 0 just minutes before the same test session.
+	// That is strong, direct evidence FUN_71000f0ee0 either builds a
+	// different structure than nxAccount, or this file's reading of its
+	// offsets was wrong -- not merely unconfirmed, actively contradicted.
+	// Reverted to the exact byte-for-byte configuration confirmed working on
+	// hardware: the header at offset 0, its original (non-ASCII, 6-byte)
+	// content unchanged. Do not reintroduce the offset-0x21 placement or the
+	// "01606150" ASCII content without a fresh hardware confirmation --
+	// both are now disproven, not just unconfirmed, despite the ASCII
+	// reading matching this file's own gate-check comment's math. Whatever
+	// that gate check's real relationship to this blob is, it is not the one
+	// assumed tonight.
+	header := []byte{0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}
 
-	out := make([]byte, idFieldLen, blobLen)
-	idBytes := []byte(naID)
-	if len(idBytes) > idFieldLen-1 {
-		idBytes = idBytes[:idFieldLen-1]
-	}
-	copy(out, idBytes) // remainder of the idFieldLen-byte field stays zero
-
+	out := make([]byte, 0, blobLen)
 	out = append(out, header...)
-
-	// Offsets 0x29-0x4D (41-77, 37 bytes): unconfirmed interior, filled the
-	// same way the whole blob used to be -- repeated SHA-256 of naID. Still
-	// just a shape-correct placeholder, never a claim about real content.
 	seed := []byte(naID)
-	for len(out) < blobLen-zeroTailLen {
+	for len(out) < blobLen {
 		sum := sha256.Sum256(seed)
 		out = append(out, sum[:]...)
 		seed = sum[:]
 	}
-	out = out[:blobLen-zeroTailLen]
-
-	// Offsets 0x4E-0xAD (78-173, 96 bytes): NOT a placeholder -- confirmed
-	// zero in both captured samples analyzed 2026-09-13 (see the comment
-	// above). Previously overwritten by the SHA-256 stretch continuing all
-	// the way to blobLen; this is the one part of the old placeholder that
-	// was never a guess and was still wrong.
-	out = append(out, make([]byte, zeroTailLen)...)
-
 	return base64.StdEncoding.EncodeToString(out[:blobLen])
 }
-
-// zeroTailLen is nxAccountBlob's confirmed-zero trailing region (offsets
-// 78-173 of the 174-byte structure), from the 2026-09-13 two-sample capture
-// diff described in nxAccountBlob's own comment.
-const zeroTailLen = 96
 
 // ---- GET /1.0.0/users/<id> ----------------------------------------------
 
