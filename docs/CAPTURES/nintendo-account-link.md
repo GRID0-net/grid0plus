@@ -663,3 +663,87 @@ an unresolved register value and has not been meaningfully examined. If the
 console is still rejecting the link after this fix reaches hardware, that
 function is the next place to look, not another guess at this blob's
 remaining unconfirmed bytes.
+
+## The offset-0x21 fix regressed 2124-0292 on hardware; reverted same night (2026-09-21, continued)
+
+The fix described immediately above this section was deployed and directly
+regressed federation on real hardware within the same test session — 2124-0292
+came back, having been confirmed gone with the header at offset 0 minutes
+earlier. Reverted byte-for-byte to the working configuration (header at
+offset 0, original 6-byte content). See `internal/baas/accounts.go`'s
+`nxAccountBlob` comment for the reverted state and the "do not retry without
+fresh hardware confirmation" warning now attached to it. A second retry
+immediately after the revert confirmed 2124-0292 stays gone — this isn't a
+fluke, the revert genuinely holds.
+
+**Directly re-verified against the raw capture, not just the old writeup's
+summary** (`docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow`,
+read with mitmproxy's own `FlowReader`): the header bytes really are `d3 5e
+b4 eb 5e 74` — exactly what shipped both before and after tonight's
+regression-and-revert. This also settles where the `"01606150"` ASCII
+theory went wrong: that string exists in `account_main.nso`'s `.rodata`
+(confirmed, still there) but is unrelated to this field — a coincidence,
+not evidence. Searched for the *real* header bytes (`d35eb4eb5e74`) as a
+literal sequence anywhere in `account_main.nso`'s decompressed memory:
+**zero hits.** Whatever validates this header, it is not a hardcoded
+byte-literal comparison anywhere in the binary — ruling out the two most
+tractable hypotheses in one night. The check exists (changing these bytes
+demonstrably changes behavior), but finding it statically needs a different
+approach than searching for a constant.
+
+**New structural detail from the direct capture comparison**, beyond what
+the earlier 2026-09-13 writeup already established: `profile`'s last
+non-zero byte is at offset 49; `login`'s is at offset 77. Only 29 of 174
+bytes differ between the two values for the same account. The real blob is
+overwhelmingly zero padding around a small structured region — the opposite
+shape from SwitchNet's placeholder, which fills the *entire* remainder with
+dense SHA-256 output. This was already implied by the old "96-byte zero
+tail" finding but is worth stating plainly: SwitchNet's placeholder isn't
+just missing a few confirmed fields, its general shape (dense pseudorandom
+bytes vs. mostly-empty structured record) doesn't resemble the real thing
+at all past the header and length.
+
+## A new, independent lead: `$.isNnLinked` (2026-09-21)
+
+While chasing the current "account couldn't be linked" dialog (which
+appears with zero further network activity after a fully successful HTTP
+sequence, including `federation` — see the 2124-0292-hardware-confirmed
+entry earlier in this file), searched `account_main.nso` for the literal
+string `isNnLinked`, since `naUsersMe`'s own doc comment (`nalink.go`)
+already names it as part of "the final local commit step... System Save
+Data `8000000000000010`" that this server can influence but never observe
+failing.
+
+Found two occurrences, both as `$.isNnLinked` — a JSONPath expression, not
+a plain field name — sitting inside one large table of many distinct,
+NUL-separated path strings in `.rodata` (confirmed by reading raw context
+around the hits: dozens of unrelated JSONPath/JSON-Pointer expressions for
+other fields sit immediately before and after it in memory, back to back).
+**SwitchNet never sends a field called `isNnLinked` anywhere** (checked:
+zero occurrences of `isNnLinked`/`IsNnLinked` in the whole Go codebase
+outside of this one doc-comment mention).
+
+**Not yet confirmed, and this is exactly where this lead currently stops**:
+whether the console evaluates `$.isNnLinked` against a *server response*
+(which would make this directly actionable — add the field) or against its
+*own local save data* when later checking link status (which would make it
+irrelevant to the failure happening during the link itself). Tried to trace
+which function actually evaluates this specific path by finding code
+cross-references to it and to the ADRP-page it lives on; both approaches
+failed to narrow it down -- the containing page is a shared string pool
+referenced by 236+ different functions throughout the binary, and
+`-noanalysis` mode's xref database has nothing recorded for the exact
+string address (likely because the load is computed via ADRP+ADD without
+the Reference analyzer's pass having run over it specifically). Full
+analysis is available in the project (`account_main.gpr`) and might resolve
+this with more targeted work — following the JSONPath *evaluator* function
+itself (a single generic function almost certainly used for every path in
+this table, rather than one direct reference per string) would be a more
+tractable next angle than more xref-hunting on individual string addresses.
+
+**What this means practically**: don't add an `isNnLinked` field to any
+SwitchNet response speculatively based on this alone — the causality isn't
+established, and CLAUDE.md's rule against inventing plausible-looking
+Nintendo internals applies exactly as much to "add a field because its name
+sounds relevant" as to guessing byte values. This is a lead worth a capture
+or a deeper decompile pass, not a fix to deploy yet.

@@ -118,13 +118,28 @@ var Scopes = []string{ScopeSelf, ScopeFavoriteFriends, ScopeFriends, ScopeFOAF, 
 // key would silently break whatever depends on it.
 type ExtrasByScope map[string]map[string]any
 
-// EmptyExtras returns an extras block with all five scopes present and empty,
-// which is what the console gets for a new account.
+// EmptyExtras returns an extras block with all five scopes present, seeded
+// with the default keys a real working account's extras carry on every
+// scope, per a 2026-08-27 capture and reconfirmed 2026-09-21 via a live
+// mitmdump capture of SwitchNet's own federation response (which showed all
+// five scopes as literal empty '{}', diverging from the reference).
+//
+// This exact seeding was implemented once before (commit d61d206), deployed,
+// tested on real hardware, and reverted (b5b32ba) after it did not fix
+// 2124-0292 -- that investigation later found 2124-0292's real cause
+// elsewhere (nxAccountBlob's header, see accounts.go). Reapplying now since
+// it is a real, capture-confirmed content gap independent of that fix, not
+// a guess, and the earlier test only ruled it out for 2124-0292 specifically
+// -- it was never implicated in, or tested against, the new post-federation
+// symptom this capture was taken for.
 func EmptyExtras() ExtrasByScope {
 	e := make(ExtrasByScope, len(Scopes))
 	for _, s := range Scopes {
-		e[s] = map[string]any{}
+		e[s] = map[string]any{"playLog": ""}
 	}
+	e[ScopeSelf]["isMediaUploaded"] = true
+	e[ScopeFriends]["isChatActivated"] = true
+	e[ScopeFriends]["isChatInvitable"] = true
 	return e
 }
 

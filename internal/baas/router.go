@@ -27,8 +27,10 @@
 package baas
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -73,6 +75,13 @@ type Config struct {
 	LoginAttemptsPerWindow int
 	// LoginWindow is the sliding window LoginAttemptsPerWindow counts over.
 	LoginWindow time.Duration
+
+	// LogBodies logs request and response bodies on the access log line.
+	// Useful exactly once, to see the real bytes a console sent or received
+	// without a console-side capture -- far too chatty (and carries real
+	// tokens/passwords) to leave on. See internal/stubs.Config.LogBodies for
+	// the same pattern elsewhere in this codebase.
+	LogBodies bool
 }
 
 // Server is the BAAS HTTP server.
@@ -473,10 +482,16 @@ func (s *Server) requireSelf(w http.ResponseWriter, r *http.Request, c *caller) 
 
 // ---- logging -------------------------------------------------------------
 
-// statusRecorder captures the response status for the access log.
+// maxLoggedBody caps how much of a request/response body LogBodies reads, so
+// it cannot be used to make the server buffer without limit.
+const maxLoggedBody = 16 << 10
+
+// statusRecorder captures the response status for the access log, and
+// optionally a copy of the body written (see LogBodies).
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
+	body   *bytes.Buffer // nil unless LogBodies is on
 }
 
 func (s *statusRecorder) WriteHeader(status int) {
@@ -488,13 +503,37 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	if s.status == 0 {
 		s.status = http.StatusOK
 	}
+	if s.body != nil && s.body.Len() < maxLoggedBody {
+		room := maxLoggedBody - s.body.Len()
+		if room > len(b) {
+			room = len(b)
+		}
+		s.body.Write(b[:room])
+	}
 	return s.ResponseWriter.Write(b)
 }
 
 func (s *Server) withLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+
+		var reqBody string
+		if s.cfg.LogBodies && r.Body != nil {
+			raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxLoggedBody))
+			if err == nil {
+				reqBody = string(raw)
+			}
+			// Handlers still need to read the body; give them a fresh reader
+			// over what was actually captured (which is everything, unless it
+			// hit the cap -- fine, this is a diagnostic path, not a semantic
+			// change to request handling).
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+		}
+
 		rec := &statusRecorder{ResponseWriter: w}
+		if s.cfg.LogBodies {
+			rec.body = &bytes.Buffer{}
+		}
 		next.ServeHTTP(rec, r)
 		if rec.status == 0 {
 			rec.status = http.StatusOK
@@ -506,7 +545,7 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 		} else if rec.status >= 400 {
 			level = slog.LevelWarn
 		}
-		s.log.Log(r.Context(), level, "baas request",
+		attrs := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
@@ -515,7 +554,11 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 			// nnAccount or nnFriends — which matters when a capture and the
 			// implementation disagree about a request shape.
 			"agent", r.Header.Get("User-Agent"),
-		)
+		}
+		if s.cfg.LogBodies {
+			attrs = append(attrs, "reqBody", reqBody, "respBody", rec.body.String())
+		}
+		s.log.Log(r.Context(), level, "baas request", attrs...)
 	})
 }
 

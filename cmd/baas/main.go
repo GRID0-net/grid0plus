@@ -103,6 +103,8 @@ func main() {
 
 		LoginAttemptsPerWindow: cfg.BAAS.LoginAttemptsPerWindow,
 		LoginWindow:            time.Duration(cfg.BAAS.LoginWindowSeconds) * time.Second,
+
+		LogBodies: cfg.BAAS.LogBodies,
 	}, baas.Deps{
 		Store:          store,
 		Bus:            bus,

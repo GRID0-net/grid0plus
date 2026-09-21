@@ -205,6 +205,12 @@ baas:
   login_attempts_per_window: 20
   login_window_seconds: 300
 
+  # Log request and response bodies on the access log line. Useful exactly
+  # once, to see the real bytes a console sent or received without a
+  # console-side capture. Carries real tokens and device account passwords
+  # in plain text in the log -- far too sensitive and chatty to leave on.
+  log_bodies: false
+
 # ---------------------------------------------------------------------------
 # scsi: OLSC cloud save backup (phase 4)
 # ---------------------------------------------------------------------------

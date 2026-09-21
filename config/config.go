@@ -227,6 +227,13 @@ type BAAS struct {
 	// LoginWindowSeconds is the sliding window LoginAttemptsPerWindow counts
 	// over.
 	LoginWindowSeconds int `yaml:"login_window_seconds"`
+
+	// LogBodies logs request and response bodies on the access log line.
+	// Useful exactly once, to see the real bytes a console sent or received
+	// without a console-side capture -- carries real tokens and device
+	// account passwords, so far too chatty and sensitive to leave on. See
+	// internal/stubs.Config.LogBodies for the same pattern elsewhere.
+	LogBodies bool `yaml:"log_bodies"`
 }
 
 // SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
@@ -724,6 +731,7 @@ func applyEnv(c *Config) {
 	envBool("SWITCHNET_BAAS_ALLOW_REGISTRATION", &c.BAAS.AllowRegistration)
 	envInt("SWITCHNET_BAAS_LOGIN_ATTEMPTS_PER_WINDOW", &c.BAAS.LoginAttemptsPerWindow)
 	envInt("SWITCHNET_BAAS_LOGIN_WINDOW_SECONDS", &c.BAAS.LoginWindowSeconds)
+	envBool("SWITCHNET_BAAS_LOG_BODIES", &c.BAAS.LogBodies)
 
 	envStr("SWITCHNET_SCSI_LISTEN", &c.SCSI.Listen)
 	envStr("SWITCHNET_SCSI_PUBLIC_URL", &c.SCSI.PublicURL)
