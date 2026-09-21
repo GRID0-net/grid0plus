@@ -601,7 +601,7 @@ func Default() Config {
 			PresenceTTL:        300,
 			ConsolePresenceTTL: 300,
 			ImageDir:           "data/images",
-			ImageBaseURL:       "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/images",
+			ImageBaseURL:       "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
 			MaxImageBytes:      1 << 20,
 			AllowRegistration:  true,
 

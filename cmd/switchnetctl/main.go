@@ -246,6 +246,15 @@ func warn(cfg config.Config) {
 				"They must be the same value, or the dashboard's matchmaking controls "+
 				"will fail every request with a plain 401.")
 	}
+	if base := strings.TrimPrefix(cfg.BAAS.ImageBaseURL, "https://"); strings.ContainsRune(base, '/') {
+		fmt.Fprintln(os.Stderr,
+			"warning: baas.image_base_url has a path after the host ('"+cfg.BAAS.ImageBaseURL+"'). "+
+				"A 2026-09-19 capture showed the console requests profile pictures at the root "+
+				"of this host, as /1/<name> and /2/<name> -- see internal/baas/images.go's "+
+				"imageURLs doc comment. Any path here makes the console's own URL validation "+
+				"reject the field before it ever requests the image, which fails closed and "+
+				"silent: no request reaches this server at all, so nothing here will show it.")
+	}
 }
 
 // ---- hosts file ----------------------------------------------------------
