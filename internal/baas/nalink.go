@@ -582,6 +582,18 @@ func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 		"region":   nil,
 		"gender":   "unknown",
 		"isChild":  false,
+		// A 2026-09-22 decompile of account_main.nso found this field's real
+		// consumer: it is parsed here (GET /2.0.0/users/me), cached to local
+		// save data as nas/<naId>_user.json, and its value feeds directly into
+		// the local check that decides whether a Nintendo Account link is
+		// accepted -- see internal/baas/accounts.go's federation/completeLogin
+		// comments for the fuller story of that check. Every SwitchNet account
+		// is meant to behave like one already established on the operator's
+		// own "dashboard" (this server), consistent with how a real transfer
+		// flow expects the account it's reconnecting to have existed before --
+		// true is the correct value for every account this server has, not a
+		// placeholder guess.
+		"isNnLinked": true,
 
 		"email":         "switchnet@example.com",
 		"emailVerified": true,
@@ -590,9 +602,8 @@ func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 		// nextendo@example.com -- not the plain literal it looked like at a
 		// glance. Matching that shape here rather than a bare word, in case
 		// the console validates it as one before locally recording the link
-		// (real accounts persist isNnLinked and this profile data in
-		// _user.json, System Save Data 8000000000000010 -- a step our
-		// server-side response can influence but never observe failing).
+		// (real accounts persist this profile data, isNnLinked included, in
+		// _user.json, System Save Data 8000000000000010).
 		"screenName": "sw•••@e••••",
 
 		"createdAt": createdAt,
