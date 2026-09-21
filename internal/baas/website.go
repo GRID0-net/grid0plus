@@ -106,6 +106,11 @@ func (s *Server) registerSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, err := assignFriendCode(r.Context(), s.store, now, userID, s.cfg.FriendCodeCooldown); err != nil {
+		writeInternalError(s.log, w, r, "assign friend code", err)
+		return
+	}
+
 	s.log.Info("baas: website registration", "user", userID, "login_username", username)
 	writeHTML(w, http.StatusOK, registerSuccessHTML(username))
 }

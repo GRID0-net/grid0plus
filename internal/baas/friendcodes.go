@@ -1,12 +1,14 @@
 package baas
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
 )
@@ -25,6 +27,13 @@ const friendCodeGroups = 3
 // against looping forever if the uniqueness constraint is failing for some other
 // reason.
 const friendCodeAttempts = 5
+
+// defaultFriendCodeCooldown is the regeneration cooldown used for a code
+// assigned at account-creation time, when there is no *Server (and so no
+// configured s.cfg.FriendCodeCooldown) to read from -- ProvisionDeviceAccount
+// is called from switchnetctl, not from a running server. Matches
+// config.example.yaml's own default for friend_code_cooldown.
+const defaultFriendCodeCooldown = 24 * time.Hour
 
 // ---- POST /1.0.0/users/<id>/generate_code -------------------------------
 
@@ -72,40 +81,13 @@ func (s *Server) generateFriendCode(w http.ResponseWriter, r *http.Request, c *c
 		return
 	}
 
-	var code string
-	for attempt := range friendCodeAttempts {
-		candidate, err := newFriendCode()
-		if err != nil {
-			writeInternalError(s.log, w, r, "generate friend code", err)
-			return
-		}
-		err = s.store.SetFriendCode(r.Context(), db.FriendCode{
-			UserID:        c.UserID,
-			Code:          candidate,
-			CreatedAt:     now,
-			UpdatedAt:     now,
-			RegenerableAt: now.Add(s.cfg.FriendCodeCooldown),
-		})
-		switch {
-		case err == nil:
-			code = candidate
-		case errors.Is(err, db.ErrConflict):
-			s.log.Warn("baas: friend code collision, retrying",
-				"user", c.UserID, "attempt", attempt+1)
-			continue
-		default:
-			writeInternalError(s.log, w, r, "store friend code", err)
-			return
-		}
-		break
-	}
-	if code == "" {
-		writeInternalError(s.log, w, r, "allocate friend code",
-			fmt.Errorf("no unique code after %d attempts", friendCodeAttempts))
+	fc, err := assignFriendCode(r.Context(), s.store, now, c.UserID, s.cfg.FriendCodeCooldown)
+	if err != nil {
+		writeInternalError(s.log, w, r, "allocate friend code", err)
 		return
 	}
 
-	s.log.Info("baas: friend code generated", "user", c.UserID, "code", code)
+	s.log.Info("baas: friend code generated", "user", c.UserID, "code", fc.Code)
 
 	user, err := s.store.GetUser(r.Context(), c.UserID)
 	if err != nil {
@@ -113,6 +95,50 @@ func (s *Server) generateFriendCode(w http.ResponseWriter, r *http.Request, c *c
 		return
 	}
 	s.writeSelf(w, r, user)
+}
+
+// assignFriendCode generates and stores a fresh friend code for a user that
+// does not have one yet, retrying on a random collision.
+//
+// Every real account has a friend code from the moment it is created --
+// System Settings shows one immediately, with no Nintendo Account link
+// required -- but until 2026-09-21 this server only ever assigned one in
+// response to an explicit POST .../generate_code, and nothing calls that
+// automatically. A live mitmdump capture that night, taken against a
+// federation attempt that ended in the console's "couldn't be linked"
+// dialog, showed why that is a real bug and not just a cosmetic gap: the
+// console's own /1.0.0/login response was missing user.links.friendCode
+// entirely (diffed against a known-working reference capture), and the
+// console never called generate_code itself, or push_channels, or
+// GET users/{id} afterwards -- it silently abandoned the link instead of
+// asking for a code. So the console expects a friend code to already exist
+// by the time it reads the account back, not to be told to go create one.
+// This is called from every path that creates a brand-new user (registerUser,
+// ProvisionDeviceAccount, the website's self-registration), not just here.
+func assignFriendCode(ctx context.Context, store db.Store, now time.Time, userID string, cooldown time.Duration) (db.FriendCode, error) {
+	for range friendCodeAttempts {
+		candidate, err := newFriendCode()
+		if err != nil {
+			return db.FriendCode{}, fmt.Errorf("generate friend code: %w", err)
+		}
+		fc := db.FriendCode{
+			UserID:        userID,
+			Code:          candidate,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+			RegenerableAt: now.Add(cooldown),
+		}
+		err = store.SetFriendCode(ctx, fc)
+		switch {
+		case err == nil:
+			return fc, nil
+		case errors.Is(err, db.ErrConflict):
+			continue
+		default:
+			return db.FriendCode{}, err
+		}
+	}
+	return db.FriendCode{}, fmt.Errorf("no unique friend code after %d attempts", friendCodeAttempts)
 }
 
 // newFriendCode returns a random twelve-digit code in dashed form.

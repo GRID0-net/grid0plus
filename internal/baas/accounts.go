@@ -159,8 +159,14 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 
 	s.log.Info("baas: registered user", "user", userID, "device_account", deviceAccountID)
 
+	fc, err := assignFriendCode(r.Context(), s.store, now, userID, s.cfg.FriendCodeCooldown)
+	if err != nil {
+		writeInternalError(s.log, w, r, "assign friend code", err)
+		return
+	}
+
 	thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
-	resp := userResponse(s.now(), user, nil, db.Presence{
+	resp := userResponse(s.now(), user, &fc, db.Presence{
 		UserID: userID, State: db.StateOffline, Extras: db.EmptyExtras(), ReportedAt: now,
 	}, nil, visSelf, thumb1, thumb2)
 	// The one and only time the password is sent.

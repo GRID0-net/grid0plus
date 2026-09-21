@@ -62,5 +62,11 @@ func ProvisionDeviceAccount(ctx context.Context, store db.Store, now time.Time, 
 	if err := store.CreateUser(ctx, user, deviceAccount); err != nil {
 		return db.User{}, err
 	}
+	// Every real account has a friend code from the moment it exists -- see
+	// assignFriendCode's doc comment (friendcodes.go) for why this matters
+	// beyond Settings cosmetics.
+	if _, err := assignFriendCode(ctx, store, now, userID, defaultFriendCodeCooldown); err != nil {
+		return db.User{}, err
+	}
 	return user, nil
 }
