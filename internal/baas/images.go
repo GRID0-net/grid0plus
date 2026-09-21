@@ -238,7 +238,17 @@ func (s *Server) defaultAvatarURLOrEmpty() (thumb1, thumb2 string) {
 
 // defaultAvatarRelPath is the filename ensureDefaultAvatar writes and
 // naUsersMe (nalink.go) points a person with no uploaded thumbnail at.
-const defaultAvatarRelPath = "default-avatar.jpg"
+//
+// Deliberately not "default-avatar.jpg" (no extension, matching the real
+// server's shape). A 2026-09-21 hardware capture, the first to show the
+// console actually requesting this URL at all, confirmed it fetches
+// exactly the relPath this constant sets -- meaning the extension mismatch
+// was invisible in every capture before that one purely because nothing had
+// exercised the "brand new account, no uploaded picture" path over a
+// hardware capture until then. The fetch itself still succeeded (a real
+// image came back either way), so this is a fidelity fix, not a diagnosis
+// of that session's actual failure.
+const defaultAvatarRelPath = "default"
 
 // ensureDefaultAvatar returns the filename of a default avatar, relative to
 // ImageDir, generating the file the first time it is needed.

@@ -115,8 +115,8 @@ func TestImageUploadRejectsAnythingThatIsNotAJPEG(t *testing.T) {
 	}
 
 	// Nothing was written for the rejected uploads. newAccount's own
-	// userResponse calls lazily create the shared default-avatar.jpg, which
-	// is expected and not one of the rejected uploads under test here.
+	// userResponse calls lazily create the shared default avatar file,
+	// which is expected and not one of the rejected uploads under test here.
 	entries, err := os.ReadDir(h.srv.GetImagePath(""))
 	if err == nil {
 		for _, e := range entries {

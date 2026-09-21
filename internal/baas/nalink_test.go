@@ -753,14 +753,14 @@ func TestNAUsersMeGivesAFreshPersonADefaultAvatar(t *testing.T) {
 	if body.IconURI == "" {
 		t.Fatal("no iconUri for a person with no uploaded thumbnail")
 	}
-	if !strings.HasSuffix(body.IconURI, "/default-avatar.jpg") {
-		t.Errorf("iconUri = %q, want it to end with /default-avatar.jpg", body.IconURI)
+	if !strings.HasSuffix(body.IconURI, "/default") {
+		t.Errorf("iconUri = %q, want it to end with /default", body.IconURI)
 	}
 
 	// The harness's ImageBaseURL is not actually routable, so check the file
 	// landed on disk (imageFileServer would serve it from here) rather than
 	// fetching the URL over HTTP.
-	raw, err := os.ReadFile(h.srv.GetImagePath("default-avatar.jpg"))
+	raw, err := os.ReadFile(h.srv.GetImagePath("default"))
 	if err != nil {
 		t.Fatalf("default avatar was not written to disk: %v", err)
 	}

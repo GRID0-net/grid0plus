@@ -606,3 +606,60 @@ constant rather than protocol-constant, since only one account has been
 observed). It is a refinement of the picture above, not the only way to make
 further progress on it, which is what was said to the operator before this
 pass — that was inaccurate and is corrected here.
+
+## The header offset was wrong, and hardware finally moved past 2124-0292 (2026-09-21)
+
+Two things happened the same night. In order:
+
+**First, a transcription bug found.** The 2026-09-20 decompile writeup above
+this section (in `accounts.go`'s comment, not this file) recorded the
+console's own header check as `*(long *)(param_1 + 0x21) != 0x3035313630363130`
+— offset **0x21 (33)**, 8 bytes, ASCII `"01606150"`. What actually shipped in
+`nxAccountBlob` was 6 unrelated non-ASCII bytes at offset **0**. Neither the
+offset, the byte count, nor the content matched what the same comment's own
+math already said. It shipped like that for a full day without anyone
+re-deriving the header from the stored constant and comparing.
+
+**Second, real hardware got past `2124-0292` for the first time** (via an
+unrelated fix, not this one), then immediately hit a new, different failure:
+a generic "account couldn't be linked" dialog, no error code, appearing only
+*after* every single server request in the sequence — including
+`federation` — had already returned success. Re-examining the account
+sysmodule to chase this new failure is what caught the transcription bug:
+tracing `FUN_71000f0ee0`, the function that *builds* the structure the
+header check validates, shows it writing a NUL-terminated string (believed
+to be `naID` itself — see the caveat below) at offset 0, then the confirmed
+8-byte header immediately after at offset **0x21**, then continuing the rest
+of the structure at offset **0x29** (33 + 8 — the decompiled code computes
+this sum directly, it is not an assumption here). This is the same offset
+the original gate-check comment already named; two independent decompile
+passes, on two different nights, agree.
+
+**This reframes the "offsets 0-5 fixed" finding from the 2026-09-13 capture
+analysis above** — not as evidence for a 6-byte header at offset 0 (that
+interpretation is now known wrong), but as exactly what a per-account,
+NUL-terminated ID string would look like sampled from five calls that all
+belonged to the same one account: trivially identical across all five, for
+a completely mundane reason. It does not, on its own, confirm the leading
+string really is `naID` and not some other field of the account-cache
+record `FUN_71000f0ee0` reads from — that identification is still a
+decompile-shape inference, not a proven one.
+
+**Fixed in `nxAccountBlob` this same night**: the header is now 8 correct
+ASCII bytes at the correct offset 0x21, preceded by `naID` (NUL-padded to
+33 bytes) instead of appended after a wrong 6-byte header at offset 0. The
+96-byte zero tail (offsets 78-173, confirmed by the 2026-09-13 capture
+above) is now actually zero instead of continuing the SHA-256 stretch over
+it — a second, independent bug this same pass caught: the confirmed-zero
+region was being silently overwritten by hash bytes the whole time.
+
+**What is still open, unchanged in kind from before**: everything from
+offset 0x29 (41) to 77 (37 bytes) remains an unconfirmed SHA-256-derived
+placeholder, repositioned but not newly justified. Whether the leading
+string is really `naID`. And — completely untouched by tonight's fix —
+`FUN_71000faed0`, the *other* function the original gate runs immediately
+before the header check, whose `-noanalysis` decompile still only recovers
+an unresolved register value and has not been meaningfully examined. If the
+console is still rejecting the link after this fix reaches hardware, that
+function is the next place to look, not another guess at this blob's
+remaining unconfirmed bytes.
