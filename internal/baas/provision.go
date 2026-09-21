@@ -41,15 +41,16 @@ func ProvisionDeviceAccount(ctx context.Context, store db.Store, now time.Time, 
 	}
 
 	user := db.User{
-		ID:               userID,
-		Nickname:         nickname,
-		Birthday:         "0000-00-00",
-		Permissions:      db.DefaultPermissions(now),
-		Extras:           db.EmptyExtras(),
-		BlocksUpdatedAt:  now,
-		FriendsUpdatedAt: now,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                  userID,
+		Nickname:            nickname,
+		Birthday:            "0000-00-00",
+		Permissions:         db.DefaultPermissions(now),
+		Extras:              db.EmptyExtras(),
+		ThumbnailUploadedAt: &now,
+		BlocksUpdatedAt:     now,
+		FriendsUpdatedAt:    now,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	deviceAccount := db.DeviceAccount{
 		ID:             deviceAccountID,

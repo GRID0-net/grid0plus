@@ -84,17 +84,18 @@ func (s *Server) registerSubmit(w http.ResponseWriter, r *http.Request) {
 
 	now := s.now()
 	user := db.User{
-		ID:                userID,
-		Nickname:          nickname,
-		Birthday:          "0000-00-00",
-		Permissions:       db.DefaultPermissions(now),
-		Extras:            db.EmptyExtras(),
-		BlocksUpdatedAt:   now,
-		FriendsUpdatedAt:  now,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		LoginUsername:     username,
-		LoginPasswordHash: string(hash),
+		ID:                  userID,
+		Nickname:            nickname,
+		Birthday:            "0000-00-00",
+		Permissions:         db.DefaultPermissions(now),
+		Extras:              db.EmptyExtras(),
+		ThumbnailUploadedAt: &now,
+		BlocksUpdatedAt:     now,
+		FriendsUpdatedAt:    now,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		LoginUsername:       username,
+		LoginPasswordHash:   string(hash),
 	}
 
 	if err := s.store.CreateUserWithLogin(r.Context(), user); err != nil {

@@ -134,14 +134,22 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 
 	now := s.now()
 	user := db.User{
-		ID:               userID,
-		Birthday:         "0000-00-00",
-		Permissions:      db.DefaultPermissions(now),
-		Extras:           db.EmptyExtras(),
-		BlocksUpdatedAt:  now,
-		FriendsUpdatedAt: now,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:          userID,
+		Birthday:    "0000-00-00",
+		Permissions: db.DefaultPermissions(now),
+		Extras:      db.EmptyExtras(),
+		// A live capture of a working account (2026-08-27) always carried a
+		// real thumbnailUploadedAt; a self-registered SwitchNet account never
+		// goes through an "upload a thumbnail" step, so it stayed nil forever
+		// otherwise -- the one structural gap left after everything else about
+		// the federation/login response was confirmed byte-identical to that
+		// capture. Real accounts have a thumbnail (even the default one) from
+		// the moment they exist, same reasoning as EmptyExtras' defaults.
+		ThumbnailUploadedAt: &now,
+		BlocksUpdatedAt:     now,
+		FriendsUpdatedAt:    now,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	deviceAccount := db.DeviceAccount{
 		ID:             deviceAccountID,
