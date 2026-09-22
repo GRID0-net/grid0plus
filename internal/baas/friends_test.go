@@ -1,6 +1,8 @@
 package baas
 
 import (
+	"encoding/json"
+	"io"
 	"net/url"
 	"testing"
 
@@ -36,18 +38,50 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	})
 	requireStatus(t, resp, 201)
 
+	// Read the body once and decode it twice: once into the struct, once into a
+	// raw map so the wire key names can be asserted directly (see below).
+	rawSent, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var sent FriendRequestResponse
-	decode(t, resp, &sent)
+	if err := json.Unmarshal(rawSent, &sent); err != nil {
+		t.Fatalf("response is not JSON: %v (body %s)", err, rawSent)
+	}
+	var sentWire map[string]any
+	if err := json.Unmarshal(rawSent, &sentWire); err != nil {
+		t.Fatalf("response is not a JSON object: %v (body %s)", err, rawSent)
+	}
 	if sent.State != db.RequestPending {
 		t.Errorf("new request state = %q, want PENDING", sent.State)
 	}
 	// The response tells A who the request went to, so the console can show
 	// "request sent to Bob" without a second lookup.
-	if sent.To == nil || sent.To.ID != bob.UserID {
-		t.Errorf("the request does not name Bob as the recipient: %+v", sent.To)
+	if sent.Receiver == nil || sent.Receiver.ID != bob.UserID {
+		t.Errorf("the request does not name Bob as the recipient: %+v", sent.Receiver)
 	}
-	if sent.To != nil && sent.To.Nickname != "Bob" {
-		t.Errorf("recipient nickname = %q, want Bob", sent.To.Nickname)
+	if sent.Receiver != nil && sent.Receiver.Nickname != "Bob" {
+		t.Errorf("recipient nickname = %q, want Bob", sent.Receiver.Nickname)
+	}
+	if sent.SenderID != alice.UserID || sent.ReceiverID != bob.UserID {
+		t.Errorf("senderId/receiverId = %q/%q, want Alice/Bob", sent.SenderID, sent.ReceiverID)
+	}
+
+	// The client reads senderId/receiverId and sender.*/receiver.*; it reads no
+	// from/to at all. Decoding into the struct above would not catch a wrong
+	// json tag, so check the key names on the wire directly.
+	for _, key := range []string{"id", "senderId", "receiverId", "state", "createdAt"} {
+		if _, ok := sentWire[key]; !ok {
+			t.Errorf("the friend-request response has no %q key: %v", key, sentWire)
+		}
+	}
+	if _, ok := sentWire["receiver"]; !ok {
+		t.Errorf("the friend-request response has no \"receiver\" key: %v", sentWire)
+	}
+	for _, dead := range []string{"from", "to"} {
+		if _, ok := sentWire[dead]; ok {
+			t.Errorf("the friend-request response still carries %q, which no client reads: %v", dead, sentWire)
+		}
 	}
 
 	// ---- it is in A's outbox and B's inbox ----
@@ -73,8 +107,16 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 		t.Fatalf("B's inbox = %+v, want the one request", inbox.Items)
 	}
 	// B needs to know who is asking, or the accept screen is blank.
-	if inbox.Items[0].From == nil || inbox.Items[0].From.ID != alice.UserID {
-		t.Errorf("B's inbox entry does not name Alice: %+v", inbox.Items[0].From)
+	if inbox.Items[0].Sender == nil || inbox.Items[0].Sender.ID != alice.UserID {
+		t.Errorf("B's inbox entry does not name Alice: %+v", inbox.Items[0].Sender)
+	}
+	// The recipient's own side is not echoed back, but the ids always are.
+	if inbox.Items[0].SenderID != alice.UserID || inbox.Items[0].ReceiverID != bob.UserID {
+		t.Errorf("B's inbox entry ids = %q/%q, want Alice/Bob",
+			inbox.Items[0].SenderID, inbox.Items[0].ReceiverID)
+	}
+	if inbox.Items[0].Receiver != nil {
+		t.Errorf("B's inbox entry echoed B's own profile back: %+v", inbox.Items[0].Receiver)
 	}
 
 	// The relationship reads correctly from both sides while pending.

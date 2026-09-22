@@ -370,10 +370,12 @@ func (s *Server) createFriendRequest(w http.ResponseWriter, r *http.Request, c *
 		s.log.Info("baas: friend requests crossed, became friends",
 			"user", c.UserID, "friend", target.ID)
 		writeJSON(w, http.StatusCreated, FriendRequestResponse{
-			ID:        incoming.ID,
-			State:     requestStateToWire(db.RequestAccepted),
-			CreatedAt: incoming.CreatedAt.Unix(),
-			UpdatedAt: s.now().Unix(),
+			ID:         incoming.ID,
+			SenderID:   incoming.FromUserID,
+			ReceiverID: incoming.ToUserID,
+			State:      requestStateToWire(db.RequestAccepted),
+			CreatedAt:  incoming.CreatedAt.Unix(),
+			UpdatedAt:  s.now().Unix(),
 		})
 		return
 	}
@@ -711,10 +713,12 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request, c *caller,
 // whichever party is not the caller.
 func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest, callerID string) FriendRequestResponse {
 	out := FriendRequestResponse{
-		ID:        req.ID,
-		State:     requestStateToWire(req.State),
-		CreatedAt: req.CreatedAt.Unix(),
-		UpdatedAt: req.UpdatedAt.Unix(),
+		ID:         req.ID,
+		SenderID:   req.FromUserID,
+		ReceiverID: req.ToUserID,
+		State:      requestStateToWire(req.State),
+		CreatedAt:  req.CreatedAt.Unix(),
+		UpdatedAt:  req.UpdatedAt.Unix(),
 	}
 
 	fill := func(id string) *UserResponse {
@@ -737,10 +741,10 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 	}
 
 	if req.FromUserID != callerID {
-		out.From = fill(req.FromUserID)
+		out.Sender = fill(req.FromUserID)
 	}
 	if req.ToUserID != callerID {
-		out.To = fill(req.ToUserID)
+		out.Receiver = fill(req.ToUserID)
 	}
 	return out
 }

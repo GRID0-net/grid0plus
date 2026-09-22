@@ -218,16 +218,45 @@ type FriendResponse struct {
 
 // FriendRequestResponse is one entry in the inbox or outbox.
 //
-// TODO(capture-needed): the inbox and outbox captures (04, 05) both returned
-// empty item lists, so the per-item shape is still unconfirmed. The fields
-// here are the minimum the console needs to draw the "friend requests" screen:
-// who sent it, when, and enough profile to show them. Change: friendRequestResponse
-// in friends.go once a capture with actual items arrives.
+// The per-item shape was settled 2026-09-22 by decompiling the operator's own
+// console's friends sysmodule — the two captures that would have shown it (04,
+// 05) both returned empty item lists, which is why it stayed a guess for so
+// long. The inbox parser (`0x1cf640`) and the outbox parser (`0x1cfe20`) read
+// identical field sets, and it is `senderId`/`receiverId` with `sender.*` and
+// `receiver.*` profiles, not `from`/`to`:
+//
+//	$.items[*].id                $.items[*].state
+//	$.items[*].senderId          $.items[*].receiverId
+//	$.items[*].sender.nickname   $.items[*].receiver.nickname
+//	$.items[*].sender.thumbnailUrl
+//	$.items[*].receiver.thumbnailUrl
+//	$.items[*].createdAt
+//	$.items[*].channels[0]
+//	$.items[*].extras.receiver.read
+//	$.items[*].extras.sender.route:*
+//	$.items[*].extras.senderAndReceiver.route:*
+//
+// SwitchNet sent `from` and `to`, so every field the client actually reads was
+// missing: the friend-requests screen had rows with no name, no picture and no
+// ids to act on.
+//
+// TODO(capture-needed): `extras.receiver.read` is the recipient's unread flag --
+// the parser reads it, and this server keeps no read state for a request, so it
+// is not sent. Whether the client treats the absent key as unread (the useful
+// default) or as read needs a capture with a real pending request in it. Change:
+// friendRequestResponse in friends.go.
 type FriendRequestResponse struct {
-	ID   string        `json:"id"`
-	From *UserResponse `json:"from,omitempty"`
-	To   *UserResponse `json:"to,omitempty"`
-	// State's real values are confirmed, unlike the rest of this type: a
+	ID string `json:"id"`
+	// SenderID and ReceiverID are always both present: they are ids, not
+	// profiles, and the client uses them to know which side is which.
+	SenderID   string `json:"senderId"`
+	ReceiverID string `json:"receiverId"`
+	// Sender and Receiver hold the two profiles. Whichever side is the caller is
+	// left out — a pending request is not yet a friendship, and the caller does
+	// not need their own profile read back to them.
+	Sender   *UserResponse `json:"sender,omitempty"`
+	Receiver *UserResponse `json:"receiver,omitempty"`
+	// State's real values are confirmed: a
 	// 2026-09-20 decompile of the operator's own console's friends sysmodule
 	// found the actual enum -- PENDING, AUTHORIZED, REJECTED, CANCELED,
 	// EXPIRED -- and three of these are spelled differently from the
