@@ -127,9 +127,9 @@ func TestBlockedUserIsNotFindable(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	var found []UserResponse
+	var found CollectionEnvelope[UserResponse]
 	decode(t, resp, &found)
-	if len(found) != 0 {
+	if len(found.Items) != 0 {
 		t.Errorf("a blocked user is still findable: %+v", found)
 	}
 }

@@ -159,16 +159,16 @@ func TestFindUserByFriendCode(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	var found []UserResponse
+	var found CollectionEnvelope[UserResponse]
 	decode(t, resp, &found)
-	if len(found) != 1 || found[0].ID != b.UserID {
+	if len(found.Items) != 1 || found.Items[0].ID != b.UserID {
 		t.Fatalf("lookup returned %+v, want just B", found)
 	}
-	if found[0].Nickname != "Bob" {
-		t.Errorf("nickname = %q, want Bob", found[0].Nickname)
+	if found.Items[0].Nickname != "Bob" {
+		t.Errorf("nickname = %q, want Bob", found.Items[0].Nickname)
 	}
 	// A stranger sees enough to be added and nothing more.
-	if len(found[0].DeviceAccounts) != 0 {
+	if len(found.Items[0].DeviceAccounts) != 0 {
 		t.Error("a stranger lookup exposed device accounts")
 	}
 }
@@ -190,10 +190,48 @@ func TestFindUserByFriendCodeRealQueryParam(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	var found []UserResponse
+	var found CollectionEnvelope[UserResponse]
 	decode(t, resp, &found)
-	if len(found) != 1 || found[0].ID != b.UserID {
+	if len(found.Items) != 1 || found.Items[0].ID != b.UserID {
 		t.Fatalf("lookup returned %+v, want just B", found)
+	}
+}
+
+// TestUserLookupByFilterIDIN reads the id form the console actually sends.
+//
+// Its builder formats "filter.id.$in=" followed by "%016llx" per id, comma
+// separated, after de-duplicating; and the response parsers beside it read
+// $.items[*]. A server that answers either with a 400 (an unfiltered query) or
+// with a bare array fails the call the applet is built around.
+func TestUserLookupByFilterIDIN(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	c := h.newAccount()
+	h.setNickname(b, "Bob")
+	h.setNickname(c, "Carol")
+
+	resp := h.do(request{
+		method: "GET",
+		path:   "/1.0.0/users?filter.id.$in=" + b.UserID + "," + c.UserID + "," + b.UserID,
+		token:  a.AccessToken,
+	})
+	requireStatus(t, resp, 200)
+
+	var found CollectionEnvelope[UserResponse]
+	decode(t, resp, &found)
+	// Two, not three: the console de-duplicates before it asks, so it never
+	// sends a repeat, but a server that echoes one back twice would make the
+	// applet's own list disagree with its cache.
+	if len(found.Items) != 2 {
+		t.Fatalf("got %d users for an $in of two ids, want 2", len(found.Items))
+	}
+	got := map[string]bool{}
+	for _, u := range found.Items {
+		got[u.ID] = true
+	}
+	if !got[b.UserID] || !got[c.UserID] {
+		t.Errorf("lookup by $in returned %+v, want both B and C", got)
 	}
 }
 
@@ -225,9 +263,9 @@ func TestFindUsersDoesNotReturnTheCaller(t *testing.T) {
 	})
 	requireStatus(t, resp, 200)
 
-	var found []UserResponse
+	var found CollectionEnvelope[UserResponse]
 	decode(t, resp, &found)
-	if len(found) != 0 {
+	if len(found.Items) != 0 {
 		t.Errorf("the caller's own account came back: %+v", found)
 	}
 }

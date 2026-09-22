@@ -947,17 +947,25 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 // the filter form.
 //
 //	GET /1.0.0/users?filter.links.friendCode.id.$in=7779-8151-4794  (real)
+//	GET /1.0.0/users?filter.id.$in=<16hex>[,<16hex>...]             (real)
 //	GET /1.0.0/users?friendCode=7779-8151-4794                      (alias)
 //	GET /1.0.0/users?nickname=someone
 //	GET /1.0.0/users?ids=aaaa...,bbbb...
 //
-// and returns a JSON array of stranger-visibility user objects.
+// and returns an envelope of stranger-visibility user objects.
 //
-// TODO(capture-needed): whether $in ever carries more than one comma-separated
-// code in practice, and whether nickname/ids go through the same filter.*
-// convention rather than their own plain query keys -- this decompile only
-// resolved the friend-code lookup, the one the string search actually found
-// evidence for.
+// The id form was settled 2026-09-22 by decompiling the friends sysmodule.
+// Its builder (`FUN_001d40b0`, and its `0x1d57d0` twin) de-duplicates the id
+// list, formats a prefix of "https://%s/1.0.0/users?filter.id.$in=" and then
+// appends "%016llx" per id with a ',' between them -- so the ids are
+// comma-separated 16-hex-digit strings, and this endpoint used to refuse the
+// whole call as unfiltered. The response parsers next to it (`0x1d4880`,
+// `0x1d4d20`) read $.items[*], $.items[*].id, .nickname, .thumbnailUrl and
+// .extras.*.playLog: an envelope, like every other list here.
+//
+// TODO(capture-needed): whether nickname also goes through the filter.*
+// convention rather than its own plain query key -- this pass only found
+// evidence for the friend-code and id forms.
 func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 	friendCode := r.URL.Query().Get("filter.links.friendCode.id.$in")
 	if friendCode == "" {
@@ -968,8 +976,18 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 		Nickname:   r.URL.Query().Get("nickname"),
 		Limit:      50,
 	}
-	if ids := r.URL.Query().Get("ids"); ids != "" {
-		q.IDs = strings.Split(ids, ",")
+	// The console's real id lookup: "filter.id.$in=<id>,<id>,...", built by
+	// FUN_001d40b0. "ids" stays as this server's own alias.
+	idsParam := r.URL.Query().Get("filter.id.$in")
+	if idsParam == "" {
+		idsParam = r.URL.Query().Get("ids")
+	}
+	if idsParam != "" {
+		for _, id := range strings.Split(idsParam, ",") {
+			if id = strings.ToLower(strings.TrimSpace(id)); id != "" {
+				q.IDs = append(q.IDs, id)
+			}
+		}
 	}
 	if q.FriendCode == "" && q.Nickname == "" && len(q.IDs) == 0 {
 		// An unfiltered query would enumerate every account on the server to
@@ -1009,7 +1027,11 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 		}
 		out = append(out, userResponse(s.now(), u, s.friendCodeOrNil(r.Context(), u.ID), pres, nil, visStranger, defaultThumb1, defaultThumb2))
 	}
-	writeJSON(w, http.StatusOK, out)
+
+	// An envelope, not a bare array: both of the console's parsers for this
+	// endpoint read $.items[*] and match nothing at the top level. See the
+	// comment above.
+	writeJSON(w, http.StatusOK, newCollection(q.Limit, out))
 }
 
 // ---- device accounts ----------------------------------------------------
