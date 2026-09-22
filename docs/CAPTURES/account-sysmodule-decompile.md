@@ -126,6 +126,40 @@ the concrete wizards behind the add-user flow, next to `detail::OAuthProcedureBa
 `migration` the console-transfer half. This answers the "which component runs
 the add-user / import flow" question in `nintendo-account-link.md`.
 
+## The linkage procedure, step by step
+
+`an_nas_oauth_linkage_stateMachine` (0x1fd120) is the wizard the add-user flow
+runs, and its order is *not* the order the wire suggests:
+
+| # | Call | What it does | Failure |
+| --- | --- | --- | --- |
+| 1a | `FUN_001d8910(…, 0x81333c548b2e876d)` | a dauth application token: `POST /v5/application_auth_token`, or `/v8/challenge` + `/v8/device_auth_tokens` when the cached one is dead | its return |
+| 1b | `FUN_00204260` → `FUN_001ccfe0` | **`POST /1.0.0/login`**, form `id&password&appAuthNToken&naCountry&isPersistent` | its return |
+| 1c | `FUN_001fd890` | **`GET /2.0.0/users/me`**, parsed by `parse_na_profile_permissions` — unconditional on 1b succeeding | its return |
+| 2 | `fs_nas_dat_a` (0x1c5a40) | ensures `%s/nas/%016llx.dat` exists; returns 1 — which the machine turns into `0x2467c` — exactly when the file is **already present at size 0x80**; a wrong size is rewritten, and "not found" returns 0 | 0x2467c |
+| 3 | `FUN_001ca070` → `FUN_001cd6d0` | **`POST /1.0.0/federation`**, form `id&password&idp=nintendoAccount&naCountry&idToken`; fills the record `{naID@0x00, nxAccount@0x21, url@0x122}` from the response, but only if the response names the same user id step 1 produced | its return, two server codes remapped to `0x2447c` |
+| 4 | `an_nxAccount_validateRecord` | the three checks above | 0x2487c = 2124-0292 |
+| 5 | `FUN_001f06a0` | POSTs the record's third string if it is non-empty, 128 KB cap | its return |
+
+Two consequences for reading a real console's nginx log:
+
+- **A login with no `GET /2.0.0/users/me` after it means step 1b's response was
+  rejected** — 1c is unconditional, so its absence is not "the console decided
+  not to". A login whose `users/me` *did* arrive, but which is followed by no
+  `federation`, failed at step 2 instead — a local file op, invisible to the
+  server.
+- **A failure inside a console sysmodule leaves the same signature as one of
+  these.** The working 2026-08-26 capture's call immediately after a login is
+  `PUT /1.0.0/push_channels/<user>/<device>`, whose body carries an **npns**
+  device token — so when push-channel registration never reaches the server,
+  the cause can be the npns/penne bootstrap and not BAAS at all. Every host in
+  that chain is served by SwitchNet's generic stubs (`consumer.lp1.npns…`,
+  `god.hac.lp1.penne…`) or by `nplnrest`'s unhandled-path fallback, which
+  answers a bare `{}` — the two-byte 200 seen on
+  `POST /v1/accounts/<id>/notification_tokens` in the 2026-09-22 hardware log.
+  `internal/stubs` logs every request it answers ("stub request"), so the
+  console's npns/penne paths are readable from that service's log.
+
 ## Where the head bytes come from (settled 2026-09-22, same pass)
 
 They are **not derived by the console at all** — they are round-tripped
