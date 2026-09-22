@@ -730,6 +730,55 @@ func TestNAUsersMeReturnsTheAuthenticatedPersonsProfile(t *testing.T) {
 	}
 }
 
+// TestNAUsersMeReflectsWhetherThisAccountHasActuallyLinked pins the field a
+// 2026-09-23 mitmdump capture caught this handler getting wrong: the console
+// calls this same endpoint again immediately after /1.0.0/federation
+// succeeds, and a version of this handler that answered unconditionally
+// handed back the exact same body both times -- nothing ever told it the
+// link it had just completed had taken effect. account_main.nso parses
+// isNnLinked out of this response and feeds it into the local check that
+// gates whether the link is accepted, so it has to flip from false to true
+// across that federation call, not read true (or false) for every account.
+func TestNAUsersMeReflectsWhetherThisAccountHasActuallyLinked(t *testing.T) {
+	h := newHarness(t)
+	user := registerLoginUser(t, h, "erin", "hunter2222")
+	accessToken, _ := naLogin(t, h, "erin", "hunter2222")
+
+	resp, err := doAuthorized(h, "GET", "/2.0.0/users/me", accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+	var before struct {
+		IsNnLinked bool `json:"isNnLinked"`
+	}
+	decode(t, resp, &before)
+	if before.IsNnLinked {
+		t.Error("isNnLinked = true before this account has ever federated")
+	}
+
+	extras := user.Extras
+	extras[db.ScopeSelf]["nintendoAccountId"] = "some-na-id"
+	if _, err := h.store.UpdateUser(t.Context(), user.ID, db.UserPatch{Extras: &extras}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err = doAuthorized(h, "GET", "/2.0.0/users/me", accessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+	var after struct {
+		IsNnLinked bool `json:"isNnLinked"`
+	}
+	decode(t, resp, &after)
+	if !after.IsNnLinked {
+		t.Error("isNnLinked = false after recordNintendoAccountLink's own bookkeeping shows a linked account")
+	}
+}
+
 // TestNAUsersMeGivesAFreshPersonADefaultAvatar matches the operator's
 // 2026-08-26 description of real Nextendo: the "add this user to this
 // console" confirmation screen always has a picture to show, generated the
