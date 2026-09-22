@@ -427,6 +427,54 @@ func TestFederationBackfillsCountryFromTheRequestNotAHardcodedDefault(t *testing
 	}
 }
 
+// TestFederationTreatsTheLiteralUnknownCountryAsAbsent guards a real gap
+// found 2026-09-22 by decompiling account_main.nso: the console's own
+// federation request builder (FUN_71000cd6d0) sends the literal string
+// "Unknown" for naCountry whenever it has no real value to report --
+// unconditionally true for a first-time link, the exact case this field
+// exists to backfill. Before this fix, "Unknown" was not empty, so it
+// passed straight through and got stored verbatim -- not a valid ISO
+// country code, and never corrected afterward since recordNintendoAccountLink
+// only backfills when the stored value is empty.
+func TestFederationTreatsTheLiteralUnknownCountryAsAbsent(t *testing.T) {
+	h := newHarness(t)
+	a := h.register()
+
+	now := h.clock()
+	idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject:  "some-other-nintendo-account-id",
+		Audience: "test",
+		IssuedAt: now.Unix(),
+		Expires:  now.Add(time.Minute).Unix(),
+		Issuer:   "https://accounts.nintendo.com",
+		TokenID:  sjwt.NewTokenID(),
+		Type:     "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp":       {"nintendoAccount"},
+			"id":        {a.DeviceAccountID},
+			"password":  {a.Password},
+			"idToken":   {idToken},
+			"naCountry": {"Unknown"},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	var body loginResponse
+	decode(t, resp, &body)
+	if body.User.Country == "Unknown" {
+		t.Errorf("federation's own embedded user.country = %q, the console's placeholder leaked through instead of falling back",
+			body.User.Country)
+	}
+}
+
 // TestFederationBackfillsBirthdayAndCountryEvenWhenTheLinkAlreadyExisted
 // guards the early-return that shipped alongside the very first version of
 // this feature: recordNintendoAccountLink skipped its whole body, birthday

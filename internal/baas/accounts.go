@@ -642,6 +642,20 @@ func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form f
 // person who just proved a real Nintendo Account, but it is not, on its
 // own, what makes federation succeed.
 //
+// naCountryUnknown is the literal string account_main.nso's own federation
+// request builder falls back to for the naCountry form field when it has
+// nothing real to report -- confirmed 2026-09-22 by decompiling
+// FUN_71000cd6d0 (the /1.0.0/federation request constructor): the
+// "%s"-formatted naCountry value defaults to the literal C string "Unknown"
+// whenever a console-side flag (whether this profile has a previously
+// linked Nintendo Account) is unset, which is unconditionally the case on a
+// first-time link -- exactly the scenario this field exists to handle.
+// Treated identically to an absent naCountry below, or a real console's
+// first link permanently stores "Unknown" as the country: not a valid ISO
+// code, and never corrected afterward since recordNintendoAccountLink only
+// backfills an empty value.
+const naCountryUnknown = "Unknown"
+
 // naCountry is the console's own hint (the request's naCountry form field)
 // for which country to backfill, used in preference to a hardcoded one --
 // found 2026-08-27 that this was previously always "US" regardless of what
@@ -677,9 +691,9 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 		birthday := "2000-01-01"
 		patch.Birthday = &birthday
 	}
-	if user.Country == "" {
+	if user.Country == "" || user.Country == naCountryUnknown {
 		country := naCountry
-		if country == "" {
+		if country == "" || country == naCountryUnknown {
 			country = "US"
 		}
 		patch.Country = &country
