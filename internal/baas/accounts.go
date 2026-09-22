@@ -537,6 +537,19 @@ func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form f
 		}
 	}
 
+	// The console checks this response against ids it cached from earlier
+	// responses in the same session, and refuses the login -- with a generic
+	// message the server never sees a request for -- when they disagree:
+	// a user id that is not the one it logged in with, or a
+	// links.nintendoAccount.id that is missing, or is not the NA account id
+	// it holds. See docs/CAPTURES/account-sysmodule-decompile.md, where
+	// those three rules come from FUN_71000ccaf0's own branches. Logging
+	// the three ids is what makes a failed session diagnosable from the
+	// server side at all, since a rejection at that gate is followed by no
+	// further request to identify it by.
+	s.log.Info("baas: login issued tokens",
+		"user", user.ID, "device_account", da.ID, "nintendo_account", nintendoAccountID)
+
 	now := s.now()
 
 	accessToken, err := s.accessIssuer.Sign(sjwt.BAASTokenClaims{
