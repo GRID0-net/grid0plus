@@ -13,6 +13,11 @@ capture — see
 `account` sysmodule: the console's own validation of `nxAccount` and the error
 codes it raises, the response parsers behind each BAAS call, and the complete
 list of endpoints it can construct (eight of which SwitchNet does not serve).
+[friends-sysmodule-decompile.md](friends-sysmodule-decompile.md) does the same
+for the client of this file's own endpoints: it confirmed the friend list, the
+presence extras and the friend-request state spellings as already right, found
+two list responses that were shaped so the console could never read them (both
+fixed), and leaves three things open.
 
 ## Fastest way to answer most of this
 
@@ -48,6 +53,14 @@ items}` envelope (not a bare array). Each item is a relationship object with
 **What SwitchNet does now:** returns `CollectionEnvelope[FriendResponse]` with
 `FriendResponse` as the confirmed relationship object.
 
+**Confirmed field-by-field by the 2026-09-22 friends-sysmodule decompile**
+(see [friends-sysmodule-decompile.md](friends-sysmodule-decompile.md)): the
+entry parser reads `friendId`, `friend.nickname`, `friend.thumbnailUrl`,
+`friend.presence.state`, `friend.presence.extras.friends.appField` and
+`appInfo:*`, `friendNote`, `createdAt` — all of which SwitchNet already sends.
+The one thing in that family it reads and SwitchNet does not send is
+`extras.self.route:*`; see that document's "What is still open".
+
 **Still open within this item:** `models.go`'s `Channels` field
 (`TODO(capture-needed)` at `internal/baas/models.go:175`) — the envelope shape
 is settled, but what triggers a `FRIEND_CODE` entry inside it and what its
@@ -63,17 +76,26 @@ typing a friend code, and picking somebody the console already knows about.
 `userId` or `nsaId`. Accepting all of them is cheaper than guessing wrong: a
 refused request during bring-up is a dead end with nothing to go on.
 
-**What a capture would settle:** which encoding and which key. Then the others
-can be dropped.
+**Settled by decompile, 2026-09-22:** the encoding is JSON. The request builder
+for this exact endpoint sends `Content-Type: application/json` and nothing
+form-encoded, so the form branch is dead weight rather than a second real shape.
+What that pass could not read: the body's keys — the builder function formats
+only the URL and headers, and the small writer that assembles the body was not
+isolated.
+
+**What a capture would settle:** which key (`friendCode`, `userId`, `nsaId`).
+Then the others can be dropped, along with the form encoding.
 
 **How to capture:** type a friend code into Add Friend on a real console.
 
-**Related, separately guessed:** the block-request body
-(`TODO(capture-needed)` at `internal/baas/friendcodes.go:185`) accepts the
-same form/JSON, `userId`/`nsaId` ambiguity, for the same undocumented reason —
+**Related, separately guessed:** the block-request *body*
+(`TODO(capture-needed)` in `internal/baas/friendcodes.go`) accepts the same
+form/JSON, `userId`/`nsaId` ambiguity, for the same undocumented reason —
 blocking a user on a real console would settle this one independently of the
 friend-request body above, since nothing confirms the friends sysmodule uses
-the same encoding for both actions.
+the same encoding for both actions. The block *list* response, which used to be
+in the same state, was settled by decompile instead: it is an envelope of
+`targetUserId`/`targetUser` entries, fixed in `2e77714`.
 
 **Also open:** the per-item shape of the inbox/outbox this request populates
 (`TODO(capture-needed)` at `internal/baas/models.go:187`, `FriendRequestResponse`)
@@ -119,12 +141,20 @@ response shape needed no correction. Fixed in `internal/baas/accounts.go`;
 convention rather than their own plain query keys -- the decompile only
 found evidence for the friend-code case.
 
-**What SwitchNet does:** accepts `?filter.links.friendCode.id.$in=` (real) and
-`?friendCode=` (alias), plus `?nickname=` and `?ids=` (still guessed as plain
-keys). Returns an array of stranger-visibility user objects. An unfiltered
-query is refused, because it would otherwise enumerate every account on the
-server to any
-authenticated console.
+**Settled by the same 2026-09-22 decompile:** the id form *does* use the filter
+convention, and the response is an envelope. `filter.id.$in=` carries
+comma-separated 16-hex-digit ids (the builder de-duplicates its list before
+formatting it), and the parsers either side of that builder read `$.items[*]`,
+`$.items[*].id`, `.nickname`, `.thumbnailUrl` and `.extras.*.playLog`. SwitchNet
+answered the id form with 400 and the response with a bare array, so neither
+half of that call worked. Fixed in `369011a`.
+
+**What SwitchNet does:** accepts `?filter.links.friendCode.id.$in=` (real),
+`?filter.id.$in=` (real), plus `?friendCode=` and `?ids=` as this server's own
+aliases, and `?nickname=` (still guessed as a plain key). Returns an envelope of
+stranger-visibility user objects. An unfiltered query is refused, because it
+would otherwise enumerate every account on the server to any authenticated
+console.
 
 It is possible the code is resolved inside `POST /2.0.0/friend_requests` instead,
 which SwitchNet also supports; in that case this endpoint stays as a convenience
