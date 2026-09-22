@@ -97,15 +97,16 @@ func makeUser(t *testing.T, s Store, nickname string) User {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	id := hexID(seq)
 	u := User{
-		ID:               id,
-		Nickname:         nickname,
-		Birthday:         "0000-00-00",
-		Permissions:      DefaultPermissions(now),
-		Extras:           EmptyExtras(),
-		BlocksUpdatedAt:  now,
-		FriendsUpdatedAt: now,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                  id,
+		Nickname:            nickname,
+		Birthday:            "0000-00-00",
+		Permissions:         DefaultPermissions(now),
+		Extras:              EmptyExtras(),
+		ThumbnailUploadedAt: &now,
+		BlocksUpdatedAt:     now,
+		FriendsUpdatedAt:    now,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	da := DeviceAccount{
 		ID:             hexID(seq + 100000),
@@ -153,6 +154,14 @@ func testUsers(t *testing.T, s Store) {
 	}
 	if got.Permissions.Presence != "FRIENDS" {
 		t.Errorf("permissions did not round-trip: %+v", got.Permissions)
+	}
+	// Caught a real bug once: Postgres's CreateUser/CreateUserWithLogin
+	// INSERTs never listed this column, so the Go-side value was silently
+	// dropped -- the in-memory store never had this bug (it stores the
+	// struct directly, no column list to miss), so this only shows up
+	// against a real database.
+	if got.ThumbnailUploadedAt == nil {
+		t.Error("thumbnailUploadedAt did not round-trip through CreateUser")
 	}
 
 	if _, err := s.GetUser(ctx, "ffffffffffffffff"); !errors.Is(err, ErrNotFound) {
@@ -239,17 +248,18 @@ func testUserLogin(t *testing.T, s Store) {
 	seq++
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	u := User{
-		ID:                hexID(seq),
-		Nickname:          "Bob",
-		Birthday:          "0000-00-00",
-		Permissions:       DefaultPermissions(now),
-		Extras:            EmptyExtras(),
-		BlocksUpdatedAt:   now,
-		FriendsUpdatedAt:  now,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		LoginUsername:     "bob",
-		LoginPasswordHash: "$2a$10$notarealhash",
+		ID:                  hexID(seq),
+		Nickname:            "Bob",
+		Birthday:            "0000-00-00",
+		Permissions:         DefaultPermissions(now),
+		Extras:              EmptyExtras(),
+		ThumbnailUploadedAt: &now,
+		BlocksUpdatedAt:     now,
+		FriendsUpdatedAt:    now,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		LoginUsername:       "bob",
+		LoginPasswordHash:   "$2a$10$notarealhash",
 	}
 	if err := s.CreateUserWithLogin(ctx, u); err != nil {
 		t.Fatalf("create user with login: %v", err)
@@ -262,6 +272,9 @@ func testUserLogin(t *testing.T, s Store) {
 	}
 	if got.LoginUsername != "bob" || got.LoginPasswordHash != "$2a$10$notarealhash" {
 		t.Errorf("login credentials did not round-trip: %+v", got)
+	}
+	if got.ThumbnailUploadedAt == nil {
+		t.Error("thumbnailUploadedAt did not round-trip through CreateUserWithLogin")
 	}
 
 	// No device account at all -- exists, just deviceless, until this person

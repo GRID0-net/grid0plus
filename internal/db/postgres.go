@@ -150,12 +150,12 @@ func (p *Postgres) CreateUser(ctx context.Context, u User, da DeviceAccount) err
 	_, err = tx.Exec(ctx, `
 		INSERT INTO users (
 			id, nickname, country, birthday,
-			thumbnail_url, thumbnail2_url,
+			thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 			permissions, extras,
 			blocks_updated_at, friends_updated_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$9)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10)`,
 		u.ID, u.Nickname, u.Country, u.Birthday,
-		u.ThumbnailURL, u.Thumbnail2URL,
+		u.ThumbnailURL, u.Thumbnail2URL, u.ThumbnailUploadedAt,
 		perms, extras, u.CreatedAt)
 	if err != nil {
 		return mapErr(err)
@@ -203,13 +203,13 @@ func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User) error {
 	_, err = p.pool.Exec(ctx, `
 		INSERT INTO users (
 			id, nickname, country, birthday,
-			thumbnail_url, thumbnail2_url,
+			thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 			permissions, extras,
 			blocks_updated_at, friends_updated_at, created_at, updated_at,
 			login_username, login_password_hash)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9,$9,$10,$11)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10,$11,$12)`,
 		u.ID, u.Nickname, u.Country, u.Birthday,
-		u.ThumbnailURL, u.Thumbnail2URL,
+		u.ThumbnailURL, u.Thumbnail2URL, u.ThumbnailUploadedAt,
 		perms, extras, u.CreatedAt,
 		u.LoginUsername, u.LoginPasswordHash)
 	if err != nil {
