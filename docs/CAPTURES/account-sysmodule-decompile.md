@@ -134,8 +134,8 @@ runs, and its order is *not* the order the wire suggests:
 | # | Call | What it does | Failure |
 | --- | --- | --- | --- |
 | 1a | `FUN_001d8910(…, 0x81333c548b2e876d)` | a dauth application token: `POST /v5/application_auth_token`, or `/v8/challenge` + `/v8/device_auth_tokens` when the cached one is dead | its return |
-| 1b | `FUN_00204260` → `FUN_001ccfe0` | **`POST /1.0.0/login`**, form `id&password&appAuthNToken&naCountry&isPersistent` | its return |
-| 1c | `FUN_001fd890` | **`GET /2.0.0/users/me`**, parsed by `parse_na_profile_permissions` — unconditional on 1b succeeding | its return |
+| 1b | `FUN_00204260` → `FUN_00204c00` | **`POST /connect/1.0.0/api/token`** — the OAuth code exchange (`param_4` is where the applet put the code), scope `openid offline napps urn:oauth:init-sso user …`; parsed by `parse_na_token_response`. *Corrected 2026-09-22 (second pass): this row previously read `FUN_001ccfe0` / `POST /1.0.0/login`, which this function does not do — it builds the NA token request, and the login is a different routine entirely (below)* | its return |
+| 1c | `FUN_001fd890` | **`GET /2.0.0/users/me`** — the *Nintendo Account* profile, parsed by `parse_na_profile_permissions`. The literal sits in the `accounts.nintendo.com` URL family (0x201270…0x201530), not the BAAS one, and the capture shows the same call on host `api.accounts.nintendo.com`. Unconditional on 1b succeeding | its return |
 | 2 | `fs_nas_dat_a` (0x1c5a40) | ensures `%s/nas/%016llx.dat` exists; returns 1 — which the machine turns into `0x2467c` — exactly when the file is **already present at size 0x80**; a wrong size is rewritten, and "not found" returns 0 | 0x2467c |
 | 3 | `FUN_001ca070` → `FUN_001cd6d0` | **`POST /1.0.0/federation`**, form `id&password&idp=nintendoAccount&naCountry&idToken`; fills the record `{naID@0x00, nxAccount@0x21, url@0x122}` from the response, but only if the response names the same user id step 1 produced | its return, two server codes remapped to `0x2447c` |
 | 4 | `an_nxAccount_validateRecord` | the three checks above | 0x2487c = 2124-0292 |
@@ -143,22 +143,26 @@ runs, and its order is *not* the order the wire suggests:
 
 Two consequences for reading a real console's nginx log:
 
-- **A login with no `GET /2.0.0/users/me` after it means step 1b's response was
-  rejected** — 1c is unconditional, so its absence is not "the console decided
-  not to". A login whose `users/me` *did* arrive, but which is followed by no
-  `federation`, failed at step 2 instead — a local file op, invisible to the
-  server.
+- **The linkage machine makes no BAAS login at all.** Its BAAS calls are
+  `application/token`, `users` and `federation` (step 3). A `POST /1.0.0/login`
+  in the same session therefore comes from a *different* routine — the one
+  that starts the console's notification channel, `FUN_001f8b30`
+  (`FUN_001f8b30` → `FUN_001c8d40` → `FUN_001c8450`, which is the only caller of
+  `PUT /1.0.0/push_channels/{user}/{device}` in the whole module):
+  dauth app token → `POST /connect/1.0.0/api/token` → `GET /2.0.0/users/me` →
+  **`POST /1.0.0/login`** → **`PUT /1.0.0/push_channels/…`**. That is exactly
+  the capture's tail, and exactly what the 2026-09-22 hardware log does until
+  it stops between the login and the push-channel PUT.
 - **A failure inside a console sysmodule leaves the same signature as one of
-  these.** The working 2026-08-26 capture's call immediately after a login is
-  `PUT /1.0.0/push_channels/<user>/<device>`, whose body carries an **npns**
-  device token — so when push-channel registration never reaches the server,
-  the cause can be the npns/penne bootstrap and not BAAS at all. Every host in
-  that chain is served by SwitchNet's generic stubs (`consumer.lp1.npns…`,
-  `god.hac.lp1.penne…`) or by `nplnrest`'s unhandled-path fallback, which
-  answers a bare `{}` — the two-byte 200 seen on
-  `POST /v1/accounts/<id>/notification_tokens` in the 2026-09-22 hardware log.
-  `internal/stubs` logs every request it answers ("stub request"), so the
-  console's npns/penne paths are readable from that service's log.
+  these.** The `push_channels` body carries an **npns** device token, and every
+  host in the npns/penne chain is served by SwitchNet's generic stubs
+  (`consumer.lp1.npns…`, `god.hac.lp1.penne…`) or by `nplnrest`'s
+  unhandled-path fallback, which answers a bare `{}` — the two-byte 200 seen on
+  `POST /v1/accounts/<id>/notification_tokens`. `internal/stubs` logs every
+  request it answers ("stub request"). **But the device token itself is not
+  fetched:** `FUN_001c8450` renders it locally from the user id and an app
+  descriptor (`FUN_001ccfd0`), so a dead npns server does not by itself explain
+  a missing `push_channels`.
 
 ## Where the head bytes come from (settled 2026-09-22, same pass)
 
@@ -201,6 +205,67 @@ derives from `naID`. So a `2124-0292` from this gate means the field was absent,
 empty, mis-prefixed or the wrong length at the moment the record was built —
 not that its *content* was wrong.
 
+## Which parser belongs to which endpoint (2026-09-22, second pass)
+
+Each response parser in this module is a table of JSONPaths, and the table is
+built by a function whose callers name the endpoint it belongs to. That gives a
+field-by-field requirement list per endpoint, with no inference from field
+names:
+
+| Endpoint | Parser | Paths it reads |
+| --- | --- | --- |
+| `POST /1.0.0/application/token` | `parse_baas_login_tokens` (0x1da0a0) | `$.idToken`, `$.accessToken`, `$.expiresIn` + the error envelope (`$.status`/`$.errorCode`/`$.title`/`$.type`/`$.detail`) |
+| `POST /1.0.0/login` | `parse_baas_login_user` (0x1da510) | `$.user.id`, `$.user.links.nintendoAccount.id`, `$.summary.nintendo.hasMembership`, `$.idToken`, `$.accessToken`, `$.expiresIn` + the envelope |
+| `POST /1.0.0/federation` (this caller) | `parse_baas_login_user_full` (0x1dab10) | the whole `$.user`: `.id`, `.nickname`, `.thumbnailUrl`, `.thumbnail2Url`, `.extras.self.nxAccount`, `.links.nintendoAccount.id` + the three token fields |
+| the *other* federation caller (0x1cdd60) | `parse_baas_login_user_self` (0x1db430) | `$.user.id`, `.links.nintendoAccount.id`, `.nickname`, `.thumbnailUrl`, `.thumbnail2Url`, `.extras.self.nxAccount` |
+| `GET /2.0.0/users/me` (NA host) | `parse_na_profile_permissions` (0x1c1eb0) | the NA profile's permission blocks; the capture's own reply lists them |
+
+Checked mechanically against the 2026-08-26 working capture, the two responses
+this flow depends on (`/1.0.0/federation` and `/1.0.0/login`) carry **every
+path in both tables**: `$.user.id`, `.nickname`, `.thumbnailUrl`,
+`.thumbnail2Url`, `.extras.self.nxAccount`, `.links.nintendoAccount.id`, and
+the three token fields. The only paths the capture has and SwitchNet's do not
+are `$.user.links.friendCode.*` and `$.user.thumbnailUploadedAt`, and neither
+appears in any parser table above — so neither is on the path that could
+reject one of these responses.
+
+## Every way this flow can fail, and the error it returns
+
+The console's own error codes, read off the branches that produce them. They
+matter for diagnosis because **only one of them is ever shown as a numbered
+error box** — the rest surface as a message with no code:
+
+| Code | Where | Trigger |
+| --- | --- | --- |
+| `0x527c` | `FUN_001fd120`, `FUN_001f8b30` | the caller passed zeroed ids (nothing to operate on) |
+| `0x2467c` | state machine | `%s/nas/%016llx.dat` already exists at exactly 0x80 bytes |
+| `0x1a47c` | `FUN_001ccaf0` (login tail) | the response's user id ≠ the id the caller asked for; or the response carries no `links.nintendoAccount.id` while the caller expected a linked account |
+| `0x1cc7c` | same | the response *does* carry a link, but not the NA account id the caller expected |
+| `0x18627c` | `FUN_001cd6d0` (federation tail) | the parsed user id ≠ the caller's expected id; or the local `cache/<uuid>` file the nxAccount field made it look up is missing, or larger than 0x100 bytes |
+| `0x3e7c` | `FUN_001d5c60` | that cached file is larger than the caller's buffer |
+| `0x30c7c` | `an_nxAccount_buildRecord` | the blob it re-renders from the profile cache is not exactly 224 base64 characters |
+| `0x18d87c` | `FUN_001ccfe0` (login) | its post-parse store step (`FUN_001ccaf0`) failed with an HTTP-shaped code |
+| `0x2487c` | state machine | `an_nxAccount_validateRecord` — **this is the only one rendered as 2124-0292** |
+
+The important consequence: **a link that fails at `0x1a47c`, `0x1cc7c` or
+`0x18627c` produces no server-visible evidence beyond the last request it made,
+because all three are comparisons against values the console cached from
+earlier responses in the same session.** The console holds two ids across the
+session — the user id and the NA account id — and every later response must
+agree with what it cached.
+
+One real-server behaviour worth writing down, because SwitchNet was accused of
+the opposite: **a real server changes the BAAS user id at federation.** The
+capture's own `POST /1.0.0/users` reply says `"id": "b6e4c0c851aa4db9"`,
+`"links": {}`, `"nickname": ""`, and hands out the device account password;
+the `POST /1.0.0/federation` immediately after returns
+`"id": "3ca9e68e66843f3a"` with `links.nintendoAccount.id` = `d63e6ad0809131f2`.
+Two different user ids for the same device account, one request apart, on a
+server the console accepts. So `completeLogin`'s reassignment (and the fact
+that the NA account id and the BAAS user id are allowed to differ) matches the
+real shape; the console takes the federation's answer as the new truth, and
+what it requires is that everything *after* that agrees with it.
+
 ## What is still open
 
 - **What the context-keyed head bytes encode.** The three big-endian u64s are
@@ -225,3 +290,26 @@ not that its *content* was wrong.
 - **The `%s/avators/profiles.dat` pair** (0x1f2180 / 0x1f5730): which half reads
   and which writes is not settled. The only evidence is copy direction and a
   memset-before-fill pattern.
+- **What fills the 16-byte key `FUN_001cd6d0` looks up in `cache/<uuid>`, and who
+  wrote that entry.** `FUN_001d5c60` formats `%s/cache/%08x-%04x-%04x-%02x%02x-%08x%04x`
+  from a 16-byte value at the parser object's `+0x36C` — a slot the parse itself
+  zeroes before parsing and no JSONPath in the table names — then stats it,
+  refuses anything over 0x100 bytes, and reads it back with the *response* into
+  `record+0x21`. The 2026-09-22 hardware log is consistent with this file
+  having been there (the federation returned 200 and the record validated far
+  enough for the avatar fetch to follow), but nothing yet proves what would
+  happen if it were absent, other than the `0x18627c` the code returns.
+- **The one step a server can influence that no log can see.** Between
+  `FUN_001c8450`'s login and its `PUT /1.0.0/push_channels/…` there is no other
+  request: the login's own tail (`FUN_001ccaf0`) and a *local* device-token
+  render. So a session that stops there was rejected either by the login's own
+  checks — `0x1a47c` / `0x1cc7c`, both comparisons against ids the console
+  cached earlier — or by local code. The measurement that separates them is the
+  server's view of the ids it handed out across that session: whether the user
+  id in the `login` reply equals the one in the `federation` reply the console
+  cached a second earlier, and whether
+  `links.nintendoAccount.id` equals the `id` the NA profile
+  (`GET /2.0.0/users/me`) returned. Both are already true of every reply
+  SwitchNet builds — which is why the next attempt is worth logging rather
+  than reasoning about: the ids are the only variables left, and the server
+  already knows all three.
