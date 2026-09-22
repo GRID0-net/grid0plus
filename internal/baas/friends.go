@@ -227,13 +227,22 @@ func (s *Server) getRelationship(w http.ResponseWriter, r *http.Request, c *call
 		return
 	}
 
-	resp := RelationshipResponse{Type: RelationshipNone}
+	resp := RelationshipResponse{Type: RelationshipNone, SentFriendRequestIDs: []string{}}
 
 	blocked, err := s.store.IsBlockedEitherWay(r.Context(), c.UserID, other)
 	if err != nil {
 		writeInternalError(s.log, w, r, "check blocks", err)
 		return
 	}
+	// The client's isBlocking describes the caller's own action, which is not
+	// the same question as the either-way suppression above. See
+	// RelationshipResponse.IsBlocking.
+	iBlock, err := s.store.IsBlocking(r.Context(), c.UserID, other)
+	if err != nil {
+		writeInternalError(s.log, w, r, "check block direction", err)
+		return
+	}
+	resp.IsBlocking = iBlock
 
 	switch {
 	case blocked:
@@ -242,12 +251,17 @@ func (s *Server) getRelationship(w http.ResponseWriter, r *http.Request, c *call
 	default:
 		if f, err := s.store.GetFriendship(r.Context(), c.UserID, other); err == nil {
 			resp.Type = RelationshipFriend
+			resp.IsFriend = true
 			resp.IsFavorite = f.Favorite
 			resp.BecameFriendAt = f.BecameFriendAt.Unix()
 			break
 		}
-		if _, err := s.store.FindPendingRequest(r.Context(), c.UserID, other); err == nil {
+		if req, err := s.store.FindPendingRequest(r.Context(), c.UserID, other); err == nil {
 			resp.Type = RelationshipSent
+			// The client only asks whether this array has a first element, so
+			// one entry says "you have a request outstanding" without
+			// inventing a list this server does not keep.
+			resp.SentFriendRequestIDs = []string{req.ID}
 			break
 		}
 		if _, err := s.store.FindPendingRequest(r.Context(), other, c.UserID); err == nil {

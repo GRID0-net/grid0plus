@@ -692,6 +692,15 @@ func (m *Memory) IsBlockedEitherWay(_ context.Context, a, b string) (bool, error
 	return ab || ba, nil
 }
 
+// IsBlocking reports whether blocker has blocked blocked, in that direction
+// only.
+func (m *Memory) IsBlocking(_ context.Context, blocker, blocked string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.blocks[blocker][blocked]
+	return ok, nil
+}
+
 // ---- presence ------------------------------------------------------------
 
 // GetPresence returns a user's presence.

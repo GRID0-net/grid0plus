@@ -709,6 +709,12 @@ type Store interface {
 	// Friend requests and presence are suppressed in both directions, so both
 	// have to be checked.
 	IsBlockedEitherWay(ctx context.Context, a, b string) (bool, error)
+	// IsBlocking reports whether blocker has blocked blocked -- one direction
+	// only. It is not a substitute for IsBlockedEitherWay, which is what
+	// suppression uses; this is for the one place a response has to describe
+	// the caller's own action rather than the pair's combined state. See
+	// RelationshipResponse.IsBlocking.
+	IsBlocking(ctx context.Context, blocker, blocked string) (bool, error)
 
 	// ---- presence ----
 

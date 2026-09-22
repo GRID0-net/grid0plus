@@ -900,6 +900,37 @@ func testBlocks(t *testing.T, s Store) {
 		}
 	}
 
+	// IsBlocking is the one-directional half: only the blocker it is asked
+	// about is blocking. A response describing the caller's own action cannot
+	// use IsBlockedEitherWay without claiming the caller did something they
+	// did not.
+	if err := s.AddBlock(ctx, b.ID, a.ID, now); err != nil {
+		t.Fatalf("add reverse block: %v", err)
+	}
+	for _, c := range []struct {
+		blocker, blocked string
+		want             bool
+	}{
+		{a.ID, b.ID, true},
+		{b.ID, a.ID, true},
+		{a.ID, a.ID, false},
+	} {
+		got, err := s.IsBlocking(ctx, c.blocker, c.blocked)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != c.want {
+			t.Errorf("IsBlocking(%s, %s) = %v, want %v", c.blocker, c.blocked, got, c.want)
+		}
+	}
+	if err := s.RemoveBlock(ctx, b.ID, a.ID); err != nil {
+		t.Fatalf("remove reverse block: %v", err)
+	}
+	// And with only B's block gone, A's is still the only one that shows.
+	if got, _ := s.IsBlocking(ctx, b.ID, a.ID); got {
+		t.Error("B still blocks A after the reverse block was removed")
+	}
+
 	if err := s.RemoveBlock(ctx, a.ID, b.ID); err != nil {
 		t.Fatalf("remove block: %v", err)
 	}

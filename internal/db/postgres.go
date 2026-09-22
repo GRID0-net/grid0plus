@@ -807,6 +807,17 @@ func (p *Postgres) IsBlockedEitherWay(ctx context.Context, a, b string) (bool, e
 	return exists, mapErr(err)
 }
 
+// IsBlocking reports whether blocker has blocked blocked, in that direction
+// only.
+func (p *Postgres) IsBlocking(ctx context.Context, blocker, blocked string) (bool, error) {
+	var exists bool
+	err := p.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM blocks
+			WHERE user_id = $1 AND blocked_user_id = $2)`, blocker, blocked).Scan(&exists)
+	return exists, mapErr(err)
+}
+
 // ---- presence ------------------------------------------------------------
 
 const presenceColumns = `

@@ -246,10 +246,45 @@ type FriendRequestResponse struct {
 
 // RelationshipResponse is the answer to GET /2.0.0/users/<id>/relationships/<id>.
 //
-// TODO(capture-needed): undocumented. 'type' is modelled on the values the
-// console's own nn::friends relationship enum uses.
+// # The wire shape, settled 2026-09-22 by decompiling the friends sysmodule
+//
+// The request builder (`FUN_001d5b90`) formats this endpoint's URL and then
+// constructs its response object at `FUN_001d5d60`, whose vtable is the table
+// at `0x258558`. That table registers exactly two field callbacks:
+//
+//   - `0x1d5d90` reads `$.isFriend` and `$.isBlocking`, storing each as a
+//     boolean flag;
+//   - `0x1d5e30` reads `$.sentFriendRequestIds[0]` and reduces it to a third
+//     boolean -- it never reads the id itself, only whether the array has a
+//     first element.
+//
+// So the client's entire model of a relationship is three booleans, and these
+// three keys are the ones that have to be right. SwitchNet used to send none of
+// them, which read as the all-false default: **every user looked like a
+// stranger**, including an existing friend, and an outgoing request looked like
+// no request at all.
+//
+// Type, User, IsFavorite and BecameFriendAt are this server's own additions.
+// The client ignores keys it does not ask for, and Type in particular is worth
+// keeping for SwitchNet's own tooling and tests -- but none of the four is read
+// by the console, and "$.becameFriendAt" appears nowhere in the friends
+// sysmodule. Do not treat their presence as evidence about the real wire shape.
 type RelationshipResponse struct {
-	// Type is NONE, FRIEND, FRIEND_REQUEST_SENT, FRIEND_REQUEST_RECEIVED or BLOCKED.
+	// IsFriend is true when a friendship exists in either direction.
+	IsFriend bool `json:"isFriend"`
+	// IsBlocking is true when the CALLER blocks the other user -- not when the
+	// caller is blocked. The distinction is deliberate: telling a blocked user
+	// they are blocked is exactly what a block is meant to prevent, and the
+	// all-false pair of IsFriend/IsBlocking is the same state an ordinary
+	// stranger produces, so a block stays invisible from the blocked side.
+	IsBlocking bool `json:"isBlocking"`
+	// SentFriendRequestIDs carries the caller's pending outgoing request ids.
+	// The client reads only element zero and only its presence, so one entry is
+	// enough; an empty array means "no request outstanding".
+	SentFriendRequestIDs []string `json:"sentFriendRequestIds"`
+
+	// Type is NONE, FRIEND, FRIEND_REQUEST_SENT, FRIEND_REQUEST_RECEIVED or
+	// BLOCKED. SwitchNet's own, not the console's.
 	Type string `json:"type"`
 	// User is the other party.
 	User *UserResponse `json:"user,omitempty"`

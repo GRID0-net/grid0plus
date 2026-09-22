@@ -685,6 +685,93 @@ func TestFriendListDoesNotLeakPrivateFields(t *testing.T) {
 	}
 }
 
+// TestRelationshipCarriesTheThreeFlagsTheClientReads asserts on the wire, not
+// on the Go struct.
+//
+// The friends sysmodule's response object for GET .../relationships/<id> is
+// built at FUN_001d5d60 with the vtable at 0x258558, which registers exactly two
+// field callbacks: one reading $.isFriend and $.isBlocking, one reading
+// $.sentFriendRequestIds[0]. SwitchNet used to send none of those three keys,
+// which the client reads as the all-false default -- a friend and a total
+// stranger were indistinguishable on screen. Decoding into RelationshipResponse
+// would not catch a wrong json tag here, so this decodes into a map.
+func TestRelationshipCarriesTheThreeFlagsTheClientReads(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	c := h.newAccount()
+
+	get := func(self account, other string) map[string]any {
+		t.Helper()
+		resp := h.do(request{
+			method: "GET",
+			path:   "/2.0.0/users/" + self.UserID + "/relationships/" + other,
+			token:  self.AccessToken,
+		})
+		requireStatus(t, resp, 200)
+		var out map[string]any
+		decode(t, resp, &out)
+		for _, key := range []string{"isFriend", "isBlocking", "sentFriendRequestIds"} {
+			if _, ok := out[key]; !ok {
+				t.Fatalf("response has no %q key: %v", key, out)
+			}
+		}
+		return out
+	}
+
+	// A stranger: all three false/empty.
+	stranger := get(a, b.UserID)
+	if stranger["isFriend"] != false || stranger["isBlocking"] != false {
+		t.Errorf("stranger relationship = %v, want isFriend/isBlocking false", stranger)
+	}
+	if ids, ok := stranger["sentFriendRequestIds"].([]any); !ok || len(ids) != 0 {
+		t.Errorf("stranger sentFriendRequestIds = %v, want []", stranger["sentFriendRequestIds"])
+	}
+
+	// A friendship: isFriend true.
+	h.befriend(a, b)
+	if got := get(a, b.UserID); got["isFriend"] != true {
+		t.Errorf("friend relationship = %v, want isFriend true", got)
+	}
+
+	// An outgoing request: non-empty sentFriendRequestIds, which is how the
+	// client tells "I have already asked" from "I could ask".
+	code := h.friendCode(c)
+	resp := h.do(request{
+		method: "POST", path: "/2.0.0/friend_requests",
+		token: a.AccessToken, json: `{"friendCode":"` + code + `"}`,
+	})
+	requireStatus(t, resp, 201)
+	sent := get(a, c.UserID)
+	if ids, ok := sent["sentFriendRequestIds"].([]any); !ok || len(ids) != 1 {
+		t.Errorf("sent request relationship = %v, want one sentFriendRequestIds entry", sent)
+	}
+	if sent["isFriend"] != false {
+		t.Errorf("a pending request reported isFriend = %v, want false", sent["isFriend"])
+	}
+
+	// A block is visible to the blocker as their own action...
+	resp = h.do(request{
+		method: "POST", path: "/1.0.0/users/" + a.UserID + "/blocks",
+		token: a.AccessToken, json: `{"userId":"` + c.UserID + `"}`,
+	})
+	requireStatus(t, resp, 204)
+	if got := get(a, c.UserID); got["isBlocking"] != true {
+		t.Errorf("blocker's own relationship = %v, want isBlocking true", got)
+	}
+
+	// ...and to the blocked user it looks exactly like a stranger, which is the
+	// same all-false, no-profile state an ordinary stranger produces. Telling a
+	// blocked user they were blocked is what a block is meant to prevent.
+	blocked := get(c, a.UserID)
+	if blocked["isBlocking"] != false || blocked["isFriend"] != false {
+		t.Errorf("blocked user's view = %v, want both flags false", blocked)
+	}
+	if ids, ok := blocked["sentFriendRequestIds"].([]any); !ok || len(ids) != 0 {
+		t.Errorf("blocked user's sentFriendRequestIds = %v, want []", blocked["sentFriendRequestIds"])
+	}
+}
+
 // ---- helpers ------------------------------------------------------------
 
 func (h *harness) relationship(t *testing.T, self account, other string) RelationshipResponse {
