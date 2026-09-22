@@ -546,6 +546,83 @@ func TestFederationBackfillsBirthdayAndCountryEvenWhenTheLinkAlreadyExisted(t *t
 	}
 }
 
+// TestFederationDoesNotStompTheConsolesOwnNxAccountPatch guards a real gap
+// described 2026-09-22 by a developer on another Nintendo-account-server
+// project: a real console PATCHes its own version of extras.self.nxAccount
+// back to /1.0.0/users/{id} once, shortly after the first successful link.
+// The server is expected to store that value and echo it back from then on
+// -- recordNintendoAccountLink used to recompute and reassign nxAccountBlob
+// on every single federation call regardless of what was already stored,
+// which would silently stomp the console's own pushed value the very next
+// time the same person's device (or a second device) federated, and the
+// console would keep trying to reconcile a value the server kept undoing.
+func TestFederationDoesNotStompTheConsolesOwnNxAccountPatch(t *testing.T) {
+	h := newHarness(t)
+	person := h.register()
+	firstDevice := h.register()
+
+	now := h.clock()
+	sign := func() string {
+		idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+			Subject:  person.UserID,
+			Audience: "test",
+			IssuedAt: now.Unix(),
+			Expires:  now.Add(time.Minute).Unix(),
+			Issuer:   "https://accounts.nintendo.com",
+			TokenID:  sjwt.NewTokenID(),
+			Type:     "id_token",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return idToken
+	}
+
+	// First federation: records the link and backfills our own placeholder.
+	first := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp": {"nintendoAccount"}, "id": {firstDevice.DeviceAccountID},
+			"password": {firstDevice.Password}, "idToken": {sign()},
+		},
+	})
+	requireStatus(t, first, 200)
+	var firstBody loginResponse
+	decode(t, first, &firstBody)
+
+	// The console PATCHes its own version back -- exactly what patchUser's
+	// /extras/self/nxAccount path is for.
+	consolesOwnValue := "this-is-what-the-real-console-pushed-back"
+	patchResp := h.do(request{
+		method: "PATCH", path: "/1.0.0/users/" + person.UserID,
+		token: firstBody.AccessToken,
+		patch: `[{"op":"replace","path":"/extras/self/nxAccount","value":"` + consolesOwnValue + `"}]`,
+	})
+	requireStatus(t, patchResp, 200)
+
+	// A second console federating to the same, already-linked person -- the
+	// scenario that used to stomp the console's own value right back.
+	secondDevice := h.register()
+	second := h.do(request{
+		method: "POST", path: "/1.0.0/federation",
+		token: h.anonymousToken(),
+		form: url.Values{
+			"idp": {"nintendoAccount"}, "id": {secondDevice.DeviceAccountID},
+			"password": {secondDevice.Password}, "idToken": {sign()},
+		},
+	})
+	requireStatus(t, second, 200)
+
+	var body loginResponse
+	decode(t, second, &body)
+	nxAccount, _ := body.User.Extras[db.ScopeSelf]["nxAccount"].(string)
+	if nxAccount != consolesOwnValue {
+		t.Errorf("extras.self.nxAccount = %q after a repeat federation call, want the console's own pushed value %q preserved",
+			nxAccount, consolesOwnValue)
+	}
+}
+
 // TestFederationAttachesAFreshDeviceAccountToAnExistingPerson is the design
 // this whole reassignment mechanism exists for, described by the operator
 // 2026-08-26 after real hardware showed the gap: signing in on the Nintendo

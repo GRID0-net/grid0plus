@@ -695,9 +695,16 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 	// server is choosing these bytes too and the client can only ever echo
 	// its own copy of them -- see nxAccountBlob's comment. What is left is a
 	// server-side choice no capture of this client can decode.
-	nxAccount := nxAccountBlob(naID)
-	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != nxAccount {
-		extras[db.ScopeSelf]["nxAccount"] = nxAccount
+	//
+	// Set only once, never overwritten on a later call: a real console PATCHes
+	// its own version of this blob back to /1.0.0/users/{id} after the first
+	// profile change (patchUser's /extras/self/nxAccount path already stores
+	// that correctly). Recomputing and reassigning it here on every
+	// subsequent login/federation -- as this used to do -- would stomp
+	// whatever the console just pushed back to our own placeholder, and the
+	// console keeps retrying to reconcile a value the server keeps undoing.
+	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing == "" {
+		extras[db.ScopeSelf]["nxAccount"] = nxAccountBlob(naID)
 		patch.Extras = &extras
 	}
 
