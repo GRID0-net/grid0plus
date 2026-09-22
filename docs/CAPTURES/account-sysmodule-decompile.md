@@ -100,6 +100,21 @@ implementation classes `AccountPolicyServiceImpl` and
 This comes from framework type names and service-name literals, not from
 reading the dispatch table.
 
+**Looking for that dispatch table failed, and the failure is informative.**
+`ns` was imported and analyzed, and a scan for the expected
+`{ u32 id; u32 pad; Handler handler; }` shape found no run of four consecutive
+entries anywhere in the module — none under that layout, nor under four other
+candidate layouts (16- and 24-byte strides, id above or below the pointer,
+zeroed or non-zeroed padding). The template the module instantiates is
+`HipcSimpleAllInOneServerManager<64, 3, …AccountPolicyServerOption…>`, and
+"simple all-in-one" plus a compile-time option list is consistent with the
+command table being a `constexpr` list the compiler folded into code rather
+than a data table. So the command ids are **not** recoverable by table scan,
+and naming individual handlers would need the client proxies' ids correlated
+against argument shapes — a much deeper analysis than this pass, and one that
+would buy little here, since SwitchNet implements the HTTP protocol, not the
+IPC surface.
+
 **The OAuth procedures are in `playerSelect`.** `0100000000001007` carries
 `NintendoAccountLinkageProcedure`, `NintendoAccountLinkageStateUpdateProcedure`,
 `NintendoAccountReauthenticationProcedure`,
