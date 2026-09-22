@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -573,33 +572,16 @@ func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 		iconURI, _ = s.defaultAvatarURLOrEmpty()
 	}
 
-	// account_main.nso parses isNnLinked out of this exact response, caches it
-	// to local save data (nas/<naId>_user.json), and its value feeds directly
-	// into the local check that gates whether a Nintendo Account link is
-	// accepted -- confirmed by a 2026-09-22 decompile (see accounts.go's
-	// federation/completeLogin comments for the fuller story of that check).
-	// A 2026-09-23 mitmdump capture of a failing link showed why this
-	// mattered in practice: the console calls this same endpoint again
-	// immediately after /1.0.0/federation succeeds, and a version of this
-	// handler that answered unconditionally handed back the exact same body
-	// both times -- nothing here ever told the console the link it had just
-	// completed had taken effect. Derived from recordNintendoAccountLink's
-	// own bookkeeping (extras.self.nintendoAccountId) rather than
-	// hardcoded true for every account, so a not-yet-linked profile still
-	// reads as not linked on its first call.
-	_, isNnLinked := user.Extras[db.ScopeSelf]["nintendoAccountId"].(string)
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":         user.ID,
-		"nickname":   user.Nickname,
-		"birthday":   birthday,
-		"country":    country,
-		"iconUri":    iconURI,
-		"language":   "en-US",
-		"region":     nil,
-		"gender":     "unknown",
-		"isChild":    false,
-		"isNnLinked": isNnLinked,
+		"id":       user.ID,
+		"nickname": user.Nickname,
+		"birthday": birthday,
+		"country":  country,
+		"iconUri":  iconURI,
+		"language": "en-US",
+		"region":   nil,
+		"gender":   "unknown",
+		"isChild":  false,
 
 		"email":         "switchnet@example.com",
 		"emailVerified": true,
