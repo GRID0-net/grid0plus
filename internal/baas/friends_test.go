@@ -23,7 +23,7 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	h.setNickname(bob, "Bob")
 
 	// ---- B generates a friend code and tells A ----
-	bobCode := h.generateFriendCode(bob)
+	bobCode := h.friendCode(bob)
 	if len(bobCode) != 14 { // dddd-dddd-dddd
 		t.Fatalf("friend code %q is not in the dddd-dddd-dddd form", bobCode)
 	}
@@ -204,7 +204,7 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 func TestFriendRequestBySelfIsRefused(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
-	code := h.generateFriendCode(a)
+	code := h.friendCode(a)
 
 	// When identity resolution upstream is broken, "add a friend" becomes a
 	// self-request surprisingly often, and a friend graph full of self-edges is
@@ -229,7 +229,7 @@ func TestFriendRequestAcceptsAFriendCodeInAnyFormPlayersType(t *testing.T) {
 	a := h.newAccount()
 	b := h.newAccount()
 
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 	digits := ""
 	for _, r := range code {
 		if r != '-' {
@@ -260,7 +260,7 @@ func TestFriendRequestByFormEncodedBody(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 	b := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	// Which encoding the friends sysmodule uses is not documented, so both are
 	// accepted. Refusing the wrong guess would be a dead end during bring-up.
@@ -296,7 +296,7 @@ func TestARetriedFriendRequestDoesNotDuplicate(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 	b := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	// A console that thinks its request was lost retries. Two rows would show B
 	// the same request twice.
@@ -332,8 +332,8 @@ func TestCrossingFriendRequestsBecomeAFriendship(t *testing.T) {
 	a := h.newAccount()
 	b := h.newAccount()
 
-	aCode := h.generateFriendCode(a)
-	bCode := h.generateFriendCode(b)
+	aCode := h.friendCode(a)
+	bCode := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "POST", path: "/2.0.0/friend_requests",
@@ -365,7 +365,7 @@ func TestOnlyTheRecipientMayAcceptAndOnlyTheSenderMayCancel(t *testing.T) {
 	a := h.newAccount()
 	b := h.newAccount()
 	stranger := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	send := func() string {
 		t.Helper()
@@ -412,7 +412,7 @@ func TestFriendRequestCanBeDeniedAndCancelled(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 	b := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	send := func() string {
 		t.Helper()
@@ -464,7 +464,7 @@ func TestFriendRequestAcceptsThePlainStateObjectBodyToo(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 	b := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "POST", path: "/2.0.0/friend_requests",
@@ -501,7 +501,7 @@ func TestFriendRequestAcceptsTheRealConsoleStateSpelling(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 	b := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "POST", path: "/2.0.0/friend_requests",
@@ -537,7 +537,7 @@ func TestFriendRequestToAUserWhoRefusesThemIsRejected(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 	b := h.newAccount()
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "PATCH", path: "/1.0.0/users/" + b.UserID,

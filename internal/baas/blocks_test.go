@@ -38,7 +38,7 @@ func TestBlockedUserCannotSendAFriendRequest(t *testing.T) {
 	h := newHarness(t)
 	alice := h.newAccount()
 	bob := h.newAccount()
-	aliceCode := h.generateFriendCode(alice)
+	aliceCode := h.friendCode(alice)
 
 	resp := h.do(request{
 		method: "POST", path: "/1.0.0/users/" + alice.UserID + "/blocks",
@@ -60,7 +60,7 @@ func TestBlockSuppressesRequestsInBothDirections(t *testing.T) {
 	h := newHarness(t)
 	alice := h.newAccount()
 	bob := h.newAccount()
-	bobCode := h.generateFriendCode(bob)
+	bobCode := h.friendCode(bob)
 
 	resp := h.do(request{
 		method: "POST", path: "/1.0.0/users/" + alice.UserID + "/blocks",
@@ -81,7 +81,7 @@ func TestBlockingCancelsAPendingRequest(t *testing.T) {
 	h := newHarness(t)
 	alice := h.newAccount()
 	bob := h.newAccount()
-	aliceCode := h.generateFriendCode(alice)
+	aliceCode := h.friendCode(alice)
 
 	resp := h.do(request{
 		method: "POST", path: "/2.0.0/friend_requests",
@@ -113,7 +113,7 @@ func TestBlockedUserIsNotFindable(t *testing.T) {
 	h := newHarness(t)
 	alice := h.newAccount()
 	bob := h.newAccount()
-	bobCode := h.generateFriendCode(bob)
+	bobCode := h.friendCode(bob)
 
 	resp := h.do(request{
 		method: "POST", path: "/1.0.0/users/" + alice.UserID + "/blocks",

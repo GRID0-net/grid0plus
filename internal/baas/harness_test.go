@@ -442,7 +442,26 @@ func (h *harness) setNickname(a account, nickname string) {
 	requireStatus(h.t, resp, 200)
 }
 
-// generateFriendCode performs POST /1.0.0/users/<id>/generate_code.
+// friendCode returns a's existing friend code without generating a new one.
+// Every account has one from the moment it is created (see
+// friendcodes.go's assignFriendCode), so a test that just needs a code
+// value to exercise something unrelated (finding a user by code, sending a
+// friend request, etc.) should read it here rather than call
+// generate_code, which would hit the 24h regeneration cooldown immediately
+// on an account that already has one.
+func (h *harness) friendCode(a account) string {
+	h.t.Helper()
+	fc := h.self(h.t, a).Links.FriendCode
+	if fc == nil {
+		h.t.Fatal("no friend code on the account")
+	}
+	return fc.ID
+}
+
+// generateFriendCode performs POST /1.0.0/users/<id>/generate_code. Only
+// for tests that actually exercise that endpoint's own behavior (shape,
+// uniqueness, the cooldown, rejecting an unknown type) -- everything else
+// should use friendCode instead.
 func (h *harness) generateFriendCode(a account) string {
 	h.t.Helper()
 	resp := h.do(request{
@@ -517,7 +536,7 @@ func (h *harness) friends(a account) []FriendResponse {
 func (h *harness) befriend(a, b account) {
 	h.t.Helper()
 
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "POST", path: "/2.0.0/friend_requests",

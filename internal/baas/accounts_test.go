@@ -516,7 +516,7 @@ func TestFederationAttachesAFreshDeviceAccountToAnExistingPerson(t *testing.T) {
 	// website before ever touching this console.
 	person := h.register()
 	h.login(&person, "")
-	friendCode := h.generateFriendCode(person)
+	friendCode := h.friendCode(person)
 
 	// The console: a brand new, otherwise-unrelated device account, exactly
 	// what /1.0.0/users hands back before any id token exists.

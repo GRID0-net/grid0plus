@@ -15,7 +15,7 @@ func TestFriendCodeShapeAndUniqueness(t *testing.T) {
 	seen := map[string]bool{}
 	for range 10 {
 		a := h.newAccount()
-		code := h.generateFriendCode(a)
+		code := h.friendCode(a)
 		if !friendCodePattern.MatchString(code) {
 			t.Fatalf("friend code %q is not dddd-dddd-dddd", code)
 		}
@@ -26,19 +26,22 @@ func TestFriendCodeShapeAndUniqueness(t *testing.T) {
 	}
 }
 
-func TestFriendCodeIsOnlyCreatedWhenAskedFor(t *testing.T) {
+// TestFriendCodeExistsFromAccountCreation used to be
+// TestFriendCodeIsOnlyCreatedWhenAskedFor, asserting the opposite of what
+// this test now checks. That was never confirmed by a capture -- a live
+// mitmdump capture of a real federation/login response (2026-09-21/22)
+// diffed against a known-working reference found a genuinely fresh account
+// missing links.friendCode entirely, and the console never called
+// generate_code itself to fix that; it just abandoned the link. Real
+// accounts have a friend code from the moment they exist (see
+// friendcodes.go's assignFriendCode), same as System Settings shows one
+// immediately with no Nintendo Account link required.
+func TestFriendCodeExistsFromAccountCreation(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 
-	// A user with no code is a normal state, not an error: one is created when
-	// the console asks.
-	if fc := h.self(t, a).Links.FriendCode; fc != nil {
-		t.Errorf("a fresh account already has a friend code: %+v", fc)
-	}
-
-	h.generateFriendCode(a)
 	if h.self(t, a).Links.FriendCode == nil {
-		t.Error("no friend code after generating one")
+		t.Error("a fresh account has no friend code")
 	}
 }
 
@@ -50,7 +53,9 @@ func TestFriendCodeCooldown(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
 
-	first := h.generateFriendCode(a)
+	// The account already has a code from creation -- read it rather than
+	// generating one, which would immediately hit the cooldown below.
+	first := h.friendCode(a)
 
 	// Immediately after, the code is not regenerable and the endpoint says so
 	// with Nintendo's dedicated 422.
@@ -105,6 +110,10 @@ func TestGenerateCodeRejectsAnUnknownType(t *testing.T) {
 
 	// An absent type is tolerated: the parameter is trivially defaulted, and
 	// refusing it would block the feature on a firmware that stopped sending it.
+	// Past the account-creation cooldown first, since this account already has
+	// a code from creation -- otherwise this second call would 422 on the
+	// cooldown rather than exercising the type validation this test is for.
+	h.advance(testFriendCodeCooldn + time.Minute)
 	resp = h.do(request{
 		method: "POST", path: "/1.0.0/users/" + a.UserID + "/generate_code",
 		token: a.AccessToken, form: url.Values{},
@@ -142,7 +151,7 @@ func TestFindUserByFriendCode(t *testing.T) {
 	a := h.newAccount()
 	b := h.newAccount()
 	h.setNickname(b, "Bob")
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "GET", path: "/1.0.0/users?friendCode=" + url.QueryEscape(code),
@@ -173,7 +182,7 @@ func TestFindUserByFriendCodeRealQueryParam(t *testing.T) {
 	a := h.newAccount()
 	b := h.newAccount()
 	h.setNickname(b, "Bob")
-	code := h.generateFriendCode(b)
+	code := h.friendCode(b)
 
 	resp := h.do(request{
 		method: "GET", path: "/1.0.0/users?filter.links.friendCode.id.$in=" + url.QueryEscape(code),
@@ -206,7 +215,7 @@ func TestFindUsersRefusesAnUnfilteredQuery(t *testing.T) {
 func TestFindUsersDoesNotReturnTheCaller(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
-	code := h.generateFriendCode(a)
+	code := h.friendCode(a)
 
 	// Finding yourself by your own code is not useful, and if the console acts
 	// on it the result is a self-friend-request.
