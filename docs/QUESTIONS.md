@@ -354,3 +354,36 @@ likely be thrown away when phase 3's Nintendo Account work introduces the first
 real human login.
 
 **Changes if answered:** `internal/dashboard/server.go` (`guard`).
+
+---
+
+## Does a first-time Nintendo Account link actually request any of the eight unserved `accounts.nintendo.com` paths?
+
+Decompiling the console's own `account` sysmodule (fw 22.5.0) shows it can
+construct eight `accounts.nintendo.com` URLs that SwitchNet does not route:
+`/profile`, `connect/1.0.0/api/term_agreement_token`,
+`connect/1.0.0/term_confirm`, `connect/1.0.0/api/transfer_na_tokens` (plus its
+`/%lld` and `_inherit` forms), and `analytics/device/opt_in` with its `app/`
+variant. All are first-link surface, and the terms pair matches the licence
+scene in the add-user wizard. See
+[`CAPTURES/account-sysmodule-decompile.md`](CAPTURES/account-sysmodule-decompile.md).
+
+This is the open candidate for the post-federation "account couldn't be linked"
+dialog: if the console walks terms → analytics → profile after federation,
+every one of those requests currently gets a 404. It needs no MITM to
+answer — `docker compose logs nginx` from the failed attempt already holds every
+request line, and `CAPTURES/nintendo-account-link.md` documents the working
+tail to compare against. **This can only be answered on the console**, which is
+why it is here rather than in `TODO.md`.
+
+**Proceeding on:** nothing is implemented for these paths, and no response
+shape is guessed for them. A URL appearing in the binary proves it is
+constructible, never that it is called.
+
+**Changes if answered:** `internal/baas/router.go` plus one handler next to
+`naAuthorizePage`/`naToken`. If the log shows a request, the response shape
+comes from the parser that consumes it — `0x1c1eb0` reads
+`$.analyticsPermissions.*` with `$.birthday`/`$.country`, and `0x1c44a0` reads
+the flattened `$.analyticsFor*` with `$.isNnLinked` — not from invention. If the
+log shows none of them, they stay unimplemented and the dialog's cause is
+somewhere else.

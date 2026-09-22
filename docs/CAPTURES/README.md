@@ -7,6 +7,13 @@ Every guess in the implementation is marked in the source with
 `TODO(capture-needed):` and says what a capture would settle and which single
 function to change. `grep -rn 'TODO(capture-needed)' internal/` is the full list.
 
+Static analysis has now settled several of the same questions without a
+capture — see
+[account-sysmodule-decompile.md](account-sysmodule-decompile.md) for the
+`account` sysmodule: the console's own validation of `nxAccount` and the error
+codes it raises, the response parsers behind each BAAS call, and the complete
+list of endpoints it can construct (eight of which SwitchNet does not serve).
+
 ## Fastest way to answer most of this
 
 ```sh
@@ -175,13 +182,14 @@ real-hardware capture. Two narrower sub-details within the same flow:
 `internal/jwt/issue.go:206` and `internal/baas/nalink.go:368`) has only ever
 been observed as `4`, for this exact grant — what other values map to is
 unknown; and `accounts.go`'s `nxAccountBlob` produces the `nxAccount` opaque
-blob, now shape-correct (174 bytes, base64-encoded — settled 2026-09-04 from
-a real captured federation response the operator supplied directly) but
-still not a claim about its interior content, which two real-hardware tests
-(another account's literal captured bytes; unformatted random data) suggest
-but do not prove the console never checks — see
-[nintendo-account-link.md](nintendo-account-link.md)'s "What is still open"
-for the detail and why that test does not fully settle it. A 2026-09-03 pass
+blob, now shape-correct and checked against the console's own consumer — see
+[account-sysmodule-decompile.md](account-sysmodule-decompile.md), which
+settled its length, encoding, payload skeleton and the exact check the console
+applies to it. The earlier reading here, that two real-hardware tests "suggest
+but do not prove the console never checks" it, is superseded: the console does
+check it, narrowly — the base64 must decode to exactly 168 bytes with a
+non-zero byte in the first 16 — and a failure is 2124-0292. What remains open
+in that field is what its *values* mean, not whether they are examined. A 2026-09-03 pass
 cross-checked this whole flow against a full clone of the
 kinnay/NintendoClients wiki (not just search-engine summaries of it) and
 against `NextendoNetwork/Prelude-Nro`'s bundled write-up — see

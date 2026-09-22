@@ -494,6 +494,18 @@ backwards and an invite mailbox either loses invites silently or replays
 stale ones on every reconnect), and whether a real client dials
 `GameSession.Port` at all now that `SyncGameSession` exists to publish it.
 
+One more arrived 2026-09-22 from static analysis rather than a capture (see
+[account-sysmodule-decompile.md](docs/CAPTURES/account-sysmodule-decompile.md)):
+the `account` sysmodule can construct eight `accounts.nintendo.com` paths that
+SwitchNet does not serve — `/profile`,
+`connect/1.0.0/api/term_agreement_token`, `connect/1.0.0/term_confirm`, the
+three `connect/1.0.0/api/transfer_na_tokens*` variants, and both
+`analytics/device/opt_in` forms. All are first-link surface, the terms pair
+matching the licence scene in the add-user wizard. **Blocked on a console**:
+whether the console calls any of them is decided by the nginx access log during
+one link attempt, and that decides whether they need implementing at all — a
+URL being constructible in the binary never proves it is requested.
+
 Write captures up under `docs/CAPTURES/` using the template, redacted,
 reconcile the implementation, and **delete the `TODO` comment in the same
 commit** so the source and the notes cannot disagree.
