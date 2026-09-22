@@ -1301,6 +1301,27 @@ func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
 	}
 }
 
+// TestNxAccountBlobTailIsZeroPadded pins the other thing the 2026-08-27
+// reference capture settled, found by a 2026-09-22 decompile of
+// account_main.nso's actual consumer of this field (FUN_71000f0960): real
+// content only through roughly byte 84, then zero padding for the rest.
+// The previous implementation filled the entire remainder with repeated
+// SHA-256 output -- passed FUN_71000f0960's own narrow non-zero check the
+// same as this version does, but was uniform high-entropy noise everywhere
+// else, unlike anything a real client has ever been observed to send.
+func TestNxAccountBlobTailIsZeroPadded(t *testing.T) {
+	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
+	if err != nil {
+		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
+	}
+	const populatedLen = 84
+	for i := populatedLen; i < len(decoded); i++ {
+		if decoded[i] != 0 {
+			t.Fatalf("byte %d = %#x, want 0 (tail should be zero-padded past byte %d)", i, decoded[i], populatedLen)
+		}
+	}
+}
+
 func TestNxAccountBlobIsStablePerAccountAndDistinctAcrossAccounts(t *testing.T) {
 	a1 := nxAccountBlob("d63e6ad0809131f2")
 	a2 := nxAccountBlob("d63e6ad0809131f2")

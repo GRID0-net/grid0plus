@@ -784,41 +784,55 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // what's disproven is that nxAccountBlob's own offset 0 is that same
 // location.
 //
-// TODO(capture-needed): what FUN_71000f0ee0 actually builds, if not this
-// field; what the still-generic "account couldn't be linked" dialog is
-// actually checking, since it survives past this exact header; and the
-// remaining interior bytes (6-173), unchanged from before. See
-// docs/CAPTURES/nintendo-account-link.md for the full writeup, including
-// the regression.
+// TODO(capture-needed): the exact per-field layout of bytes 6-83 -- what's
+// here is a structural match (populated vs. zero regions), not a confirmed
+// field-by-field one. See docs/CAPTURES/nintendo-account-link.md for the
+// full writeup, including the 2124-0292 regression this header survived.
+//
+// 2026-09-22, from a full decompile of account_main.nso (not this file's
+// earlier reasoning from a single function in isolation): found the actual
+// consumer, FUN_71000f0960, called from the federation success path right
+// before a local user profile is marked complete. It checks two things
+// about this exact field, in order: the base64 text starts with "01606150"
+// (already true here -- that is the header's own base64 encoding, not a
+// separate literal, and was never the problem); then it base64-decodes
+// everything after those first 8 characters (which is everything after the
+// 6-byte header) and requires specific byte-swapped words drawn from the
+// first ~16 decoded bytes to be non-zero.
+//
+// Comparing that decode against a real, working reference capture
+// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) byte-for-byte
+// found the true shape neither version of this function tried before: the
+// header, then non-zero content only through roughly byte 83, then zero
+// padding for the rest (~90 bytes) all the way to 174. The previous
+// implementation filled the entire 168-byte remainder with repeated SHA-256
+// output -- satisfies FUN_71000f0960's narrow non-zero check same as this
+// version does, but is uniform high-entropy noise everywhere else, which
+// cannot be what a real client ever produces and is exactly the kind of gap
+// a not-yet-found later check could be failing on. This version matches the
+// real capture's macro-structure instead of guessing a plausible-looking
+// alternative.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
-	// REVERTED 2026-09-21, on real hardware: the offset-0x21 header/naID-prefix
-	// layout above this function (from the same night's earlier decompile of
-	// FUN_71000f0ee0) was implemented, deployed, and directly regressed
-	// federation -- 2124-0292 came back, having been hardware-confirmed gone
-	// with the header at offset 0 just minutes before the same test session.
-	// That is strong, direct evidence FUN_71000f0ee0 either builds a
-	// different structure than nxAccount, or this file's reading of its
-	// offsets was wrong -- not merely unconfirmed, actively contradicted.
-	// Reverted to the exact byte-for-byte configuration confirmed working on
-	// hardware: the header at offset 0, its original (non-ASCII, 6-byte)
-	// content unchanged. Do not reintroduce the offset-0x21 placement or the
-	// "01606150" ASCII content without a fresh hardware confirmation --
-	// both are now disproven, not just unconfirmed, despite the ASCII
-	// reading matching this file's own gate-check comment's math. Whatever
-	// that gate check's real relationship to this blob is, it is not the one
-	// assumed tonight.
+	// Confirmed working on hardware; do not move off offset 0 or change its
+	// content without a fresh hardware confirmation -- see the regression
+	// this survived, above.
 	header := []byte{0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}
+	// How far past the header a real capture had any non-zero byte at all.
+	// Everything from here to blobLen was zero in that capture.
+	const populatedLen = 84
 
 	out := make([]byte, 0, blobLen)
 	out = append(out, header...)
 	seed := []byte(naID)
-	for len(out) < blobLen {
+	for len(out) < populatedLen {
 		sum := sha256.Sum256(seed)
 		out = append(out, sum[:]...)
 		seed = sum[:]
 	}
-	return base64.StdEncoding.EncodeToString(out[:blobLen])
+	out = out[:populatedLen]
+	out = append(out, make([]byte, blobLen-populatedLen)...)
+	return base64.StdEncoding.EncodeToString(out)
 }
 
 // ---- GET /1.0.0/users/<id> ----------------------------------------------
