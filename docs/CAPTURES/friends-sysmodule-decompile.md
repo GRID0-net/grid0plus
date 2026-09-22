@@ -139,12 +139,46 @@ reads the *friend's* permissions out of `FriendUserResponse` for its own
 visibility display (which SwitchNet does send, via `scopedExtras`) was not
 traced.
 
+**The presence state enum is three values, and `INACTIVE` is not one of them.**
+`0x1a7b10` is the string-to-enum helper this sysmodule's own state fields go through
+— the friend-list parser calls it for `$.items[*].friend.presence.state`, the
+notification parser for `$.value.state`, and `0x1b8420` for the entry a PATCH
+returns. It is a character-by-character chain with exactly three matches:
+`OFFLINE` → 0, `ONLINE` → 1, `PLAYING` → 2, and **anything else → 0**.
+
+SwitchNet's three spellings are therefore right, and `INACTIVE` — which
+`internal/baas/presence.go` accepts in a console's own report and
+`internal/presence` passes through untouched, per its "a fresh report is used
+exactly" rule — reaches a friend list as unrecognised text that the client reads
+as offline. That is the same result as mapping it to `OFFLINE` explicitly, so
+nothing needed changing; what remains unknown is whether Nintendo's own server
+maps a reported `INACTIVE` to `ONLINE` instead, which would be visible as a
+console idling in the Home Menu showing as online to its friends. That is a
+capture question, not a decompile one.
+
 ## Endpoint inventory
 
-30 URL formats are constructible by this sysmodule. Every one is served by
-`internal/baas`, on the base `e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com`
-(the modern host `m-lp1.baas.nintendo.com` appears for account-level calls, as
-`README.md` records). The list is reproducible — it is every
-`https://%s/...`-shaped literal referenced by code in the module — and its value
-is that adding a SwitchNet route or renaming a query parameter can be checked
-against it directly.
+30 URL formats are constructible by this sysmodule, across three hosts, and
+**they are not all served by the same SwitchNet process** — worth writing down
+because it is the kind of thing a reader of `internal/baas` alone would get
+wrong:
+
+| Host | Who answers it today |
+| --- | --- |
+| `e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com`, `m-lp1.baas.nintendo.com` | `internal/baas` — the friend list, requests, blocks, relationships, users |
+| `app.%.five.nintendo.net` — the whole invitations family (`/v1/invitations`, `/v2/invitation_groups`, `/v2/users/<id>/invitations/inbox`, `mark_as_read`) | `internal/stubs`, as an empty list: phase 1 has no invitations |
+| `api-%.frs.srv.nintendo.net/v1/friend_recommendations` | `internal/stubs`, as an empty list |
+| `c-%.accounts.nintendo.com` (`/v1/apps/<id>/catalog.json`, `/v1/apps/<id>/<name>.jpg`) | nothing — null-routed by `Resolve`'s Nintendo-domain fallback. See the note above about what that costs the friend list's game name and icon |
+
+The list is reproducible — it is every `https://%s/...`-shaped literal
+referenced by code in the module — and its value is that adding a SwitchNet
+route or renaming a query parameter can be checked against it directly.
+
+One shape warning for whoever implements the stubs for real: the `five`
+invitations parsers read `$.invitations[]` and `$.invitations[*].receiver_id`,
+and the `frs` recommendation parsers read `$.items[*].id|nickname|
+mii_image_url_param` alongside `$.original_count` (`0x1db010`, `0x1db070`,
+`0x1de430`, `0x1deb90`). `internal/stubs` answers both hosts with a bare `[]`,
+which the incremental parsers accept as "no entries". That is invisible for an
+empty list and must not be read as evidence that the real envelope is a bare
+array — for both of these the real response is a keyed object.
