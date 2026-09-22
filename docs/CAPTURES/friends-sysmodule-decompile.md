@@ -30,10 +30,33 @@ alone:
   wrapper is not "missing a field" — nothing inside it is ever visited. That is
   the defect class below.
 
-## Two defects it found, both fixed
+## Three defects it found, all fixed
 
-Both were the same mistake: a bare top-level array where this client can only
-read an `{items: [...]}` envelope.
+Two were the same mistake — a bare top-level array where this client can only
+read an `{items: [...]}` envelope. The third was a response whose keys the
+client does not read at all.
+
+**`GET /2.0.0/users/<id>/relationships/<id>`.** This one is the cleanest piece of
+proof in the pass, because the object graph is visible in the decompilation
+rather than inferred from adjacency. The request builder (`0x1d5b90`) formats
+the endpoint's URL and then constructs its response object at `0x1d5d60`, which
+sets its vtable to `&PTR_FUN_00258558`. Two references into that table land at
+`0x258558+0x40` and `+0x58`, and they are `0x1d5d90` — reading `$.isFriend` and
+`$.isBlocking` into two boolean flags — and `0x1d5e30` — reading
+`$.sentFriendRequestIds[0]` and reducing it to a third boolean, never reading
+the id itself. The client's entire model of a relationship is three booleans.
+
+SwitchNet sent `type`, `user`, `isFavorite` and `becameFriendAt`, none of which
+appears in that table, so the client saw the all-false default: **an existing
+friend and a total stranger were indistinguishable**, as were an outstanding
+friend request and none. Fixed in `333c292`.
+
+That fix needed a directional block lookup (`IsBlocking`, added to the Store
+contract with both implementations and a contract-test case) rather than the
+either-way check suppression uses: `isBlocking` describes what the *caller* did,
+and a blocked user must keep seeing false/false — the same state an ordinary
+stranger produces. The old `type` field, which SwitchNet *did* send and the
+client ignores, announced `BLOCKED` to anyone who asked.
 
 **`GET /1.0.0/users/<id>/blocks`.** The request builder at `0x1b4c60` formats
 that exact endpoint, and the parser it feeds (`0x1b50e0`, via `0x1b4fe0`) reads

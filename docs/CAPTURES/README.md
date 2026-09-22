@@ -162,7 +162,18 @@ for tooling.
 
 ### 5. `GET /2.0.0/users/<id>/relationships/<id>`
 
-**What SwitchNet does:** returns `{"type": …}` with `NONE`, `FRIEND`,
+**Settled, not a capture, 2026-09-22.** The friends sysmodule builds its
+response object for this endpoint with a vtable (`0x258558`) that registers
+exactly two callbacks: one reading `$.isFriend` and `$.isBlocking` as booleans,
+and one reading `$.sentFriendRequestIds[0]` as a third. There is no `type` field
+on the wire. SwitchNet sent only its own invented fields, so every relationship
+read as the all-false default -- a friend looked like a stranger. The three real
+keys are now sent; see
+[friends-sysmodule-decompile.md](friends-sysmodule-decompile.md).
+
+**What SwitchNet does:** returns the three flags above, plus `{"type": …}` with
+`NONE`, `FRIEND`,
+
 `FRIEND_REQUEST_SENT`, `FRIEND_REQUEST_RECEIVED` or `BLOCKED`, modelled on the
 console's own `nn::friends` relationship enum.
 
