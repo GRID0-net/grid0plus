@@ -268,10 +268,42 @@ const (
 	RelationshipBlocked  = "BLOCKED"
 )
 
-// BlockResponse is one blocked user.
+// BlockResponse is one entry in GET /1.0.0/users/<id>/blocks.
+//
+// Shape settled 2026-09-22 by decompiling the operator's own console's friends
+// sysmodule (see docs/CAPTURES/friends-sysmodule-decompile.md). The blocks
+// response parser (an incremental JSON key callback at import address 0x1b50e0,
+// reached from the request builder at 0x1b4c60 that formats this very
+// endpoint) reads:
+//
+//	$.items[*]                                  the array marker
+//	$.items[*].targetUserId                     hex-digit string
+//	$.items[*].targetUser.nickname
+//	$.items[*].targetUser.thumbnailUrl
+//	$.items[*].extras.self.reason
+//	$.items[*].extras.self.route:*
+//	$.items[*].createdAt
+//
+// Two consequences, both of which this type and listBlocks used to get wrong.
+// It reads targetUser, not user -- and it reads $.items[*], which means the
+// response has to be an envelope: given a bare top-level array, the array
+// marker never matches and the screen is simply empty, with nothing in the
+// console's log to say why.
+//
+// TODO(capture-needed): extras.self.reason is parsed as a string (the parser
+// routes it through the same string-to-enum helper its other enum fields use)
+// and this server always sends none, which the key callback tolerates. What
+// the values mean -- and what the extras.self.route:* block on a *blocked*
+// user holds, since a block shows no presence -- needs a capture. Change: the
+// entry construction in listBlocks (friendcodes.go).
 type BlockResponse struct {
-	User      *UserResponse `json:"user,omitempty"`
-	CreatedAt int64         `json:"createdAt"`
+	// TargetUserID is the blocked user's id, a hex-digit string ("%016llx"
+	// in the URL path, dec:hex-decoded by the client).
+	TargetUserID string `json:"targetUserId"`
+
+	TargetUser *UserResponse `json:"targetUser,omitempty"`
+
+	CreatedAt int64 `json:"createdAt"`
 }
 
 // ---- conversion ----------------------------------------------------------

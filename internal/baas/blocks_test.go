@@ -168,19 +168,25 @@ func TestListAndRemoveBlocks(t *testing.T) {
 	})
 	requireStatus(t, resp, 204)
 
-	var blocks []BlockResponse
+	var blocks CollectionEnvelope[BlockResponse]
 	resp = h.do(request{
 		method: "GET", path: "/1.0.0/users/" + alice.UserID + "/blocks",
 		token: alice.AccessToken,
 	})
 	requireStatus(t, resp, 200)
 	decode(t, resp, &blocks)
-	if len(blocks) != 1 {
-		t.Fatalf("got %d blocks, want 1", len(blocks))
+	if len(blocks.Items) != 1 {
+		t.Fatalf("got %d blocks, want 1", len(blocks.Items))
 	}
 	// Alice needs to see who she blocked, or the unblock screen is a list of ids.
-	if blocks[0].User == nil || blocks[0].User.Nickname != "Bob" {
-		t.Errorf("block entry = %+v, want Bob's profile", blocks[0].User)
+	if blocks.Items[0].TargetUser == nil || blocks.Items[0].TargetUser.Nickname != "Bob" {
+		t.Errorf("block entry = %+v, want Bob's profile", blocks.Items[0].TargetUser)
+	}
+	// The console's block-list parser reads $.items[*].targetUserId and
+	// $.items[*].targetUser.*, so both have to be on the wire under those names
+	// for the entry to exist at all. See BlockResponse's comment.
+	if blocks.Items[0].TargetUserID != bob.UserID {
+		t.Errorf("targetUserId = %q, want %q", blocks.Items[0].TargetUserID, bob.UserID)
 	}
 
 	resp = h.do(request{
@@ -195,8 +201,8 @@ func TestListAndRemoveBlocks(t *testing.T) {
 		token: alice.AccessToken,
 	})
 	decode(t, resp, &blocks)
-	if len(blocks) != 0 {
-		t.Errorf("still %d blocks after unblocking", len(blocks))
+	if len(blocks.Items) != 0 {
+		t.Errorf("still %d blocks after unblocking", len(blocks.Items))
 	}
 
 	// And they can be friends again.

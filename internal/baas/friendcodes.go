@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -193,18 +194,30 @@ func (s *Server) listBlocks(w http.ResponseWriter, r *http.Request, c *caller) {
 
 	out := make([]BlockResponse, 0, len(blocks))
 	for _, b := range blocks {
-		entry := BlockResponse{CreatedAt: b.CreatedAt.Unix()}
+		entry := BlockResponse{
+			TargetUserID: b.BlockedUserID,
+			CreatedAt:    b.CreatedAt.Unix(),
+		}
 		if user, err := s.store.GetUser(r.Context(), b.BlockedUserID); err == nil {
 			// A blocked user's presence is not shown, so it is not looked up.
 			thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 			u := userResponse(s.now(), user, nil,
 				db.Presence{UserID: user.ID, State: db.StateOffline, Extras: db.EmptyExtras()},
 				nil, visStranger, thumb1, thumb2)
-			entry.User = &u
+			entry.TargetUser = &u
 		}
 		out = append(out, entry)
 	}
-	writeJSON(w, http.StatusOK, out)
+
+	// An envelope, not a bare array: the console's parser reads $.items[*] and
+	// never matches anything at the top level. See BlockResponse's comment.
+	requested := 100
+	if c := r.URL.Query().Get("count"); c != "" {
+		if n, err := strconv.Atoi(c); err == nil && n > 0 {
+			requested = n
+		}
+	}
+	writeJSON(w, http.StatusOK, newCollection(requested, out))
 }
 
 // blockRequestBody is the POST body.
