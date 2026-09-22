@@ -1349,25 +1349,48 @@ func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
 	}
 }
 
-// TestNxAccountBlobTailIsZeroPadded pins the other thing the 2026-08-27
-// reference capture settled, found by a 2026-09-22 decompile of
-// account_main.nso's actual consumer of this field (FUN_71000f0960): real
-// content only through roughly byte 84, then zero padding for the rest.
-// The previous implementation filled the entire remainder with repeated
-// SHA-256 output -- passed FUN_71000f0960's own narrow non-zero check the
-// same as this version does, but was uniform high-entropy noise everywhere
-// else, unlike anything a real client has ever been observed to send.
-func TestNxAccountBlobTailIsZeroPadded(t *testing.T) {
+// TestNxAccountBlobZeroesTheRangesRealBlobsShowZero pins the payload's zero
+// ranges and its marker, which a 2026-09-22 decompile of the builder
+// (FUN_71000f0ee0) and the 2026-09-13 capture diff agree on: payload 24-39
+// is two zero quads the builder writes itself, payload 40-43 is the
+// 01 00 01 01 marker both captured values carry, and everything from
+// payload 44 on is zero. The previous implementation ran repeated SHA-256
+// output out to byte 83 -- it passed FUN_71000f0960's narrow non-zero check
+// the same as this version does, but was high-entropy noise in ranges every
+// real sample of this field has shown to be zero.
+func TestNxAccountBlobZeroesTheRangesRealBlobsShowZero(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
 		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
 	}
-	const populatedLen = 84
-	for i := populatedLen; i < len(decoded); i++ {
-		if decoded[i] != 0 {
-			t.Fatalf("byte %d = %#x, want 0 (tail should be zero-padded past byte %d)", i, decoded[i], populatedLen)
+	// Blob offsets: 6-byte header first, then the 168-byte payload.
+	for _, r := range [][2]int{{30, 46}, {50, len(decoded)}} {
+		for i := r[0]; i < r[1]; i++ {
+			if decoded[i] != 0 {
+				t.Errorf("byte %d = %#x, want 0 (real blobs are zero here; see nxAccountBlob's comment)", i, decoded[i])
+			}
 		}
 	}
+	if want := []byte{0x01, 0x00, 0x01, 0x01}; string(decoded[46:50]) != string(want) {
+		t.Errorf("marker at bytes 46-49 = %x, want %x", decoded[46:50], want)
+	}
+}
+
+// TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960 pins the only thing
+// the console's real consumer checks about this field: at least one
+// non-zero byte among roughly the first 24 payload bytes. An all-zero head
+// is the one way this placeholder can raise 2124-0292 on its own.
+func TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960(t *testing.T) {
+	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
+	if err != nil {
+		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
+	}
+	for _, b := range decoded[6:30] {
+		if b != 0 {
+			return
+		}
+	}
+	t.Errorf("nxAccountBlob's payload head (bytes 6-29) is all zero, which is what FUN_71000f0960 rejects")
 }
 
 func TestNxAccountBlobIsStablePerAccountAndDistinctAcrossAccounts(t *testing.T) {

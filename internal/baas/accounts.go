@@ -674,13 +674,13 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 		extras[db.ScopeSelf]["nintendoAccountId"] = naID
 		patch.Extras = &extras
 	}
-	// TODO(capture-needed): the interior byte layout of nxAccountBlob's
-	// output -- what a real one encodes, and whether the console checks any
-	// of it. See that function's own comment for what 2026-09-04 and
-	// 2026-09-13 captures settled (length, encoding, and which byte ranges
-	// are fixed vs. per-call) versus what remains open (whether any of it is
-	// checked, and which of the fixed ranges are per-account rather than
-	// protocol-wide).
+	// TODO(capture-needed): what nxAccountBlob's context-keyed head bytes
+	// encode, and whether anything past the one check a decompile found
+	// reads any of this. See that function's own comment for what the
+	// 2026-09-04 and 2026-09-13 captures, the 2026-09-20 consumer decompile
+	// and the 2026-09-22 builder decompile settled between them, versus what
+	// still needs a capture (a second account's samples, which would
+	// separate protocol-wide structure from one account's own values).
 	nxAccount := nxAccountBlob(naID)
 	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != nxAccount {
 		extras[db.ScopeSelf]["nxAccount"] = nxAccount
@@ -745,8 +745,10 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // Nintendo internal still means the varying, call-context-keyed regions are
 // not reproduced here (nothing visible to SwitchNet explains what selects
 // them). What changed from the original placeholder (the bare Nintendo
-// Account id, ~16 characters) remains only the parts confirmed real: length
-// and encoding. A 16-character hex string sitting where a console has only
+// Account id, ~16 characters) began as only the parts confirmed real --
+// length and encoding -- and now also carries the skeleton the builder
+// decompile and the capture diff agree on; see the third 2026-09-22 note
+// below. A 16-character hex string sitting where a console has only
 // ever seen a 232-character value was a mismatch nothing about "content
 // unconfirmed" excused -- matching a confirmed length costs nothing and is
 // never a worse guess than visibly not even trying to.
@@ -754,10 +756,10 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // Deliberately not derived from anything Nintendo-secret and not the
 // captured value itself (that value belongs to one specific real Nintendo
 // Account and is not this project's to redistribute, even reshaped): just
-// naID, which is SwitchNet's own data, stretched to the confirmed length
-// with repeated SHA-256. Stable per account, so it does not change on every
-// login, but it is a placeholder shape, never a claim about what the real
-// bytes encode.
+// naID, which is SwitchNet's own data, hashed once into the 24 bytes the
+// head needs. Stable per account, so it does not change on every login, but
+// it is a placeholder shape, never a claim about what the real bytes
+// encode.
 //
 // 2026-09-20: offsets 0-5 are no longer just an inferred-fixed range. The
 // operator dumped their own console's `account` sysmodule (title
@@ -798,10 +800,21 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // what's disproven is that nxAccountBlob's own offset 0 is that same
 // location.
 //
-// TODO(capture-needed): the exact per-field layout of bytes 6-83 -- what's
-// here is a structural match (populated vs. zero regions), not a confirmed
-// field-by-field one. See docs/CAPTURES/nintendo-account-link.md for the
-// full writeup, including the 2124-0292 regression this header survived.
+// 2026-09-22, resolving that regression: FUN_71000f0ee0 builds a 265-byte
+// internal RECORD, not the wire value on its own -- a 33-byte naID at
+// +0x00, then this field's own value, all 232 base64 characters, at +0x21.
+// The ASCII "01606150" that the same-night attempt moved to offset 0 is the
+// record's copy of the header's base64 text; the wire value's offset 0 is
+// that same text *decoded*, the 6 bytes above. Both readings were correct
+// about their own structure, which is exactly why the wire value keeps the
+// decoded form at offset 0 and the ASCII form appears nowhere in it.
+//
+// TODO(capture-needed): what the context-keyed head bytes encode, and
+// whether anything past FUN_71000f0960's single check reads any of this.
+// A second account's samples would at least separate protocol-wide
+// structure from one account's own values. See
+// docs/CAPTURES/nintendo-account-link.md for the full writeup, including
+// the 2124-0292 regression this header survived.
 //
 // 2026-09-22, from a full decompile of account_main.nso (not this file's
 // earlier reasoning from a single function in isolation): found the actual
@@ -811,41 +824,64 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // (already true here -- that is the header's own base64 encoding, not a
 // separate literal, and was never the problem); then it base64-decodes
 // everything after those first 8 characters (which is everything after the
-// 6-byte header) and requires specific byte-swapped words drawn from the
-// first ~16 decoded bytes to be non-zero.
+// 6-byte header) and requires at least one non-zero byte among roughly the
+// first 24 decoded bytes -- payload 0-23 below -- and asks nothing else
+// about the rest.
 //
-// Comparing that decode against a real, working reference capture
-// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) byte-for-byte
-// found the true shape neither version of this function tried before: the
-// header, then non-zero content only through roughly byte 83, then zero
-// padding for the rest (~90 bytes) all the way to 174. The previous
-// implementation filled the entire 168-byte remainder with repeated SHA-256
-// output -- satisfies FUN_71000f0960's narrow non-zero check same as this
-// version does, but is uniform high-entropy noise everywhere else, which
-// cannot be what a real client ever produces and is exactly the kind of gap
-// a not-yet-found later check could be failing on. This version matches the
-// real capture's macro-structure instead of guessing a plausible-looking
-// alternative.
+// Same session, the builder: FUN_71000f0ee0, the function this field is
+// named after, assembles that same structure out of local profile state,
+// and its stack stores pin the payload's ranges. Payload 0-23: three
+// big-endian u64s rendered from the account's cached profile record
+// (offsets 0x18, 0x20 and 0x10 of it -- the same region the 2026-09-13 diff
+// below found varying between a login-shaped and a profile-shaped
+// response). Payload 24-39: sixteen literal zero bytes the builder writes
+// itself. Payload 40-167: sixteen u64s copied verbatim, little-endian and
+// unswapped, from profile offsets 0x48-0xC0. The `01 00 01 01` marker both
+// captured values carry at 46-49 is the low half of that first copied u64,
+// and the capture's 96-byte zero tail is the rest of the copied region
+// being zero. Capture and builder agree on that skeleton; the previous
+// version's repeated SHA-256 out to byte 83 agreed with neither.
+//
+// What this reproduces is that skeleton and nothing more: a non-zero head
+// for the console's one check, the builder's zero range, that marker, and
+// zeros where the copied profile region goes. The real blobs only ever put
+// account state there -- the ten login-only bytes at 62-65 and 72-77 -- and
+// a record that is genuinely empty is a more defensible value than
+// inventing plausible-looking Nintendo internals. Two capture-stable
+// details are deliberately not reproduced for that same reason: the 0x10 at
+// offset 12 sits inside the context-keyed head, and offsets 22-25 reading
+// zero is one account's profile record rather than something a second
+// account's capture has shown to be protocol-wide.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
+
 	// Confirmed working on hardware; do not move off offset 0 or change its
 	// content without a fresh hardware confirmation -- see the regression
 	// this survived, above.
 	header := []byte{0xd3, 0x5e, 0xb4, 0xeb, 0x5e, 0x74}
-	// How far past the header a real capture had any non-zero byte at all.
-	// Everything from here to blobLen was zero in that capture.
-	const populatedLen = 84
 
-	out := make([]byte, 0, blobLen)
-	out = append(out, header...)
-	seed := []byte(naID)
-	for len(out) < populatedLen {
-		sum := sha256.Sum256(seed)
-		out = append(out, sum[:]...)
-		seed = sum[:]
-	}
-	out = out[:populatedLen]
-	out = append(out, make([]byte, blobLen-populatedLen)...)
+	out := make([]byte, blobLen)
+	copy(out, header)
+
+	// Bytes 6-29 -- payload 0-23. Three big-endian u64s a real console
+	// renders from its own cached profile record. SwitchNet has no such
+	// record, so these stand in for it, derived from naID alone: all
+	// FUN_71000f0960 requires is one non-zero byte in this range.
+	seed := sha256.Sum256([]byte("nxAccount:" + naID))
+	copy(out[6:30], seed[:24])
+
+	// Bytes 30-45 -- payload 24-39 -- are the two zero quads the builder
+	// writes itself, and stay zero here (make() already left them so).
+
+	// Bytes 46-49 -- payload 40-43 -- the marker both values in the
+	// 2026-09-13 diff carry. It is the one part of the copied profile region
+	// identical between a login-shaped and a profile-shaped response, which
+	// makes it structure rather than that account's own data.
+	copy(out[46:50], []byte{0x01, 0x00, 0x01, 0x01})
+
+	// Bytes 50-173 -- the rest of the copied profile region -- stay zero;
+	// see the comment above for why an empty record is the honest value.
+
 	return base64.StdEncoding.EncodeToString(out)
 }
 
