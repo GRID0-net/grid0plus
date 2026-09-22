@@ -86,6 +86,32 @@ the head bytes is per-response, not per-account — so a console that validated
 them against a derivation of its own account would be validating something a
 working server does not itself keep stable.
 
+## Which responses carry the field, measured 2026-09-22
+
+Replayed against SwitchNet's own handler in the test harness, because "the
+capture has it" does not by itself say when SwitchNet does:
+
+| Response | `extras.self.nxAccount` | `links.nintendoAccount` |
+| --- | --- | --- |
+| `POST /1.0.0/federation` with an `idToken` | present | present |
+| `POST /1.0.0/login` for that same device account | present | present |
+| `POST /1.0.0/login` for a device account whose user has never federated | **absent** | **absent** |
+
+That is the whole mechanism, and it is worth stating plainly: only
+`recordNintendoAccountLink` puts the field on a user, and it runs from
+`federation` and from the NA-link endpoint — never from `login`. A login is
+otherwise a pure read, so it carries the field only because an earlier
+federation on that account stored it. The console reads
+`$.user.extras.self.nxAccount` on **every** login, copies it into the record
+`an_nxAccount_validateRecord` then checks, and a missing field zero-fills the
+232-character slot — the same signature as a wrong one.
+
+**This is the shape to check first when a session stops right after a login**,
+which is what the 2026-09-22 hardware log shows (`POST /1.0.0/users` 201,
+then two logins, then nothing): a `users`+`login` pair that never federated is
+logging in as a brand-new, unlinked user, and no capture is needed to see that
+its `nxAccount` is absent.
+
 ## What this changes
 
 - [x] Matches the implementation, with one exception — `nxAccountBlob` wrote
@@ -93,8 +119,13 @@ working server does not itself keep stable.
   Fixed in the same commit, along with `0x10` at offset 12.
 - [x] No new `TODO(capture-needed)`; this capture closes a sub-question of the
   existing one rather than opening one.
-- [ ] **Still open:** what the head bytes mean, and why they differ per
-  response. Neither question is answerable from wire data alone.
+- [x] "Why they differ per response" is answered
+  ([`account-sysmodule-decompile.md`](account-sysmodule-decompile.md), "Where the
+  head bytes come from"): the console renders the head from its own profile
+  cache, and that cache is filled from the last response. The server picks the
+  bytes; the client stores and echoes them.
+- [ ] **Still open:** what the values *mean* — a server-side choice, so no
+  capture or decompile of this client can settle it.
 
 ## Notes
 

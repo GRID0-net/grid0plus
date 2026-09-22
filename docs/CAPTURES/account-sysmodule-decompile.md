@@ -126,22 +126,66 @@ the concrete wizards behind the add-user flow, next to `detail::OAuthProcedureBa
 `migration` the console-transfer half. This answers the "which component runs
 the add-user / import flow" question in `nintendo-account-link.md`.
 
+## Where the head bytes come from (settled 2026-09-22, same pass)
+
+They are **not derived by the console at all** — they are round-tripped
+server data, and the round trip is visible end to end in three functions:
+
+| Function | Role |
+| --- | --- |
+| `an_profileCache_updateProfile_a` / `_b` (0x1f1640 / 0x1f1c40) | writes the selected slot's `+0x10`, `+0x18`, `+0x20` from `param_3[0]`, `param_3[1]`, `param_3[2]`, and `+0x48`..`+0xC0` from `param_4[0..15]` — together with the avatar it downloaded and the UTF-16 nickname it was handed |
+| `an_profileCache_readSlotFields` (0x1f32c0) | copies those same two regions back out |
+| `an_nxAccount_buildRecord` (0x1f0ee0) | renders the first three as **big-endian** u64s into payload 0-23 and copies the other sixteen verbatim into payload 40-167 |
+
+The slot is selected by a 16-byte key (`param_2`), and `updateProfile` returns
+`0xc87c` if no slot matches it — so the cache has to have been created for that
+account first. **Net effect: the head is whatever a response last told the
+console to cache.** That is the mechanism behind the per-response difference in
+the table below, and it also rules out the reading that worried this file most:
+a console cannot be checking the head against a derivation of its own, because
+it never holds anything but a copy of the server's own bytes. The server
+chooses them; the console stores them and echoes them in the next blob it
+builds.
+
+## What the validator actually constrains
+
+`an_nxAccount_validateRecord` (0x1f0960), re-derived from its own decompile
+rather than from the caller's error path:
+
+1. the 8 bytes at `record+0x21` equal ASCII `01606150` — which is not a
+   separate marker: it is what base64 of the `d3 5e b4 eb 5e 74` header *is*,
+   so any correct encoding of that header produces it for free;
+2. `an_base64_decode` over `record+0x29` (the 224 characters after those 8)
+   returns success with a length-out of exactly `0xa8` — 168 bytes;
+3. a byte-permuting non-zero test over the **first 16 payload bytes** (blob
+  6-21). Both words it tests are byte-swapped, and byte-swapping preserves
+   which bytes are zero, so this is exactly "not all zero".
+
+and nothing else — the remaining 152 payload bytes are read by nothing in
+either caller. `nxAccountBlob` satisfies all three, including with the head it
+derives from `naID`. So a `2124-0292` from this gate means the field was absent,
+empty, mis-prefixed or the wrong length at the moment the record was built —
+not that its *content* was wrong.
+
 ## What is still open
 
-- **What the context-keyed head bytes encode.** The three big-endian u64s behave
-  like per-account profile state (they differ between a login-shaped and a
-  profile-shaped response for the same account) but their meaning is not
-  recoverable from this binary alone. **A second account's samples arrived
-  2026-08-26** ([`nextendo-login-flow-2026-08-26.md`](nextendo-login-flow-2026-08-26.md))
-  and answered the half of this they could: every range the 2026-09-13 diff
-  called fixed is identical there too — including bytes 22-25 reading zero,
-  which is now reproduced — and the login-only pair sits at the same two
-  offsets with different values. *Why* the bytes differ between a login-shaped
-  and a profile-shaped response is still open, and no wire capture settles it:
-  the split is server-side.
+- **What the context-keyed head bytes encode.** The three big-endian u64s are
+  server-supplied and console-cached (above), so their *meaning* is a
+  server-side choice, not something this binary or any capture can decode. A
+  second account's samples arrived 2026-08-26
+  ([`nextendo-login-flow-2026-08-26.md`](nextendo-login-flow-2026-08-26.md))
+  and confirmed every range the 2026-09-13 diff called fixed, including bytes
+  22-25 reading zero. The narrowest remaining question is therefore not "what
+  does SwitchNet lose by inventing them" — nothing reads them — but whether a
+  *future* console build compares a cached value against a refreshed one.
 - **Whether the ten login-only bytes the real server sent (payload 56-59 and
   66-71) matter.** SwitchNet sends zeros there. Nothing in the validator reads
-  them; a later check was never found.
+  them; a later check was never found. They land in the same copied region as
+  the `01 00 01 01` at payload 40-43, which reads as four booleans
+  (`personalAnalytics` / `personalNotification` / `friendRequestReception` and
+  a zero, in some order) — the region looks like the *permissions* block of a
+  user object, which would make the ten login-only bytes its
+  `*UpdatedAt` timestamps.
 - **Whether the eight unserved NA paths are actually called during a first
   link**, per above.
 - **The `%s/avators/profiles.dat` pair** (0x1f2180 / 0x1f5730): which half reads

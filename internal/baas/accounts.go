@@ -676,12 +676,12 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 		patch.Extras = &extras
 	}
 	// TODO(capture-needed): what nxAccountBlob's context-keyed head bytes
-	// encode, and whether anything past the one check a decompile found
-	// reads any of this. See that function's own comment for what the
-	// 2026-09-04 and 2026-09-13 captures, the 2026-09-20 consumer decompile
-	// and the 2026-09-22 builder decompile settled between them, versus what
-	// still needs a capture (a second account's samples, which would
-	// separate protocol-wide structure from one account's own values).
+	// *mean*. Not whether they matter, which the 2026-09-22 round-trip
+	// decompile settled: the head is rendered from the console's own profile
+	// cache and that cache is filled from the last response, so a working
+	// server is choosing these bytes too and the client can only ever echo
+	// its own copy of them -- see nxAccountBlob's comment. What is left is a
+	// server-side choice no capture of this client can decode.
 	nxAccount := nxAccountBlob(naID)
 	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing != nxAccount {
 		extras[db.ScopeSelf]["nxAccount"] = nxAccount
@@ -859,12 +859,27 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // being zero. Capture and builder agree on that skeleton; the previous
 // version's repeated SHA-256 out to byte 83 agreed with neither.
 //
-// What this reproduces is that skeleton and nothing more: a non-zero head
+//	// What this reproduces is that skeleton and nothing more: a non-zero head
+//
 // for the console's one check, the zero ranges and marker both accounts
 // agree on, and zeros where the copied profile region goes. The real blobs
 // only ever put account state in the copied region -- the ten login-only
-// bytes at 62-65 and 72-77 -- and a record that is genuinely empty is a more
-// defensible value than inventing plausible-looking Nintendo internals.
+// bytes at 62-65 and 72-77, which sit in the same copied region as the
+// `01 00 01 01` at 46-49 and read as four booleans, so the region looks
+// like a user object's permissions block with those two pairs its
+// timestamps -- and a record that is genuinely empty is a more defensible
+// value than inventing plausible-looking Nintendo internals.
+//
+// The round trip is what makes an invented head safe, and it was found by
+// decompiling both ends 2026-09-22: an_profileCache_updateProfile_a/_b
+// (0x1f1640/0x1f1c40) write the selected slot's +0x10/+0x18/+0x20 from
+// their own param_3, an_profileCache_readSlotFields (0x1f32c0) copies that
+// region back out, and an_nxAccount_buildRecord (0x1f0ee0) renders those
+// three fields big-endian into bytes 6-29 right here. The console has no
+// derivation of its own to compare against -- it renders whatever the last
+// response told it to cache, which is exactly why the same account gets two
+// different heads from federation/login and from a profile read on a
+// working server.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
 
