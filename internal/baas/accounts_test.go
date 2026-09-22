@@ -1377,20 +1377,26 @@ func TestNxAccountBlobZeroesTheRangesRealBlobsShowZero(t *testing.T) {
 }
 
 // TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960 pins the only thing
-// the console's real consumer checks about this field: at least one
-// non-zero byte among roughly the first 24 payload bytes. An all-zero head
-// is the one way this placeholder can raise 2124-0292 on its own.
+// the console's real consumer checks about this field: FUN_71000f0960
+// base64-decodes the 224 characters after the header, requires exactly 168
+// bytes back, and requires at least one non-zero byte in the first 16 of
+// them -- payload 0-15, blob bytes 6-21. It reaches that by byte-swapping
+// two 8-byte words, which preserves which bytes are zero, so the range is
+// the whole claim. An all-zero range there is the one way this placeholder
+// can raise 2124-0292 on its own, which is why the assertion is on blob
+// bytes 6-21 rather than on the 24 bytes written: asserting the wider range
+// would pass on a value the console would refuse.
 func TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
 		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
 	}
-	for _, b := range decoded[6:30] {
+	for _, b := range decoded[6:22] {
 		if b != 0 {
 			return
 		}
 	}
-	t.Errorf("nxAccountBlob's payload head (bytes 6-29) is all zero, which is what FUN_71000f0960 rejects")
+	t.Error("nxAccountBlob's first 16 payload bytes (blob bytes 6-21) are all zero, which is what FUN_71000f0960 rejects")
 }
 
 func TestNxAccountBlobIsStablePerAccountAndDistinctAcrossAccounts(t *testing.T) {

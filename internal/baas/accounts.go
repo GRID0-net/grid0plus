@@ -824,9 +824,14 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // (already true here -- that is the header's own base64 encoding, not a
 // separate literal, and was never the problem); then it base64-decodes
 // everything after those first 8 characters (which is everything after the
-// 6-byte header) and requires at least one non-zero byte among roughly the
-// first 24 decoded bytes -- payload 0-23 below -- and asks nothing else
-// about the rest.
+// 6-byte header), requires exactly 168 bytes back, and then requires at
+// least one non-zero byte in the first 16 of them -- payload 0-15 below,
+// blob bytes 6-21 -- and asks nothing else about the rest. Two byte-swapped
+// 8-byte words are the whole of that check; byte-swapping preserves which
+// bytes are zero, so "either word non-zero" and "not all zero" are the same
+// test. Which 16 bytes those are was settled by decompiling the decoder
+// itself (an_base64_decode at 0x137890 takes a length-out as its first
+// argument, so the decoded buffer starts at its second, not at the first).
 //
 // Same session, the builder: FUN_71000f0ee0, the function this field is
 // named after, assembles that same structure out of local profile state,
@@ -865,8 +870,10 @@ func nxAccountBlob(naID string) string {
 
 	// Bytes 6-29 -- payload 0-23. Three big-endian u64s a real console
 	// renders from its own cached profile record. SwitchNet has no such
-	// record, so these stand in for it, derived from naID alone: all
-	// FUN_71000f0960 requires is one non-zero byte in this range.
+	// record, so these stand in for it, derived from naID alone. The only
+	// part of that a console insists on is bytes 6-21 (the first 16 payload
+	// bytes), which FUN_71000f0960 requires not to be all zero; 24 bytes are
+	// written here so the range it checks is a strict subset.
 	seed := sha256.Sum256([]byte("nxAccount:" + naID))
 	copy(out[6:30], seed[:24])
 
