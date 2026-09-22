@@ -254,6 +254,18 @@ custom login page (checking a person's own SwitchNet login credentials, from
 OAuth flow. See [nintendo-account-link.md](nintendo-account-link.md) for the
 full writeup of both captures.
 
+**A later capture runs the whole flow start to finish** —
+[`nextendo-login-flow-2026-08-26.md`](nextendo-login-flow-2026-08-26.md) — and
+it answers two things the endpoint-by-endpoint ones could not. First, the eight
+unserved `accounts.nintendo.com` paths raised above as a suspected cause of the
+post-federation failure are **not called at all** by a link that succeeds:
+`term_agreement_token`, `term_confirm`, `transfer_na_tokens*`,
+`analytics/device/opt_in` and `%s/profile` appear nowhere in it. Second, every
+endpoint the flow does visit — `application/token`, `users`, `federation`,
+`login`, `push_channels`, `GET users/{id}`, `qrcode_param`, `devices/snapshot`,
+`friends` — is already routed, at the same paths and methods SwitchNet already
+serves.
+
 ### 9. `nintendo.x5t#S256` and `nintendo.esv` — undocumented device-token fields
 
 Not on the [Kinnay wiki's device-information

@@ -131,8 +131,14 @@ the add-user / import flow" question in `nintendo-account-link.md`.
 - **What the context-keyed head bytes encode.** The three big-endian u64s behave
   like per-account profile state (they differ between a login-shaped and a
   profile-shaped response for the same account) but their meaning is not
-  recoverable from this binary alone. A second account's samples would separate
-  protocol-wide structure from one account's values.
+  recoverable from this binary alone. **A second account's samples arrived
+  2026-08-26** ([`nextendo-login-flow-2026-08-26.md`](nextendo-login-flow-2026-08-26.md))
+  and answered the half of this they could: every range the 2026-09-13 diff
+  called fixed is identical there too — including bytes 22-25 reading zero,
+  which is now reproduced — and the login-only pair sits at the same two
+  offsets with different values. *Why* the bytes differ between a login-shaped
+  and a profile-shaped response is still open, and no wire capture settles it:
+  the split is server-side.
 - **Whether the ten login-only bytes the real server sent (payload 56-59 and
   66-71) matter.** SwitchNet sends zeros there. Nothing in the validator reads
   them; a later check was never found.

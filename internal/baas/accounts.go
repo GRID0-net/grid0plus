@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"net/http"
 	"strings"
@@ -739,6 +740,17 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 //     byte at 12), and offsets 26-29
 //   - login-only, zero on a plain profile read: offsets 62-65 and 72-77
 //
+// 2026-08-26: a SECOND account's samples arrived -- a full Nextendo login
+// capture (their own server, a different account, a different server build,
+// console SDK 22.2.0). It has the same five appearances and the same two
+// values, and every range the diff above calls "fixed in both" is
+// byte-identical there, 0x10 at offset 12 included. It also re-confirms the
+// login-only pair at the same two offsets (62-65, 72-77) with entirely
+// different values, so those stay account state and stay zero here. What
+// that settles is the one range the list above could not: offsets 22-25
+// reading zero is protocol-wide structure, not one account's profile
+// record, and this now reproduces it.
+//
 // None of that is confirmed protocol-wide yet -- one account's captures can
 // only show what's fixed *within* that account, not what's fixed *across*
 // accounts, and CLAUDE.md's rule against inventing a plausible-looking
@@ -848,15 +860,11 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // version's repeated SHA-256 out to byte 83 agreed with neither.
 //
 // What this reproduces is that skeleton and nothing more: a non-zero head
-// for the console's one check, the builder's zero range, that marker, and
-// zeros where the copied profile region goes. The real blobs only ever put
-// account state there -- the ten login-only bytes at 62-65 and 72-77 -- and
-// a record that is genuinely empty is a more defensible value than
-// inventing plausible-looking Nintendo internals. Two capture-stable
-// details are deliberately not reproduced for that same reason: the 0x10 at
-// offset 12 sits inside the context-keyed head, and offsets 22-25 reading
-// zero is one account's profile record rather than something a second
-// account's capture has shown to be protocol-wide.
+// for the console's one check, the zero ranges and marker both accounts
+// agree on, and zeros where the copied profile region goes. The real blobs
+// only ever put account state in the copied region -- the ten login-only
+// bytes at 62-65 and 72-77 -- and a record that is genuinely empty is a more
+// defensible value than inventing plausible-looking Nintendo internals.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
 
@@ -868,14 +876,35 @@ func nxAccountBlob(naID string) string {
 	out := make([]byte, blobLen)
 	copy(out, header)
 
-	// Bytes 6-29 -- payload 0-23. Three big-endian u64s a real console
-	// renders from its own cached profile record. SwitchNet has no such
-	// record, so these stand in for it, derived from naID alone. The only
-	// part of that a console insists on is bytes 6-21 (the first 16 payload
-	// bytes), which FUN_71000f0960 requires not to be all zero; 24 bytes are
-	// written here so the range it checks is a strict subset.
+	// Bytes 6-21 -- payload 0-15 -- the varying head. A real console renders
+	// these from its own cached profile record; SwitchNet has no such record,
+	// so this stands in for it, derived from naID alone. It is also the only
+	// range a console insists on: FUN_71000f0960 requires these 16 payload
+	// bytes not to be all zero.
 	seed := sha256.Sum256([]byte("nxAccount:" + naID))
-	copy(out[6:30], seed[:24])
+	copy(out[6:22], seed[:16])
+
+	// Byte 12 is the one byte inside that varying head that is identical in
+	// every value of this field either account has ever produced -- 0x10 --
+	// while the bytes on both sides of it differ, so it is structure and not
+	// data. It is inside the range the console requires non-zero, so writing
+	// it changes nothing about that check.
+	out[12] = 0x10
+
+	// Bytes 22-29 -- payload 16-23 -- are the third of the builder's three
+	// big-endian u64s, and the only one with a shape both known accounts agree
+	// on: its HIGH half (blob bytes 22-25) is zero and its low half (26-29) is
+	// not, i.e. the value is below 2^32 in every sample. Writing 24 hash bytes
+	// across 6-29 put entropy in 22-25 instead, which is a value no real sample
+	// has ever had -- see the 2026-08-26 note above for what settled it. Zero
+	// bytes 22-25 come free from make(); only the low half is written.
+	v := binary.BigEndian.Uint32(seed[16:20])
+	if v == 0 {
+		// Not reachable in practice; kept so the "non-zero" reading stays
+		// true of the code and not just of the hash.
+		v = 1
+	}
+	binary.BigEndian.PutUint32(out[26:30], v)
 
 	// Bytes 30-45 -- payload 24-39 -- are the two zero quads the builder
 	// writes itself, and stay zero here (make() already left them so).

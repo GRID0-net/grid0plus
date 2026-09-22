@@ -1358,13 +1358,21 @@ func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
 // output out to byte 83 -- it passed FUN_71000f0960's narrow non-zero check
 // the same as this version does, but was high-entropy noise in ranges every
 // real sample of this field has shown to be zero.
+//
+// Bytes 22-25 are in this list on the strength of a SECOND account's samples
+// (the 2026-08-26 Nextendo login capture), which is what the 2026-09-13
+// diff alone could not supply: one account's capture shows what is fixed
+// within that account, not what is fixed across accounts. The pair of
+// samples agrees with the first account on every fixed range, this one
+// included, which makes payload 16-19 the zero high half of the builder's
+// third big-endian u64 rather than a range nobody writes.
 func TestNxAccountBlobZeroesTheRangesRealBlobsShowZero(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
 		t.Fatalf("nxAccountBlob's output does not decode as base64: %v", err)
 	}
 	// Blob offsets: 6-byte header first, then the 168-byte payload.
-	for _, r := range [][2]int{{30, 46}, {50, len(decoded)}} {
+	for _, r := range [][2]int{{22, 26}, {30, 46}, {50, len(decoded)}} {
 		for i := r[0]; i < r[1]; i++ {
 			if decoded[i] != 0 {
 				t.Errorf("byte %d = %#x, want 0 (real blobs are zero here; see nxAccountBlob's comment)", i, decoded[i])
@@ -1373,6 +1381,16 @@ func TestNxAccountBlobZeroesTheRangesRealBlobsShowZero(t *testing.T) {
 	}
 	if want := []byte{0x01, 0x00, 0x01, 0x01}; string(decoded[46:50]) != string(want) {
 		t.Errorf("marker at bytes 46-49 = %x, want %x", decoded[46:50], want)
+	}
+	// The one byte inside the varying head that no known value of this field
+	// has ever disagreed on. Asserted because it is written from a constant
+	// and nothing else in the tests would notice it being dropped.
+	if decoded[12] != 0x10 {
+		t.Errorf("byte 12 = %#x, want 0x10 (identical in every sample of both accounts)", decoded[12])
+	}
+	// Payload 20-23: non-zero in every sample, as the low half of that u64.
+	if decoded[26] == 0 && decoded[27] == 0 && decoded[28] == 0 && decoded[29] == 0 {
+		t.Error("the leading u64's low half (bytes 26-29) is zero, which no sample has ever shown")
 	}
 }
 
