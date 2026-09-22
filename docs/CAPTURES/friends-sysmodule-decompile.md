@@ -30,11 +30,29 @@ alone:
   wrapper is not "missing a field" — nothing inside it is ever visited. That is
   the defect class below.
 
-## Three defects it found, all fixed
+## Four defects it found, all fixed
 
 Two were the same mistake — a bare top-level array where this client can only
-read an `{items: [...]}` envelope. The third was a response whose keys the
-client does not read at all.
+read an `{items: [...]}` envelope. The other two were responses whose keys the
+client does not read at all, which is the more interesting failure: nothing
+about the response looks wrong, and the screen it feeds comes up blank.
+
+**The friend-request inbox and outbox entries.** The inbox parser (`0x1cf640`)
+and the outbox parser (`0x1cfe20`) read identical field sets: `id`,
+`senderId`, `receiverId`, `state`, `sender.nickname`, `sender.thumbnailUrl`,
+`receiver.nickname`, `receiver.thumbnailUrl`, `createdAt`, `channels[0]`,
+`extras.receiver.read`, and the two `extras.sender`/`extras.senderAndReceiver`
+`route:*` blocks. Neither reads `from` or `to`.
+
+SwitchNet sent `from` and `to`, which is why this stayed a guess for so long:
+the two captures that would have shown the shape (04, 05) both came back with
+empty item lists, so nothing ever exercised the field names. Fixed in `2456156`.
+
+What that fix could not settle is `extras.receiver.read` — the recipient's
+unread flag. The client reads it and this server keeps no read state for a
+request, so the question of whether an absent key reads as unread (the useful
+default) or as read is a capture question, and it is now the
+`TODO(capture-needed)` on `FriendRequestResponse`.
 
 **`GET /2.0.0/users/<id>/relationships/<id>`.** This one is the cleanest piece of
 proof in the pass, because the object graph is visible in the decompilation

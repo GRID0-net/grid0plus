@@ -15,9 +15,9 @@ codes it raises, the response parsers behind each BAAS call, and the complete
 list of endpoints it can construct (eight of which SwitchNet does not serve).
 [friends-sysmodule-decompile.md](friends-sysmodule-decompile.md) does the same
 for the client of this file's own endpoints: it confirmed the friend list, the
-presence extras and the friend-request state spellings as already right, found
-two list responses that were shaped so the console could never read them (both
-fixed), and leaves three things open.
+presence extras, the game-play log and the friend-request state spellings as
+already right, found **four** responses shaped so the console could not read them
+(all fixed — items 2, 4 and 5 below), and leaves three things open.
 
 ## Fastest way to answer most of this
 
@@ -97,13 +97,19 @@ the same encoding for both actions. The block *list* response, which used to be
 in the same state, was settled by decompile instead: it is an envelope of
 `targetUserId`/`targetUser` entries, fixed in `2e77714`.
 
-**Also open:** the per-item shape of the inbox/outbox this request populates
-(`TODO(capture-needed)` at `internal/baas/models.go:187`, `FriendRequestResponse`)
-— captures 04 and 05 both returned empty item lists, so `id`/`from`/`to` are
-SwitchNet's best guess at the minimum a console needs to draw the "friend
-requests" screen, not a confirmed shape. A capture with a real pending request
-in the list (send one from a second console and capture the first one's inbox
-before accepting) would settle it.
+**The inbox/outbox per-item shape, settled 2026-09-22.** Captures 04 and 05 both
+returned empty item lists, so this was a guess for months — and a wrong one. The
+inbox parser (`0x1cf640`) and outbox parser (`0x1cfe20`) read `id`, `senderId`,
+`receiverId`, `sender.nickname`, `sender.thumbnailUrl`, `receiver.nickname`,
+`receiver.thumbnailUrl`, `state`, `createdAt`, `channels[0]`,
+`extras.receiver.read` and the `extras.sender`/`senderAndReceiver` `route:*`
+blocks. `from`/`to` are read by nothing. Fixed in `2456156`.
+
+**Still open within it:** `extras.receiver.read` is the recipient's unread flag,
+and SwitchNet keeps no read state for a request, so it sends none. Whether the
+client reads an absent key as unread or as read needs the same capture this item
+always needed — a real pending request sitting in an inbox — and it is now the
+only thing that capture would still settle for this endpoint.
 
 ### 3. `PATCH /2.0.0/friend_requests/<id>` — the body
 
