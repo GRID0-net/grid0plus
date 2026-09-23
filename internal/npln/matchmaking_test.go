@@ -598,3 +598,34 @@ func awaitSucceeded(
 type grpc_ClientStream interface {
 	Recv() (*mmpb.MatchmakingTicket, error)
 }
+
+// TestStreamingResponsesCarryTheirNPLNGRPCType: Nintendo's gateway stamps
+// npln-grpc-type on every response, streams included (ServerStreaming,
+// BidirectionalStreaming), per a 704-response capture of the real tenant host.
+// Unary calls always had it here; streams had nothing.
+func TestStreamingResponsesCarryTheirNPLNGRPCType(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("stream-one", "device-stream-one")
+	ctx := h.ctx(h.sessionFor(t, "stream-one", "device-stream-one"), "")
+
+	client := mmpb.NewMatchmakerClient(h.conn)
+	ticket, err := client.CreateMatchmakingTicket(ctx, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket: %v", err)
+	}
+	stream, err := client.TrackMatchmakingTicket(ctx,
+		&mmpb.TrackMatchmakingTicketRequest{Name: ticket.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("first update: %v", err)
+	}
+	md, err := stream.Header()
+	if err != nil {
+		t.Fatalf("header: %v", err)
+	}
+	if got := md.Get("npln-grpc-type"); len(got) != 1 || got[0] != "ServerStreaming" {
+		t.Errorf("npln-grpc-type = %v, want [ServerStreaming]", got)
+	}
+}

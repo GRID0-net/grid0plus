@@ -686,6 +686,17 @@ func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames [
 
     ssl_certificate     /etc/switchnet/certs/edge.crt;
     ssl_certificate_key /etc/switchnet/certs/edge.key;
+
+    # Splatoon 3 holds gRPC streams open that can stay quiet for minutes
+    # (PresenceService/KeepAlive, LobbyMessaging/RecvMessage, ticket tracking,
+    # Gamesync/KeepUserSession). nginx's defaults end a stream after 60s of
+    # silence in either direction and an idle HTTP/2 connection after 75s; a
+    # stream torn down mid-lobby is 2321-4992 on the console, the pattern
+    # NextendoNetwork/splatoon-3 measured when its own server cut them.
+    grpc_read_timeout   1h;
+    grpc_send_timeout   1h;
+    client_body_timeout 1h;
+    keepalive_timeout   1h;
 %s
     location / {
         grpc_pass grpc://switchnet_%s;

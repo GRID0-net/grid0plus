@@ -204,6 +204,7 @@ func (s *Server) unaryInterceptor(
 	ctx context.Context, req any,
 	info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 ) (any, error) {
+	_ = grpc.SetHeader(ctx, metadata.Pairs("npln-grpc-type", "Unary"))
 	ctx, err := s.enter(ctx, info.FullMethod)
 	if err != nil {
 		return nil, err
@@ -215,11 +216,28 @@ func (s *Server) streamInterceptor(
 	srv any, ss grpc.ServerStream,
 	info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 ) error {
+	_ = ss.SetHeader(metadata.Pairs("npln-grpc-type", grpcKind(info)))
 	ctx, err := s.enter(ss.Context(), info.FullMethod)
 	if err != nil {
 		return err
 	}
 	return handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+}
+
+// grpcKind is the value Nintendo's NPLN gateway puts in npln-grpc-type: the
+// kind of call. A capture of 704 responses from the real tenant host carries it
+// on every one -- Unary, ServerStreaming or BidirectionalStreaming -- per
+// NextendoNetwork/splatoon-3's measurement (facts only, not its code).
+func grpcKind(info *grpc.StreamServerInfo) string {
+	switch {
+	case info.IsClientStream && info.IsServerStream:
+		return "BidirectionalStreaming"
+	case info.IsServerStream:
+		return "ServerStreaming"
+	case info.IsClientStream:
+		return "ClientStreaming"
+	}
+	return "Unary"
 }
 
 type wrappedStream struct {
