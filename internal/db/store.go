@@ -185,6 +185,16 @@ type FriendCode struct {
 func (f FriendCode) Regenerable(t time.Time) bool { return !t.Before(f.RegenerableAt) }
 
 // Friendship is one direction of a mutual friendship.
+// NARefreshToken is one Nintendo Account link refresh token. TokenSHA256 is
+// the lowercase hex SHA-256 of the token; the token itself is never stored.
+type NARefreshToken struct {
+	TokenSHA256 string
+	UserID      string
+	Scope       []string
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+}
+
 type Friendship struct {
 	UserID         string
 	FriendID       string
@@ -685,6 +695,13 @@ type Store interface {
 	SetFavorite(ctx context.Context, userID, friendID string, favorite bool) error
 	// SetFriendshipExtras replaces the extras on one direction only.
 	SetFriendshipExtras(ctx context.Context, userID, friendID string, extras ExtrasByScope) error
+
+	// CreateNARefreshToken stores a refresh token, and drops any that expired
+	// before t.CreatedAt.
+	CreateNARefreshToken(ctx context.Context, t NARefreshToken) error
+	// GetNARefreshToken returns the token with this hash, or ErrNotFound if
+	// there is none or it expired at or before now.
+	GetNARefreshToken(ctx context.Context, tokenSHA256 string, now time.Time) (NARefreshToken, error)
 
 	// ---- friend requests ----
 

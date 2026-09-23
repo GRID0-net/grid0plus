@@ -41,6 +41,8 @@ type Memory struct {
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
 
+	naRefreshTokens map[string]NARefreshToken
+
 	saveDataArchives map[string]SaveDataArchive
 	// componentFiles is keyed by archive id then component file id, the same
 	// shape friendships/festEntries use for their own per-parent maps.
@@ -62,6 +64,8 @@ func NewMemory() *Memory {
 		blocks:         map[string]map[string]Block{},
 		presence:       map[string]Presence{},
 		images:         map[string]Image{},
+
+		naRefreshTokens: map[string]NARefreshToken{},
 
 		saveDataArchives: map[string]SaveDataArchive{},
 		componentFiles:   map[string]map[string]ComponentFile{},
@@ -549,6 +553,42 @@ func (m *Memory) SetFavorite(_ context.Context, userID, friendID string, favorit
 	f.Favorite = favorite
 	m.friendships[userID][friendID] = f
 	return nil
+}
+
+// ---- Nintendo Account refresh tokens -------------------------------------
+
+// CreateNARefreshToken stores a refresh token, and drops any that expired
+// before t.CreatedAt.
+func (m *Memory) CreateNARefreshToken(_ context.Context, t NARefreshToken) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.users[t.UserID]; !ok {
+		return ErrNotFound
+	}
+	for h, old := range m.naRefreshTokens {
+		if !old.ExpiresAt.After(t.CreatedAt) {
+			delete(m.naRefreshTokens, h)
+		}
+	}
+	if _, ok := m.naRefreshTokens[t.TokenSHA256]; ok {
+		return ErrConflict
+	}
+	t.Scope = append([]string(nil), t.Scope...)
+	m.naRefreshTokens[t.TokenSHA256] = t
+	return nil
+}
+
+// GetNARefreshToken returns the token with this hash, or ErrNotFound if there
+// is none or it expired at or before now.
+func (m *Memory) GetNARefreshToken(_ context.Context, tokenSHA256 string, now time.Time) (NARefreshToken, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	t, ok := m.naRefreshTokens[tokenSHA256]
+	if !ok || !t.ExpiresAt.After(now) {
+		return NARefreshToken{}, ErrNotFound
+	}
+	t.Scope = append([]string(nil), t.Scope...)
+	return t, nil
 }
 
 // ---- friend requests -----------------------------------------------------

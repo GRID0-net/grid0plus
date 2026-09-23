@@ -2,6 +2,7 @@ package baas
 
 import (
 	"bytes"
+	"errors"
 	"image/jpeg"
 	"io"
 	"net/http"
@@ -886,5 +887,54 @@ func TestNATokenRefreshRestatesTheGrantedScopes(t *testing.T) {
 		if scp[i] != v {
 			t.Errorf("ac:scp[%d] = %v, want %v", i, scp[i], v)
 		}
+	}
+}
+
+// TestNARefreshTokenSurvivesARestart pins what a deploy used to break: the
+// console holds its Nintendo Account refresh token for days, and every
+// restart of this service used to forget every one of them, so the next
+// refresh answered 400 invalid_grant and the console showed the login page
+// again (2026-09-23, 08:10). A refresh issued before a restart has to work
+// after it.
+func TestNARefreshTokenSurvivesARestart(t *testing.T) {
+	h := newHarness(t)
+	user := registerLoginUser(t, h, "grace", "hunter2222")
+	_, refreshToken := naLogin(t, h, "grace", "hunter2222")
+
+	h.restart()
+
+	resp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {"6ffd70c434d303c8"},
+		"refresh_token": {refreshToken},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusOK)
+	var body struct {
+		AccessToken string `json:"access_token"`
+	}
+	decode(t, resp, &body)
+
+	// And the new access token is really Grace's.
+	me, err := doAuthorized(h, "GET", "/2.0.0/users/me", body.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer me.Body.Close()
+	requireStatus(t, me, http.StatusOK)
+	var who struct {
+		ID string `json:"id"`
+	}
+	decode(t, me, &who)
+	if who.ID != user.ID {
+		t.Errorf("refreshed token is for %q, want %q", who.ID, user.ID)
+	}
+
+	// Only a hash is stored: the token itself is not a key the store knows.
+	if _, err := h.store.GetNARefreshToken(t.Context(), refreshToken, h.clock()); !errors.Is(err, db.ErrNotFound) {
+		t.Error("the refresh token is stored in the clear")
 	}
 }

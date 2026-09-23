@@ -1,9 +1,12 @@
 package baas
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -11,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -64,9 +68,6 @@ func oidcHash(value string) string {
 type authCode struct {
 	userID    string
 	expiresAt time.Time
-	// scope is what a refresh token was granted, restated on every refresh.
-	// Unused for authorization codes.
-	scope []string
 }
 
 const authCodeTTL = 5 * time.Minute
@@ -123,32 +124,50 @@ func (s *Server) consumeAuthCode(code string, now time.Time) (string, bool) {
 // defensible default rather than a confirmed one.
 const naRefreshTokenTTL = 30 * 24 * time.Hour
 
-// storeNARefreshToken and consumeNARefreshToken hold naToken's refresh
-// tokens the same way storeAuthCode/consumeAuthCode hold its authorization
-// codes -- except a refresh token is multi-use (consuming one issues a new
-// access token but does not invalidate the refresh token itself, matching
-// ordinary OAuth refresh semantics), so consuming does not delete it.
-func (s *Server) storeNARefreshToken(token, userID string, scope []string, now time.Time) {
-	s.naRefreshTokensMu.Lock()
-	defer s.naRefreshTokensMu.Unlock()
-	for t, rt := range s.naRefreshTokens {
-		if now.After(rt.expiresAt) {
-			delete(s.naRefreshTokens, t)
-		}
-	}
-	s.naRefreshTokens[token] = authCode{userID: userID, expiresAt: now.Add(naRefreshTokenTTL), scope: scope}
+// storeNARefreshToken and consumeNARefreshToken keep naToken's refresh
+// tokens in the database.
+//
+// The token is a plain opaque string, not a JWT: a real working capture
+// (2026-08-27) showed refresh_token from this endpoint is 64 characters,
+// unlike every other token minted alongside it, so there is nothing in it to
+// verify and the server has to remember it. It used to be remembered in this
+// process's memory, which meant every restart or deploy logged every console
+// out of its Nintendo Account: the next refresh answered 400 invalid_grant
+// and the console showed the login page again (seen 2026-09-23). Only its
+// SHA-256 is stored.
+//
+// A refresh token is multi-use (consuming one issues a new access token but
+// does not invalidate it, ordinary OAuth refresh semantics), so consuming
+// does not delete it.
+func (s *Server) storeNARefreshToken(ctx context.Context, token, userID string, scope []string, now time.Time) error {
+	return s.store.CreateNARefreshToken(ctx, db.NARefreshToken{
+		TokenSHA256: naRefreshTokenHash(token),
+		UserID:      userID,
+		Scope:       scope,
+		ExpiresAt:   now.Add(naRefreshTokenTTL),
+		CreatedAt:   now,
+	})
 }
 
 // consumeNARefreshToken returns the refresh token's user and the scopes it was
-// granted.
-func (s *Server) consumeNARefreshToken(token string, now time.Time) (string, []string, bool) {
-	s.naRefreshTokensMu.Lock()
-	defer s.naRefreshTokensMu.Unlock()
-	rt, ok := s.naRefreshTokens[token]
-	if !ok || now.After(rt.expiresAt) {
-		return "", nil, false
+// granted, or ok=false if it is unknown or expired.
+func (s *Server) consumeNARefreshToken(ctx context.Context, token string, now time.Time) (userID string, scope []string, ok bool, err error) {
+	if token == "" {
+		return "", nil, false, nil
 	}
-	return rt.userID, rt.scope, true
+	rt, err := s.store.GetNARefreshToken(ctx, naRefreshTokenHash(token), now)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		return "", nil, false, nil
+	case err != nil:
+		return "", nil, false, err
+	}
+	return rt.UserID, rt.Scope, true, nil
+}
+
+func naRefreshTokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // naAuthorizePage renders the login form. GET /connect/1.0.0/authorize.
@@ -456,7 +475,10 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			writeInternalError(s.log, w, r, "generate na refresh token", err)
 			return
 		}
-		s.storeNARefreshToken(refreshToken, userID, scope, now)
+		if err := s.storeNARefreshToken(r.Context(), refreshToken, userID, scope, now); err != nil {
+			writeInternalError(s.log, w, r, "store na refresh token", err)
+			return
+		}
 
 		sessionToken, err := newHexID(32)
 		if err != nil {
@@ -475,7 +497,11 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case "refresh_token":
-		userID, granted, ok := s.consumeNARefreshToken(form.Get("refresh_token"), now)
+		userID, granted, ok, err := s.consumeNARefreshToken(r.Context(), form.Get("refresh_token"), now)
+		if err != nil {
+			writeInternalError(s.log, w, r, "load na refresh token", err)
+			return
+		}
 		if !ok {
 			s.log.Warn("nalink: token refresh with an unknown or expired refresh_token")
 			writeNAOAuthError(w, http.StatusBadRequest, "invalid_grant")

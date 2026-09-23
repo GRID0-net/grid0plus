@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,6 +65,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"undeleteDeviceAccount":     testUndeleteDeviceAccount,
 		"friendCodes":               testFriendCodes,
 		"friendships":               testFriendships,
+		"naRefreshTokens":           testNARefreshTokens,
 		"friendRequests":            testFriendRequests,
 		"blocks":                    testBlocks,
 		"presence":                  testPresence,
@@ -1901,5 +1903,59 @@ func testStats(t *testing.T, s Store) {
 	// AddFriendship writes both directions.
 	if got.Friendships != before.Friendships+2 {
 		t.Errorf("friendships = %d, want %d", got.Friendships, before.Friendships+2)
+	}
+}
+
+func testNARefreshTokens(t *testing.T, s Store) {
+	ctx := t.Context()
+	a := makeUser(t, s, "Alice")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	tok := NARefreshToken{
+		TokenSHA256: "aa" + strings.Repeat("0", 62),
+		UserID:      a.ID,
+		Scope:       []string{"openid", "user"},
+		ExpiresAt:   now.Add(time.Hour),
+		CreatedAt:   now,
+	}
+	if err := s.CreateNARefreshToken(ctx, tok); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.GetNARefreshToken(ctx, tok.TokenSHA256, now)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.UserID != a.ID || len(got.Scope) != 2 || got.Scope[0] != "openid" || got.Scope[1] != "user" {
+		t.Errorf("got %+v, want Alice with [openid user]", got)
+	}
+	if !got.ExpiresAt.Equal(tok.ExpiresAt) {
+		t.Errorf("expires_at = %v, want %v", got.ExpiresAt, tok.ExpiresAt)
+	}
+
+	// Expired at exactly its expiry, and unknown hashes, are both not found.
+	if _, err := s.GetNARefreshToken(ctx, tok.TokenSHA256, tok.ExpiresAt); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get at expiry: err = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetNARefreshToken(ctx, "bb"+strings.Repeat("0", 62), now); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get unknown: err = %v, want ErrNotFound", err)
+	}
+
+	// A token for a user that does not exist is refused.
+	orphan := tok
+	orphan.TokenSHA256 = "cc" + strings.Repeat("0", 62)
+	orphan.UserID = "0000000000000000"
+	if err := s.CreateNARefreshToken(ctx, orphan); !errors.Is(err, ErrNotFound) {
+		t.Errorf("create for unknown user: err = %v, want ErrNotFound", err)
+	}
+
+	// No scope reads back as empty, not as an error.
+	bare := tok
+	bare.TokenSHA256 = "dd" + strings.Repeat("0", 62)
+	bare.Scope = nil
+	if err := s.CreateNARefreshToken(ctx, bare); err != nil {
+		t.Fatalf("create without scope: %v", err)
+	}
+	if got, err := s.GetNARefreshToken(ctx, bare.TokenSHA256, now); err != nil || len(got.Scope) != 0 {
+		t.Errorf("scope-less token: %+v, %v", got, err)
 	}
 }

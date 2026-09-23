@@ -31,7 +31,9 @@ const (
 // harness is a BAAS server wired up over httptest, with an in-memory store and a
 // clock the test controls.
 type harness struct {
-	t *testing.T
+	// build makes a Server on this harness's store and keys; see restart.
+	build func() *Server
+	t     *testing.T
 
 	server *httptest.Server
 	srv    *Server
@@ -140,23 +142,36 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		accessIssuer: sjwt.NewIssuer(accessKey, testIssuer+"/1.0.0/internal_certificates", true),
 	}
 
-	h.srv = New(cfg, Deps{
-		Store:          h.store,
-		Bus:            h.bus,
-		Log:            slog.New(slog.DiscardHandler),
-		AccessIssuer:   sjwt.NewIssuer(accessKey, cfg.AccessTokenJWKSURL, true),
-		IDIssuer:       sjwt.NewIssuer(idKey, cfg.IDTokenJWKSURL, true),
-		NAIDIssuer:     sjwt.NewIssuer(naIDKey, NAIDTokenJWKSURL, true),
-		AccessVerifier: sjwt.NewVerifier(accessKey),
-		IDVerifier:     sjwt.NewVerifier(naIDKey),
-		DeviceVerifier: sjwt.NewVerifier(deviceKey),
-		AppVerifier:    sjwt.NewVerifier(appKey),
-	})
-	h.srv.SetClock(h.clock)
-
+	h.build = func() *Server {
+		srv := New(cfg, Deps{
+			Store:          h.store,
+			Bus:            h.bus,
+			Log:            slog.New(slog.DiscardHandler),
+			AccessIssuer:   sjwt.NewIssuer(accessKey, cfg.AccessTokenJWKSURL, true),
+			IDIssuer:       sjwt.NewIssuer(idKey, cfg.IDTokenJWKSURL, true),
+			NAIDIssuer:     sjwt.NewIssuer(naIDKey, NAIDTokenJWKSURL, true),
+			AccessVerifier: sjwt.NewVerifier(accessKey),
+			IDVerifier:     sjwt.NewVerifier(naIDKey),
+			DeviceVerifier: sjwt.NewVerifier(deviceKey),
+			AppVerifier:    sjwt.NewVerifier(appKey),
+		})
+		srv.SetClock(h.clock)
+		return srv
+	}
+	h.srv = h.build()
 	h.server = httptest.NewServer(h.srv.Handler())
-	t.Cleanup(h.server.Close)
+	t.Cleanup(func() { h.server.Close() })
 	return h
+}
+
+// restart replaces the server with a new one on the same store and keys --
+// what a deploy does. Anything a console still holds that only lived in the
+// old Server's memory stops working across this.
+func (h *harness) restart() {
+	h.t.Helper()
+	h.server.Close()
+	h.srv = h.build()
+	h.server = httptest.NewServer(h.srv.Handler())
 }
 
 func (h *harness) clock() time.Time {

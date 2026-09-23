@@ -668,6 +668,48 @@ func (p *Postgres) SetFavorite(ctx context.Context, userID, friendID string, fav
 	return nil
 }
 
+// ---- Nintendo Account refresh tokens -------------------------------------
+
+// CreateNARefreshToken stores a refresh token, and drops any that expired
+// before t.CreatedAt.
+func (p *Postgres) CreateNARefreshToken(ctx context.Context, t NARefreshToken) error {
+	scope := t.Scope
+	if scope == nil {
+		scope = []string{}
+	}
+	buf, err := json.Marshal(scope)
+	if err != nil {
+		return err
+	}
+	if _, err := p.pool.Exec(ctx,
+		`DELETE FROM na_refresh_tokens WHERE expires_at <= $1`, t.CreatedAt); err != nil {
+		return mapErr(err)
+	}
+	_, err = p.pool.Exec(ctx, `
+		INSERT INTO na_refresh_tokens (token_sha256, user_id, scope, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5)`,
+		t.TokenSHA256, t.UserID, buf, t.ExpiresAt, t.CreatedAt)
+	return mapErr(err)
+}
+
+// GetNARefreshToken returns the token with this hash, or ErrNotFound if there
+// is none or it expired at or before now.
+func (p *Postgres) GetNARefreshToken(ctx context.Context, tokenSHA256 string, now time.Time) (NARefreshToken, error) {
+	var t NARefreshToken
+	var scope []byte
+	err := p.pool.QueryRow(ctx, `
+		SELECT token_sha256, user_id, scope, expires_at, created_at
+		FROM na_refresh_tokens WHERE token_sha256 = $1 AND expires_at > $2`,
+		tokenSHA256, now).Scan(&t.TokenSHA256, &t.UserID, &scope, &t.ExpiresAt, &t.CreatedAt)
+	if err != nil {
+		return NARefreshToken{}, mapErr(err)
+	}
+	if err := json.Unmarshal(scope, &t.Scope); err != nil {
+		return NARefreshToken{}, fmt.Errorf("decode refresh token scope: %w", err)
+	}
+	return t, nil
+}
+
 // ---- friend requests -----------------------------------------------------
 
 const friendRequestColumns = `id, from_user_id, to_user_id, state, created_at, updated_at`
