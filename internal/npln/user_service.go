@@ -32,8 +32,7 @@ type userService struct {
 // IssueToken rather than through a tracked CreateUser call, so there is no
 // honest creation or last-login instant to report and no assigned short id.
 // Fabricating any of the four would be inventing account state rather than
-// reporting it -- the same reasoning IssueToken's own doc comment gives for
-// leaving RefreshToken unanswered.
+// reporting it.
 //
 // TODO(capture-needed): whether a real client treats a User response with
 // these four fields absent as different from one where they carry real

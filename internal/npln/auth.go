@@ -55,6 +55,11 @@ type nplnClaims struct {
 	// Absent on an access token, which is not about one match.
 	SessionID string `json:"npln:gsid,omitempty"`
 
+	// Refresh marks a refresh token, so exchangeRefreshToken can refuse an
+	// access token presented in its place even though both are signed by the
+	// same key and verify with the same claim shape.
+	Refresh bool `json:"npln:refresh,omitempty"`
+
 	// Gamesync is the session block a session token carries, and it is there
 	// for the console rather than for this server: the client reads gsid, usid,
 	// uid and tid out of it to open its gamesync session. Present only on a
@@ -208,16 +213,26 @@ func (s *Server) exchangeIDToken(ctx context.Context, idToken string) (Caller, e
 		return Caller{}, ErrUnauthenticated
 	}
 
-	if _, err := s.store.GetUser(ctx, claims.Subject); err != nil {
+	return s.resolveCaller(ctx, claims.Subject, claims.DeviceAccountID, claims.IssuedAt)
+}
+
+// resolveCaller is the "is this identity still good" check shared by every
+// token this server accepts as proof of a player: a user that still exists,
+// and -- if the token names a console -- a device account that still belongs
+// to that user and was not revoked after the token was minted. exchangeIDToken
+// and exchangeRefreshToken both reduce to this once they've verified their
+// own token's signature and picked a subject out of it.
+func (s *Server) resolveCaller(ctx context.Context, userID, deviceAccountID string, issuedAt int64) (Caller, error) {
+	if _, err := s.store.GetUser(ctx, userID); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return Caller{}, ErrUnauthenticated
 		}
-		s.log.Error("npln: load user", "user", claims.Subject, "error", err)
+		s.log.Error("npln: load user", "user", userID, "error", err)
 		return Caller{}, ErrUnauthenticated
 	}
 
-	if claims.DeviceAccountID != "" {
-		da, err := s.store.GetDeviceAccount(ctx, claims.DeviceAccountID)
+	if deviceAccountID != "" {
+		da, err := s.store.GetDeviceAccount(ctx, deviceAccountID)
 		switch {
 		case errors.Is(err, db.ErrNotFound):
 			return Caller{}, ErrUnauthenticated
@@ -225,21 +240,79 @@ func (s *Server) exchangeIDToken(ctx context.Context, idToken string) (Caller, e
 			s.log.Error("npln: load device account", "error", err)
 			return Caller{}, ErrUnauthenticated
 		}
-		if da.DeletedAt != nil || da.UserID != claims.Subject {
+		if da.DeletedAt != nil || da.UserID != userID {
 			return Caller{}, ErrUnauthenticated
 		}
-		if da.TokensRevokedBefore != nil && time.Unix(claims.IssuedAt, 0).Before(*da.TokensRevokedBefore) {
+		if da.TokensRevokedBefore != nil && time.Unix(issuedAt, 0).Before(*da.TokensRevokedBefore) {
 			// Same check as internal/baas/router.go's authenticate, and for the
-			// same reason: an id token minted before an operator revoked this
+			// same reason: a token minted before an operator revoked this
 			// device account's tokens stays cryptographically valid, but must
-			// not seed a new NPLN session either.
-			s.log.Warn("npln: refused an id token minted before its device account's tokens were revoked",
-				"device_account", claims.DeviceAccountID)
+			// not seed or extend an NPLN session either.
+			s.log.Warn("npln: refused a token minted before its device account's tokens were revoked",
+				"device_account", deviceAccountID)
 			return Caller{}, ErrUnauthenticated
 		}
 	}
 
-	return Caller{UserID: claims.Subject, DeviceAccountID: claims.DeviceAccountID}, nil
+	return Caller{UserID: userID, DeviceAccountID: deviceAccountID}, nil
+}
+
+// refreshTokenTTL is how long a minted refresh token stays valid before the
+// console must go back through BAAS for a fresh id token. Nextendo's own
+// deployed server hands a refresh token back on every IssueToken/
+// IssuePrearrangedUserToken response (confirmed by reading, not copying,
+// their newTokenPID helper); this server previously minted none at all. A
+// hardware crash right after IssuePrearrangedUserToken -- with no further
+// call ever logged, so the client never even got as far as asking for
+// anything else -- surfaced this as a real gap rather than a cosmetic one:
+// see docs/CAPTURES/README.md. Their server never expires it; SwitchNet gives
+// it a TTL instead, consistent with every other token this server issues.
+const refreshTokenTTL = 30 * 24 * time.Hour
+
+// issueRefreshToken mints an opaque, self-verifying refresh token for c. It is
+// this server's own token, not a reconstruction of a Nintendo one: the format
+// only has to be something exchangeRefreshToken can verify later.
+func (s *Server) issueRefreshToken(c Caller, now time.Time) (string, error) {
+	tok, err := s.issuer.Sign(nplnClaims{
+		Subject:         c.UserID,
+		Issuer:          s.issuerName,
+		Audience:        s.tenant,
+		IssuedAt:        now.Unix(),
+		Expires:         now.Add(refreshTokenTTL).Unix(),
+		TokenID:         sjwt.NewTokenID(),
+		DeviceAccountID: c.DeviceAccountID,
+		Refresh:         true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("sign npln refresh token: %w", err)
+	}
+	return tok, nil
+}
+
+// exchangeRefreshToken is issueRefreshToken's inverse: it verifies a refresh
+// token and, if the identity it names is still good, resolves it to a Caller.
+//
+// Rejects an access token presented in its place -- the two share a verifier
+// and claim shape, so the Refresh claim is what tells them apart.
+func (s *Server) exchangeRefreshToken(ctx context.Context, refreshToken string) (Caller, error) {
+	if refreshToken == "" {
+		return Caller{}, ErrUnauthenticated
+	}
+
+	var claims nplnClaims
+	if err := s.tokens.Verify(refreshToken, &claims); err != nil {
+		s.log.Debug("npln: rejected refresh token", "error", err)
+		return Caller{}, ErrUnauthenticated
+	}
+	if !claims.Refresh {
+		s.log.Debug("npln: refused an access token presented as a refresh token")
+		return Caller{}, ErrUnauthenticated
+	}
+	if claims.Subject == "" {
+		return Caller{}, ErrUnauthenticated
+	}
+
+	return s.resolveCaller(ctx, claims.Subject, claims.DeviceAccountID, claims.IssuedAt)
 }
 
 // issueAccessToken signs an NPLN access token for a caller.

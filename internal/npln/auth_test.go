@@ -69,6 +69,55 @@ func TestABAASIDTokenBuysAnNPLNSession(t *testing.T) {
 	}
 }
 
+// TestRefreshTokenBuysANewAccessTokenWithoutGoingBackToBAAS proves the round
+// trip IssueToken's own refresh token is for: RefreshToken must accept it and
+// hand back a working access token, and must refuse an access token offered
+// in its place even though both verify against the same key.
+func TestRefreshTokenBuysANewAccessTokenWithoutGoingBackToBAAS(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("user-1", "device-account-1")
+
+	client := authpb.NewAuthClient(h.conn)
+	first, err := client.IssueToken(h.ctx("", ""), &authpb.IssueTokenRequest{
+		ExternalIdToken: &authpb.ExternalIdToken{
+			Token: &authpb.ExternalIdToken_NsaIdToken{
+				NsaIdToken: h.baasIDToken("user-1", "device-account-1"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("IssueToken: %v", err)
+	}
+	if first.GetToken().GetRefreshToken() == "" {
+		t.Fatal("no refresh token in the response")
+	}
+
+	refreshed, err := client.RefreshToken(h.ctx("", ""), &authpb.RefreshTokenRequest{
+		RefreshToken: first.GetToken().GetRefreshToken(),
+	})
+	if err != nil {
+		t.Fatalf("RefreshToken: %v", err)
+	}
+	if refreshed.GetToken().GetAccessToken() == "" {
+		t.Fatal("no access token in the refreshed response")
+	}
+
+	var claims nplnClaims
+	if err := sjwt.NewECVerifier(h.accessKey).Verify(refreshed.GetToken().GetAccessToken(), &claims); err != nil {
+		t.Fatalf("the refreshed access token does not verify: %v", err)
+	}
+	if claims.Subject != "user-1" {
+		t.Errorf("sub = %q, want user-1", claims.Subject)
+	}
+
+	_, err = client.RefreshToken(h.ctx("", ""), &authpb.RefreshTokenRequest{
+		RefreshToken: first.GetToken().GetAccessToken(),
+	})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("RefreshToken with an access token: code = %v, want Unauthenticated", status.Code(err))
+	}
+}
+
 // TestIssuePrearrangedUserTokenBuysAnNPLNSession is the same seam as
 // TestABAASIDTokenBuysAnNPLNSession, but for the RPC Splatoon 3 actually
 // calls first: confirmed on real hardware (2026-09-23 capture) as the first

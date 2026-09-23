@@ -98,9 +98,15 @@ func (a *authService) IssueToken(
 		return nil, err
 	}
 
-	access, ttl, err := a.s.issueAccessToken(caller, a.s.now())
+	now := a.s.now()
+	access, ttl, err := a.s.issueAccessToken(caller, now)
 	if err != nil {
 		a.s.log.Error("npln: issue access token", "user", caller.UserID, "error", err)
+		return nil, ErrUnauthenticated
+	}
+	refresh, err := a.s.issueRefreshToken(caller, now)
+	if err != nil {
+		a.s.log.Error("npln: issue refresh token", "user", caller.UserID, "error", err)
 		return nil, ErrUnauthenticated
 	}
 
@@ -108,23 +114,10 @@ func (a *authService) IssueToken(
 
 	return &authpb.IssueTokenResponse{
 		Token: &authpb.Token{
-			User:        userResourceName(caller.UserID),
-			AccessToken: access,
-			Ttl:         durationpb.New(ttl),
-			// No refresh token. TODO(capture-needed): whether Splatoon 3 ever
-			// calls RefreshToken, and what it expects back when it does. The
-			// game re-authenticates from its BAAS id token on reconnect, which
-			// is a path SwitchNet already serves, so an absent refresh token is
-			// the defensible reading rather than a fabricated one. A capture of
-			// a real session lasting past the access token's TTL would settle
-			// it. Change: this function and RefreshToken below.
-			//
-			// A 2026-09-20 decompile of Splatoon 3 v11.3.0 confirms
-			// "/nn.npln.auth.v1.Auth/RefreshToken" is a real, compiled-in RPC
-			// this client links against -- the mechanism this TODO asks about
-			// does exist on the wire. That narrows "does it exist" but not
-			// "does this game actually call it instead of just re-authenticating
-			// from BAAS"; only a capture answers that.
+			User:         userResourceName(caller.UserID),
+			AccessToken:  access,
+			RefreshToken: refresh,
+			Ttl:          durationpb.New(ttl),
 		},
 	}, nil
 }
@@ -150,9 +143,15 @@ func (a *authService) IssuePrearrangedUserToken(
 		return nil, err
 	}
 
-	access, ttl, err := a.s.issueAccessToken(caller, a.s.now())
+	now := a.s.now()
+	access, ttl, err := a.s.issueAccessToken(caller, now)
 	if err != nil {
 		a.s.log.Error("npln: issue access token", "user", caller.UserID, "error", err)
+		return nil, ErrUnauthenticated
+	}
+	refresh, err := a.s.issueRefreshToken(caller, now)
+	if err != nil {
+		a.s.log.Error("npln: issue refresh token", "user", caller.UserID, "error", err)
 		return nil, ErrUnauthenticated
 	}
 
@@ -162,17 +161,53 @@ func (a *authService) IssuePrearrangedUserToken(
 		User: &authpb.User{
 			Name: userResourceName(caller.UserID),
 			// Account, CreateTime, LastLoginTime and ShortId are left unset:
-			// nothing in internal/db.Store tracks them today, and TODO(capture-
-			// needed) below covers whether the client actually reads any of
-			// them here rather than from a later call. See docs/CAPTURES/README.md.
+			// nothing in internal/db.Store tracks them today. See
+			// docs/CAPTURES/README.md.
 		},
 		Token: &authpb.Token{
-			User:        userResourceName(caller.UserID),
-			AccessToken: access,
-			Ttl:         durationpb.New(ttl),
-			// TODO(capture-needed): same open question as IssueToken's Token
-			// above -- whether a refresh token belongs here. Change: this
-			// function and RefreshToken.
+			User:         userResourceName(caller.UserID),
+			AccessToken:  access,
+			RefreshToken: refresh,
+			Ttl:          durationpb.New(ttl),
+		},
+	}, nil
+}
+
+// RefreshToken trades a still-good refresh token for a fresh access token,
+// without the console needing to go back through BAAS for a new id token.
+//
+// Splatoon 3 links this RPC in (confirmed by a 2026-09-20 decompile of
+// v11.3.0's main), and Nextendo's own deployed server always hands a refresh
+// token back from IssueToken/IssuePrearrangedUserToken -- so this server now
+// does the same, and answers this RPC rather than leaving it Unimplemented.
+func (a *authService) RefreshToken(
+	ctx context.Context, req *authpb.RefreshTokenRequest,
+) (*authpb.RefreshTokenResponse, error) {
+	caller, err := a.s.exchangeRefreshToken(ctx, req.GetRefreshToken())
+	if err != nil {
+		return nil, err
+	}
+
+	now := a.s.now()
+	access, ttl, err := a.s.issueAccessToken(caller, now)
+	if err != nil {
+		a.s.log.Error("npln: issue access token", "user", caller.UserID, "error", err)
+		return nil, ErrUnauthenticated
+	}
+	refresh, err := a.s.issueRefreshToken(caller, now)
+	if err != nil {
+		a.s.log.Error("npln: issue refresh token", "user", caller.UserID, "error", err)
+		return nil, ErrUnauthenticated
+	}
+
+	a.s.log.Info("npln: refreshed a session", "user", caller.UserID)
+
+	return &authpb.RefreshTokenResponse{
+		Token: &authpb.Token{
+			User:         userResourceName(caller.UserID),
+			AccessToken:  access,
+			RefreshToken: refresh,
+			Ttl:          durationpb.New(ttl),
 		},
 	}, nil
 }
