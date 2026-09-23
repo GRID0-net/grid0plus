@@ -64,6 +64,9 @@ func oidcHash(value string) string {
 type authCode struct {
 	userID    string
 	expiresAt time.Time
+	// scope is what a refresh token was granted, restated on every refresh.
+	// Unused for authorization codes.
+	scope []string
 }
 
 const authCodeTTL = 5 * time.Minute
@@ -125,7 +128,7 @@ const naRefreshTokenTTL = 30 * 24 * time.Hour
 // codes -- except a refresh token is multi-use (consuming one issues a new
 // access token but does not invalidate the refresh token itself, matching
 // ordinary OAuth refresh semantics), so consuming does not delete it.
-func (s *Server) storeNARefreshToken(token, userID string, now time.Time) {
+func (s *Server) storeNARefreshToken(token, userID string, scope []string, now time.Time) {
 	s.naRefreshTokensMu.Lock()
 	defer s.naRefreshTokensMu.Unlock()
 	for t, rt := range s.naRefreshTokens {
@@ -133,17 +136,19 @@ func (s *Server) storeNARefreshToken(token, userID string, now time.Time) {
 			delete(s.naRefreshTokens, t)
 		}
 	}
-	s.naRefreshTokens[token] = authCode{userID: userID, expiresAt: now.Add(naRefreshTokenTTL)}
+	s.naRefreshTokens[token] = authCode{userID: userID, expiresAt: now.Add(naRefreshTokenTTL), scope: scope}
 }
 
-func (s *Server) consumeNARefreshToken(token string, now time.Time) (string, bool) {
+// consumeNARefreshToken returns the refresh token's user and the scopes it was
+// granted.
+func (s *Server) consumeNARefreshToken(token string, now time.Time) (string, []string, bool) {
 	s.naRefreshTokensMu.Lock()
 	defer s.naRefreshTokensMu.Unlock()
 	rt, ok := s.naRefreshTokens[token]
 	if !ok || now.After(rt.expiresAt) {
-		return "", false
+		return "", nil, false
 	}
-	return rt.userID, true
+	return rt.userID, rt.scope, true
 }
 
 // naAuthorizePage renders the login form. GET /connect/1.0.0/authorize.
@@ -451,7 +456,7 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			writeInternalError(s.log, w, r, "generate na refresh token", err)
 			return
 		}
-		s.storeNARefreshToken(refreshToken, userID, now)
+		s.storeNARefreshToken(refreshToken, userID, scope, now)
 
 		sessionToken, err := newHexID(32)
 		if err != nil {
@@ -470,11 +475,19 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case "refresh_token":
-		userID, ok := s.consumeNARefreshToken(form.Get("refresh_token"), now)
+		userID, granted, ok := s.consumeNARefreshToken(form.Get("refresh_token"), now)
 		if !ok {
 			s.log.Warn("nalink: token refresh with an unknown or expired refresh_token")
 			writeNAOAuthError(w, http.StatusBadRequest, "invalid_grant")
 			return
+		}
+		// The console's refresh request carries no scope at all, and a
+		// working server's answer (2026-08-27 capture, the refresh right
+		// after federation) restates the original grant's twelve scopes,
+		// with the matching ac:scp in the access token. Echoing the empty
+		// request answered scope: [] and an access token with no ac:scp.
+		if len(scope) == 0 && len(granted) > 0 {
+			scope = granted
 		}
 
 		accessToken, err := s.naIDIssuer.Sign(sjwt.BAASTokenClaims{

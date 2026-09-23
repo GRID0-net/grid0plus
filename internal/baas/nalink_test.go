@@ -809,3 +809,82 @@ func TestNATokenRefreshGrantIsRefusedNotCrashed(t *testing.T) {
 		t.Errorf("body = %s, want an invalid_grant OAuth error", body)
 	}
 }
+
+// TestNATokenRefreshRestatesTheGrantedScopes pins what a working server's
+// refresh answer carries (2026-08-27 capture, the refresh right after
+// federation): the console's refresh request names no scope at all, and the
+// answer restates the original grant's scopes, with the matching ac:scp in
+// the access token. Echoing the request instead answered scope: [] and an
+// access token with no ac:scp.
+func TestNATokenRefreshRestatesTheGrantedScopes(t *testing.T) {
+	h := newHarness(t)
+	registerLoginUser(t, h, "frank", "hunter2222")
+
+	authorizeResp, err := noRedirectClient().PostForm(h.server.URL+"/connect/1.0.0/authorize", url.Values{
+		"redirect_uri": {"nintendo://account.nx.sys"},
+		"username":     {"frank"},
+		"password":     {"hunter2222"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizeResp.Body.Close()
+	frag, err := url.ParseQuery(strings.TrimPrefix(authorizeResp.Header.Get("Location"), "nintendo://account.nx.sys#"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	granted := []string{"openid", "offline", "napps", "user"}
+	exchange, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type": {"authorization_code"},
+		"code":       {frag.Get("code")},
+		"client_id":  {"6ffd70c434d303c8"},
+		"scope":      {strings.Join(granted, " ")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exchange.Body.Close()
+	requireStatus(t, exchange, http.StatusOK)
+	var first struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	decode(t, exchange, &first)
+
+	// The console's own refresh request: no scope field.
+	refresh, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"client_id":     {"6ffd70c434d303c8"},
+		"refresh_token": {first.RefreshToken},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refresh.Body.Close()
+	requireStatus(t, refresh, http.StatusOK)
+	var body map[string]any
+	decode(t, refresh, &body)
+
+	got, _ := body["scope"].([]any)
+	if len(got) != len(granted) {
+		t.Fatalf("refresh scope = %v, want the granted %v restated", body["scope"], granted)
+	}
+	for i, s := range granted {
+		if got[i] != s {
+			t.Errorf("scope[%d] = %v, want %q", i, got[i], s)
+		}
+	}
+
+	tok, _ := body["access_token"].(string)
+	_, payload := decodeTokenParts(t, tok)
+	scp, _ := payload["ac:scp"].([]any)
+	want := []float64{0, 1, 4, 8}
+	if len(scp) != len(want) {
+		t.Fatalf("access_token ac:scp = %v, want %v", payload["ac:scp"], want)
+	}
+	for i, v := range want {
+		if scp[i] != v {
+			t.Errorf("ac:scp[%d] = %v, want %v", i, scp[i], v)
+		}
+	}
+}
