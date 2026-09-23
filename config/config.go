@@ -586,6 +586,13 @@ type NATCheck struct {
 	// AlternateListen is a socket on a DIFFERENT ADDRESS, used for message
 	// type 2. Leave empty if you only have one address.
 	AlternateListen string `yaml:"alternate_listen"`
+	// StunListen answers STUN (RFC 5389) Binding requests -- a different
+	// protocol from the NCS one above, but the same kind of lightweight UDP
+	// connectivity responder, so it runs alongside it rather than as a
+	// separate service. Splatoon 3 sends these to whatever host
+	// npln.ListLatencyMeasurementServers names, confirmed by a 2026-09-23
+	// packet capture (see internal/stunresponder). Empty disables it.
+	StunListen string `yaml:"stun_listen"`
 }
 
 // Log configures logging.
@@ -702,6 +709,7 @@ func Default() Config {
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
 			SecondaryListen: ":10125",
+			StunListen:      ":3478",
 		},
 		Log: Log{
 			Level:  "info",

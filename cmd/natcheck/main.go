@@ -4,6 +4,11 @@
 // external address and classify its router's NAT before attempting
 // peer-to-peer. See internal/natcheck — in particular the note about needing
 // two distinct IP addresses.
+//
+// It also answers STUN (RFC 5389) Binding requests, when npln.stun_listen is
+// set: a different protocol, but the same kind of lightweight UDP
+// connectivity responder Splatoon 3 turns out to need before matchmaking
+// even starts. See internal/stunresponder for why.
 package main
 
 import (
@@ -12,6 +17,7 @@ import (
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/natcheck"
 	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/switchnet/internal/stunresponder"
 )
 
 func main() {
@@ -42,7 +48,21 @@ func main() {
 	ctx, cancel := service.SignalContext()
 	defer cancel()
 
-	if err := srv.Serve(ctx); err != nil {
+	errCh := make(chan error, 2)
+
+	if cfg.NATCheck.StunListen != "" {
+		stunConn, err := stunresponder.Listen(cfg.NATCheck.StunListen)
+		if err != nil {
+			service.Fatal(log, "stun listen", err)
+		}
+		defer stunConn.Close()
+		log.Info("stun listening", "addr", cfg.NATCheck.StunListen)
+		go func() { errCh <- stunresponder.Serve(ctx, stunConn, log) }()
+	}
+
+	go func() { errCh <- srv.Serve(ctx) }()
+
+	if err := <-errCh; err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

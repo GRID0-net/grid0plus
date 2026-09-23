@@ -573,6 +573,13 @@ natcheck:
   # NAT than the router really has.
   alternate_listen: "192.168.1.51:10025"
 
+  # Answers STUN (RFC 5389) Binding requests -- a different protocol from NCS
+  # above, but the same kind of lightweight UDP connectivity responder.
+  # Splatoon 3 sends these to whatever host
+  # npln.ListLatencyMeasurementServers names, and this port (3478) is what
+  # that response advertises. Empty disables it.
+  stun_listen: ":3478"
+
 # ---------------------------------------------------------------------------
 # logging
 # ---------------------------------------------------------------------------

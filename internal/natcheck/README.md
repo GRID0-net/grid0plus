@@ -54,6 +54,14 @@ Running with one address does work â€” type 2 falls back to the secondary port â
 but consoles then report a stricter NAT type than their router really has, and
 some titles refuse to matchmake on that basis.
 
+## `cmd/natcheck` also answers STUN
+
+`internal/stunresponder`'s RFC 5389 Binding responder runs in the same
+process, on `natcheck.stun_listen` (default `:3478`) -- a different protocol
+from NCS above, but the same kind of small, stateless UDP responder, so it
+shares this service rather than getting its own. See that package's own
+README for why Splatoon 3 needs it.
+
 ## Why this has to run natively
 
 The protocol works by the console observing *which* address and port
