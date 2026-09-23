@@ -358,3 +358,24 @@ hang.
 `GameRecord/InitializeAttributes` accepts `tenants/current/users/current` as
 the already authenticated caller and stores the document under that caller's
 actual user ID. It does not use the literal alias as a shared document owner.
+
+## `SelectFestSchedule` never answers empty, even with no fest configured
+
+The obvious "honest" answer to "no fest is running" looks like an empty
+response. It is not: NextendoNetwork/splatoon-3 measured (facts only, not its
+code) that both of its real Nintendo captures always answer with a real,
+non-empty schedule -- the current fest, or the last one, never nothing -- and
+that sending an empty one crashes Splatoon 3 about two seconds later
+(`2162-0001` in `nn.npln.Worker`), right after it loads `FestRegion`,
+`Fest` and `FestRecord` from its own save and asks for the matching
+schedule. Reproduced on SwitchNet's own hardware on 2026-09-24: the console
+showed the Splatfest region prompt (reading those same save keys) and
+crashed under a second later, against a server that answered empty.
+
+`noFestSentinel` in `service.go` is what's sent instead whenever there's no
+operator fest to announce -- started at the Unix epoch, so its 42-day
+publication window closed decades before any real console asks, which keeps
+it from ever being "announced" in the sense that would make a client try to
+fetch its decryption key. It carries no Nintendo or Nextendo content: no
+team names, no banners, no real BCAT pack. Just the mechanical shape a
+schedule needs to not be nil.

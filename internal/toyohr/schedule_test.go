@@ -179,6 +179,36 @@ func TestNoConfiguredRotationIsAnEmptyScheduleRatherThanAnError(t *testing.T) {
 	}
 }
 
+// TestLeagueAndVsParamsAnswerRatherThanUnimplemented is the regression test
+// for a real hardware finding (2026-09-23): neither RPC had a handler at
+// all, so the console got Unimplemented instead of the empty answer
+// documented as this project's policy for un-fabricatable game content --
+// right in the middle of the hall's own startup call sequence, immediately
+// before the game crashed at the Splatfest region prompt.
+func TestLeagueAndVsParamsAnswerRatherThanUnimplemented(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
+
+	league, err := sc.SelectLeagueSchedules(context.Background(), &toyohrpb.SelectLeagueSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("select league schedules: %v", err)
+	}
+	if len(league.GetSchedules()) != 0 {
+		t.Errorf("got %d league schedules, want 0 (no event to describe)", len(league.GetSchedules()))
+	}
+
+	params, err := sc.SelectVsParams(context.Background(), &toyohrpb.SelectVsParamsRequest{Etag: "abc"})
+	if err != nil {
+		t.Fatalf("select vs params: %v", err)
+	}
+	if params.GetParams() != nil {
+		t.Errorf("params = %v, want unset (nothing to honestly fabricate)", params.GetParams())
+	}
+	if params.GetEtag() != "abc" {
+		t.Errorf("etag = %q, want the request's own %q echoed back", params.GetEtag(), "abc")
+	}
+}
+
 func TestTheSeasonIsAQuarterAndIsAligned(t *testing.T) {
 	// Mid-quarter, so the answer cannot come from the clock by accident.
 	at := time.Date(2026, 8, 28, 21, 22, 0, 0, time.UTC)

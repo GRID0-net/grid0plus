@@ -841,6 +841,42 @@ see [`../PACKET_CAPTURE.md`](../PACKET_CAPTURE.md).
 
 ---
 
+### What real hardware and `NextendoNetwork/splatoon-3`'s source settled, 2026-09-24
+
+A full hall bootstrap finally succeeded on SwitchNet's own hardware after this
+session's earlier fixes (STUN, SCSI auth, the Frontline opening frame, the
+`tenants/current/users/current` alias). Two more real gaps surfaced right in
+the resulting call sequence, both fixed the same session:
+
+- **`Schedule.SelectLeagueSchedules` and `Schedule.SelectVsParams` had no
+  handler at all — settled, and now implemented**
+  (`internal/toyohr/schedule.go`). Both were embedded via
+  `UnimplementedScheduleServer` only, despite this project's own README and
+  ROADMAP already documenting all four `Schedule` RPCs as "answered empty" —
+  a stale claim two of the four never matched. The console called both,
+  back to back, immediately before the game crashed at the Splatfest region
+  prompt. Now answered the same "nothing scheduled, not invented" way as the
+  other two.
+- **`FestService.SelectFestSchedule` must never answer with an empty
+  response, even when no fest is configured — settled, and now fixed.**
+  `NextendoNetwork/splatoon-3`'s own comment (facts only, not its code)
+  documents measuring this directly against two real Nintendo captures: a
+  real server always answers with a non-empty schedule (the current fest, or
+  the last one, never nothing), and an empty one crashes Splatoon 3 about
+  two seconds later (`2162-0001` in `nn.npln.Worker`), right after the game
+  loads `FestRegion`/`Fest`/`FestRecord` from its own save and asks for the
+  matching schedule. SwitchNet's own handler answered a genuinely empty
+  `SelectFestScheduleResponse{}` whenever no operator fest was configured —
+  exactly the shape their measurement says crashes the game — and this
+  reproduced on SwitchNet's own hardware the same day: the Splatfest region
+  prompt appeared (reading those same save keys) and the game crashed under
+  a second later. Fixed with `noFestSentinel`, a fest of SwitchNet's own
+  (no team names, no banners, no real BCAT content, started at the Unix
+  epoch so it can never be "announced" in the sense that would trigger a
+  decryption-key fetch) sent in place of an empty response.
+
+---
+
 ## Documenting a capture
 
 Add one file per endpoint under `docs/CAPTURES/`, named after the path:

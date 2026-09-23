@@ -132,6 +132,46 @@ func (s *Service) vsSchedule(start time.Time, index int, rot Rotation) *toyohrpb
 	return out
 }
 
+// SelectLeagueSchedules answers the League Battle rotation.
+//
+// Always empty: League Battle is a limited-time, Nintendo-curated event mode
+// with its own separate ranking and reward structure this server has no
+// content for, not a Rotation-driven mode like Vs. An empty schedule list is
+// what a real server answers between events, and there is no event to
+// author here -- inventing one would be exactly the kind of made-up game
+// content CLAUDE.md's first ground rule forbids. Confirmed real and linked,
+// not previously implemented at all: a 2026-09-23 hardware attempt showed
+// the console calling this RPC and getting Unimplemented, not an empty
+// answer, right after the fest-region prompt appears.
+func (sc *scheduleService) SelectLeagueSchedules(
+	ctx context.Context, _ *toyohrpb.SelectLeagueSchedulesRequest,
+) (*toyohrpb.SelectLeagueSchedulesResponse, error) {
+	if _, ok := sc.s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	return &toyohrpb.SelectLeagueSchedulesResponse{}, nil
+}
+
+// SelectVsParams answers whatever per-mode Vs tuning parameters a real
+// server would otherwise send (VsParams -- proto shape confirmed, content
+// not).
+//
+// Left unset rather than guessed, the same reasoning SelectVsSchedules and
+// friends already give for an empty schedule: this is Nintendo's own game
+// tuning data, not something a private server can honestly fabricate.
+// TODO(capture-needed): a capture of a real VsParams payload and what
+// leaving `unk`/`params` unset does to the client, versus what a real one
+// contains. Confirmed real and linked, not previously implemented at all --
+// same 2026-09-23 hardware finding as SelectLeagueSchedules above.
+func (sc *scheduleService) SelectVsParams(
+	ctx context.Context, req *toyohrpb.SelectVsParamsRequest,
+) (*toyohrpb.SelectVsParamsResponse, error) {
+	if _, ok := sc.s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	return &toyohrpb.SelectVsParamsResponse{Etag: req.GetEtag()}, nil
+}
+
 // SelectCoopSchedules answers the Salmon Run rotation -- every operator-
 // scheduled shift that has not fully ended yet, soonest first.
 //

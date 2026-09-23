@@ -172,6 +172,21 @@ func (s *Service) tenantPath() string { return "tenants/" + s.tenant }
 // by name, but nothing here confirms the request/response shape --
 // left unregistered rather than guessed at, same as GameRecord's five.
 
+// noFestSentinel is what SelectFestSchedule answers with when no operator
+// fest is configured -- a fest of SwitchNet's own, not Nintendo's or
+// Nextendo's: no team names, no banners, no BCAT content, just the mechanical
+// shape a schedule needs. Started at the Unix epoch so its publication window
+// (42 days from seven hours before it opens) closed decades before any real
+// console asks -- it never gets "announced" in the sense that would make a
+// client try to fetch its decryption key.
+var noFestSentinel = Fest{
+	ID:       "NXTD-00000",
+	Resource: "switchnet-none",
+	Revision: strings.Repeat("0", 40),
+	Start:    time.Unix(0, 0),
+	Regions:  DefaultRegions,
+}
+
 // SelectFestSchedule announces the fest a region should be showing.
 //
 // The response carries only the fest's MECHANICS: which pack to load, its
@@ -183,6 +198,18 @@ func (s *Service) tenantPath() string { return "tenants/" + s.tenant }
 // revision does not match what the console's BCAT cache actually holds, the
 // game asks BCAT for a resource digest it cannot find and reports BcatInvalid,
 // which reaches the player as a generic communication error.
+//
+// An EMPTY response ("no fest at all") is never sent, even when no operator
+// fest is configured. NextendoNetwork/splatoon-3 measured this directly on
+// real hardware (facts only, not its code): both of their real Nintendo
+// captures always answer with a real, non-empty schedule -- the current fest,
+// or the last one, never nothing -- and sending an empty one crashes the game
+// about two seconds later (2162-0001 in nn.npln.Worker), right after it loads
+// FestRegion/Fest/FestRecord from its own save and asks for the matching
+// schedule. This reproduced on SwitchNet's own hardware on 2026-09-24: the
+// console showed the Splatfest region prompt (reading those same save keys)
+// and crashed under a second later. noFestSentinel is answered instead --
+// SwitchNet's own placeholder, not reconstructed Nintendo or Nextendo data.
 func (s *Service) SelectFestSchedule(
 	ctx context.Context, req *toyohrpb.SelectFestScheduleRequest,
 ) (*toyohrpb.SelectFestScheduleResponse, error) {
@@ -193,9 +220,7 @@ func (s *Service) SelectFestSchedule(
 		return nil, err
 	}
 	if !ok {
-		// No fest is running. An empty schedule is the honest answer, and it is
-		// what the game sees between fests on a real server.
-		return &toyohrpb.SelectFestScheduleResponse{}, nil
+		fest = noFestSentinel
 	}
 
 	return &toyohrpb.SelectFestScheduleResponse{
