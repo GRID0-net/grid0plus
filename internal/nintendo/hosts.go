@@ -50,7 +50,7 @@ const (
 	// server and the content server (phase 3).
 	ServiceEShop Service = "eshop"
 	// ServiceSCSI is the OLSC (Online Save Cloud) cloud-save server (phase 4):
-	// storage.lp1.scsi.srv.nintendo.net's save data archives and
+	// storage.hac.lp1.scsi.srv.nintendo.net's save data archives and
 	// permission.lp1.sata.srv.nintendo.net's save data sets / key package.
 	ServiceSCSI Service = "scsi"
 	// ServiceBlackhole means the host should be null-routed on the console
@@ -362,7 +362,7 @@ var Hosts = []Host{
 		// internal/scsi/README.md for exactly which endpoints are that
 		// confirmed versus this project's own defensible reading of an
 		// undocumented one.
-		Pattern: "storage.lp1.scsi.srv.nintendo.net",
+		Pattern: "storage.hac.lp1.scsi.srv.nintendo.net",
 		Service: ServiceSCSI, TLS: true,
 		Comment: "OLSC save data archives (phase 4)",
 	},
@@ -489,7 +489,7 @@ var Hosts = []Host{
 			"was not worth making.",
 	},
 	{
-		// Same wiki page as storage.lp1.scsi.srv.nintendo.net above: "SATA
+		// Same wiki page as storage.hac.lp1.scsi.srv.nintendo.net above: "SATA
 		// permission server". Its two endpoints (save_data_sets,
 		// save_data_sets/generate_key_package) are listed with no method or
 		// field shape at all -- generate_key_package is flagged in

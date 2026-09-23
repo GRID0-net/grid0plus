@@ -1,5 +1,5 @@
 -- OLSC cloud save backups (phase 4). One row per per-title, per-device backup
--- attempt, mirroring storage.lp1.scsi.srv.nintendo.net's "save data archive"
+-- attempt, mirroring storage.hac.lp1.scsi.srv.nintendo.net's "save data archive"
 -- object.
 --
 -- Reference: https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers

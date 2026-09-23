@@ -238,7 +238,7 @@ type BAAS struct {
 
 // SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
 //
-// Reimplements storage.lp1.scsi.srv.nintendo.net and
+// Reimplements storage.hac.lp1.scsi.srv.nintendo.net and
 // permission.lp1.sata.srv.nintendo.net. See internal/scsi for the endpoints.
 type SCSI struct {
 	Listen string `yaml:"listen"`
@@ -664,7 +664,7 @@ func Default() Config {
 		},
 		SCSI: SCSI{
 			Listen:     "127.0.0.1:8091",
-			PublicURL:  "https://storage.lp1.scsi.srv.nintendo.net",
+			PublicURL:  "https://storage.hac.lp1.scsi.srv.nintendo.net",
 			StorageDir: "data/save-archives",
 			// 1 GiB: generous for save data (real Switch saves are almost
 			// always well under 100 MiB), small enough that even a handful of

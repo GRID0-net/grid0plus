@@ -464,7 +464,7 @@ type Stats struct {
 }
 
 // SaveDataArchive is one OLSC cloud-save backup for a single title on a
-// single device (phase 4). Mirrors storage.lp1.scsi.srv.nintendo.net's "save
+// single device (phase 4). Mirrors storage.hac.lp1.scsi.srv.nintendo.net's "save
 // data archive" object field-for-field where the shape is confirmed.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers#save-data-archive

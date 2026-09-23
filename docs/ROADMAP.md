@@ -682,7 +682,7 @@ this system, not a guess.
 **Both real backend hosts, not a guess between them.** Kinnay's public wiki
 has a dedicated [OLSC Servers](https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers)
 page — the same kind of public source this project already leans on heavily
-for BAAS/dAuth/aAuth — documenting `storage.lp1.scsi.srv.nintendo.net`'s
+for BAAS/dAuth/aAuth — documenting `storage.hac.lp1.scsi.srv.nintendo.net`'s
 `save_data_archives` API (v2, full field-level shape for the archive and
 component-file objects, `start_upload`/`finish_upload`/
 `generate_key_seed_package`/`extend_upload_timeout`) and

@@ -4,7 +4,7 @@
 //
 // Endpoints:
 //
-//	https://storage.lp1.scsi.srv.nintendo.net       (save data archives, v2)
+//	https://storage.hac.lp1.scsi.srv.nintendo.net       (save data archives, v2)
 //	https://permission.lp1.sata.srv.nintendo.net    (save data sets / key package)
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers
@@ -58,7 +58,7 @@ type Store interface {
 // Config is what the server needs to run.
 type Config struct {
 	// PublicURL is this service's own externally-reachable base URL (e.g.
-	// "https://storage.lp1.scsi.srv.nintendo.net"), used to build the
+	// "https://storage.hac.lp1.scsi.srv.nintendo.net"), used to build the
 	// signed_uri this project's own upload/download endpoint is reached
 	// through. See signedURI's TODO(capture-needed).
 	PublicURL string
@@ -81,7 +81,7 @@ func New(cfg Config, store Store, blobs BlobStore, accessVerifier *sjwt.Verifier
 
 // Routes registers every route on mux.
 func (s *Server) Routes(mux *http.ServeMux) {
-	// ---- storage.lp1.scsi.srv.nintendo.net -- save data archives, v2 ------
+	// ---- storage.hac.lp1.scsi.srv.nintendo.net -- save data archives, v2 ------
 	mux.HandleFunc("GET /api/nx/v2/save_data_archives", s.authenticated(s.listArchives))
 	mux.HandleFunc("GET /api/nx/v2/save_data_archives/{id}", s.authenticated(s.getArchive))
 	// Both forms from the wiki's own URL table route to the same handler:

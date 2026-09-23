@@ -219,9 +219,9 @@ scsi:
   listen: "127.0.0.1:8091"
 
   # This service's own externally-reachable base URL. Must be a host in the
-  # redirect list (storage.lp1.scsi.srv.nintendo.net) -- see internal/scsi's
+  # redirect list (storage.hac.lp1.scsi.srv.nintendo.net) -- see internal/scsi's
   # signedURI doc comment for why it is used at all.
-  public_url: "https://storage.lp1.scsi.srv.nintendo.net"
+  public_url: "https://storage.hac.lp1.scsi.srv.nintendo.net"
 
   # Where save data blobs are written, on this same box. See
   # docs/ROADMAP.md's phase 4 section for why local disk is the default

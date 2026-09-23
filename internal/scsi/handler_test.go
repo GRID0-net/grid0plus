@@ -56,7 +56,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 
-	srv := New(Config{PublicURL: "https://storage.lp1.scsi.srv.nintendo.net"},
+	srv := New(Config{PublicURL: "https://storage.hac.lp1.scsi.srv.nintendo.net"},
 		store, blobs, sjwt.NewVerifier(accessKey), slog.New(slog.DiscardHandler))
 
 	mux := http.NewServeMux()

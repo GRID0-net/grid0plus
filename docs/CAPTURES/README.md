@@ -816,7 +816,7 @@ before it becomes a request.
 
 ## Phase 4 — cloud save (OLSC)
 
-`internal/scsi` implements storage.lp1.scsi.srv.nintendo.net and
+`internal/scsi` implements storage.hac.lp1.scsi.srv.nintendo.net and
 permission.lp1.sata.srv.nintendo.net against Kinnay's wiki page for OLSC —
 most of the shape is confirmed there, the same kind of source this project
 already leans on for BAAS/dAuth/aAuth. What is not confirmed is marked

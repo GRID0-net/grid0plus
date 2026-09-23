@@ -8,7 +8,7 @@ separate protocol.
 
 | | |
 | --- | --- |
-| Reimplements | `https://storage.lp1.scsi.srv.nintendo.net` (save data archives, v2) |
+| Reimplements | `https://storage.hac.lp1.scsi.srv.nintendo.net` (save data archives, v2) |
 | | `https://permission.lp1.sata.srv.nintendo.net` (save data sets / key package) |
 | Reference | [OLSC Servers](https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers) |
 | Needs a database | yes |
