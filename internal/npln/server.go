@@ -47,6 +47,9 @@ type Server struct {
 	sessionHost string
 	sessionPort int32
 
+	// tenantSeen logs, once, the npln-tenant-id form the console really sends.
+	tenantSeen sync.Once
+
 	// tokens verifies the ES256 access tokens this server issues; issuer signs
 	// them. Both wrap the same key.
 	tokens *sjwt.ECVerifier
@@ -416,6 +419,30 @@ func grpcKind(info *grpc.StreamServerInfo) string {
 	return "Unary"
 }
 
+// sameTenant reports whether a call's npln-tenant-id names the configured
+// tenant, accepting the id in either of the forms that circulate for it: the
+// full id Nintendo's own tokens carry ("t-dce9377b-lp1", the tid of a real
+// access token, and what NextendoNetwork/splatoon-3 records the console
+// sending) and the short hex id ("dce9377b") this project used until
+// 2026-09-23. Which one the console sends has not been seen by this server
+// yet -- the first call logs it -- and refusing the other would refuse every
+// call the game makes.
+func sameTenant(got, want string) bool {
+	return got != "" && shortTenant(got) == shortTenant(want)
+}
+
+// shortTenant reduces "t-<id>-<env>" to "<id>"; anything else is returned as
+// is.
+func shortTenant(t string) string {
+	t = strings.TrimPrefix(t, "tenants/")
+	if rest, ok := strings.CutPrefix(t, "t-"); ok {
+		if i := strings.LastIndexByte(rest, '-'); i > 0 {
+			return rest[:i]
+		}
+	}
+	return t
+}
+
 // unknownService answers a call to a service this server does not register at
 // all (Ugcstore, Datastore, Appconfig... -- see services.go).
 //
@@ -469,12 +496,17 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 		s.log.Debug("npln: malformed metadata", "method", method)
 		return nil, errMalformed(s.env)
 	}
-	if md.tenant != s.tenant {
+	if !sameTenant(md.tenant, s.tenant) {
 		// Another title's traffic, or a misconfigured tenant. Refused the same
-		// way malformed metadata is: it is not this server's to answer.
-		s.log.Debug("npln: wrong tenant", "method", method, "tenant", md.tenant)
+		// way malformed metadata is: it is not this server's to answer. Warn,
+		// not Debug: when this fires for the one title configured, every call
+		// the game makes is refused, and at Debug that was invisible.
+		s.log.Warn("npln: wrong tenant", "method", method, "tenant", md.tenant, "want", s.tenant)
 		return nil, errMalformed(s.env)
 	}
+	s.tenantSeen.Do(func() {
+		s.log.Info("npln: first call's npln-tenant-id", "tenant", md.tenant, "configured", s.tenant)
+	})
 
 	if unauthenticatedMethods[method] {
 		return ctx, nil

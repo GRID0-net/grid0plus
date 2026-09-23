@@ -288,7 +288,12 @@ type NPLN struct {
 	// port that reads oddly in config.
 	GamesyncListen string `yaml:"gamesync_listen"`
 
-	// Tenant is the NPLN tenant id. Splatoon 3's is dce9377b.
+	// Tenant is the NPLN tenant id. Splatoon 3's is t-dce9377b-lp1: the full
+	// form a real Nintendo access token carries in its tid, and the one
+	// NextendoNetwork/splatoon-3 records the console sending as
+	// npln-tenant-id. It names this tenant's resources ("tenants/<id>/...")
+	// and goes into every token's tid. The short "dce9377b" is still accepted
+	// on incoming calls -- see npln.sameTenant.
 	Tenant string `yaml:"tenant"`
 	// Issuer is the 'iss' of the ES256 access tokens this server signs.
 	Issuer string `yaml:"issuer"`
@@ -647,7 +652,7 @@ func Default() Config {
 			Listen:         "127.0.0.1:8085",
 			RestListen:     "127.0.0.1:8086",
 			GamesyncListen: "127.0.0.1:8088",
-			Tenant:         "dce9377b",
+			Tenant:         "t-dce9377b-lp1",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
 			AccessTokenTTL: 10800,
