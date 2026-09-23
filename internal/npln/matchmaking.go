@@ -766,13 +766,21 @@ func iceServersFrom(cfg []config.IceServer) []config.IceServer {
 // queueConfig builds the matchmaking queue's config from the NPLN section.
 func queueConfig(c config.NPLN) matchmaking.Config {
 	cfg := matchmaking.Config{
-		PlayersPerMatch: c.PlayersPerMatch,
-		TicketTTL:       time.Duration(c.TicketTTL) * time.Second,
+		PlayersPerMatch:   c.PlayersPerMatch,
+		TicketTTL:         time.Duration(c.TicketTTL) * time.Second,
+		VersusGracePeriod: time.Duration(c.VersusGracePeriod) * time.Second,
+		CoopGracePeriod:   time.Duration(c.CoopGracePeriod) * time.Second,
 	}
 	if len(c.ModePlayers) > 0 {
 		cfg.ModeSizes = make(map[string]int, len(c.ModePlayers))
 		for mode, n := range c.ModePlayers {
 			cfg.ModeSizes[mode] = n
+		}
+	}
+	if len(c.CoopModes) > 0 {
+		cfg.CoopModes = make(map[string]bool, len(c.CoopModes))
+		for _, mode := range c.CoopModes {
+			cfg.CoopModes[mode] = true
 		}
 	}
 	return cfg

@@ -44,6 +44,13 @@ const (
 	StateCancelled
 )
 
+// waiting reports whether a ticket is still in the queue, in either sense a
+// grace period can leave it: actively Searching, or Placing because a
+// countdown toward a match is already running.
+func (s State) waiting() bool {
+	return s == StateSearching || s == StatePlacing
+}
+
 func (s State) String() string {
 	switch s {
 	case StateSearching:
@@ -118,6 +125,33 @@ type Config struct {
 	// game, not from here, and a mode nobody has seen a capture of should be
 	// settable without a code change.
 	ModeSizes map[string]int
+
+	// CoopModes names the modes formed like Salmon Run -- one team, not two --
+	// rather than like Turf War/Anarchy. A set because mode strings come from
+	// the game and this project has not captured Salmon Run's yet; empty by
+	// default, so every mode is versus-shaped until an operator adds one here,
+	// which the "unknown mode" log gives them the exact string for.
+	CoopModes map[string]bool
+
+	// VersusGracePeriod is how long a versus-shaped match waits, once it has
+	// enough players for two even teams, before actually forming.
+	//
+	// Zero means form the instant the count is reached, which is what this
+	// queue always did before grace periods existed. An operator running
+	// their own small group wants this non-zero: two players filling the
+	// lowered PlayersPerMatch is not "everyone who is coming has arrived", it
+	// is "the minimum has been met" -- a third or fourth player closing
+	// their own app at the same moment should still get to join, not watch
+	// the other two disappear into a match a second before they searched.
+	VersusGracePeriod time.Duration
+
+	// CoopGracePeriod is how long a Salmon Run-shaped match waits after its
+	// SECOND player joins before forming, restarting every time another
+	// player joins (up to the mode's size, which forms immediately: there is
+	// no point waiting out a clock for a room that cannot take anyone else).
+	// A lone player is never on this clock at all -- see formCoopLocked.
+	CoopGracePeriod time.Duration
+
 	// TicketTTL is how long a ticket waits before giving up.
 	//
 	// A ticket that waits forever is worse than one that times out: the console
@@ -143,10 +177,16 @@ type Config struct {
 // playing. The real mode sizes belong in a mode table, driven by what a capture
 // shows the game expects; until then, a number that lets two friends actually
 // start a match is more useful than one that is faithful and idle.
+//
+// Both grace periods are 30 seconds, the operator's own choice for this
+// deployment rather than anything measured -- there is no real server to
+// capture a lobby-fill grace period from.
 var DefaultConfig = Config{
-	PlayersPerMatch: 2,
-	TicketTTL:       3 * time.Minute,
-	SessionTTL:      30 * time.Minute,
+	PlayersPerMatch:   2,
+	TicketTTL:         3 * time.Minute,
+	SessionTTL:        30 * time.Minute,
+	VersusGracePeriod: 30 * time.Second,
+	CoopGracePeriod:   30 * time.Second,
 }
 
 // Queue forms matches from waiting tickets.
@@ -177,6 +217,23 @@ type Queue struct {
 
 	// watchers are the streams waiting on a ticket's state to change.
 	watchers map[string][]chan Ticket
+
+	// grace is the pending countdown per mode, for the modes currently on one
+	// (enough players for versus, or two or more for coop) -- see
+	// formVersusLocked/formCoopLocked. Absent from the map means no countdown
+	// is running for that mode.
+	grace map[string]*graceState
+}
+
+// graceState is one mode's pending countdown.
+type graceState struct {
+	// deadline is when the pending batch forms.
+	deadline time.Time
+	// lastCount is the waiting count the deadline was last set from. Coop
+	// compares against this on every pass to notice a new joiner and restart
+	// its own clock; versus does not use it (its countdown starts once and
+	// runs to completion regardless of who else queues behind it).
+	lastCount int
 }
 
 // New builds a queue.
@@ -208,6 +265,7 @@ func New(cfg Config, now func() time.Time) *Queue {
 		waiting:   map[string][]string{},
 		sessions:  map[string]*Session{},
 		watchers:  map[string][]chan Ticket{},
+		grace:     map[string]*graceState{},
 	}
 }
 
@@ -255,11 +313,20 @@ func (q *Queue) Cancel(ticketID string) bool {
 	defer q.mu.Unlock()
 
 	t, ok := q.tickets[ticketID]
-	if !ok || t.State != StateSearching {
+	if !ok || !t.State.waiting() {
 		return false
 	}
+	mode := t.Mode
 	q.setStateLocked(t, StateCancelled)
 	q.removeFromWaitingLocked(t)
+	// The rest of the mode's grace period, if one was running, was counting
+	// down to include this ticket. Re-evaluate rather than leave a stale
+	// countdown (or the rest of the mode's tickets stuck in StatePlacing).
+	if q.cfg.CoopModes[mode] {
+		q.formCoopLocked(mode)
+	} else {
+		q.formVersusLocked(mode)
+	}
 	return true
 }
 
@@ -430,7 +497,11 @@ func (q *Queue) ForceMatch(mode string) (Session, bool, error) {
 	// Everyone waiting, not the first `size` of them: an operator forcing a
 	// start means "play with who is here", and leaving somebody in the queue
 	// they were about to be matched into is the opposite of that.
-	return q.formSessionLocked(mode, append([]string(nil), ids...)), true, nil
+	sess := q.formSessionLocked(mode, append([]string(nil), ids...))
+	// Whatever countdown was pending is moot: everybody it was waiting on just
+	// got a match by another route.
+	delete(q.grace, mode)
+	return sess, true, nil
 }
 
 // SetModeSize changes how many tickets make a match in a mode, and forms any
@@ -474,12 +545,16 @@ type ModeQueue struct {
 	Waiting    []WaitingTicket
 }
 
-// WaitingTicket is one ticket still searching.
+// WaitingTicket is one ticket still waiting -- searching, or placing because
+// its mode's grace period is counting down.
 type WaitingTicket struct {
 	ID     string
 	UserID string
 	// WaitingFor is how long it has been queued.
 	WaitingFor time.Duration
+	// Placing is true once a grace-period countdown toward a match is
+	// running for this ticket's mode.
+	Placing bool
 }
 
 // Snapshot is everything the operator's view needs, taken under one lock.
@@ -534,6 +609,7 @@ func (q *Queue) Snapshot() Snapshot {
 				ID:         t.ID,
 				UserID:     t.UserID,
 				WaitingFor: now.Sub(t.CreatedAt),
+				Placing:    t.State == StatePlacing,
 			})
 		}
 		out.Modes = append(out.Modes, mq)
@@ -593,23 +669,29 @@ func (q *Queue) unwatch(ticketID string, ch chan Ticket) {
 
 // Sweep times out tickets that have waited too long, and returns them. It also
 // discards sessions and tickets that are old enough that nobody can still be
-// asking about them.
+// asking about them, and forms any match whose grace period has run out --
+// see formVersusLocked/formCoopLocked, both of which only start counting down
+// on a ticket event and otherwise need this timer to ever finish counting.
 //
 // Called on a timer by the service. Not folded into Enqueue: a queue nobody is
-// joining is exactly the one whose tickets need to expire, and doing it only on
-// arrival means the last player to give up waits forever.
-func (q *Queue) Sweep() []Ticket {
+// joining is exactly the one whose tickets need to expire (or whose grace
+// period needs to end), and doing it only on arrival means the last player to
+// give up, or to be kept waiting by a countdown, waits forever.
+func (q *Queue) Sweep() (expired []Ticket, formed []Session) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	q.pruneLocked()
 
 	deadline := q.now().Add(-q.cfg.TicketTTL)
-	var expired []Ticket
 
 	for _, mode := range sortedKeys(q.waiting) {
 		for _, id := range append([]string(nil), q.waiting[mode]...) {
 			t := q.tickets[id]
+			// StatePlacing is excluded deliberately: a ticket mid-countdown
+			// toward a match is not "nobody else turned up", and timing it out
+			// here would strand the rest of its batch waiting on one that no
+			// longer exists.
 			if t == nil || t.State != StateSearching {
 				continue
 			}
@@ -622,7 +704,8 @@ func (q *Queue) Sweep() []Ticket {
 			expired = append(expired, *t)
 		}
 	}
-	return expired
+	formed = q.formMatchesLocked()
+	return expired, formed
 }
 
 // Waiting returns how many tickets are queued per mode. For the dashboard.
@@ -634,7 +717,8 @@ func (q *Queue) Waiting() map[string]int {
 	for mode, ids := range q.waiting {
 		n := 0
 		for _, id := range ids {
-			if t := q.tickets[id]; t != nil && t.State == StateSearching {
+			// Placing counts too: a mode mid-countdown is not an empty queue.
+			if t := q.tickets[id]; t != nil && t.State.waiting() {
 				n++
 			}
 		}
@@ -678,21 +762,119 @@ func (q *Queue) pruneLocked() {
 	}
 }
 
-// formMatchesLocked pairs off waiting tickets into sessions.
+// formMatchesLocked forms every match a mode is currently ready for -- either
+// immediately (no grace period configured) or once its grace period has run
+// out. Call on every state change (a ticket arrives, cancels, or times out)
+// AND on a timer (Sweep): a grace period that started because enough players
+// arrived can only finish counting down between ticket events, when nothing
+// else has happened to call this again.
 func (q *Queue) formMatchesLocked() []Session {
 	var formed []Session
 
 	for _, mode := range sortedKeys(q.waiting) {
-		size := q.playersForLocked(mode)
-		for {
-			ids := q.liveWaitingLocked(mode)
-			if len(ids) < size {
-				break
-			}
-			formed = append(formed, q.formSessionLocked(mode, ids[:size]))
+		if q.cfg.CoopModes[mode] {
+			formed = append(formed, q.formCoopLocked(mode)...)
+		} else {
+			formed = append(formed, q.formVersusLocked(mode)...)
 		}
 	}
 	return formed
+}
+
+// formVersusLocked forms a Turf War/Anarchy-shaped match: two even teams, one
+// countdown, started the moment the mode has enough players and run to
+// completion regardless of who queues behind it. Dropping below the mode's
+// size cancels the countdown -- there is no partial team to hold a spot open
+// for.
+func (q *Queue) formVersusLocked(mode string) []Session {
+	size := q.playersForLocked(mode)
+	var formed []Session
+
+	for {
+		ids := q.liveWaitingLocked(mode)
+		if len(ids) < size {
+			q.cancelGraceLocked(mode)
+			return formed
+		}
+		if q.cfg.VersusGracePeriod <= 0 {
+			formed = append(formed, q.formSessionLocked(mode, ids[:size]))
+			continue
+		}
+		g, pending := q.grace[mode]
+		if !pending {
+			g = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod)}
+			q.grace[mode] = g
+			q.setModeStateLocked(mode, StatePlacing)
+		}
+		if q.now().Before(g.deadline) {
+			return formed
+		}
+		delete(q.grace, mode)
+		formed = append(formed, q.formSessionLocked(mode, ids[:size]))
+	}
+}
+
+// formCoopLocked forms a Salmon Run-shaped match: one team, no even split.
+// Nobody waits on a clock alone -- a countdown only exists once a second
+// player is present, and it restarts every time another one joins, so a
+// trickle of arrivals does not lose the ones already waiting to a clock that
+// started before they got there. Reaching the mode's size forms immediately:
+// a full room has nobody left to wait for.
+func (q *Queue) formCoopLocked(mode string) []Session {
+	size := q.playersForLocked(mode)
+
+	ids := q.liveWaitingLocked(mode)
+	switch {
+	case len(ids) == 0:
+		q.cancelGraceLocked(mode)
+		return nil
+	case len(ids) == 1:
+		// Alone: no countdown runs at all, however long that lasts.
+		q.cancelGraceLocked(mode)
+		return nil
+	case len(ids) >= size:
+		delete(q.grace, mode)
+		return []Session{q.formSessionLocked(mode, ids[:size])}
+	}
+
+	if q.cfg.CoopGracePeriod <= 0 {
+		return []Session{q.formSessionLocked(mode, ids)}
+	}
+
+	g, pending := q.grace[mode]
+	if !pending || len(ids) != g.lastCount {
+		// First player past solo, or a new arrival since the clock was last
+		// set: (re)start it from here.
+		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.CoopGracePeriod), lastCount: len(ids)}
+		q.setModeStateLocked(mode, StatePlacing)
+		return nil
+	}
+	if q.now().Before(g.deadline) {
+		return nil
+	}
+	delete(q.grace, mode)
+	return []Session{q.formSessionLocked(mode, ids)}
+}
+
+// cancelGraceLocked clears a mode's pending countdown, if any, and puts its
+// waiting tickets back to Searching -- they were told a match was forming
+// (StatePlacing) and that stopped being true.
+func (q *Queue) cancelGraceLocked(mode string) {
+	if _, pending := q.grace[mode]; !pending {
+		return
+	}
+	delete(q.grace, mode)
+	q.setModeStateLocked(mode, StateSearching)
+}
+
+// setModeStateLocked moves every still-searching-or-placing ticket in a mode
+// to a state, for the grace-period transition in both directions.
+func (q *Queue) setModeStateLocked(mode string, state State) {
+	for _, id := range q.waiting[mode] {
+		if t := q.tickets[id]; t != nil && t.State.waiting() {
+			q.setStateLocked(t, state)
+		}
+	}
 }
 
 // formSessionLocked turns a chosen set of waiting tickets into a session.
@@ -736,13 +918,14 @@ func (q *Queue) playersForLocked(mode string) int {
 	return q.cfg.PlayersPerMatch
 }
 
-// liveWaitingLocked returns the still-searching ticket ids for a mode, in queue
-// order, discarding any that are no longer searching.
+// liveWaitingLocked returns the still-waiting ticket ids for a mode (Searching
+// or Placing -- see State.waiting), in queue order, discarding any that are
+// neither.
 func (q *Queue) liveWaitingLocked(mode string) []string {
 	ids := q.waiting[mode]
 	live := ids[:0]
 	for _, id := range ids {
-		if t := q.tickets[id]; t != nil && t.State == StateSearching {
+		if t := q.tickets[id]; t != nil && t.State.waiting() {
 			live = append(live, id)
 		}
 	}
@@ -762,7 +945,7 @@ func (q *Queue) removeFromWaitingLocked(t *Ticket) {
 
 func (q *Queue) cancelUserTicketsLocked(userID string) {
 	for _, t := range q.tickets {
-		if t.UserID == userID && t.State == StateSearching {
+		if t.UserID == userID && t.State.waiting() {
 			q.setStateLocked(t, StateCancelled)
 			q.removeFromWaitingLocked(t)
 		}

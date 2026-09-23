@@ -243,12 +243,24 @@ func (s *Server) sweepTickets() {
 		case <-s.stop:
 			return
 		case <-ticker.C:
-			for _, t := range s.queue.Sweep() {
+			expired, formed := s.queue.Sweep()
+			for _, t := range expired {
 				// Logged because a ticket that timed out is the visible half of
 				// "nobody else was queuing", and an operator reading this
 				// wants to know it happened rather than infer it.
 				s.log.Info("npln: matchmaking ticket timed out",
 					"ticket", t.ID, "user", t.UserID, "mode", t.Mode)
+			}
+			for _, sess := range formed {
+				// The other half of forming a match on a timer rather than on a
+				// request: CreateMatchmakingTicket's own handler logs and
+				// records a match it formed inline, and a match a grace period
+				// finishes between requests needs the same treatment or it is
+				// invisible to the operator and missing from the history.
+				s.log.Info("npln: match formed after its grace period",
+					"session", sess.ID, "mode", sess.Mode,
+					"players", len(sess.Players), "host", sess.Host)
+				s.recordMatch(context.Background(), sess, false)
 			}
 			s.publishStats()
 		}

@@ -103,6 +103,9 @@ type adminTicket struct {
 	// WaitingForSeconds is a number rather than a Go duration string, because
 	// the page formats it and "1m30s" would have to be parsed back apart.
 	WaitingForSeconds int `json:"waitingForSeconds"`
+	// Placing is true once this ticket's mode has enough players and is
+	// counting down its grace period toward forming a match.
+	Placing bool `json:"placing"`
 }
 
 type adminSession struct {
@@ -147,6 +150,7 @@ func (h *AdminHandler) snapshotBody() (adminSnapshot, map[string]int) {
 				ID:                w.ID,
 				UserID:            w.UserID,
 				WaitingForSeconds: int(w.WaitingFor.Seconds()),
+				Placing:           w.Placing,
 			})
 			out.Waiting++
 		}

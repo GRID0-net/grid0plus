@@ -162,13 +162,13 @@ func TestATicketTimesOutRatherThanWaitingForever(t *testing.T) {
 
 	ticket, _, _ := q.Enqueue("alice", "turf_war")
 
-	if expired := q.Sweep(); len(expired) != 0 {
+	if expired, _ := q.Sweep(); len(expired) != 0 {
 		t.Fatalf("a fresh ticket expired: %v", expired)
 	}
 
 	*clock = clock.Add(4 * time.Minute)
 
-	expired := q.Sweep()
+	expired, _ := q.Sweep()
 	if len(expired) != 1 || expired[0].ID != ticket.ID {
 		t.Fatalf("expired = %v, want the one waiting ticket", expired)
 	}
@@ -467,4 +467,152 @@ func TestMutatingAReturnedSessionDoesNotChangeTheQueuesOwn(t *testing.T) {
 	if again.Players[0] == "attacker" {
 		t.Error("a caller rewrote the queue's own player list through the value it was handed")
 	}
+}
+
+// testGraceQueue is testQueue with both grace periods set, for the tests
+// below.
+func testGraceQueue(t *testing.T, playersPerMatch int, versus, coop time.Duration, coopModes ...string) (*Queue, *time.Time) {
+	t.Helper()
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	clock := &now
+	cfg := Config{
+		PlayersPerMatch: playersPerMatch, TicketTTL: 3 * time.Minute,
+		VersusGracePeriod: versus, CoopGracePeriod: coop,
+	}
+	if len(coopModes) > 0 {
+		cfg.CoopModes = map[string]bool{}
+		for _, m := range coopModes {
+			cfg.CoopModes[m] = true
+		}
+	}
+	return New(cfg, func() time.Time { return *clock }), clock
+}
+
+// TestVersusGracePeriodWaitsThenFormsWithWhoIsThere: reaching the mode's size
+// does not form a match immediately; it starts a countdown, tracked as
+// StatePlacing, and forms once the countdown ends -- Sweep is what ends it,
+// since nothing else calls into the queue while everyone just waits.
+func TestVersusGracePeriodWaitsThenFormsWithWhoIsThere(t *testing.T) {
+	q, clock := testGraceQueue(t, 2, 30*time.Second, 0)
+
+	alice, sessions, _ := q.Enqueue("alice", "turf_war")
+	if len(sessions) != 0 {
+		t.Fatalf("a match formed with one player: %v", sessions)
+	}
+	_, sessions, _ = q.Enqueue("bob", "turf_war")
+	if len(sessions) != 0 {
+		t.Fatalf("a match formed the instant the grace period should have started: %v", sessions)
+	}
+	if got, _ := q.Get(alice.ID); got.State != StatePlacing {
+		t.Errorf("alice's state = %s, want placing once the countdown starts", got.State)
+	}
+
+	*clock = clock.Add(29 * time.Second)
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("formed before the grace period elapsed: %v", formed)
+	}
+
+	*clock = clock.Add(2 * time.Second)
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 2 {
+		t.Fatalf("formed = %v, want one 2-player match once the grace period elapsed", formed)
+	}
+	if got, _ := q.Get(alice.ID); got.State != StateSucceeded {
+		t.Errorf("alice's state = %s, want succeeded", got.State)
+	}
+}
+
+// TestVersusGracePeriodCancelsIfSomebodyLeaves: dropping below the mode's
+// size during the countdown cancels it -- there is no partial team to hold a
+// spot open for -- and reaching size again starts a fresh one.
+func TestVersusGracePeriodCancelsIfSomebodyLeaves(t *testing.T) {
+	q, clock := testGraceQueue(t, 2, 30*time.Second, 0)
+
+	alice, _, _ := q.Enqueue("alice", "turf_war")
+	bob, _, _ := q.Enqueue("bob", "turf_war")
+	if got, _ := q.Get(alice.ID); got.State != StatePlacing {
+		t.Fatalf("state = %s, want placing", got.State)
+	}
+
+	if !q.Cancel(bob.ID) {
+		t.Fatal("cancelling bob's ticket (mid-countdown) was refused")
+	}
+	if got, _ := q.Get(alice.ID); got.State != StateSearching {
+		t.Errorf("alice's state = %s, want searching again once the countdown was cancelled", got.State)
+	}
+
+	*clock = clock.Add(time.Minute)
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Errorf("a match formed with nobody but alice waiting: %v", formed)
+	}
+
+	// Reaching size again starts a fresh countdown, not an already-elapsed one.
+	q.Enqueue("carol", "turf_war")
+	*clock = clock.Add(29 * time.Second)
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("the new countdown fired early: %v", formed)
+	}
+	*clock = clock.Add(2 * time.Second)
+	if _, formed := q.Sweep(); len(formed) != 1 {
+		t.Fatalf("formed = %v, want one match once the fresh countdown elapsed", formed)
+	}
+}
+
+// TestCoopWaitsAloneIndefinitelyThenStartsACountdownPerJoin covers Salmon
+// Run's different rule: a lone player is on no clock at all, a second player
+// starts one, and each further arrival restarts it -- so a trickle of joiners
+// does not lose the ones already waiting to a clock that started before they
+// got there.
+func TestCoopWaitsAloneIndefinitelyThenStartsACountdownPerJoin(t *testing.T) {
+	q, clock := testGraceQueue(t, 4, 0, 30*time.Second, "coop")
+
+	q.Enqueue("alice", "coop")
+	*clock = clock.Add(time.Minute) // well under the 3-minute ticket TTL
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("alice matched herself: %v", formed)
+	}
+	if got, _ := q.Get(mustGet(t, q, "alice")); got.State != StateSearching {
+		t.Errorf("alone: state = %s, want searching (no countdown at all)", got.State)
+	}
+
+	q.Enqueue("bob", "coop")
+	if got, _ := q.Get(mustGet(t, q, "alice")); got.State != StatePlacing {
+		t.Errorf("after a 2nd player: state = %s, want placing", got.State)
+	}
+
+	// 20s in, a third joins: the clock restarts from here, not from bob's join.
+	*clock = clock.Add(20 * time.Second)
+	q.Enqueue("carol", "coop")
+	*clock = clock.Add(20 * time.Second) // 20s since carol, would be 40s since bob
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("formed on bob's original clock, ignoring carol's restart: %v", formed)
+	}
+	*clock = clock.Add(11 * time.Second) // 31s since carol
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 3 {
+		t.Fatalf("formed = %v, want one 3-player match (below the mode's size of 4, which nobody reached)", formed)
+	}
+}
+
+// TestCoopFormsImmediatelyOnceFull: a full room has nobody left to wait for,
+// so reaching the mode's size skips whatever remains of the countdown.
+func TestCoopFormsImmediatelyOnceFull(t *testing.T) {
+	q, _ := testGraceQueue(t, 2, 0, 30*time.Second, "coop")
+
+	q.Enqueue("alice", "coop")
+	_, sessions, _ := q.Enqueue("bob", "coop")
+	if len(sessions) != 1 {
+		t.Fatalf("sessions = %v, want one formed the instant the (size-2) mode filled", sessions)
+	}
+}
+
+func mustGet(t *testing.T, q *Queue, userID string) string {
+	t.Helper()
+	for _, tk := range q.tickets {
+		if tk.UserID == userID {
+			return tk.ID
+		}
+	}
+	t.Fatalf("no ticket for %s", userID)
+	return ""
 }

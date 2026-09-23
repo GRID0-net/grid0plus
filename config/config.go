@@ -317,6 +317,24 @@ type NPLN struct {
 	// to put here. Turf War and Anarchy are 4v4 (eight), Salmon Run is four.
 	ModePlayers map[string]int `yaml:"mode_players"`
 
+	// CoopModes names the modes formed like Salmon Run -- one team, not two,
+	// no even split -- rather than like Turf War/Anarchy. Keyed the same way
+	// as ModePlayers: real mode strings from a capture, which this project
+	// does not have for Salmon Run yet, so this is empty (every mode versus-
+	// shaped) until an operator adds one from the "unknown mode" log.
+	CoopModes []string `yaml:"coop_modes"`
+
+	// VersusGracePeriod is how many seconds a versus-shaped match (two even
+	// teams) waits, once it has enough players, before actually forming.
+	// Zero forms the instant the count is reached.
+	VersusGracePeriod int `yaml:"versus_grace_period"`
+
+	// CoopGracePeriod is how many seconds a Salmon Run-shaped match waits
+	// after its second player joins, restarting on every further arrival, up
+	// to the mode's size (which forms immediately). Zero forms the instant
+	// two players are present. A lone player is never on this clock.
+	CoopGracePeriod int `yaml:"coop_grace_period"`
+
 	// TicketTTL is how long a matchmaking ticket waits before giving up, in
 	// seconds. A ticket that never resolves shows the player a spinner with no
 	// way out.
@@ -657,8 +675,10 @@ func Default() Config {
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
 			AccessTokenTTL: 10800,
 			// Two, so two friends can start a match. See the field comment.
-			PlayersPerMatch: 2,
-			TicketTTL:       180,
+			PlayersPerMatch:   2,
+			VersusGracePeriod: 30,
+			CoopGracePeriod:   30,
+			TicketTTL:         180,
 			// fro-3 because that is the member the reference server resolves
 			// the frontline to. Any of fro-1..4 is redirected and carries a
 			// certificate SAN; this one is the least likely to surprise.
@@ -781,6 +801,8 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_REST_RECORD_DIR", &c.NPLN.RestRecordDir)
 	envInt("SWITCHNET_NPLN_PLAYERS_PER_MATCH", &c.NPLN.PlayersPerMatch)
 	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)
+	envInt("SWITCHNET_NPLN_VERSUS_GRACE_PERIOD", &c.NPLN.VersusGracePeriod)
+	envInt("SWITCHNET_NPLN_COOP_GRACE_PERIOD", &c.NPLN.CoopGracePeriod)
 	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
 	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)

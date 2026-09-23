@@ -392,6 +392,28 @@ npln:
   mode_players: {}
   #  regular: 8
 
+  # Modes formed like Salmon Run -- one team, no even split -- rather than
+  # like Turf War/Anarchy. Same rule as mode_players: real strings from a
+  # capture, none known yet, so this starts empty and everything is
+  # versus-shaped until you add one from the "unknown mode" log.
+  coop_modes: []
+  #  - coop
+
+  # How long a versus-shaped match (two even teams) waits, once it has enough
+  # players, before actually forming -- so a third or fourth player closing
+  # their own app in the same instant the second one queued still gets to
+  # join, instead of watching the first two vanish into a match a second
+  # before they searched. Zero forms the instant the count is reached.
+  versus_grace_period: 30
+
+  # How long a Salmon Run-shaped match waits after its SECOND player joins
+  # before forming, restarting on every further arrival up to the mode's size
+  # (which forms immediately -- a full room has nobody left to wait for). A
+  # lone player is never on this clock: matchmaking waits for a second player
+  # however long that takes, same as always. Zero forms the instant two
+  # players are present.
+  coop_grace_period: 30
+
   # How long a matchmaking ticket waits before giving up, in seconds. A ticket
   # that never resolves leaves the player on a spinner with no way back, so
   # timing out is what lets the game offer to try again.
