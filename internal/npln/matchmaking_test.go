@@ -500,6 +500,49 @@ func TestAllocateIceServerSetReturnsWhatWasConfigured(t *testing.T) {
 	}
 }
 
+// TestListLatencyMeasurementServersFallsBackToPublicIPWhenUnconfigured is the
+// regression test for the crash-loop this RPC being Unimplemented caused on
+// real hardware (2026-09-23): the console called it right after
+// IssuePrearrangedUserToken, before matchmaking, and treated the refusal as a
+// communication error, reloading the hall forever. Unlike AllocateIceServerSet,
+// an empty answer here is not a valid "LAN only" default -- see the RPC's own
+// doc comment -- so an unconfigured deployment must still get a non-empty list
+// from network.public_ip.
+func TestListLatencyMeasurementServersFallsBackToPublicIPWhenUnconfigured(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("player", "device")
+	ctx := h.ctx(h.sessionFor(t, "player", "device"), "")
+	h.srv.publicIP = "203.0.113.9"
+
+	got, err := mmpb.NewGameSessionServiceClient(h.conn).
+		ListLatencyMeasurementServers(ctx, &mmpb.ListLatencyMeasurementServersRequest{})
+	if err != nil {
+		t.Fatalf("ListLatencyMeasurementServers: %v", err)
+	}
+	if len(got.GetLatencyMeasurementServers()) != 1 {
+		t.Fatalf("servers = %d, want 1 (the public_ip fallback)", len(got.GetLatencyMeasurementServers()))
+	}
+	if got := got.GetLatencyMeasurementServers()[0].GetHost(); got != "203.0.113.9" {
+		t.Errorf("host = %q, want the configured public_ip", got)
+	}
+
+	// Configuring a real stun server takes over from the fallback.
+	h.srv.iceServers = iceServersFrom([]config.IceServer{
+		{Kind: "stun", Host: "10.0.0.5", Port: 3478},
+	})
+	got, err = mmpb.NewGameSessionServiceClient(h.conn).
+		ListLatencyMeasurementServers(ctx, &mmpb.ListLatencyMeasurementServersRequest{})
+	if err != nil {
+		t.Fatalf("ListLatencyMeasurementServers: %v", err)
+	}
+	if len(got.GetLatencyMeasurementServers()) != 1 {
+		t.Fatalf("servers = %d, want 1 (the configured stun server)", len(got.GetLatencyMeasurementServers()))
+	}
+	if got := got.GetLatencyMeasurementServers()[0].GetHost(); got != "10.0.0.5" {
+		t.Errorf("host = %q, want the configured stun server, not the public_ip fallback", got)
+	}
+}
+
 // TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented is the regression
 // test for the failure NextendoNetwork/splatoon-3 measured on real hardware
 // against a different NPLN title: a client that calls this RPC at all reads

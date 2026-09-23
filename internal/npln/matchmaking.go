@@ -446,6 +446,77 @@ func (g *gameSessionService) AllocateIceServerSet(
 	return set, nil
 }
 
+// ListLatencyMeasurementServers hands the console what it pings, before
+// matchmaking even starts, to pick which of several server regions to
+// search in.
+//
+// Splatoon 3 calls this right after IssuePrearrangedUserToken -- confirmed by
+// a hardware capture of a real console (2026-09-23), where it was the very
+// next RPC and the one this server did not yet implement, refused
+// Unimplemented, and the console read that as a communication error and
+// retried the hall forever rather than surfacing a Nintendo error code.
+// NextendoNetwork/splatoon-3's own hardware capture (facts only, not its
+// code) confirms the shape of the fix: the console needs a NON-EMPTY list to
+// proceed past this screen at all -- an empty one aborts earlier than a
+// list whose pings simply time out, which the console tolerates fine. So,
+// unlike AllocateIceServerSet just above (where an empty ICE set is a valid
+// answer for a LAN-only deployment), this answers with the operator's own
+// configured ICE servers reused as latency targets rather than an empty
+// list: real addresses this deployment already advertises as reachable from
+// a console, not an invented Nintendo region table.
+//
+// TODO(capture-needed): whether the console actually requires a *successful*
+// ping to at least one server, rather than merely a non-empty list. If it
+// does, an operator with no ice_servers configured (the LAN-only default)
+// would need a real answer here too -- change this function.
+func (g *gameSessionService) ListLatencyMeasurementServers(
+	ctx context.Context, _ *mmpb.ListLatencyMeasurementServersRequest,
+) (*mmpb.ListLatencyMeasurementServersResponse, error) {
+	if _, ok := CallerFrom(ctx); !ok {
+		return nil, ErrUnauthenticated
+	}
+
+	out := &mmpb.ListLatencyMeasurementServersResponse{}
+	for _, cfgServer := range g.s.iceServers {
+		if cfgServer.Kind != "stun" {
+			continue
+		}
+		out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
+			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + cfgServer.Host,
+			Region:   "switchnet",
+			Host:     cfgServer.Host,
+			Port:     int32(cfgServer.Port),
+			Protocol: latencyProtocol(cfgServer.Protocol),
+		})
+	}
+
+	// No stun entries -- the LAN-only default AllocateIceServerSet documents
+	// as fine for ICE, but which this RPC's own doc comment says the console
+	// does not tolerate as an empty list. network.public_ip is already this
+	// deployment's one required "the console can reach this" address (natcheck
+	// advertises it the same way), so it is the fallback target here rather
+	// than leaving the list empty.
+	if len(out.LatencyMeasurementServers) == 0 && g.s.publicIP != "" {
+		out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
+			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + g.s.publicIP,
+			Region:   "switchnet",
+			Host:     g.s.publicIP,
+			Port:     3478,
+			Protocol: mmpb.LatencyMeasurementServer_UDP,
+		})
+	}
+	return out, nil
+}
+
+func latencyProtocol(name string) mmpb.LatencyMeasurementServer_Protocol {
+	switch name {
+	case "tcp", "tls":
+		return mmpb.LatencyMeasurementServer_TCP
+	default:
+		return mmpb.LatencyMeasurementServer_UDP
+	}
+}
+
 // ListUserSessions returns every matched player's session for one game
 // session -- the same list GetGameSession already embeds in
 // GameSession.UserSessions, as its own paginated resource.

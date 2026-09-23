@@ -100,6 +100,7 @@ func main() {
 		PresenceTTL:        time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
 		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,
 		Bus:                bus,
+		PublicIP:           cfg.Network.PublicIP,
 	})
 	if err != nil {
 		service.Fatal(log, "build server", err)

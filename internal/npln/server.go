@@ -81,6 +81,9 @@ type Server struct {
 
 	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
 	iceServers []config.IceServer
+	// publicIP is network.public_ip -- ListLatencyMeasurementServers' fallback
+	// target when no ice_servers are configured (the LAN-only default).
+	publicIP string
 	// adminToken guards the operator API. Empty means it is not served at all.
 	adminToken string
 
@@ -152,6 +155,9 @@ type Options struct {
 
 	// Now is overridable in tests. Defaults to time.Now.
 	Now func() time.Time
+
+	// PublicIP is network.public_ip -- see Server.publicIP.
+	PublicIP string
 }
 
 // New builds the gateway.
@@ -197,6 +203,7 @@ func New(opts Options) (*Server, error) {
 		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),
 		matchModes:     opts.Config.ModePlayers,
 		iceServers:     iceServersFrom(opts.Config.IceServers),
+		publicIP:       opts.PublicIP,
 		adminToken:     opts.Config.AdminToken,
 		messages:       messaging.New(opts.Now),
 		presence: presence.Resolver{
