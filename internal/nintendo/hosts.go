@@ -99,7 +99,9 @@ type Host struct {
 	TLSNames []string
 
 	// NoClientCertRequest is true for a host nginx must not send a TLS
-	// CertificateRequest to. Captured 2026-08-25: with ssl_verify_client
+	// CertificateRequest to. Two hosts need it, for two different clients
+	// that fail on one: accounts.nintendo.com (the browser applet, below) and
+	// the friends host (the friends sysmodule, see its entry). Captured 2026-08-25: with ssl_verify_client
 	// optional_no_ca (needed by dauth/aauth/baas to read the console's device
 	// certificate), the TLS handshake for accounts.nintendo.com negotiated
 	// fine up through the server's certificate flight, then the console's
@@ -168,8 +170,18 @@ var Hosts = []Host{
 
 	// ---- Accounts and friends -------------------------------------------
 	{
+		// No client-cert request: this is the friends sysmodule's host, and
+		// friends does not cope with one the way nnAccount does. A 2026-09-23
+		// tcpdump of a friend-list refresh showed a clean TLS 1.3 handshake
+		// to this SNI, then the console aborting in its own final flight --
+		// nginx: "client closed connection while waiting for request" -- and
+		// the applet showing 2121-1058. The friends binary's curl-error table
+		// (0x121608) maps 2121-1058 to CURLE_SSL_CERTPROBLEM: asked for a
+		// certificate, friends tries to present one and cannot. Nothing on
+		// this host reads a client certificate (only dauth does), so there is
+		// nothing to lose by not asking. Implies HTTP/1.1, see NoHTTP2.
 		Pattern: "e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
-		Service: ServiceBAAS, TLS: true,
+		Service: ServiceBAAS, TLS: true, NoClientCertRequest: true,
 		Comment: "BAAS lp1 — accounts and friends",
 	},
 	{

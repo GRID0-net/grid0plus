@@ -531,9 +531,11 @@ func nginxConf(cfg config.Config) string {
 			switch {
 			case !v.verifyClient:
 				b.WriteString("# No ssl_verify_client, and HTTP/2 off: unlike the rest of this service,\n")
-				b.WriteString("# these hosts are only ever reached by the console's browser applet, not\n")
-				b.WriteString("# the curl-based device-auth clients. It does not answer a TLS\n")
-				b.WriteString("# CertificateRequest the way those do, and a 2026-08-25 capture of a\n")
+				b.WriteString("# these hosts' clients fail on a TLS CertificateRequest instead of\n")
+				b.WriteString("# answering it with an empty certificate: the browser applet on\n")
+				b.WriteString("# accounts.nintendo.com, and the friends sysmodule on the friends host\n")
+				b.WriteString("# (2121-1058, see its entry in internal/nintendo/hosts.go). For the\n")
+				b.WriteString("# browser, a 2026-08-25 capture of a\n")
 				b.WriteString("# real working Nextendo server showed this exact request made over plain\n")
 				b.WriteString("# HTTP/1.1 -- never HTTP/2. With http2 on and the browser offering 'h2'\n")
 				b.WriteString("# in ALPN, nginx picked h2 and the connection completed a full TLS\n")
