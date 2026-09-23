@@ -114,7 +114,7 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// which may be the wrong shape specifically for that one -- a free-trial
 		// eligibility check is a different question from "is there an active
 		// membership" and this server has never seen either one asked for.
-		h.membership(w)
+		h.membership(w, path)
 
 	case strings.Contains(host, "service-status"):
 		// Game server availability. Everything is up; if it were not, the
@@ -305,17 +305,61 @@ func (h *Handler) notificationToken(w http.ResponseWriter, r *http.Request, path
 
 // membership reports an active Nintendo Switch Online membership.
 //
-// TODO(capture-needed): the op2 response shape is undocumented. What is here is
-// the minimum a "has a membership" answer would carry. If the console rejects
-// it, the request and response are worth capturing — but note that with
-// aauth.online_play_policy set to FREE (the default) the console never asks this
-// at all, which is why it has not been a blocker.
-func (h *Handler) membership(w http.ResponseWriter) {
+// GET /v1/users/<na id>/memberships has a known shape, read out of the
+// account sysmodule's own parser (fw 22.5.0: FUN_7100113d90 roots it at
+// $.items[0], FUN_7100113ed0 names the fields, FUN_7100113c00/FUN_7100114070
+// type them, FUN_7100113f70/FUN_7100113e10 judge the result):
+//
+//   - each item needs all of user_id, context and membership.active, or the
+//     whole answer is 0x18647c (2124-3122, "no membership");
+//   - user_id is exactly 16 hex digits and must equal the id in the URL;
+//   - context "default" is the base membership and "ex" the Expansion Pack,
+//     and an answer is only accepted when it has one item of each;
+//   - an active "ex" with an inactive "default" is its own error, 0x18667c.
+//
+// The old catch-all {"active": true, "expiresAt": ...} had no items at all,
+// so every membership check the console made failed -- it retried each one
+// four times in a row, right before the friends applet reported an error.
+//
+// Every other op2 path keeps the old answer.
+// TODO(capture-needed): what those are asked, and whether any is.
+func (h *Handler) membership(w http.ResponseWriter, path string) {
+	if naID, ok := membershipsPathUser(path); ok {
+		item := func(context string) map[string]any {
+			return map[string]any{
+				"user_id":    naID,
+				"context":    context,
+				"membership": map[string]any{"active": true},
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items": []any{item("default"), item("ex")},
+		})
+		return
+	}
+
 	expires := time.Now().Add(365 * 24 * time.Hour)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"active":    true,
 		"expiresAt": expires.Unix(),
 	})
+}
+
+// membershipsPathUser returns the Nintendo Account id from
+// /v1/users/<16 hex digits>/memberships.
+func membershipsPathUser(path string) (string, bool) {
+	rest, ok := strings.CutPrefix(path, "/v1/users/")
+	if !ok {
+		return "", false
+	}
+	id, ok := strings.CutSuffix(rest, "/memberships")
+	if !ok || len(id) != 16 {
+		return "", false
+	}
+	if _, err := hex.DecodeString(id); err != nil {
+		return "", false
+	}
+	return strings.ToLower(id), true
 }
 
 // serviceStatus reports that no service is down and no maintenance is planned.

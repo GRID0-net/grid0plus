@@ -192,17 +192,32 @@ observed values verbatim.
 **What a capture would settle:** whether they encode account state. A user token
 from a console whose account is banned, or has no membership, would show it.
 
-### 7. `capi.lp1.op2.nintendo.net` — the membership response
+### 7. `capi.lp1.op2.nintendo.net` — the membership response — **`/v1/users/<id>/memberships` settled by decompile**
 
-Stubbed with `{"active": true, "expiresAt": …}`. With
-`aauth.online_play_policy: FREE` (the default) the console never asks, which is
-why this has not blocked anything.
+`GET /v1/users/<na id>/memberships` is asked, by the account sysmodule, on
+every friend-list refresh and after a Nintendo Account link — the
+"console never asks" note that used to be here was wrong. Its shape is
+read out of the account sysmodule's own parser (fw 22.5.0,
+`FUN_7100113d90`/`FUN_7100113ed0`/`FUN_7100113c00`/`FUN_7100114070`, judged by
+`FUN_7100113e10`):
 
-A 2026-09-20 decompile of `nim.nso` confirms this host's real error-code
-convention (`500/op2_error`, `503/op2_maintenance`) and a distinct path this
-server's catch-all does not treat differently: `/v1/my/membership/free_trial_availability`.
-That is a different question from "is there an active membership," and this
-server has never seen either one actually asked for.
+```json
+{"items":[
+  {"user_id":"<na id>","context":"default","membership":{"active":true}},
+  {"user_id":"<na id>","context":"ex","membership":{"active":true}}]}
+```
+
+Every item needs all three fields; `user_id` must be the URL's id as 16 hex
+digits; an answer without both a `default` and an `ex` item is `0x18647c`
+(2124-3122), and an active `ex` over an inactive `default` is `0x18667c`.
+The old stub answered `{"active": true, "expiresAt": …}` everywhere, which
+failed every one of those checks. Implemented in `internal/stubs`
+(`Handler.membership`).
+
+**Still open:** every *other* op2 path keeps the old guessed answer. A
+2026-09-20 decompile of `nim.nso` shows this host's error-code convention
+(`500/op2_error`, `503/op2_maintenance`) and a distinct path,
+`/v1/my/membership/free_trial_availability`; neither has been seen asked.
 
 ### 8. `accounts.nintendo.com` — the Nintendo Account link flow ~~the redirect mechanism~~ **CAPTURED**
 

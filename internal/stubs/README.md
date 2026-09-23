@@ -26,7 +26,7 @@ things that are genuinely not part of this stack.
 | `ctest`, `conntest` | `ok`, plus `X-Organization: Nintendo` | the console checks both the body and the header; JSON here is a captive-portal signal |
 | `.frs.` | `[]` | friend recommendations — there is nobody to recommend |
 | `.five.` | `[]` | online play invitations — phase 2 |
-| `.op2.` | `{"active": true, …}` | membership verification; every registered user may play |
+| `.op2.` | `/v1/users/<id>/memberships`: an `items` envelope with a `default` and an `ex` entry (the shape the account sysmodule's parser accepts — see `docs/CAPTURES/README.md` item 7); every other path `{"active": true, …}` | membership verification; every registered user may play |
 | `service-status` | everything up | if it were not, the console learning it here would not help |
 | `.dragons.` | mostly `{}`, one path is not — see below | eLicense; `aauth` accepts the token without looking at it |
 | `god.…penne` | `POST /v1/accounts/<id>/notification_tokens` → `{"notification_token": "<36 hex>"}`, every other path `{}` | npns hands this token to the account sysmodule for `PUT /1.0.0/push_channels`; `{}` left the Nintendo Account link stuck one request short. See `docs/CAPTURES/README.md` item 11 |

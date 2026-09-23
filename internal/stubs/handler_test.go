@@ -400,3 +400,46 @@ func TestPenneNotificationTokenIsARealToken(t *testing.T) {
 		t.Errorf("GET account = %s, want {}", rec.Body.String())
 	}
 }
+
+// TestOp2MembershipsIsTheItemsEnvelopeTheAccountParserReads pins
+// GET /v1/users/<na id>/memberships to the shape the account sysmodule's
+// parser accepts (see Handler.membership): an items array with one
+// "default" and one "ex" entry, each carrying the id from the URL as a
+// 16-hex-digit user_id and membership.active as a real boolean. Anything
+// less is 2124-3122 on the console. Asserted on the wire.
+func TestOp2MembershipsIsTheItemsEnvelopeTheAccountParserReads(t *testing.T) {
+	h := newTestHandler(t)
+	const naID = "ea4b6873f0397ab3"
+
+	rec := get(t, h, "capi.lp1.op2.nintendo.net", "/v1/users/"+naID+"/memberships")
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not JSON: %v (%s)", err, rec.Body.String())
+	}
+	contexts := map[string]bool{}
+	for _, it := range body.Items {
+		if it["user_id"] != naID {
+			t.Errorf("user_id = %v, want the id from the URL %q", it["user_id"], naID)
+		}
+		m, _ := it["membership"].(map[string]any)
+		if m["active"] != true {
+			t.Errorf("membership.active = %#v, want boolean true", m["active"])
+		}
+		ctx, _ := it["context"].(string)
+		contexts[ctx] = true
+	}
+	if !contexts["default"] || !contexts["ex"] || len(body.Items) != 2 {
+		t.Errorf("items = %s, want exactly one \"default\" and one \"ex\"", rec.Body.String())
+	}
+
+	// A malformed id is not this endpoint: the catch-all answer, not an
+	// items envelope naming an id the console never asked about.
+	if rec := get(t, h, "capi.lp1.op2.nintendo.net", "/v1/users/not-hex/memberships"); strings.Contains(rec.Body.String(), "items") {
+		t.Errorf("malformed id got an items envelope: %s", rec.Body.String())
+	}
+}
