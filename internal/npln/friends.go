@@ -291,7 +291,7 @@ func (s *Server) friendsSnapshot(ctx context.Context, userID string) (*friendspb
 func (s *Server) friendUserProto(ctx context.Context, callerUser, friend db.User, fr db.Friendship) *friendspb.FriendUser {
 	return &friendspb.FriendUser{
 		Name:       s.tenantPath() + "/users/" + callerUser.ID + "/friendUsers/" + friend.ID,
-		FriendUser: userResourceName(friend.ID),
+		FriendUser: s.userResourceName(friend.ID),
 		NsaId:      friend.ID,
 		Relationship: &friendspb.FriendUser_Relationship{
 			Favorite: fr.Favorite,
@@ -311,7 +311,7 @@ func (s *Server) friendUserProto(ctx context.Context, callerUser, friend db.User
 func (s *Server) blockingUserProto(callerID string, blocked db.User) *friendspb.BlockingUser {
 	return &friendspb.BlockingUser{
 		Name:         s.tenantPath() + "/users/" + callerID + "/blockingUsers/" + blocked.ID,
-		BlockingUser: userResourceName(blocked.ID),
+		BlockingUser: s.userResourceName(blocked.ID),
 		NsaId:        blocked.ID,
 	}
 }

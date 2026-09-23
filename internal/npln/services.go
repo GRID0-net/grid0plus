@@ -114,7 +114,7 @@ func (a *authService) IssueToken(
 
 	return &authpb.IssueTokenResponse{
 		Token: &authpb.Token{
-			User:         userResourceName(caller.UserID),
+			User:         a.s.userResourceName(caller.UserID),
 			AccessToken:  access,
 			RefreshToken: refresh,
 			Ttl:          durationpb.New(ttl),
@@ -128,13 +128,13 @@ func (a *authService) IssueToken(
 // that identity for an NPLN session in one round trip instead of CreateUser
 // then IssueToken.
 //
-// The request also carries its own "tenant" and "user_index" fields. Neither
-// feeds identity: tenant is checked once, for every call, by the gateway
-// interceptor before a handler is ever reached (see enter()/sameTenant), and
-// user_index has no defensible reading here -- nothing in this codebase
-// tracks a per-tenant short id for a user, so inventing one would be exactly
-// the kind of plausible-looking Nintendo internal CLAUDE.md rules out. It is
-// read but not used, same as IssueToken's own now-documented "user" field.
+// The request's own "tenant" field does not feed identity: it is checked
+// once, for every call, by the gateway interceptor before a handler is ever
+// reached (see enter()/sameTenant). "user_index" is echoed back as the
+// response's short_id -- not this server's own id scheme (nothing here
+// tracks one), just handing back what the console itself supplied, the same
+// way IssueToken's "user" field would be if this server ever needed to
+// restate it.
 func (a *authService) IssuePrearrangedUserToken(
 	ctx context.Context, req *authpb.IssuePrearrangedUserTokenRequest,
 ) (*authpb.IssuePrearrangedUserTokenResponse, error) {
@@ -159,13 +159,13 @@ func (a *authService) IssuePrearrangedUserToken(
 
 	return &authpb.IssuePrearrangedUserTokenResponse{
 		User: &authpb.User{
-			Name: userResourceName(caller.UserID),
-			// Account, CreateTime, LastLoginTime and ShortId are left unset:
-			// nothing in internal/db.Store tracks them today. See
-			// docs/CAPTURES/README.md.
+			Name:    a.s.userResourceName(caller.UserID),
+			ShortId: int64(req.GetUserIndex()),
+			// Account, CreateTime and LastLoginTime are left unset: nothing in
+			// internal/db.Store tracks them today. See docs/CAPTURES/README.md.
 		},
 		Token: &authpb.Token{
-			User:         userResourceName(caller.UserID),
+			User:         a.s.userResourceName(caller.UserID),
 			AccessToken:  access,
 			RefreshToken: refresh,
 			Ttl:          durationpb.New(ttl),
@@ -204,7 +204,7 @@ func (a *authService) RefreshToken(
 
 	return &authpb.RefreshTokenResponse{
 		Token: &authpb.Token{
-			User:         userResourceName(caller.UserID),
+			User:         a.s.userResourceName(caller.UserID),
 			AccessToken:  access,
 			RefreshToken: refresh,
 			Ttl:          durationpb.New(ttl),

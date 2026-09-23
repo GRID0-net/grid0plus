@@ -143,7 +143,7 @@ func TestIssuePrearrangedUserTokenBuysAnNPLNSession(t *testing.T) {
 		t.Fatalf("IssuePrearrangedUserToken: %v", err)
 	}
 
-	if got, want := resp.GetUser().GetName(), "users/user-1"; got != want {
+	if got, want := resp.GetUser().GetName(), h.srv.userResourceName("user-1"); got != want {
 		t.Errorf("user.name = %q, want %q", got, want)
 	}
 
@@ -151,8 +151,8 @@ func TestIssuePrearrangedUserTokenBuysAnNPLNSession(t *testing.T) {
 	if access == "" {
 		t.Fatal("no access token in the response")
 	}
-	if got := resp.GetToken().GetUser(); got != "users/user-1" {
-		t.Errorf("token.user = %q, want users/user-1", got)
+	if got, want := resp.GetToken().GetUser(), h.srv.userResourceName("user-1"); got != want {
+		t.Errorf("token.user = %q, want %q", got, want)
 	}
 
 	var claims nplnClaims

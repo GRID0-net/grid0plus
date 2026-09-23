@@ -46,8 +46,8 @@ func TestSendMessageIsDeliveredOnAFreshRecvMessageCall(t *testing.T) {
 	if got.GetMessageBody().GetMessageRequestId() != "req-1" {
 		t.Errorf("message_request_id = %q, want req-1", got.GetMessageBody().GetMessageRequestId())
 	}
-	if got.GetSenderUser() != "users/sender0000000001" {
-		t.Errorf("sender_user = %q, want users/sender0000000001", got.GetSenderUser())
+	if want := h.srv.userResourceName("sender0000000001"); got.GetSenderUser() != want {
+		t.Errorf("sender_user = %q, want %q", got.GetSenderUser(), want)
 	}
 	if got.GetMessageResumeToken() == "" {
 		t.Error("message_resume_token is empty")
@@ -96,8 +96,8 @@ func TestSendAckReachesTheOriginalSendersOwnRecvMessageStream(t *testing.T) {
 	if got.GetAck().GetMessageRequestId() != "req-2" {
 		t.Errorf("message_request_id = %q, want req-2", got.GetAck().GetMessageRequestId())
 	}
-	if got.GetReceiverUser() != "users/receiver00000002" {
-		t.Errorf("receiver_user (who acked) = %q, want users/receiver00000002", got.GetReceiverUser())
+	if want := h.srv.userResourceName("receiver00000002"); got.GetReceiverUser() != want {
+		t.Errorf("receiver_user (who acked) = %q, want %q", got.GetReceiverUser(), want)
 	}
 }
 

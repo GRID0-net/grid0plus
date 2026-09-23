@@ -147,12 +147,12 @@ func (m *messagingService) RecvMessage(
 	msgs, acks, _, _ := m.s.messages.Drain(caller.UserID,
 		req.GetMessageResumeToken(), req.GetAckResumeToken())
 	for _, mm := range msgs {
-		if err := stream.Send(recvMessageProto(mm)); err != nil {
+		if err := stream.Send(recvMessageProto(m.s, mm)); err != nil {
 			return err
 		}
 	}
 	for _, a := range acks {
-		if err := stream.Send(recvAckProto(a)); err != nil {
+		if err := stream.Send(recvAckProto(m.s, a)); err != nil {
 			return err
 		}
 	}
@@ -175,9 +175,9 @@ func (m *messagingService) RecvMessage(
 			var err error
 			switch v := e.(type) {
 			case messaging.Message:
-				err = stream.Send(recvMessageProto(v))
+				err = stream.Send(recvMessageProto(m.s, v))
 			case messaging.Ack:
-				err = stream.Send(recvAckProto(v))
+				err = stream.Send(recvAckProto(m.s, v))
 			}
 			if err != nil {
 				return err
@@ -186,7 +186,7 @@ func (m *messagingService) RecvMessage(
 	}
 }
 
-func recvMessageProto(m messaging.Message) *messagingpb.RecvMessageResponse {
+func recvMessageProto(s *Server, m messaging.Message) *messagingpb.RecvMessageResponse {
 	fields, _ := m.Body.Fields.(*common.MapValue)
 	return &messagingpb.RecvMessageResponse{
 		Reply: &messagingpb.RecvMessageResponse_Message{
@@ -197,7 +197,7 @@ func recvMessageProto(m messaging.Message) *messagingpb.RecvMessageResponse {
 					MessageType:      m.Body.MessageType,
 					Fields:           fields,
 				},
-				SenderUser:         userResourceName(m.SenderID),
+				SenderUser:         s.userResourceName(m.SenderID),
 				MessageResumeToken: messaging.FormatToken(m.Seq),
 				SendTime:           timestamppb.New(m.SentAt),
 			},
@@ -205,15 +205,15 @@ func recvMessageProto(m messaging.Message) *messagingpb.RecvMessageResponse {
 	}
 }
 
-func recvAckProto(a messaging.Ack) *messagingpb.RecvMessageResponse {
+func recvAckProto(s *Server, a messaging.Ack) *messagingpb.RecvMessageResponse {
 	return &messagingpb.RecvMessageResponse{
 		Reply: &messagingpb.RecvMessageResponse_Ack{
 			Ack: &messagingpb.RecvAck{
 				Ack: &messagingpb.AckBody{
 					MessageRequestId: a.RequestID,
-					SenderUser:       userResourceName(a.OriginalSender),
+					SenderUser:       s.userResourceName(a.OriginalSender),
 				},
-				ReceiverUser:   userResourceName(a.AckedByID),
+				ReceiverUser:   s.userResourceName(a.AckedByID),
 				AckResumeToken: messaging.FormatToken(a.Seq),
 				AckSendTime:    timestamppb.New(a.SentAt),
 			},

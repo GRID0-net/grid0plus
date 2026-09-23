@@ -173,7 +173,7 @@ func TestATicketIsCreatedForTheTokenNotForTheUserTheRequestNames(t *testing.T) {
 
 	req := ticketFor("turf-war")
 	req.MatchmakingTicket.UserDefinitions = []*mmpb.UserDefinition{
-		{User: userResourceName("victim")},
+		{User: h.srv.userResourceName("victim")},
 	}
 
 	got, err := mmpb.NewMatchmakerClient(h.conn).CreateMatchmakingTicket(liar, req)
@@ -185,7 +185,7 @@ func TestATicketIsCreatedForTheTokenNotForTheUserTheRequestNames(t *testing.T) {
 	if len(users) != 1 {
 		t.Fatalf("expected exactly one user definition, got %d", len(users))
 	}
-	if want := userResourceName("liar"); users[0].GetUser() != want {
+	if want := h.srv.userResourceName("liar"); users[0].GetUser() != want {
 		t.Errorf("ticket belongs to %q, want the authenticated caller %q",
 			users[0].GetUser(), want)
 	}

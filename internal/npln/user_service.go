@@ -52,7 +52,7 @@ func (u *userService) GetUser(
 		u.s.log.Error("npln: load user", "user", id, "error", err)
 		return nil, errInternal()
 	}
-	return &authpb.User{Name: userResourceName(id)}, nil
+	return &authpb.User{Name: u.s.userResourceName(id)}, nil
 }
 
 // QueryUserExternalIds and QueryUserShortIds are left to the embedded

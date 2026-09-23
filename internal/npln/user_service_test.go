@@ -16,12 +16,12 @@ func TestGetUserResolvesAnExistingUserByName(t *testing.T) {
 	ctx := h.ctx(bearer, "")
 
 	client := authpb.NewUserServiceClient(h.conn)
-	got, err := client.GetUser(ctx, &authpb.GetUserRequest{Name: userResourceName("someone")})
+	got, err := client.GetUser(ctx, &authpb.GetUserRequest{Name: h.srv.userResourceName("someone")})
 	if err != nil {
 		t.Fatalf("GetUser: %v", err)
 	}
-	if got.GetName() != userResourceName("someone") {
-		t.Errorf("Name = %q, want %q", got.GetName(), userResourceName("someone"))
+	if got.GetName() != h.srv.userResourceName("someone") {
+		t.Errorf("Name = %q, want %q", got.GetName(), h.srv.userResourceName("someone"))
 	}
 }
 
@@ -32,7 +32,7 @@ func TestGetUserRefusesAMissingUser(t *testing.T) {
 	ctx := h.ctx(bearer, "")
 
 	client := authpb.NewUserServiceClient(h.conn)
-	_, err := client.GetUser(ctx, &authpb.GetUserRequest{Name: userResourceName("nobody")})
+	_, err := client.GetUser(ctx, &authpb.GetUserRequest{Name: h.srv.userResourceName("nobody")})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("err = %v, want NotFound", err)
 	}
@@ -43,7 +43,7 @@ func TestGetUserRefusesAnUnauthenticatedCaller(t *testing.T) {
 	h.createUser("someone", "device-someone")
 
 	client := authpb.NewUserServiceClient(h.conn)
-	_, err := client.GetUser(h.ctx("", ""), &authpb.GetUserRequest{Name: userResourceName("someone")})
+	_, err := client.GetUser(h.ctx("", ""), &authpb.GetUserRequest{Name: h.srv.userResourceName("someone")})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("err = %v, want Unauthenticated", err)
 	}

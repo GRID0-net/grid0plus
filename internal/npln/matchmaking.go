@@ -562,7 +562,7 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		MatchmakingConfig: t.Mode,
 		State:             ticketState(t.State),
 		UserDefinitions: []*mmpb.UserDefinition{
-			{User: userResourceName(t.UserID)},
+			{User: s.userResourceName(t.UserID)},
 		},
 	}
 
@@ -620,7 +620,7 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 	for _, userID := range sess.Players {
 		out = append(out, &mmpb.UserSession{
 			Name:       s.userSessionName(sess.ID, userID),
-			User:       userResourceName(userID),
+			User:       s.userResourceName(userID),
 			State:      mmpb.UserSession_ACTIVE,
 			CreateTime: timestamppb.New(sess.CreatedAt),
 		})
@@ -657,7 +657,7 @@ func (s *Server) matchedUserSessions(sess matchmaking.Session) ([]*mmpb.MatchedU
 			return nil, err
 		}
 		out = append(out, &mmpb.MatchedUserSession{
-			UserDefinition:     &mmpb.UserDefinition{User: userResourceName(userID)},
+			UserDefinition:     &mmpb.UserDefinition{User: s.userResourceName(userID)},
 			UserSession:        s.userSessionName(sess.ID, userID),
 			MatchmakingIdToken: token,
 		})
