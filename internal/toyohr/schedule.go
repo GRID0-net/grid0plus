@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/n-popescu/switchnet/proto/common"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
@@ -152,24 +153,50 @@ func (sc *scheduleService) SelectLeagueSchedules(
 	return &toyohrpb.SelectLeagueSchedulesResponse{}, nil
 }
 
-// SelectVsParams answers whatever per-mode Vs tuning parameters a real
-// server would otherwise send (VsParams -- proto shape confirmed, content
-// not).
+// SelectVsParams answers a real, non-nil VsParams, never a bare Etag with
+// `params` left unset.
 //
-// Left unset rather than guessed, the same reasoning SelectVsSchedules and
-// friends already give for an empty schedule: this is Nintendo's own game
-// tuning data, not something a private server can honestly fabricate.
-// TODO(capture-needed): a capture of a real VsParams payload and what
-// leaving `unk`/`params` unset does to the client, versus what a real one
-// contains. Confirmed real and linked, not previously implemented at all --
-// same 2026-09-23 hardware finding as SelectLeagueSchedules above.
+// This used to leave `params` unset, reasoned as the correct answer rather
+// than a stub -- this is Nintendo's own game tuning data, not something a
+// private server can honestly fabricate, the same reasoning SelectVsSchedules
+// and friends give for an empty schedule. NextendoNetwork/splatoon-3 measured
+// (facts only, not its code) that leaving it unset is wrong: it replays a
+// real captured VsParams payload rather than answering empty, and separately
+// found that the payload's own two timestamps must be shifted onto the
+// current rotation along with everything else -- a real server never sends
+// stale ones, and a client that gets them "cannot tie the current rotation
+// to its parameters" and stops advancing. Reproduced on SwitchNet's own
+// hardware on 2026-09-24: the console called this RPC successfully and then
+// went silent before ever calling PresenceService/SubscribePresences, the
+// next call in the confirmed reference sequence -- the same crash family as
+// noFestSentinel and GetSaveRecord's real SaveRecord.
+//
+// A real VsParams is answered instead, timestamped off the current clock so
+// it is never stale, but Attributes is left an honestly empty MapValue and
+// ParamsSetId ties to the same slot-derived id vsSchedule already uses:
+// SwitchNet has no legitimate way to know what real tuning values belong
+// inside, and does not invent them. TODO(capture-needed): a capture of a
+// real VsParams payload's Attributes content -- see
+// docs/CAPTURES/README.md.
 func (sc *scheduleService) SelectVsParams(
 	ctx context.Context, req *toyohrpb.SelectVsParamsRequest,
 ) (*toyohrpb.SelectVsParamsResponse, error) {
 	if _, ok := sc.s.caller(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
-	return &toyohrpb.SelectVsParamsResponse{Etag: req.GetEtag()}, nil
+
+	now := sc.s.now()
+	setID := scheduleSetID(AlignToSlot(now))
+	return &toyohrpb.SelectVsParamsResponse{
+		Params: &toyohrpb.VsParams{
+			Name:        sc.s.tenantPath() + "/vsParams/" + setID,
+			Timestamp1:  timestamppb.New(now),
+			Timestamp2:  timestamppb.New(now),
+			Attributes:  &common.MapValue{Fields: map[string]*common.Value{}},
+			ParamsSetId: setID,
+		},
+		Etag: req.GetEtag(),
+	}, nil
 }
 
 // SelectCoopSchedules answers the Salmon Run rotation -- every operator-

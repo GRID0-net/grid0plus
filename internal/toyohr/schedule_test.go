@@ -201,11 +201,50 @@ func TestLeagueAndVsParamsAnswerRatherThanUnimplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select vs params: %v", err)
 	}
-	if params.GetParams() != nil {
-		t.Errorf("params = %v, want unset (nothing to honestly fabricate)", params.GetParams())
+	// TestSelectVsParamsNeverAnswersEmpty below is the regression test for
+	// why this must be non-nil; kept minimal here since this test's own
+	// point is "answers at all", not the shape.
+	if params.GetParams() == nil {
+		t.Error("params is nil -- this is what stalls a real console before it ever calls SubscribePresences")
 	}
 	if params.GetEtag() != "abc" {
 		t.Errorf("etag = %q, want the request's own %q echoed back", params.GetEtag(), "abc")
+	}
+}
+
+// TestSelectVsParamsNeverAnswersEmptyOrStale is the regression test for a
+// real crash: NextendoNetwork/splatoon-3 measured (facts only, not its code)
+// that a real server never sends VsParams with nil `params`, and separately
+// that its two timestamps must ride the current rotation rather than
+// whatever fixed values a capture happened to record -- stale ones leave the
+// client unable to tie the current rotation to its parameters. Reproduced on
+// SwitchNet's own hardware on 2026-09-24: the console called this RPC and
+// then went silent before ever calling PresenceService/SubscribePresences.
+func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
+	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
+
+	resp, err := sc.SelectVsParams(context.Background(), &toyohrpb.SelectVsParamsRequest{})
+	if err != nil {
+		t.Fatalf("select vs params: %v", err)
+	}
+	params := resp.GetParams()
+	if params == nil {
+		t.Fatal("params is nil -- this stalls a real console")
+	}
+	if params.GetName() == "" {
+		t.Error("name is empty")
+	}
+	for name, ts := range map[string]time.Time{
+		"timestamp1": params.GetTimestamp1().AsTime(),
+		"timestamp2": params.GetTimestamp2().AsTime(),
+	} {
+		if ts.IsZero() || ts.Year() < at.Year() {
+			t.Errorf("%s = %v, want it riding the current clock rather than a stale fixed value", name, ts)
+		}
+	}
+	if params.GetAttributes() == nil {
+		t.Error("attributes is nil, want an empty-but-present MapValue")
 	}
 }
 

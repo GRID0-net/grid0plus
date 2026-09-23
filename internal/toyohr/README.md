@@ -253,20 +253,36 @@ a warning rather than picking arbitrarily.
 
 ## `Schedule`: honest emptiness for Vs, a real rotation for Coop
 
-`schedule.go` answers `SelectVsParams`, `SelectVsSchedules`,
-`SelectSeasonSchedules` and `SelectLeagueSchedules` with an empty schedule
-list rather than `Unimplemented`, because the console calls these early in
-boot and the alternative is a to-do-list log line where a working boot query
-should be.
+`schedule.go` answers `SelectVsSchedules`, `SelectSeasonSchedules` and
+`SelectLeagueSchedules` with an empty schedule list rather than
+`Unimplemented`, because the console calls these early in boot and the
+alternative is a to-do-list log line where a working boot query should be.
 
-The content those four RPCs would normally carry — which stages, which mode
-— is Nintendo's own game design data. Unlike a fest, which the operator
-authors and `SaveFest` validates, there is no equivalent authoring path for a
-normal Vs rotation and no dump of one. CLAUDE.md is explicit that a genuinely
+The content those RPCs would normally carry — which stages, which mode — is
+Nintendo's own game design data. Unlike a fest, which the operator authors
+and `SaveFest` validates, there is no equivalent authoring path for a normal
+Vs rotation and no dump of one. CLAUDE.md is explicit that a genuinely
 undocumented shape must not be filled with an invented-but-plausible
-Nintendo internal, so these four stay honestly empty (`TODO(capture-needed)`,
-in `schedule.go`) rather than serving a fabricated rotation nothing here
-would ever catch as wrong.
+Nintendo internal, so these stay honestly empty (`TODO(capture-needed)`, in
+`schedule.go`) rather than serving a fabricated rotation nothing here would
+ever catch as wrong.
+
+**`SelectVsParams` used to be the fourth empty one, and that was wrong.**
+Unlike an empty schedule list, `params` left unset is not what a real server
+sends: NextendoNetwork/splatoon-3 measured (facts only, not its code) that it
+replays a real captured `VsParams` payload rather than answering empty, and
+separately that the payload's own two timestamps must ride the same clock
+shift as everything else, or the client "cannot tie the current rotation to
+its parameters" and stops advancing. Reproduced on SwitchNet's own hardware
+on 2026-09-24: the console called this RPC successfully and then went silent
+before ever calling `PresenceService/SubscribePresences`, the next call in
+the confirmed reference sequence — the same crash family as
+`noFestSentinel` and `GetSaveRecord`'s real `SaveRecord`.
+
+`SelectVsParams` now answers a real, non-nil `VsParams`, timestamped off the
+current clock so it is never stale. `Attributes` — the one field whose real
+content is genuinely undocumented — stays an honestly empty `MapValue`
+rather than a guess (`TODO(capture-needed)`, in `schedule.go`).
 
 **`SelectCoopSchedules` is the fifth RPC, and it is different**, because the
 usual blocker for a Vs/Coop rotation — no known wire shape — did not actually

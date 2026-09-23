@@ -875,6 +875,38 @@ the resulting call sequence, both fixed the same session:
   epoch so it can never be "announced" in the sense that would trigger a
   decryption-key fetch) sent in place of an empty response.
 
+Two more instances of the same crash family surfaced immediately after,
+each requiring its own real capture to reproduce -- the earlier VM-side
+loopback capture technique (`docs/PACKET_CAPTURE.md`) decrypted every gRPC
+exchange without console-side setup:
+
+- **`CloudSave.GetSaveRecord` answering `NotFound` — settled, and now
+  fixed.** `NextendoNetwork/splatoon-3`'s own `cloudsave_nextendo.go`
+  documents testing three behaviors on real hardware for a player with no
+  save record: `NotFound` makes the game create nothing and loop on a
+  communication error; a genuinely empty success makes it stop dead — no
+  `CreateSaveRecord`, no `FestSchedule`, no documents; only a real,
+  structurally-complete record made everything resume. SwitchNet answered
+  `NotFound`, reasoned as correct rather than a stub. A VM-side loopback
+  capture confirmed the console went silent immediately after this RPC on
+  SwitchNet's own hardware. Fixed by answering a real `SaveRecord` for the
+  caller with an empty-but-present `SaveData` `MapValue`, never seeded with
+  Nextendo's own captured save content since that belongs to a real
+  stranger's account.
+- **`Schedule.SelectVsParams` answering with `params` unset — settled, and
+  now fixed.** `NextendoNetwork/splatoon-3` replays a real captured
+  `VsParams` payload rather than answering empty, and separately found the
+  payload's own two timestamps must ride the same clock shift as everything
+  else or the client "cannot tie the current rotation to its parameters"
+  and stops advancing. A second VM-side loopback capture, taken after the
+  `GetSaveRecord` fix, showed the full confirmed reference sequence firing
+  correctly through this RPC and then going silent before ever calling
+  `PresenceService/SubscribePresences` — the next call in the confirmed
+  sequence. Fixed by answering a real, non-nil `VsParams` timestamped off
+  the current clock; `Attributes`, the one field whose real content is
+  genuinely undocumented, stays an honestly empty `MapValue`
+  (`TODO(capture-needed)`, in `internal/toyohr/schedule.go`).
+
 ---
 
 ## Documenting a capture
