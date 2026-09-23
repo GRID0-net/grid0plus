@@ -78,6 +78,8 @@ type Server struct {
 	// unimplemented remembers which RPCs have already been reported as
 	// unanswered, for the same reason: the console retries.
 	unimplemented sync.Map
+	// seenMethods backs noteFirstSeen -- see its own doc comment.
+	seenMethods sync.Map
 
 	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
 	iceServers []config.IceServer
@@ -373,7 +375,23 @@ func (s *Server) unaryInterceptor(
 	sendNPLNHeader(ctx, s.log, info.FullMethod)
 	resp, err := handler(ctx, req)
 	s.noteUnimplemented(info.FullMethod, err)
+	s.noteFirstSeen(info.FullMethod, err)
 	return resp, err
+}
+
+// noteFirstSeen logs the first time any given unary RPC is actually reached,
+// once, regardless of outcome -- the counterpart to noteUnimplemented, for
+// every call that IS implemented. Without it, a handler that runs and returns
+// successfully (or with an ordinary, expected error like NotFound) leaves no
+// trace at all: exactly the gap that made ListLatencyMeasurementServers
+// invisible on 2026-09-23 right up until it was found to be Unimplemented --
+// there was no way to tell "never called" from "called and answered" for
+// anything already implemented.
+func (s *Server) noteFirstSeen(method string, err error) {
+	if _, seen := s.seenMethods.LoadOrStore(method, struct{}{}); seen {
+		return
+	}
+	s.log.Info("npln: first call to this RPC", "method", method, "code", status.Code(err))
 }
 
 // sendNPLNHeader forces this call's HTTP/2 response headers out before the
@@ -417,6 +435,11 @@ func (s *Server) streamInterceptor(
 	if err != nil {
 		return err
 	}
+	// Logged on entry, not after handler() returns: a stream like
+	// TrackMatchmakingTicket is meant to stay open until a match forms, so
+	// waiting for it to close before noting it was ever reached would often
+	// mean never.
+	s.noteFirstSeen(info.FullMethod, nil)
 	err = handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
 	s.noteUnimplemented(info.FullMethod, err)
 	return err

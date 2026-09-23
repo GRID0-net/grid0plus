@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -24,7 +25,7 @@ import (
 // Unlike SubscribeFriendUsers, this stream's protocol has a real
 // heartbeat-only variant (Heartbeat, in the response oneof), so keeping it
 // warm does not require resending the presences themselves.
-const presenceKeepAlive = 30 * time.Second
+var presenceKeepAlive = 30 * time.Second
 
 // maxSubscribedPresences bounds how many presence names one SubscribePresences
 // call may watch, the same shape as internal/baas's page-size caps: a console
@@ -41,6 +42,25 @@ type presenceService struct {
 
 // KeepAlive is a bidirectional liveness stream.
 //
+// Answers on ITS OWN clock (presenceKeepAlive, 30s), not once per client
+// ping -- acking every ping immediately was a real bug, not just a
+// theoretical one. NextendoNetwork/splatoon-3 measured it directly (facts
+// only, not its code): with one ack per ping, a real console's KeepAlive
+// stream carried 1,362 messages each way in fifteen seconds (the client
+// re-sends its next ping the instant it gets a reply, so an immediate ack
+// makes the SERVER the one setting the pace, faster and faster), the server
+// received no other application call for the whole time, and the game
+// eventually gave up with "A communication error has occurred" even though
+// nothing had actually been disconnected. Their own capture of a real
+// Nintendo server showed eleven replies in 293 seconds -- one every ~29.3s,
+// matching the {30s ping, 50s deadline} contract the first Heartbeat itself
+// announces. So the client's own deadline math is calibrated to a reply
+// roughly on that cadence, not to one immediately after every ping.
+//
+// Every client message still counts as proof of life immediately (Ack or
+// UpdatePresence alike) -- draining and touching presence on receipt is
+// unrelated to the runaway-loop bug and stays as before.
+//
 // TODO(capture-needed): whether Splatoon 3 ever sends UpdatePresence over
 // this RPC to report richer, game-specific state (KeepAliveRequest carries a
 // Presence + FieldMask for exactly that). SwitchNet does not persist it: the
@@ -48,12 +68,7 @@ type presenceService struct {
 // deliberately not given a second writer here, for the same reason
 // docs/ROADMAP.md#2.5 insists on one friend graph rather than two -- a second
 // presence writer that disagrees with the first is a worse bug than an
-// unread field. What every message on this stream DOES do, Ack or
-// UpdatePresence alike, is count as proof of life: the caller is talking to
-// NPLN, so internal/presence's liveness rule applies exactly as it does for
-// an authenticated BAAS request (see enter() in server.go, which already
-// touches presence once per call -- this stream just keeps doing it for as
-// long as it stays open).
+// unread field.
 // Change: this function, if a capture shows attributes the client actually
 // depends on.
 func (p *presenceService) KeepAlive(
@@ -65,25 +80,49 @@ func (p *presenceService) KeepAlive(
 		return ErrUnauthenticated
 	}
 
+	// A gRPC stream does not allow two concurrent Sends: the drain loop below
+	// and this function's own ticker both go through send().
+	var sendMu sync.Mutex
+	send := func() error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return stream.Send(&friendspb.KeepAliveResponse{
+			Heartbeat: &friendspb.Heartbeat{Interval: durationpb.New(presenceKeepAlive)},
+		})
+	}
+
+	recvErr := make(chan error, 1)
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				recvErr <- err
+				return
+			}
+			if err := p.s.store.TouchPresence(ctx, caller.UserID, p.s.now()); err != nil {
+				// Liveness is a nicety, same as internal/baas's own
+				// TouchPresence call: failing the stream over it would turn a
+				// cosmetic problem into a dropped connection.
+				p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(presenceKeepAlive)
+	defer ticker.Stop()
+
 	for {
-		if _, err := stream.Recv(); err != nil {
+		select {
+		case err := <-recvErr:
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return nil
 			}
 			return err
-		}
-
-		if err := p.s.store.TouchPresence(ctx, caller.UserID, p.s.now()); err != nil {
-			// Liveness is a nicety, same as internal/baas's own TouchPresence
-			// call: failing the stream over it would turn a cosmetic problem
-			// into a dropped connection.
-			p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
-		}
-
-		if err := stream.Send(&friendspb.KeepAliveResponse{
-			Heartbeat: &friendspb.Heartbeat{Interval: durationpb.New(presenceKeepAlive)},
-		}); err != nil {
-			return err
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := send(); err != nil {
+				return err
+			}
 		}
 	}
 }

@@ -3,6 +3,7 @@ package npln
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
@@ -168,6 +169,10 @@ func TestSubscribePresencesPushesOnAFreshReport(t *testing.T) {
 // all is proof of life, and PresenceService's own stream is where that
 // matters most.
 func TestKeepAliveTouchesPresenceLiveness(t *testing.T) {
+	old := presenceKeepAlive
+	presenceKeepAlive = 20 * time.Millisecond
+	t.Cleanup(func() { presenceKeepAlive = old })
+
 	h := newHarness(t)
 	h.createUser("keepalive0000001", "device-keepalive")
 
@@ -199,5 +204,77 @@ func TestKeepAliveTouchesPresenceLiveness(t *testing.T) {
 	}
 	if p.State != "ONLINE" {
 		t.Errorf("state = %q, want ONLINE from KeepAlive traffic alone", p.State)
+	}
+}
+
+// TestKeepAliveAnswersOnItsOwnClockNotOnceProPing is the regression test for
+// the runaway-loop bug NextendoNetwork/splatoon-3 measured on real hardware
+// (facts only, not its code): acking every client ping immediately makes the
+// client re-send its next ping the instant it gets a reply, so the server
+// ends up setting an ever-faster pace instead of the client's own. A real
+// console's stream carried 1,362 messages each way in fifteen seconds under
+// that bug, during which the server received no other application call --
+// and the game eventually reported "A communication error has occurred" even
+// though the stream itself was never actually dropped.
+//
+// Several rapid pings in a row must therefore get, at most, one reply within
+// one keep-alive interval -- not one reply per ping.
+func TestKeepAliveAnswersOnItsOwnClockNotOncePerPing(t *testing.T) {
+	old := presenceKeepAlive
+	presenceKeepAlive = 100 * time.Millisecond
+	t.Cleanup(func() { presenceKeepAlive = old })
+
+	h := newHarness(t)
+	h.createUser("keepalive0000002", "device-keepalive-2")
+
+	rpcCtx := h.ctx(h.sessionFor(t, "keepalive0000002", "device-keepalive-2"), "")
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).KeepAlive(rpcCtx)
+	if err != nil {
+		t.Fatalf("KeepAlive: %v", err)
+	}
+
+	const pings = 20
+	for i := 0; i < pings; i++ {
+		if err := stream.Send(&friendspb.KeepAliveRequest{
+			Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000002"}},
+		}); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+
+	replies := make(chan *friendspb.KeepAliveResponse, pings)
+	go func() {
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				close(replies)
+				return
+			}
+			replies <- resp
+		}
+	}()
+
+	// Well under two intervals: long enough for a correct implementation's
+	// one scheduled heartbeat, nowhere near enough for a broken one that
+	// would already have exchanged many times that under the old
+	// answer-every-ping behaviour.
+	deadline := time.After(150 * time.Millisecond)
+	count := 0
+loop:
+	for {
+		select {
+		case resp, ok := <-replies:
+			if !ok {
+				break loop
+			}
+			if resp.GetHeartbeat() != nil {
+				count++
+			}
+			if count > 1 {
+				t.Fatalf("replies = %d for %d pings within ~1.5 intervals, want at most 1 -- answering once per ping instead of once per interval", count, pings)
+			}
+		case <-deadline:
+			break loop
+		}
 	}
 }
