@@ -210,6 +210,7 @@ func New(opts Options) (*Server, error) {
 	s.grpc = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(s.unaryInterceptor),
 		grpc.ChainStreamInterceptor(s.streamInterceptor),
+		grpc.UnknownServiceHandler(s.unknownService),
 	)
 	s.register()
 	go s.sweepTickets()
@@ -413,6 +414,23 @@ func grpcKind(info *grpc.StreamServerInfo) string {
 		return "ClientStreaming"
 	}
 	return "Unary"
+}
+
+// unknownService answers a call to a service this server does not register at
+// all (Ugcstore, Datastore, Appconfig... -- see services.go).
+//
+// Without it grpc-go answers Unimplemented as a single Trailers-Only frame,
+// and runs no interceptor, so nothing is logged either. That single-frame shape
+// is the one NextendoNetwork/splatoon-3 measured crashing Splatoon 3
+// (2162-0001 in nn.npln.Worker) -- see sendNPLNHeader. Here the call still goes
+// through streamInterceptor (authentication, npln-grpc-type), the headers go
+// out on their own, and the Unimplemented follows in a separate trailers frame,
+// logged once per method like any other unimplemented RPC.
+func (s *Server) unknownService(_ any, stream grpc.ServerStream) error {
+	if err := stream.SendHeader(nil); err != nil {
+		s.log.Debug("npln: send header", "error", err)
+	}
+	return status.Error(codes.Unimplemented, "not implemented")
 }
 
 // noteUnimplemented logs an RPC the console asked for and this server does not
