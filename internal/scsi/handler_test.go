@@ -138,6 +138,32 @@ func TestUnauthenticatedRequestIsRefused(t *testing.T) {
 	}
 }
 
+// TestConsoleV3RoutesAnswerTheSameAsTheirV2Counterparts is the regression
+// test for the hall-stall cause found on 2026-09-23: a real console calls
+// /api/console/v3/save_data_archives and
+// /api/console/v3/network_service_accounts/{id}/notification_tokens, not the
+// /api/nx/v2/ paths this server had routes for, and got a 404 on both --
+// which it retried continuously roughly every 700ms rather than treating as
+// harmless.
+func TestConsoleV3RoutesAnswerTheSameAsTheirV2Counterparts(t *testing.T) {
+	h := newHarness(t)
+
+	list := h.do("GET", "/api/console/v3/save_data_archives?datatype=0", nil)
+	if list.StatusCode != http.StatusOK {
+		t.Errorf("GET .../v3/save_data_archives: status = %d, want 200", list.StatusCode)
+	}
+	body := decode[map[string]any](t, list)
+	if _, ok := body["save_data_archives"]; !ok {
+		t.Errorf("response has no save_data_archives field: %v", body)
+	}
+
+	reg := h.do("POST", "/api/console/v3/network_service_accounts/"+h.userID+"/notification_tokens",
+		map[string]string{"notification_token": "test-token"})
+	if reg.StatusCode != http.StatusOK {
+		t.Errorf("POST .../v3/.../notification_tokens: status = %d, want 200", reg.StatusCode)
+	}
+}
+
 func TestFullBackupAndRestoreCycle(t *testing.T) {
 	h := newHarness(t)
 

@@ -108,6 +108,31 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nx/v2/network_service_accounts/{id}/notification_tokens", s.authenticated(s.registerNotificationToken))
 	mux.HandleFunc("GET /api/nx/v2/permissions", s.authenticated(s.permissions))
 
+	// A 2026-09-23 hardware capture shows a real Splatoon 3 console calling
+	// these same two resources under /api/console/v3/, not /api/nx/v2/ --
+	// this project's whole OLSC surface was built against the wiki's v2
+	// paths and had no route for v3 at all, so every one of these requests
+	// 404ed. The console did not treat that 404 as harmless: it retried
+	// roughly every 700ms, continuously, for the whole time the hall was
+	// open -- logUnimplemented's own doc comment assumed a clean 404
+	// wouldn't cause a retry loop, and empirically, here, it did.
+	//
+	// Routed to the same handlers as their v2 counterparts, not a new
+	// implementation: both handlers already ignore anything path-shaped that
+	// would differ between the two prefixes (registerNotificationToken never
+	// reads the path's {id} at all; listArchives filters only on query
+	// parameters). Reusing them is applying already-confirmed-defensible
+	// logic to a newly-confirmed real path, not inventing a new one.
+	//
+	// TODO(capture-needed): whether /api/console/v3/ is Splatoon 3's whole
+	// OLSC surface (in which case every /api/nx/v2/ route above may need a
+	// v3 twin too) or just these two, and what "datatype" in
+	// ?datatype=0 on save_data_archives selects -- listArchives does not
+	// look at it today. No other /api/console/v3/ path has been observed
+	// yet; add its route here, to the same handler, the moment one is.
+	mux.HandleFunc("POST /api/console/v3/network_service_accounts/{id}/notification_tokens", s.authenticated(s.registerNotificationToken))
+	mux.HandleFunc("GET /api/console/v3/save_data_archives", s.authenticated(s.listArchives))
+
 	// ---- permission.lp1.sata.srv.nintendo.net ------------------------------
 	mux.HandleFunc("GET /api/nx/v1/save_data_sets", s.authenticated(s.listSaveDataSets))
 	mux.HandleFunc("POST /api/nx/v1/save_data_sets/generate_key_package", s.authenticated(s.generateKeyPackage))
