@@ -191,6 +191,20 @@ outcome of a report is that the operator hears about it.
 nobody to issue them, and a private server that silently banned one of the
 operator's own consoles would be a bug with no way to see it.
 
+**The response must still carry its own resource name.** Upstream's own
+proto marked `GetViolationResponse`'s fields `[UNKNOWN]`, and this used to be
+answered as a genuinely empty message — reasoned as unambiguous, since
+"no violation" and "here is your violation" are the same bytes when there
+are no fields to tell them apart. NextendoNetwork/splatoon-3 measured
+(facts only, not its code) that Splatoon 3's own client parses this
+response's resource name and hard-aborts in its resource-path parser when
+it is empty — an empty message decodes to a zero-value `GetViolationResponse`
+whose `name` defaults to `""`. Reproduced on SwitchNet's own hardware on
+2026-09-24. The upstream `.proto` now carries the confirmed `name` field
+(`.proto-upstream/latest/proto/toyohr/v1/userscreening.proto`, regenerated
+via `scripts/gen-proto.sh`), and the handler always resolves it to
+`tenants/<t>/users/<uid>/violations/current` — never a real violation.
+
 ## The vote is measured; the battle ratios are not
 
 `GetFestResult` fills four sections, and they are not equally real.

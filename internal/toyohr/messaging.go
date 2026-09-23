@@ -321,16 +321,33 @@ func (u *userScreeningService) CreateReport(
 
 // GetViolation reports that the caller is not in trouble.
 //
-// The response message has no fields at all, so "no violation" and "here is
-// your violation" are the same bytes — which means answering is unambiguous and
-// costs nothing. SwitchNet issues no penalties: there is nobody to issue them,
-// and a private server that silently banned one of the operator's own consoles
-// would be a bug with no way to see it.
+// The response must carry its own resource name, ending in a "violations"
+// segment. This was answered as a genuinely empty message (upstream's own
+// proto marks the field list "[UNKNOWN]"), which used to be reasoned as
+// unambiguous -- "no violation" and "here is your violation" are the same
+// bytes when there are no fields to tell them apart. That reasoning is
+// wrong: NextendoNetwork/splatoon-3 measured (facts only, not its code)
+// that Splatoon 3's own client parses this response's resource name and
+// hard-aborts in its resource-path parser when it is empty -- the response
+// defaults to a zero-value message whose name is "". Reproduced on
+// SwitchNet's own hardware on 2026-09-24: the crash's own return address
+// inside Splatoon 3's own module landed a few hundred bytes from the exact
+// function Nextendo's measurement names. The upstream proto has been
+// updated with the confirmed `name` field (.proto-upstream's own comment
+// cites this finding) and regenerated -- see internal/toyohr/README.md.
+//
+// SwitchNet issues no penalties: there is nobody to issue them, and a
+// private server that silently banned one of the operator's own consoles
+// would be a bug with no way to see it. The name always resolves to "no
+// violation", never a real one.
 func (u *userScreeningService) GetViolation(
 	ctx context.Context, _ *toyohrpb.GetViolationRequest,
 ) (*toyohrpb.GetViolationResponse, error) {
-	if _, ok := u.s.caller(ctx); !ok {
+	uid, ok := u.s.caller(ctx)
+	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
-	return &toyohrpb.GetViolationResponse{}, nil
+	return &toyohrpb.GetViolationResponse{
+		Name: u.s.tenantPath() + "/users/" + uid + "/violations/current",
+	}, nil
 }

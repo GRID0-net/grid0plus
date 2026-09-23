@@ -9,6 +9,14 @@
 #
 # Do not hand-edit anything under proto/. Every file there carries a
 # "Code generated ... DO NOT EDIT." header and the next run overwrites it.
+#
+# .proto-upstream itself carries one local patch, not tracked by git (the
+# directory is gitignored -- fetch-proto.sh pins and checks out an upstream
+# commit there): userscreening.proto's GetViolationResponse has a `name`
+# field added, upstream's own copy still marking it "[UNKNOWN]". Re-running
+# fetch-proto.sh discards that patch. See internal/toyohr/README.md's
+# GetViolation section and docs/CAPTURES/README.md before regenerating, and
+# reapply the field first.
 set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

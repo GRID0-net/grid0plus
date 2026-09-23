@@ -907,6 +907,27 @@ exchange without console-side setup:
   genuinely undocumented, stays an honestly empty `MapValue`
   (`TODO(capture-needed)`, in `internal/toyohr/schedule.go`).
 
+A third VM-side loopback capture, taken after the `SelectVsParams` fix,
+showed the console making it one RPC further into the confirmed sequence
+each time before going silent at the exact same crash address
+(`[574284b4] + 0x17574c`, byte-identical registers and full stack trace
+across three separate crash reports) — pointing at a single generic abort
+in the client's resource-path parser rather than three unrelated bugs:
+
+- **`UserScreening.GetViolation` answering a genuinely empty message —
+  settled, and now fixed.** Upstream's own proto marks
+  `GetViolationResponse`'s fields `[UNKNOWN]`; SwitchNet answered a truly
+  empty message, reasoned as unambiguous since "no violation" and "here is
+  your violation" are the same bytes with no fields to tell them apart.
+  `NextendoNetwork/splatoon-3` measured (facts only, not its code) that
+  Splatoon 3's own client parses this response's own resource name and
+  hard-aborts in its resource-path parser when it is empty — the crash
+  return address they name for this sits a few hundred bytes from the one
+  reproduced on SwitchNet's own hardware, inside the same client module.
+  The upstream `.proto` now carries the confirmed `name` field (field 1,
+  string) and was regenerated via `scripts/gen-proto.sh`; the handler
+  always resolves it to `tenants/<t>/users/<uid>/violations/current`.
+
 ---
 
 ## Documenting a capture

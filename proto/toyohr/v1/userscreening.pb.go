@@ -118,7 +118,14 @@ func (x *GetViolationRequest) GetName() string {
 }
 
 type GetViolationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// NextendoNetwork/splatoon-3 measured (facts only, not its code) that
+	// Splatoon 3's own client parses this response's own resource name and
+	// requires it to end in a "violations" segment -- an empty response
+	// (this field absent, field 1 defaulting to "") crashes the client at a
+	// hard abort in its resource-path parser. See
+	// internal/toyohr/messaging.go's GetViolation.
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -151,6 +158,13 @@ func (x *GetViolationResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetViolationResponse.ProtoReflect.Descriptor instead.
 func (*GetViolationResponse) Descriptor() ([]byte, []int) {
 	return file_proto_toyohr_v1_userscreening_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetViolationResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
 }
 
 type SelectSnapshotRequest struct {
@@ -274,8 +288,9 @@ const file_proto_toyohr_v1_userscreening_proto_rawDesc = "" +
 	"\x06parent\x18\x01 \x01(\tR\x06parent\x121\n" +
 	"\x06report\x18\x02 \x01(\v2\x19.nn.npln.toyohr.v1.ReportR\x06report\")\n" +
 	"\x13GetViolationRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\x16\n" +
-	"\x14GetViolationResponse\"N\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"*\n" +
+	"\x14GetViolationResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"N\n" +
 	"\x15SelectSnapshotRequest\x12\x12\n" +
 	"\x04user\x18\x01 \x01(\tR\x04user\x12!\n" +
 	"\fstring_value\x18\x02 \x01(\tR\vstringValue\"k\n" +

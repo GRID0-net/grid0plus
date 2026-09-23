@@ -2,6 +2,7 @@ package toyohr
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,9 +232,14 @@ func TestAReportIsAcceptedAndAViolationIsNever(t *testing.T) {
 	// SwitchNet issues no penalties: there is nobody to issue them, and a
 	// private server that silently banned one of the operator's own consoles
 	// would be a bug with no way to see it.
-	if _, err := u.GetViolation(context.Background(),
-		&toyohrpb.GetViolationRequest{}); err != nil {
+	violation, err := u.GetViolation(context.Background(), &toyohrpb.GetViolationRequest{})
+	if err != nil {
 		t.Errorf("get violation: %v", err)
+	}
+	// Regression test for a real crash: an empty name here makes Splatoon 3's
+	// own resource-path parser hard-abort. See GetViolation's own doc comment.
+	if !strings.HasSuffix(violation.GetName(), "/violations/current") {
+		t.Errorf("name = %q, want it to end in a violations resource segment -- this is what crashes a real console", violation.GetName())
 	}
 }
 
