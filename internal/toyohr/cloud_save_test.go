@@ -5,27 +5,49 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
-// TestGetSaveRecordAnswersNotFoundRatherThanFabricatingASave is CLAUDE.md's
-// "no game dump, no save data" boundary applied to a boot query: a fresh
-// account has no cloud save on a real server either, and NotFound is what
-// the game already has to handle for that case -- not a placeholder for
-// missing functionality.
-func TestGetSaveRecordAnswersNotFoundRatherThanFabricatingASave(t *testing.T) {
+// TestGetSaveRecordNeverAnswersNotFoundOrEmpty is the regression test for a
+// real crash: NextendoNetwork/splatoon-3 measured (facts only, not its code)
+// that NotFound makes the game loop on a communication error, and a
+// genuinely empty success makes it stop dead -- no CreateSaveRecord, no
+// FestSchedule, no documents. Reproduced on SwitchNet's own hardware on
+// 2026-09-24: the console went silent immediately after this RPC. A real,
+// resolved SaveRecord with an honestly-empty SaveData is answered instead.
+func TestGetSaveRecordNeverAnswersNotFoundOrEmpty(t *testing.T) {
+	as(t, "aaaaaaaaaaaaaaaa")
 	svc, _ := newService(t, time.Now())
 
-	_, err := svc.GetSaveRecord(context.Background(), &toyohrpb.GetSaveRecordRequest{
+	got, err := svc.GetSaveRecord(context.Background(), &toyohrpb.GetSaveRecordRequest{
 		Name: "tenants/" + testTenant + "/users/aaaaaaaaaaaaaaaa/saveRecord",
 	})
-	if err == nil {
-		t.Fatal("GetSaveRecord succeeded for an account with no cloud save")
+	if err != nil {
+		t.Fatalf("GetSaveRecord: %v -- this is what crashes a real console", err)
 	}
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("code = %v, want NotFound", status.Code(err))
+	if got == nil {
+		t.Fatal("no save record at all -- this is what crashes a real console")
+	}
+	if got.GetSaveData() == nil {
+		t.Error("save_data is nil, want an empty-but-present MapValue")
+	}
+	if got.GetName() == "" {
+		t.Error("name is empty")
+	}
+	if got.GetCreateTime() == nil || got.GetUpdateTime() == nil {
+		t.Error("create_time/update_time are unset")
+	}
+}
+
+// TestGetSaveRecordRefusesAnUnauthenticatedCaller keeps this RPC on the
+// fail-closed identity rule the rest of the codebase is shaped around: see
+// CLAUDE.md's "identity is fail-closed" section.
+func TestGetSaveRecordRefusesAnUnauthenticatedCaller(t *testing.T) {
+	as(t, "")
+	svc, _ := newService(t, time.Now())
+
+	_, err := svc.GetSaveRecord(context.Background(), &toyohrpb.GetSaveRecordRequest{})
+	if err == nil {
+		t.Fatal("GetSaveRecord succeeded with no authenticated caller")
 	}
 }

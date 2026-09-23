@@ -339,14 +339,26 @@ from, not a rotation to synthesize entries for. Three fields on the wire
 message are an operator-local assumption rather than a confirmed shape —
 `coopScheduleProto` documents which, and `docs/QUESTIONS.md` has the entry.
 
-## `CloudSave.GetSaveRecord`: `NotFound` is the correct answer, not a stub
+## `CloudSave.GetSaveRecord`: a real, empty record, never `NotFound`
 
-A cloud save is real player save state. SwitchNet has no legitimate way to
-have one — the same "no game dump, no save data" boundary CLAUDE.md draws
-for phase 3 applies here too. `GetSaveRecord` answers `NotFound` for every
-account, which is not a placeholder: a fresh account has no cloud save on a
-real server either, and the game already has to handle that case on its
-very first boot.
+This used to answer `NotFound` for every account, reasoned as the correct
+answer rather than a stub — a fresh account has no cloud save on a real
+server either. That reasoning turned out to be wrong, and reproduced as a
+real crash: NextendoNetwork/splatoon-3 measured (facts only, not its code)
+three behaviours on real hardware for a player with no save record —
+`NotFound` makes the game create nothing and loop on a communication error;
+a genuinely empty success makes it stop dead, with no `CreateSaveRecord`, no
+`FestSchedule`, no documents; only a real, structurally-complete record made
+everything resume. This reproduced on SwitchNet's own hardware on
+2026-09-24: the console went silent immediately after this RPC, the same
+crash family as `SelectFestSchedule`'s `noFestSentinel` below.
+
+`GetSaveRecord` now answers a real `SaveRecord` for the caller, with an
+empty-but-present `SaveData` `MapValue`. A cloud save is still real player
+save state SwitchNet has no legitimate way to have — the same "no game dump,
+no save data" boundary CLAUDE.md draws for phase 3 — so `SaveData` is left
+honestly blank rather than seeded with Nextendo's own captured content,
+which is a stranger's real save progression and out of scope regardless.
 
 The other five `CloudSave` RPCs are left to
 `UnimplementedCloudSaveServer`. Nothing calls them this early, and actually
