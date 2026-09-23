@@ -377,7 +377,9 @@ npln:
   # RS256 one.
   issuer: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
   jwks_url: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates"
-  access_token_ttl: 10800
+  # 28800 (8h) is confirmed by a 2026-09-23 decrypted capture of a real
+  # working server's access token, not guessed.
+  access_token_ttl: 28800
 
   # How many players a match takes.
   #

@@ -426,83 +426,62 @@ func randomToken(n int) (string, error) {
 
 // ---- fro-N: the persistent connection -------------------------------------
 
-// frontlinePoll is how often the frontline handler checks whether the console
-// has gone away.
-//
-// It writes nothing. See the handler for why silence is the answer here.
-const frontlinePoll = 5 * time.Second
-
-// frontline keeps the response open while the console's request body remains
-// active. The local reference server drains that body and ends the response when
-// the request stream ends; consuming it here also prevents unread client data
-// from stalling the bidirectional connection. The bytes are opaque, so we count
-// them but never record their contents. TODO(capture-needed): the frame format
-// and whether SwitchNet needs to act on any frame rather than just consume it.
-//
-// It sends NOTHING after the response headers. Writing invented bytes into a
-// stream whose framing is unknown risks turning a waiting client into a broken
-// one. The headers are flushed immediately so the console sees the response
-// begin rather than mistaking buffering for an absent server.
+// frontline sends the observed opening frame, then leaves the response open
+// until the client disconnects. The captured POST has no body: request EOF is
+// normal and must not terminate the server-to-client stream.
 func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		// Cannot stream, so the connection would be buffered until it closed —
-		// which is the failure this whole handler exists to avoid.
-		s.log.Error("nplnrest: the frontline response writer cannot flush")
+	controller := http.NewResponseController(w)
+	// HTTP/1 otherwise drains an unfinished upload before flushing headers.
+	// HTTP/2 already supports concurrent reads/writes and may report unsupported.
+	if err := controller.EnableFullDuplex(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		s.log.Error("nplnrest: enable frontline duplex", "error", err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
-
-	s.rec.RecordStream(r, http.StatusOK, "frontline: held open")
-
-	// Chunked, unbuffered, and not cached anywhere between here and the
-	// console. Without X-Accel-Buffering an nginx in front holds the stream
-	// until a buffer fills, which for a stream that writes nothing is forever.
+	s.rec.RecordStream(r, http.StatusOK, "frontline: opening frame and persistent response")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	if _, err := w.Write(frontlineOpeningFrame(now)); err != nil {
+		return
+	}
+	if err := controller.Flush(); err != nil {
+		return
+	}
 	open := s.frontlines.Add(1)
-	// Logged at info because this line answers the first question anybody asks
-	// when Splatoon 3 will not connect: did the console get as far as the
-	// frontline?
 	s.log.Info("nplnrest: frontline connection open", "host", wirelog.HostOnly(r.Host), "open", open)
-	closeReason := "request_body_eof"
+	reason := "request_context_done"
 	defer func() {
-		remaining := s.frontlines.Add(-1)
-		s.log.Info("nplnrest: frontline connection closed",
-			"host", wirelog.HostOnly(r.Host), "open", remaining, "reason", closeReason)
+		s.log.Info("nplnrest: frontline connection closed", "host", wirelog.HostOnly(r.Host), "open", s.frontlines.Add(-1), "reason", reason)
 	}()
-
 	type bodyReadResult struct {
 		bytes int64
 		err   error
 	}
-	bodyDone := make(chan bodyReadResult, 1)
-	go func() {
-		n, err := io.Copy(io.Discard, r.Body)
-		bodyDone <- bodyReadResult{bytes: n, err: err}
-	}()
-
-	ticker := time.NewTicker(frontlinePoll)
-	defer ticker.Stop()
-
+	var bodyDone chan bodyReadResult
+	if r.Body != nil && r.Body != http.NoBody {
+		bodyDone = make(chan bodyReadResult, 1)
+		// Capture the channel value: the select disables its own copy on EOF.
+		go func(done chan<- bodyReadResult) {
+			n, err := io.Copy(io.Discard, r.Body)
+			done <- bodyReadResult{n, err}
+		}(bodyDone)
+	}
 	for {
 		select {
 		case result := <-bodyDone:
+			bodyDone = nil
 			s.log.Info("nplnrest: frontline request body ended", "bytes", result.bytes, "error", result.err)
-			if result.err != nil && !errors.Is(result.err, io.EOF) {
-				closeReason = "request_body_error"
+			if result.err != nil {
+				reason = "request_body_error"
+				return
 			}
-			return
 		case <-r.Context().Done():
-			closeReason = "request_context_done"
 			return
-		case <-ticker.C:
-			// Nothing to send. Keep the response open until the request body
-			// ends or the console disconnects.
 		}
 	}
 }

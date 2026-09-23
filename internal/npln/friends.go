@@ -62,7 +62,8 @@ func (f *friendsService) ActivateUser(
 	if !ok {
 		return nil, ErrUnauthenticated
 	}
-	if id := lastSegment(req.GetName()); id != "" && id != caller.UserID {
+	// The console names itself with this alias; identity still comes from the token.
+	if id := lastSegment(req.GetName()); req.GetName() != "tenants/current/users/current" && id != "" && id != caller.UserID {
 		// Same rule as everywhere else a request names a user: the token
 		// decides who this call is about, not a field the client filled in.
 		f.s.log.Warn("npln: ActivateUser for a user other than the caller",

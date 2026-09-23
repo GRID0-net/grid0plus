@@ -304,6 +304,9 @@ type NPLN struct {
 	// JWKSURL is where those tokens' 'jku' points.
 	JWKSURL string `yaml:"jwks_url"`
 	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds.
+	// 28800 (8h) is confirmed, not guessed: a 2026-09-23 decrypted capture of
+	// a real IssuePrearrangedUserTokenResponse from a working server carries
+	// exactly iat=..., exp=iat+28800.
 	AccessTokenTTL int `yaml:"access_token_ttl"`
 
 	// PlayersPerMatch is how many players a match takes for any mode
@@ -689,7 +692,7 @@ func Default() Config {
 			AppID:          "0100c2500fc20000",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
-			AccessTokenTTL: 10800,
+			AccessTokenTTL: 28800,
 			// Two, so two friends can start a match. See the field comment.
 			PlayersPerMatch:   2,
 			VersusGracePeriod: 30,

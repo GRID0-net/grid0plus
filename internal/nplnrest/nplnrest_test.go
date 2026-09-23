@@ -1,7 +1,6 @@
 package nplnrest
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -256,80 +254,6 @@ func TestAnUnknownHostIsAnsweredRatherThanRefused(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 — a connection error is worse than an empty answer", rec.Code)
-	}
-}
-
-type blockingFrontlineBody struct {
-	firstRead  chan struct{}
-	secondRead chan struct{}
-	release    chan struct{}
-	first      bool
-	closeOnce  sync.Once
-	secondOnce sync.Once
-}
-
-func (b *blockingFrontlineBody) Read(p []byte) (int, error) {
-	if !b.first {
-		b.first = true
-		n := copy(p, []byte("opaque-frame"))
-		close(b.firstRead)
-		return n, nil
-	}
-	b.secondOnce.Do(func() { close(b.secondRead) })
-	<-b.release
-	return 0, io.EOF
-}
-
-func (b *blockingFrontlineBody) Close() error {
-	b.closeOnce.Do(func() { close(b.release) })
-	return nil
-}
-
-func TestTheFrontlineDrainsRequestBodyAndStaysOpenUntilItEnds(t *testing.T) {
-	s := newServer(t, t.TempDir())
-	body := &blockingFrontlineBody{
-		firstRead: make(chan struct{}), secondRead: make(chan struct{}), release: make(chan struct{}),
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	req := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
-	req.Body = body
-	req.Host = frontlineHost
-	rec := httptest.NewRecorder()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.Handler().ServeHTTP(rec, req)
-	}()
-
-	select {
-	case <-body.firstRead:
-	case <-time.After(time.Second):
-		t.Fatal("frontline handler did not consume the request body")
-	}
-	select {
-	case <-body.secondRead:
-	case <-time.After(time.Second):
-		t.Fatal("frontline reader did not remain active after the first frame")
-	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if rec.Body.Len() != 0 {
-		t.Errorf("frontline response body has %d bytes, want no unsolicited frame", rec.Body.Len())
-	}
-
-	select {
-	case <-done:
-		t.Fatal("frontline closed while the request body was still open")
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	_ = body.Close()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("frontline did not close after the request body ended")
 	}
 }
 

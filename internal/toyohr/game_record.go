@@ -40,7 +40,8 @@ func (s gameRecordService) InitializeAttributes(
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
 	}
-	if u := req.GetUser(); u != "" && lastSegment(u) != uid {
+	// The console names itself with this alias; identity still comes from the token.
+	if u := req.GetUser(); u != "tenants/current/users/current" && u != "" && lastSegment(u) != uid {
 		s.log.Warn("toyohr: InitializeAttributes for another player refused",
 			"caller", uid, "user", u)
 		return nil, status.Error(codes.PermissionDenied, "permission denied")

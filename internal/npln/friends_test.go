@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
@@ -211,5 +214,24 @@ func recvWithTimeout[T any](t *testing.T, stream recvStream[T]) (T, error) {
 	case <-time.After(5 * time.Second):
 		var zero T
 		return zero, context.DeadlineExceeded
+	}
+}
+
+func TestActivateCurrentUserStillRequiresTheCallersToken(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("alias-owner", "alias-device")
+	client := friendspb.NewFriendsClient(h.conn)
+	req := &friendspb.ActivateUserRequest{Name: "tenants/current/users/current"}
+	if _, err := client.ActivateUser(h.ctx("", ""), req); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("anonymous activation = %v, want Unauthenticated", err)
+	}
+	ctx := h.ctx(h.sessionFor(t, "alias-owner", "alias-device"), "")
+	if _, err := client.ActivateUser(ctx, req); err != nil {
+		t.Fatalf("activate authenticated current user: %v", err)
+	}
+	for _, name := range []string{"tenants/current/users/someone-else", "tenants/foreign/users/current"} {
+		if _, err := client.ActivateUser(ctx, &friendspb.ActivateUserRequest{Name: name}); status.Code(err) != codes.PermissionDenied {
+			t.Errorf("ActivateUser(%q) = %v, want PermissionDenied", name, err)
+		}
 	}
 }

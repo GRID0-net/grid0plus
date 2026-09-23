@@ -49,23 +49,22 @@ npln:
 error decides the network is broken, and that surfaces somewhere unrelated to
 the request that failed. The same reasoning `internal/stubs` gives.
 
-**The frontline response sends no application bytes.** The console does send
-opaque request-body frames; SwitchNet drains them without storing their
-contents. The local reference logs those inbound frames as hex but does not
-establish their meaning. Sending an invented response frame risks turning a
-waiting console into one that decides the server is broken, so the response
-remains silent until the client ends its body.
+**Frontline sends an opening frame, then keeps its response open.** The
+2026-09-23 successful hall capture contains three empty POSTs, each answered
+with a 68-byte size-prefixed FlatBuffer before the response stays open. Only
+the Unix timestamp changes between the frames. `frontlineOpeningFrame` builds
+that layout from protocol fields; it does not replay captured bytes.
 
-The headers *are* flushed immediately, because a response that has not started
-is indistinguishable from a server that is not there.
+**Request EOF does not end the response.** An empty POST is normal in this
+capture. The handler flushes its opening frame immediately, drains any upload
+concurrently, and waits for disconnect even after a clean request EOF. HTTP/1
+full duplex prevents an unfinished upload from delaying the response. The
+listener has no read/write timeout, because the shared thirty-second timeout
+would truncate these connections. The meaning of subsequent client messages
+and any required acknowledgements remains unconfirmed.
 
-**It stays open for the request stream's lifetime.** Closing before the client
-ends its body is an error — `2307-2103` on Splatoon 2, `2321-*` on Splatoon 3.
-The reference returns when the request body ends, so SwitchNet follows that
-lifecycle. That is also why `cmd/npln` serves this listener with no read or
-write timeout, through `service.Serve` rather than `service.ServeHTTP`: the
-shared thirty-second write timeout that suits every other service would sever
-this one, and the player would see the game lose its connection for no reason.
+The live capture supersedes the local reference source's silent, EOF-terminated
+handler. See [the measured layout and limitations](../../docs/CAPTURES/nextendo-hall-bootstrap-2026-09-23.md).
 
 `Frontlines()` reports how many are open. It exists because it answers the first
 question anybody asks when Splatoon 3 will not connect: *did the console get

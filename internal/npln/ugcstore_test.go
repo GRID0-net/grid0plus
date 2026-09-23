@@ -200,3 +200,40 @@ func TestInitializeAttributesCreatesTheDocumentTheConsoleReadsNext(t *testing.T)
 		t.Errorf("initialising another player: err = %v, want PermissionDenied", err)
 	}
 }
+
+func TestInitializeCurrentUserKeepsEachPlayersDocumentsSeparate(t *testing.T) {
+	h, first, docs := ugcHarness(t)
+	gr := toyohrpb.NewGameRecordClient(h.conn)
+	for i, uid := range []string{"ugc0000000000001", "ugc0000000000002"} {
+		ctx := first
+		if i == 1 {
+			ctx = h.ctx(h.sessionFor(t, uid, "device-ugc-2"), "")
+		}
+		shift := "shift-" + uid
+		resp, err := gr.InitializeAttributes(ctx, &toyohrpb.InitializeAttributesRequest{
+			User:      "tenants/current/users/current",
+			CoopShift: &toyohrpb.InitializeAttributesRequest_CoopShift{ShiftId: shift, JobType: "Normal"},
+		})
+		if err != nil {
+			t.Fatalf("initialise current user %s: %v", uid, err)
+		}
+		want := "tenants/current/documents/services/GameRecord/users/" + uid + "/CoopUserAttribute/Data"
+		if resp.GetDocument() != want {
+			t.Fatalf("document = %q, want %q", resp.GetDocument(), want)
+		}
+		doc, err := docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: want})
+		if err != nil || doc.GetFields().GetFields()["shift_id"].GetStringValue() != shift {
+			t.Fatalf("read caller's document: %v, %v", doc, err)
+		}
+	}
+	for _, name := range []string{"tenants/current/users/ugc0000000000002", "tenants/foreign/users/current"} {
+		_, err := gr.InitializeAttributes(first, &toyohrpb.InitializeAttributesRequest{User: name})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("initialise %q: %v, want PermissionDenied", name, err)
+		}
+	}
+	_, err := gr.InitializeAttributes(h.ctx("", ""), &toyohrpb.InitializeAttributesRequest{User: "tenants/current/users/current"})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("anonymous initialise: %v, want Unauthenticated", err)
+	}
+}

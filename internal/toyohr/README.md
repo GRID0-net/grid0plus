@@ -354,3 +354,7 @@ implementing `Write`/`Create`/`Delete` convincingly would mean this server
 keeping opaque save blobs it has no way to validate — a materially
 different scope than answering the one boot query that would otherwise
 hang.
+
+`GameRecord/InitializeAttributes` accepts `tenants/current/users/current` as
+the already authenticated caller and stores the document under that caller's
+actual user ID. It does not use the literal alias as a shared document owner.

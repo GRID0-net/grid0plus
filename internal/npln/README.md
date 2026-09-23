@@ -338,3 +338,7 @@ process restarts is one the sender's own retry resends, and it keeps this
 package as protocol-agnostic as that one — it imports nothing from `proto/`,
 and `messaging.go` is where a `Message` or `Ack` becomes a
 `RecvMessageResponse`.
+
+`Friends/ActivateUser` accepts `tenants/current/users/current` as the already
+authenticated caller. An explicit different user is refused; the alias cannot
+establish identity without a valid token.

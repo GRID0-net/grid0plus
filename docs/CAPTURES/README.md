@@ -602,14 +602,12 @@ this version deliberately names no number to keep stale).
   open: whether the console validates the ticket's own shape (the value
   itself is still an opaque placeholder, since nothing here can construct
   or validate a real Nintendo-signed one).
-- **A frontline connection's stream behavior**
-  (`internal/nplnrest/nplnrest.go`, `frontline`): the response stays open while
-  the console's request body is active; SwitchNet drains the opaque body and
-  sends no application bytes. The local Nextendo source confirms its handler
-  also reads client frames and returns when that body ends, but logs those
-  frames as opaque hex and does not establish their meaning. A two-way capture
-  is still needed to tell whether SwitchNet must act on any client frame or
-  send a server frame; do not invent one before then.
+- **Later Frontline messages and acknowledgements**
+  (`internal/nplnrest/frontline_frame.go`, `frontlineOpeningFrame`): the
+  [successful hall capture](nextendo-hall-bootstrap-2026-09-23.md) establishes
+  the opening frame and that request EOF must leave the response open. These
+  are implemented. The semantic name of discriminator 12, handling of later
+  client messages, and any later server cadence remain unconfirmed.
 - **`FestEntry`'s resource-name shape**
   (`internal/toyohr/entries.go`, `festEntryProto`): follows the same
   `tenants/<t>/fests/<ID>/...` convention `GetFestDecryptionKey` already
@@ -772,7 +770,7 @@ mitmproxy, and it does need the console.
 | Capture | Why |
 | --- | --- |
 | game boot, from the very first vermillion request through the NPLN auth handshake | confirms whether vermillion is actually contacted (and needed) for Splatoon 3 specifically, penne's real request bodies and this server's guessed response fields, and what the tenant expects in `authorization`/`uid` metadata once the gRPC channel opens |
-| a frontline connection, bytes in both directions after the HTTP response headers | whether the console's opaque request-body frames need server-side action, and whether a working server sends any application frames back |
+| a frontline connection, bytes in both directions after the HTTP response headers | later client-message handling, acknowledgements, and server cadence beyond the captured opening frame |
 | entering the lobby | `Schedule`'s four Vs/season RPCs (currently answered empty; `SelectCoopSchedules` is no longer on this list -- see above), the first things the lobby draws |
 | a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
 | the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
