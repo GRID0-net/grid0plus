@@ -66,17 +66,17 @@ type Config struct {
 
 // Server serves the SCSI/SATA OLSC API.
 type Server struct {
-	cfg            Config
-	store          Store
-	blobs          BlobStore
-	accessVerifier *sjwt.Verifier
-	log            *slog.Logger
+	cfg        Config
+	store      Store
+	blobs      BlobStore
+	idVerifier *sjwt.Verifier
+	log        *slog.Logger
 }
 
-// New returns an OLSC server. accessVerifier must verify tokens signed with
-// the same key as internal/baas's own baas_access issuer — see auth.go.
-func New(cfg Config, store Store, blobs BlobStore, accessVerifier *sjwt.Verifier, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, store: store, blobs: blobs, accessVerifier: accessVerifier, log: log}
+// New returns an OLSC server. idVerifier must verify tokens signed with the
+// same key as internal/baas's own baas_id issuer -- see auth.go.
+func New(cfg Config, store Store, blobs BlobStore, idVerifier *sjwt.Verifier, log *slog.Logger) *Server {
+	return &Server{cfg: cfg, store: store, blobs: blobs, idVerifier: idVerifier, log: log}
 }
 
 // Routes registers every route on mux.

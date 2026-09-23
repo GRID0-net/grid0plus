@@ -41,13 +41,17 @@ func main() {
 	defer func() { _ = store.Close() }()
 
 	keys := sjwt.NewKeyring(cfg.Keys.Dir, cfg.Keys.GenerateIfMissing)
-	// Verifies BAAS's own access tokens: this service reads identity off the
-	// token BAAS already issued, rather than issuing or verifying one of its
-	// own. Both processes must read the same keys.dir, the same reason
-	// aauth/dauth already document at their own key-loading call sites.
-	accessKey, err := keys.Key(sjwt.IssuerBAASAccess)
+	// Verifies BAAS's own id tokens, not access tokens: a 2026-09-23 loopback
+	// capture of a real console's Authorization header showed 'jku' pointing
+	// at /1.0.0/certificates (the id-token JWKS) and the payload's own 'typ'
+	// as "id_token" -- the same credential internal/npln's exchangeIDToken
+	// verifies at its own phase-1/phase-2 seam, not the access token this
+	// server previously expected. Both processes must read the same
+	// keys.dir, the same reason aauth/dauth already document at their own
+	// key-loading call sites.
+	idKey, err := keys.Key(sjwt.IssuerBAASID)
 	if err != nil {
-		service.Fatal(log, "load BAAS access verification key", err)
+		service.Fatal(log, "load BAAS id verification key", err)
 	}
 
 	blobs, err := scsi.NewLocalDisk(cfg.SCSI.StorageDir, cfg.SCSI.PerUserQuotaBytes)
@@ -57,7 +61,7 @@ func main() {
 
 	handler := scsi.New(scsi.Config{
 		PublicURL: cfg.SCSI.PublicURL,
-	}, store, blobs, sjwt.NewVerifier(accessKey), log)
+	}, store, blobs, sjwt.NewVerifier(idKey), log)
 
 	mux := http.NewServeMux()
 	handler.Routes(mux)

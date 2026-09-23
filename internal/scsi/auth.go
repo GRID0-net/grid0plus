@@ -21,17 +21,22 @@ type Caller struct {
 	DeviceAccountID string
 }
 
-// authenticate verifies the Authorization header the same way
-// internal/baas/router.go's own authenticate does, against the same
-// baas_access key, rather than importing baas's package: this server reads
-// identity off the token BAAS already issued, exactly the seam
-// internal/npln's exchangeIDToken documents for its own equivalent check.
+// authenticate verifies the Authorization header against BAAS's id-token
+// key -- the same seam internal/npln's exchangeIDToken checks, not
+// internal/baas's own access-token verification.
 //
-// Real OLSC traffic authenticates this way because it is system-level
-// account-state synchronization from the account sysmodule, which already
-// holds a BAAS access token — not a separate token type of its own. No
-// capture confirms this; it is the only reading consistent with there being
-// no separate token-issuance endpoint anywhere in OLSC's documented surface.
+// Confirmed on real hardware, not guessed: a 2026-09-23 loopback capture of
+// the plaintext request nginx forwards to this service (between it and a
+// console that had already completed BAAS login) shows the Authorization
+// header's 'jku' pointing at /1.0.0/certificates -- the id-token JWKS,
+// distinct from /1.0.0/internal_certificates' access-token one -- and the
+// payload's own 'typ' as "id_token". This server previously verified against
+// the access-token key instead (an untested, and wrong, guess: the account
+// sysmodule reaches this host over a system-level credential separate from
+// any per-app access token, exactly the reasoning that makes an id token the
+// right one here too, in hindsight). Every request from that console 401ed
+// with "unknown key id" until this was found, and it retried continuously
+// rather than backing off.
 func (s *Server) authenticate(r *http.Request) (Caller, error) {
 	header := r.Header.Get("Authorization")
 	scheme, token, found := strings.Cut(header, " ")
@@ -40,11 +45,11 @@ func (s *Server) authenticate(r *http.Request) (Caller, error) {
 	}
 
 	var claims sjwt.BAASTokenClaims
-	if err := s.accessVerifier.Verify(token, &claims); err != nil {
-		s.log.Debug("scsi: rejected access token", "error", err)
+	if err := s.idVerifier.Verify(token, &claims); err != nil {
+		s.log.Debug("scsi: rejected id token", "error", err)
 		return Caller{}, ErrUnauthenticated
 	}
-	if claims.Type != "token" || claims.Subject == "" || claims.DeviceAccountID == "" {
+	if claims.Type != "id_token" || claims.Subject == "" || claims.DeviceAccountID == "" {
 		return Caller{}, ErrUnauthenticated
 	}
 

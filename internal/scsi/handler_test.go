@@ -30,7 +30,7 @@ func newHarness(t *testing.T) *harness {
 	t.Helper()
 
 	ring := sjwt.NewKeyring(t.TempDir(), true)
-	accessKey, err := ring.Key(sjwt.IssuerBAASAccess)
+	idKey, err := ring.Key(sjwt.IssuerBAASID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,30 +57,32 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	srv := New(Config{PublicURL: "https://storage.hac.lp1.scsi.srv.nintendo.net"},
-		store, blobs, sjwt.NewVerifier(accessKey), slog.New(slog.DiscardHandler))
+		store, blobs, sjwt.NewVerifier(idKey), slog.New(slog.DiscardHandler))
 
 	mux := http.NewServeMux()
 	srv.Routes(mux)
 
 	h := &harness{
 		t: t, store: store, userID: user.ID, deviceAccountID: deviceAccount.ID,
-		issuer: sjwt.NewIssuer(accessKey, "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/internal_certificates", true),
+		issuer: sjwt.NewIssuer(idKey, "https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com/1.0.0/certificates", true),
 	}
 	h.server = httptest.NewServer(mux)
 	t.Cleanup(h.server.Close)
 	return h
 }
 
-// accessToken mints the user access token a console would present, the same
-// shape internal/baas/accounts.go's own login/federation handlers sign.
+// accessToken mints the id token a real console presents to this service,
+// the same shape internal/npln's own exchangeIDToken verifies at its
+// equivalent seam -- see auth.go's authenticate for why this is an id token,
+// not a BAAS access token.
 func (h *harness) accessToken() string {
 	h.t.Helper()
 	now := time.Now()
 	token, err := h.issuer.Sign(sjwt.BAASTokenClaims{
 		Subject: h.userID, Audience: "test-audience", IssuedAt: now.Unix(),
 		Expires: now.Add(time.Hour).Unix(), Issuer: "e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
-		TokenID: sjwt.NewTokenID(), Type: "token", GrantType: 2,
-		DeviceAccountID: h.deviceAccountID, Status: sjwt.UserTokenStatus,
+		TokenID: sjwt.NewTokenID(), Type: "id_token",
+		DeviceAccountID: h.deviceAccountID,
 	})
 	if err != nil {
 		h.t.Fatal(err)
