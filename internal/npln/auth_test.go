@@ -69,6 +69,48 @@ func TestABAASIDTokenBuysAnNPLNSession(t *testing.T) {
 	}
 }
 
+// TestAccessTokenCarriesTheNPLNRightsClaim asserts on the wire, not on the Go
+// struct: a real access token's payload carries an 'npln' object the client
+// reads to know what it may do (NextendoNetwork/splatoon-3's decrypted
+// capture, facts only -- see nplnRights' doc comment), and this server sent
+// none at all until this test existed. 'deny' must decode as an array, not
+// null: a nil Go slice and the capture's "[]" are not the same byte on the
+// wire, and a client that parses the field strictly would see one and not
+// the other.
+func TestAccessTokenCarriesTheNPLNRightsClaim(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("user-1", "device-account-1")
+
+	access := h.sessionFor(t, "user-1", "device-account-1")
+	parts := strings.Split(access, ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected three token parts, got %d", len(parts))
+	}
+	payload := decodeJWTSegment(t, parts[1])
+
+	npln, ok := payload["npln"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload carries no 'npln' object: %v", payload)
+	}
+	if npln["app_id"] != h.srv.appID {
+		t.Errorf("app_id = %v, want %q", npln["app_id"], h.srv.appID)
+	}
+	if npln["tid"] != testTenant {
+		t.Errorf("tid = %v, want %q", npln["tid"], testTenant)
+	}
+	auth, ok := npln["authorization"].(map[string]any)
+	if !ok {
+		t.Fatalf("npln carries no 'authorization' object: %v", npln)
+	}
+	allow, ok := auth["allow"].([]any)
+	if !ok || len(allow) != 1 || allow[0] != "**" {
+		t.Errorf("authorization.allow = %v, want [\"**\"]", auth["allow"])
+	}
+	if _, ok := auth["deny"].([]any); !ok {
+		t.Errorf("authorization.deny = %v (%T), want a JSON array, not null", auth["deny"], auth["deny"])
+	}
+}
+
 // TestRefreshTokenBuysANewAccessTokenWithoutGoingBackToBAAS proves the round
 // trip IssueToken's own refresh token is for: RefreshToken must accept it and
 // hand back a working access token, and must refuse an access token offered

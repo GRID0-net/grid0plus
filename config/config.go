@@ -295,6 +295,10 @@ type NPLN struct {
 	// and goes into every token's tid. The short "dce9377b" is still accepted
 	// on incoming calls -- see npln.sameTenant.
 	Tenant string `yaml:"tenant"`
+	// AppID is the title id an access token's 'npln.app_id' claim carries.
+	// Splatoon 3's is 0100c2500fc20000 -- a public, documented constant (every
+	// Switch title id is), not a guessed Nintendo internal.
+	AppID string `yaml:"app_id"`
 	// Issuer is the 'iss' of the ES256 access tokens this server signs.
 	Issuer string `yaml:"issuer"`
 	// JWKSURL is where those tokens' 'jku' points.
@@ -671,6 +675,7 @@ func Default() Config {
 			RestListen:     "127.0.0.1:8086",
 			GamesyncListen: "127.0.0.1:8088",
 			Tenant:         "t-dce9377b-lp1",
+			AppID:          "0100c2500fc20000",
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
 			AccessTokenTTL: 10800,

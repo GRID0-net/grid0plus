@@ -60,6 +60,12 @@ type nplnClaims struct {
 	// same key and verify with the same claim shape.
 	Refresh bool `json:"npln:refresh,omitempty"`
 
+	// NPLN is field-for-field what a real access token's own 'npln' claim
+	// carries -- see nplnRights' doc comment. Present only on an access
+	// token: it is what npl1 reads to decide what the token may do, and a
+	// session token is a different credential for a different reader.
+	NPLN *nplnRights `json:"npln,omitempty"`
+
 	// Gamesync is the session block a session token carries, and it is there
 	// for the console rather than for this server: the client reads gsid, usid,
 	// uid and tid out of it to open its gamesync session. Present only on a
@@ -76,6 +82,49 @@ type nplnClaims struct {
 // which this server announces but does not assign, and 'attr'/'ltcy' are the
 // client's own attribute and latency JSON, which the capture shows as "{}" and
 // {"latencies":{}} for a session that has not gathered either yet.
+// nplnRights is the 'npln' object a real access token's payload carries.
+//
+// Field for field a real Nintendo access token's payload, from a decrypted
+// MITM capture NextendoNetwork/splatoon-3 records taking on 2026-06-28 (facts
+// only, not its code):
+//
+//	"npln":{"aid":"a-…","app_id":"0100c2500fc20000",
+//	        "authorization":{"allow":["**"],"deny":[],"nso_restricted":false},
+//	        "ext_id":"…","ext_id_type":1,"tid":"t-dce9377b-lp1"}
+//
+// Their own write-up is explicit about why this matters more than it looks:
+// npl1 reads these claims to know what it may do, and a token it cannot
+// decode this way "finds no rights at all" -- which reproduces exactly the
+// class of symptom that motivated writing this down: authentication that
+// reports success, calls that return OK, and the client still behaving as
+// though it were offline. An access token that never carried this object at
+// all (SwitchNet's own case until this was found) is the same failure by
+// construction, not merely a risk of it.
+//
+// Authorization is the one field this project cannot get wrong by omission:
+// SwitchNet has no notion of a title-scoped rights system to report honestly,
+// so it grants the token every right (allow: ["**"]) rather than reporting
+// none -- the same shape the capture itself shows for an ordinary session,
+// and the opposite of what an absent claim leaves the client concluding on
+// its own. AID and ExtID echo this server's own identifiers (the caller's
+// user id and device account id) under the field names the capture uses,
+// not fabricated Nintendo internals -- the same reasoning IssuePrearrangedUserToken
+// already gives for echoing user_index back as ShortId.
+type nplnRights struct {
+	AID           string            `json:"aid"`
+	AppID         string            `json:"app_id"`
+	Authorization nplnAuthorization `json:"authorization"`
+	ExtID         string            `json:"ext_id"`
+	ExtIDType     int               `json:"ext_id_type"`
+	TID           string            `json:"tid"`
+}
+
+type nplnAuthorization struct {
+	Allow         []string `json:"allow"`
+	Deny          []string `json:"deny"`
+	NSORestricted bool     `json:"nso_restricted"`
+}
+
 type gamesyncClaim struct {
 	Attr string `json:"attr"`
 	GSID string `json:"gsid"`
@@ -326,6 +375,17 @@ func (s *Server) issueAccessToken(c Caller, now time.Time) (string, time.Duratio
 		Expires:         now.Add(ttl).Unix(),
 		TokenID:         sjwt.NewTokenID(),
 		DeviceAccountID: c.DeviceAccountID,
+		NPLN: &nplnRights{
+			AID:   "a-" + c.UserID,
+			AppID: s.appID,
+			Authorization: nplnAuthorization{
+				Allow: []string{"**"},
+				Deny:  []string{},
+			},
+			ExtID:     c.DeviceAccountID,
+			ExtIDType: 1,
+			TID:       s.tenant,
+		},
 	})
 	if err != nil {
 		return "", 0, fmt.Errorf("sign npln access token: %w", err)

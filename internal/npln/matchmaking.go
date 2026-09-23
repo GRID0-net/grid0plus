@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"fmt"
 	"github.com/google/uuid"
 	"strings"
 	"time"
@@ -472,18 +473,19 @@ func (g *gameSessionService) AllocateIceServerSet(
 func (g *gameSessionService) ListLatencyMeasurementServers(
 	ctx context.Context, _ *mmpb.ListLatencyMeasurementServersRequest,
 ) (*mmpb.ListLatencyMeasurementServersResponse, error) {
-	if _, ok := CallerFrom(ctx); !ok {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
 		return nil, ErrUnauthenticated
 	}
 
 	out := &mmpb.ListLatencyMeasurementServersResponse{}
-	for _, cfgServer := range g.s.iceServers {
+	for i, cfgServer := range g.s.iceServers {
 		if cfgServer.Kind != "stun" {
 			continue
 		}
 		out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
-			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + cfgServer.Host,
-			Region:   "switchnet",
+			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(i),
+			Region:   latencyServerRegion,
 			Host:     cfgServer.Host,
 			Port:     int32(cfgServer.Port),
 			Protocol: latencyProtocol(cfgServer.Protocol),
@@ -498,14 +500,32 @@ func (g *gameSessionService) ListLatencyMeasurementServers(
 	// than leaving the list empty.
 	if len(out.LatencyMeasurementServers) == 0 && g.s.publicIP != "" {
 		out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
-			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + g.s.publicIP,
-			Region:   "switchnet",
+			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(0),
+			Region:   latencyServerRegion,
 			Host:     g.s.publicIP,
 			Port:     3478,
 			Protocol: mmpb.LatencyMeasurementServer_UDP,
 		})
 	}
+	g.s.log.Info("npln: answered ListLatencyMeasurementServers",
+		"user", caller.UserID, "servers", len(out.LatencyMeasurementServers))
 	return out, nil
+}
+
+// latencyServerRegion is a real GCP region identifier NextendoNetwork/
+// splatoon-3 records as part of the set Nintendo's own latency servers use
+// (facts only, not its code) -- a real-looking value rather than an invented
+// one, on the theory that the resource-name/region parser this project has
+// already found to be strict elsewhere (see internal/ugcstore's README) may
+// validate this field too.
+const latencyServerRegion = "europe-west2"
+
+// latencyServerID renders a dot-free slug for the resource name's last
+// segment -- an IP address there would put dots where the console's
+// resource-name parser does not expect them (the same class of strictness
+// ugcstore's README documents for document names).
+func latencyServerID(i int) string {
+	return fmt.Sprintf("switchnet-%02d-udp", i+1)
 }
 
 func latencyProtocol(name string) mmpb.LatencyMeasurementServer_Protocol {

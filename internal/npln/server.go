@@ -62,6 +62,7 @@ type Server struct {
 
 	tenant         string
 	issuerName     string
+	appID          string
 	accessTokenTTL int
 	env            Environment
 
@@ -200,6 +201,7 @@ func New(opts Options) (*Server, error) {
 		sessionHost:    opts.Config.SessionHost,
 		sessionPort:    int32(opts.Config.SessionPort),
 		issuerName:     opts.Config.Issuer,
+		appID:          opts.Config.AppID,
 		accessTokenTTL: opts.Config.AccessTokenTTL,
 		env:            opts.Env,
 		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),

@@ -368,6 +368,10 @@ npln:
   # accepted from the console.
   tenant: "t-dce9377b-lp1"
 
+  # The title id an access token's npln.app_id claim carries. Splatoon 3's is
+  # 0100c2500fc20000 -- a public, documented constant, not a guessed value.
+  app_id: "0100c2500fc20000"
+
   # NPLN access tokens are ES256 -- the only ES256 tokens in the stack. See
   # internal/jwt's README for why that path is deliberately separate from the
   # RS256 one.
