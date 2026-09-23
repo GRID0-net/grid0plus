@@ -76,7 +76,11 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		m.s.recordMatch(ctx, sess, false)
 	}
 
-	return m.s.ticketProto(ticket), nil
+	proto, err := m.s.ticketProto(ticket)
+	if err != nil {
+		return nil, err
+	}
+	return proto, nil
 }
 
 // recordMatch persists a formed session to the match history, for the
@@ -139,7 +143,11 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 			if !open {
 				return nil
 			}
-			if err := stream.Send(m.s.ticketProto(t)); err != nil {
+			proto, err := m.s.ticketProto(t)
+			if err != nil {
+				return err
+			}
+			if err := stream.Send(proto); err != nil {
 				return err
 			}
 			if terminal(t.State) {
@@ -296,9 +304,13 @@ func (g *gameSessionService) JoinGameSession(
 		return nil, ErrNotFound
 	}
 
+	matched, err := g.s.matchedUserSessions(sess)
+	if err != nil {
+		return nil, err
+	}
 	return &mmpb.JoinGameSessionResponse{
 		GameSession:         g.s.sessionProto(sess),
-		MatchedUserSessions: g.s.matchedUserSessions(sess),
+		MatchedUserSessions: matched,
 	}, nil
 }
 
@@ -543,7 +555,7 @@ func (s *Server) tenantPath() string { return "tenants/" + s.tenant }
 // still parses leniently regardless, since a wrong prefix elsewhere in this
 // package would otherwise cost a cosmetic mismatch instead of a broken Track
 // or Cancel -- this confirmation does not change that defensive choice.
-func (s *Server) ticketProto(t matchmaking.Ticket) *mmpb.MatchmakingTicket {
+func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, error) {
 	out := &mmpb.MatchmakingTicket{
 		Name:              s.tenantPath() + "/matchmakingTickets/" + t.ID,
 		MatchmakingConfig: t.Mode,
@@ -554,18 +566,25 @@ func (s *Server) ticketProto(t matchmaking.Ticket) *mmpb.MatchmakingTicket {
 	}
 
 	if t.SessionID == "" {
-		return out
+		return out, nil
 	}
 	sess, ok := s.queue.Session(t.SessionID)
 	if !ok {
 		// The session aged out from under a ticket somebody is still reading.
 		// The state is still the truth, so the ticket is worth sending without
 		// it rather than failing the stream.
-		return out
+		return out, nil
 	}
 	out.GameSession = s.sessionProto(sess)
-	out.MatchedUserSessions = s.matchedUserSessions(sess)
-	return out
+	matched, err := s.matchedUserSessions(sess)
+	if err != nil {
+		// The session exists and is named, but no player can open it without a
+		// token. Sending the ticket without them would be the 2321-4992 shape
+		// with extra steps, so the call fails instead.
+		return nil, err
+	}
+	out.MatchedUserSessions = matched
+	return out, nil
 }
 
 // sessionProto renders a formed match as the wire message.
@@ -607,27 +626,41 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 	return out
 }
 
-// matchedUserSessions names each player's session in the match.
+// matchedUserSessions names each player's session in the match, and carries the
+// session token that player's console opens its gamesync channel with.
 //
-// MatchmakingIdToken is deliberately left empty. It is NPLN's mechanism for one
-// player to prove to another that the server placed them in this match, and
-// SwitchNet issues no such token: peers here are consoles on one operator's own
-// network, and a token nobody verifies is a token that only looks like a
-// safeguard.
+// The token was left empty here until 2026-09-23, on the reasoning that
+// SwitchNet verified no such token, so issuing one would only look like a
+// safeguard. That reasoning was wrong about who the reader is, and a real
+// console paid for it: the console reads gsid, usid, uid and tid out of the
+// token's 'gamesync' object to build Gamesync/IssueToken and then
+// KeepUserSession (see issueSessionToken), so with this field empty the console
+// opens its session channel to the session host and never sends a request at
+// all -- the connection dies after about a second and the game reports
+// 2321-4992.
 //
-// TODO(capture-needed): whether Splatoon 3 refuses to start a match when this
-// is absent. If it does, this becomes a real signed token rather than a gap,
-// and the thing it has to be signed with is the same key IssueToken uses.
-// Change: this function.
-func (s *Server) matchedUserSessions(sess matchmaking.Session) []*mmpb.MatchedUserSession {
+// One token per player rather than one per match, because each names its own
+// player as the subject: a shared token would let the first console that
+// received it open a gamesync session as somebody else.
+//
+// The whole set is minted before any of it is returned. A match where some
+// players can open their session and others cannot is the failure this codebase
+// is shaped around, one phase later: the ones who did get in sit in a lobby
+// that never fills.
+func (s *Server) matchedUserSessions(sess matchmaking.Session) ([]*mmpb.MatchedUserSession, error) {
 	out := make([]*mmpb.MatchedUserSession, 0, len(sess.Players))
 	for _, userID := range sess.Players {
+		token, err := s.issueSessionToken(userID, sess.ID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, &mmpb.MatchedUserSession{
-			UserDefinition: &mmpb.UserDefinition{User: userResourceName(userID)},
-			UserSession:    s.userSessionName(sess.ID, userID),
+			UserDefinition:     &mmpb.UserDefinition{User: userResourceName(userID)},
+			UserSession:        s.userSessionName(sess.ID, userID),
+			MatchmakingIdToken: token,
 		})
 	}
-	return out
+	return out, nil
 }
 
 func (s *Server) userSessionName(sessionID, userID string) string {

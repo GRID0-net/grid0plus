@@ -483,12 +483,15 @@ was first written; fifty-two as of the gamesync/nplnrest work). This
 paragraph deliberately names no number of its own from here on, to stop
 repeating the same drift.
 
-Two from the original five are still the ones that change behaviour rather
+One of the original five is still the one that changes behaviour rather
 than cosmetics, not just naming: whether the game sends more than one
 `UserDefinition` when a squad queues together (a squad currently has
-everyone but the leader dropped), and whether it refuses to start a match
-with an empty `MatchmakingIdToken` (a gap SwitchNet cannot fill without
-issuing a credential nothing verifies). Newer arrivals worth the same
+everyone but the leader dropped). Another was answered on 2026-09-23 and is
+no longer a question: the game does refuse to start a match handed an empty
+`MatchmakingIdToken`, because the console — not the server — is its reader,
+and without it the session channel opens and never sends a request
+(`2321-4992` on `KeepUserSession`). SwitchNet mints it now; see
+[npln-session-token-2026-09-23.md](docs/CAPTURES/npln-session-token-2026-09-23.md). Newer arrivals worth the same
 weight: `Messaging.RecvMessage`'s empty-resume-token behaviour (get it
 backwards and an invite mailbox either loses invites silently or replays
 stale ones on every reconnect), and whether a real client dials

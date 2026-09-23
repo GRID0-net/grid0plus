@@ -137,13 +137,38 @@ func (i *ECIssuer) Key() ECKey { return i.key }
 
 // Sign signs claims and returns the compact serialisation.
 func (i *ECIssuer) Sign(claims gojwt.Claims) (string, error) {
-	tok := gojwt.NewWithClaims(gojwt.SigningMethodES256, claims)
-	tok.Header = map[string]any{
+	return i.sign(map[string]any{
 		"alg": "ES256",
 		"jku": i.jwksURL,
 		"kid": i.key.ID,
 		"typ": "JWT",
-	}
+	}, claims)
+}
+
+// SignSessionToken signs claims with the header NPLN's session token carries:
+// {alg, kid} and nothing else.
+//
+// A two-member header where every other ES256 token here has four. The reason
+// is a capture, and the absence is the whole point: the response the console
+// takes its session token out of — NextendoNetwork/splatoon-3's hardware
+// capture of TrackGameSessionCreationTicket, MatchedUserSession field 3 — has a
+// header of exactly {"alg":"ES256","kid":"754fe17e-…"}. No 'jku', so a client
+// that compared this header against the shape it expects never sees a key-set
+// URL it has never heard of; no 'typ'.
+//
+// Whether the client looks at the header at all is unconfirmed. Emitting the
+// measured shape costs nothing and takes the question off the list — the same
+// reasoning NewECIssuer's own comment gives for seeing 'typ' everywhere else.
+func (i *ECIssuer) SignSessionToken(claims gojwt.Claims) (string, error) {
+	return i.sign(map[string]any{
+		"alg": "ES256",
+		"kid": i.key.ID,
+	}, claims)
+}
+
+func (i *ECIssuer) sign(header map[string]any, claims gojwt.Claims) (string, error) {
+	tok := gojwt.NewWithClaims(gojwt.SigningMethodES256, claims)
+	tok.Header = header
 	return tok.SignedString(i.key.Private)
 }
 

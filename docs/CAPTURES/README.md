@@ -483,10 +483,16 @@ this version deliberately names no number to keep stale).
   confirms what Splatoon 3 actually receives or how strictly it parses it.
   `lastSegment` deliberately parses leniently so a wrong prefix costs a
   cosmetic mismatch rather than a broken `Track`/`Cancel`.
-- **The matched-session security token**
-  (`internal/npln/matchmaking.go:394`, `matchedUserSessions`): whether
-  Splatoon 3 refuses to start a match when this is absent. If it does, it
-  needs to become a real token signed with the same key `IssueToken` uses.
+- **The matched-session security token** — **ANSWERED 2026-09-23, and it is
+  required**: see [npln-session-token-2026-09-23.md](npln-session-token-2026-09-23.md).
+  The console reads `gsid`/`usid`/`uid`/`tid` out of the token's `gamesync`
+  object to open its session, so a match that hands out none leaves the console
+  opening TCP+TLS+h2 and never sending a request — `2321-4992` on
+  `KeepUserSession`, with nothing in the server's log. SwitchNet mints the
+  measured shape now (`internal/npln/auth.go`, `issueSessionToken`). Still open,
+  and only a console of our own can settle it: whether one accepts a token
+  SwitchNet signed. Two fields also go out on defaults rather than evidence —
+  `team` (Splatfest teams are announced but not assigned) and `attr`/`ltcy`.
 - **`Auth.RefreshToken`**
   (`internal/npln/services.go:72`, `IssueToken`): whether Splatoon 3 ever
   calls it at all, and what it expects back. SwitchNet issues no refresh

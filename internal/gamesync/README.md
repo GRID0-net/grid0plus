@@ -33,18 +33,25 @@ different decision.
 ## How a console gets in
 
 ```
-gateway: IssueMatchmakingIdToken   ES256, aud "gamesync", 5-minute TTL
-gamesync: IssueToken               verifies it, returns an opaque session handle
+gateway: a session token per player   ES256, iss "gss", 1-hour TTL
+gamesync: IssueToken                  verifies it, returns an opaque session handle
 ```
 
-Three things about that:
+Four things about that:
 
 - **the id token is verified, not read.** A console cannot name itself; the
   signature is what binds the name to the caller.
-- **the audience is what keeps the credentials apart.** An NPLN access token and
-  a matchmaking id token are both ES256 signed by the same key. `aud` is the only
-  thing stopping an access token — which acts on the account API — being accepted
-  here.
+- **the issuer is what keeps the credentials apart.** An NPLN access token and a
+  session token are both ES256 signed by the same key. `iss` separates them: a
+  session token says `gss` and carries the `gamesync` object the console reads,
+  where an access token — which acts on the account API — carries the tenant URL
+  as its issuer and no such block.
+- **the shape is the console's, not ours.** The token arrives inside the ticket
+  (`MatchedUserSession.matchmaking_id_token`) and the console takes
+  `gsid`/`usid`/`uid`/`tid` out of it before it calls `IssueToken` at all, so the
+  field names are a client-facing contract — see
+  `docs/CAPTURES/npln-session-token-2026-09-23.md` for the capture that settles
+  them, and `internal/npln/auth.go`'s `issueSessionToken` for the shape itself.
 - **the gateway issues id tokens for the caller's own user only.** The protocol
   names this case itself, `INCLUDE_ID_TOKEN_FOR_SAME_CLIENT`. A request naming
   somebody else is refused rather than filtered: a console that asked for two

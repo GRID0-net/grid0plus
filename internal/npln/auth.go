@@ -33,12 +33,18 @@ type Caller struct {
 // the token was signed. A claim baked into a token is a fact frozen at issue
 // time, and this project has already been bitten by treating one as current.
 type nplnClaims struct {
-	Subject  string `json:"sub"`
-	Issuer   string `json:"iss"`
-	Audience string `json:"aud"`
+	Subject string `json:"sub"`
+	Issuer  string `json:"iss"`
+	// Audience is empty on a session token, and absent from the wire when it
+	// is: a real one (see issueSessionToken) carries five members and 'aud' is
+	// not among them. An access token still always sets it -- the tenant.
+	Audience string `json:"aud,omitempty"`
 	Expires  int64  `json:"exp"`
 	IssuedAt int64  `json:"iat"`
-	TokenID  string `json:"jti"`
+	// TokenID is empty on a session token for the same reason: the capture has
+	// no 'jti' either, and a claim the client has never seen is a difference
+	// worth not introducing.
+	TokenID string `json:"jti,omitempty"`
 
 	// DeviceAccountID is the console this token was issued to, carried so that
 	// the same device-account ownership check BAAS makes on every request can
@@ -48,6 +54,32 @@ type nplnClaims struct {
 	// SessionID is the game session a matchmaking id token was issued for.
 	// Absent on an access token, which is not about one match.
 	SessionID string `json:"npln:gsid,omitempty"`
+
+	// Gamesync is the session block a session token carries, and it is there
+	// for the console rather than for this server: the client reads gsid, usid,
+	// uid and tid out of it to open its gamesync session. Present only on a
+	// session token -- see issueSessionToken.
+	Gamesync *gamesyncClaim `json:"gamesync,omitempty"`
+}
+
+// gamesyncClaim is the 'gamesync' object a session token carries.
+//
+// Field for field the shape a hardware capture of a working server shows
+// (NextendoNetwork/splatoon-3's capture of TrackGameSessionCreationTicket,
+// MatchedUserSession field 3). The two fields SwitchNet has no source for are
+// present and empty rather than absent or invented: 'team' is a Splatfest team,
+// which this server announces but does not assign, and 'attr'/'ltcy' are the
+// client's own attribute and latency JSON, which the capture shows as "{}" and
+// {"latencies":{}} for a session that has not gathered either yet.
+type gamesyncClaim struct {
+	Attr string `json:"attr"`
+	GSID string `json:"gsid"`
+	LTCY string `json:"ltcy"`
+	Team string `json:"team"`
+	TID  string `json:"tid"`
+	Typ  int    `json:"typ"`
+	UID  string `json:"uid"`
+	USID string `json:"usid"`
 }
 
 func (c nplnClaims) GetExpirationTime() (*gojwt.NumericDate, error) {
@@ -228,53 +260,93 @@ func (s *Server) issueAccessToken(c Caller, now time.Time) (string, time.Duratio
 	return tok, ttl, nil
 }
 
-// matchmakingIDTokenAudience is the 'aud' of a matchmaking id token.
+// sessionTokenIssuer is the 'iss' of a session token: literally "gss".
 //
-// A distinct audience from an access token's, which is the tenant. That is what
-// stops one being used where the other belongs: gamesync accepts only this
-// audience, so an access token presented to it is refused even though both are
-// ES256 and signed by the same key.
-const matchmakingIDTokenAudience = "gamesync"
-
-// matchmakingIDTokenTTL is how long a matchmaking id token is good for.
+// Not s.issuerName, which is what an access token carries. The console is the
+// reader of this one (see issueSessionToken), and "gss" is the value a real one
+// carries -- the game's own name for the session service it is about to call.
 //
-// Five minutes. It exists to be handed straight to gamesync, which exchanges it
-// for a session of its own, so its whole life is one round trip — and a
-// short-lived credential that leaks is worth much less than a long-lived one.
-const matchmakingIDTokenTTL = 5 * time.Minute
+// It is also what keeps the two credentials apart now that neither is separated
+// by an audience: an access token's issuer is the tenant URL and it carries no
+// gamesync block, so VerifyMatchmakingIDToken refuses it.
+const sessionTokenIssuer = "gss"
 
-// issueMatchmakingIDToken signs a token a player presents to gamesync.
-func (s *Server) issueMatchmakingIDToken(c Caller, sessionID string) (string, error) {
+// sessionTokenTTL is how long a session token is good for.
+//
+// An hour, from the capture: exp - iat = 3600 there. Longer than one match's
+// bring-up needs and no longer than that: the token's whole life is "open the
+// gamesync session for this match".
+const sessionTokenTTL = time.Hour
+
+// issueSessionToken mints the token a match hands one player.
+//
+// Signed with the same ES256 key as every other NPLN token — gamesync verifies
+// it through VerifyMatchmakingIDToken — but shaped for the CONSOLE to read,
+// because the console is what reads it: npl1 takes gsid, usid, uid and tid out
+// of the 'gamesync' object here to build Gamesync/IssueToken and then
+// KeepUserSession. That is measured, not inferred, and so is the cost of
+// getting it wrong: with this token absent or shaped differently the console
+// opens TCP+TLS+h2 to the session host and never sends a HEADERS frame at all,
+// the connection drops after about a second, and the game reports 2321-4992 on
+// KeepUserSession with nothing in this server's log — because from this side
+// nothing was ever called. See docs/CAPTURES/npln-session-token-2026-09-23.md.
+//
+// The signature is what makes the ids trustworthy: a console cannot write its
+// own gsid, so a match cannot be joined by naming yourself into it.
+func (s *Server) issueSessionToken(userID, sessionID string) (string, error) {
 	now := s.now()
-	tok, err := s.issuer.Sign(nplnClaims{
-		Subject:  c.UserID,
-		Issuer:   s.issuerName,
-		Audience: matchmakingIDTokenAudience,
+	tok, err := s.issuer.SignSessionToken(nplnClaims{
+		Subject:  userID,
+		Issuer:   sessionTokenIssuer,
 		IssuedAt: now.Unix(),
-		Expires:  now.Add(matchmakingIDTokenTTL).Unix(),
-		TokenID:  sjwt.NewTokenID(),
-		// The session, so a token issued for one match cannot be replayed into
-		// another. Not enforced by gamesync today -- it has no view of matches
-		// -- but present so that becoming enforced is a change in one place
-		// rather than a new token format.
-		SessionID: sessionID,
-		// No device account. The device-account ownership check belongs to the
-		// gateway, which re-reads it on every call; carrying it here would
-		// invite gamesync to make the same check against a fact frozen at issue
-		// time.
+		Expires:  now.Add(sessionTokenTTL).Unix(),
+		Gamesync: &gamesyncClaim{
+			Attr: "{}",
+			GSID: sessionID,
+			LTCY: `{"latencies":{}}`,
+			// A Splatfest team. SwitchNet announces fests but does not place a
+			// player on a team, so this is empty rather than guessed.
+			Team: "",
+			TID:  s.tenant,
+			Typ:  1,
+			UID:  userID,
+			// The user session's own id: the last segment of
+			// userSessionName, which here is the user id, because a session
+			// is addressed by the player it belongs to.
+			USID: userID,
+		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("sign matchmaking id token: %w", err)
+		// Logged here rather than at each caller: this is the one place that
+		// knows which player and which session the failure belongs to, and the
+		// status itself says nothing (see errInternal).
+		s.log.Error("npln: sign session token",
+			"user", userID, "session", sessionID, "error", err)
+		return "", errInternal()
 	}
 	return tok, nil
 }
 
-// VerifyMatchmakingIDToken resolves a matchmaking id token to its player.
+// issueMatchmakingIDToken signs the same token by name, for the RPC that will
+// hand one out on request.
+//
+// The same credential as a match hands its players, not a second kind:
+// IssueMatchmakingIdToken's own field is the one the ticket's
+// MatchedUserSession carries, so a console that asked for it there and a
+// console that read it off a ticket hold identical tokens. The RPC itself is
+// not registered yet (see README's table), which is why nothing calls this.
+func (s *Server) issueMatchmakingIDToken(c Caller, sessionID string) (string, error) {
+	return s.issueSessionToken(c.UserID, sessionID)
+}
+
+// VerifyMatchmakingIDToken resolves a session token to its player.
 //
 // Exported because internal/gamesync needs it and must not import this package's
-// internals: cmd/npln hands this method across as a function. It is the same
-// key, so there is nothing to distribute — but it is a different audience, which
-// is what makes an access token unusable there.
+// internals: cmd/npln hands this method across as a function. The same key signs
+// every token here, so the issuer is what separates them: a session token says
+// 'iss' "gss" and carries the gamesync block the console reads. An access token
+// — which acts on the account API, not on a match — has neither, and is refused
+// rather than accepted on its subject.
 func (s *Server) VerifyMatchmakingIDToken(idToken string) (string, error) {
 	if idToken == "" {
 		return "", errors.New("no token")
@@ -284,11 +356,9 @@ func (s *Server) VerifyMatchmakingIDToken(idToken string) (string, error) {
 	if err := s.tokens.Verify(idToken, &claims); err != nil {
 		return "", err
 	}
-	if claims.Audience != matchmakingIDTokenAudience {
-		// An access token, or a token for something else. Refused rather than
-		// accepted on its subject: the audience is the only thing separating a
-		// credential for the account API from one for a game service.
-		return "", fmt.Errorf("wrong audience %q", claims.Audience)
+	if claims.Issuer != sessionTokenIssuer || claims.Gamesync == nil {
+		return "", fmt.Errorf("not a session token (iss %q, gamesync %t)",
+			claims.Issuer, claims.Gamesync != nil)
 	}
 	if claims.Subject == "" {
 		return "", errors.New("no subject")
