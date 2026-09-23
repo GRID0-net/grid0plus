@@ -30,7 +30,7 @@ keeps them apart and `cmd/switchnetctl`'s generator tests assert it.
 | `server.go` | the gRPC server, the interceptors, and the unauthenticated-method allowlist |
 | `metadata.go` | the `npln-tenant-id` / `authorization` / `uid` metadata |
 | `auth.go` | the BAAS id-token seam, token issue, and identity resolution |
-| `services.go` | auth, maintenance and toyohr/gamesync registration |
+| `services.go` | auth, maintenance, Ugcstore (`internal/ugcstore`) and toyohr/gamesync registration |
 | `matchmaking.go` | `Matchmaker` and `GameSessionService`, over `internal/matchmaking`'s queue |
 | `friends.go` | `Friends`, over `internal/db`'s friendship store — the same rows BAAS reads |
 | `presence_service.go` | `PresenceService`, over `internal/presence`'s TTL rules — the same rules BAAS reads |

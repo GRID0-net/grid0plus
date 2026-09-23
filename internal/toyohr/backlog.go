@@ -121,13 +121,12 @@ func (s replayService) FulfillReservations(
 
 // ---- nn.npln.toyohr.v1.GameRecord --------------------------------------------
 //
-// CreateBankaraChallenge, InitializeAttributes and CreateFestPowerMeasurement
-// are all writes that report real battle outcomes and rank/power state --
-// deeply Nintendo-internal rating data (InitializeAttributesRequest alone
-// carries per-mode X Power seed values for Area/Lift/Goal/Clam) with no
-// defensible default. Inventing initial values here is exactly the
-// plausible-looking-Nintendo-internal CLAUDE.md's first rule forbids, so
-// all three are left entirely to the embedded Unimplemented default.
+// CreateBankaraChallenge and CreateFestPowerMeasurement are writes that report
+// real battle outcomes and rank/power state -- deeply Nintendo-internal rating
+// data with no defensible default -- so both are left to the embedded
+// Unimplemented default. InitializeAttributes is implemented (game_record.go):
+// the game's own parser keeps its defaults for any absent key, so that answer
+// needs no invented value, only what the request itself carries.
 //
 // The real GameRecord service has more RPCs than this file, this package's
 // proto, and kinnay's public NPLN-Protocols repo all know about. A

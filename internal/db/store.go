@@ -185,6 +185,16 @@ type FriendCode struct {
 func (f FriendCode) Regenerable(t time.Time) bool { return !t.Before(f.RegenerableAt) }
 
 // Friendship is one direction of a mutual friendship.
+// UGCDocument is one NPLN Ugcstore document. Fields is the document's
+// nn.npln.common.MapValue, protobuf-encoded; the store does not look inside.
+type UGCDocument struct {
+	Name       string
+	Owner      string
+	Fields     []byte
+	CreateTime time.Time
+	UpdateTime time.Time
+}
+
 // NARefreshToken is one Nintendo Account link refresh token. TokenSHA256 is
 // the lowercase hex SHA-256 of the token; the token itself is never stored.
 type NARefreshToken struct {
@@ -702,6 +712,13 @@ type Store interface {
 	// GetNARefreshToken returns the token with this hash, or ErrNotFound if
 	// there is none or it expired at or before now.
 	GetNARefreshToken(ctx context.Context, tokenSHA256 string, now time.Time) (NARefreshToken, error)
+
+	// GetUGCDocument returns a Ugcstore document by name, or ErrNotFound.
+	GetUGCDocument(ctx context.Context, name string) (UGCDocument, error)
+	// PutUGCDocument creates or replaces a Ugcstore document.
+	PutUGCDocument(ctx context.Context, d UGCDocument) error
+	// DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
+	DeleteUGCDocument(ctx context.Context, name string) error
 
 	// ---- friend requests ----
 

@@ -66,6 +66,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"friendCodes":               testFriendCodes,
 		"friendships":               testFriendships,
 		"naRefreshTokens":           testNARefreshTokens,
+		"ugcDocuments":              testUGCDocuments,
 		"friendRequests":            testFriendRequests,
 		"blocks":                    testBlocks,
 		"presence":                  testPresence,
@@ -1957,5 +1958,56 @@ func testNARefreshTokens(t *testing.T, s Store) {
 	}
 	if got, err := s.GetNARefreshToken(ctx, bare.TokenSHA256, now); err != nil || len(got.Scope) != 0 {
 		t.Errorf("scope-less token: %+v, %v", got, err)
+	}
+}
+
+func testUGCDocuments(t *testing.T, s Store) {
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	name := "tenants/t-x-lp1/documents/services/GameRecord/users/u1/VsUserAttribute/Data"
+
+	if _, err := s.GetUGCDocument(ctx, name); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("get before put: err = %v, want ErrNotFound", err)
+	}
+	d := UGCDocument{Name: name, Owner: "u1", Fields: []byte{0x0a, 0x01}, CreateTime: now, UpdateTime: now}
+	if err := s.PutUGCDocument(ctx, d); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	got, err := s.GetUGCDocument(ctx, name)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Owner != "u1" || string(got.Fields) != string(d.Fields) ||
+		!got.CreateTime.Equal(now) || !got.UpdateTime.Equal(now) {
+		t.Errorf("got %+v, want %+v", got, d)
+	}
+
+	// Replacing keeps one row and the new content.
+	later := now.Add(time.Minute)
+	d.Fields, d.UpdateTime = []byte{0x0a, 0x02, 0x03}, later
+	if err := s.PutUGCDocument(ctx, d); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if got, _ := s.GetUGCDocument(ctx, name); string(got.Fields) != string(d.Fields) || !got.UpdateTime.Equal(later) {
+		t.Errorf("after replace: %+v", got)
+	}
+
+	// An empty field set is a document, not an absence.
+	empty := UGCDocument{Name: name + "2", Owner: "u1", CreateTime: now, UpdateTime: now}
+	if err := s.PutUGCDocument(ctx, empty); err != nil {
+		t.Fatalf("put empty: %v", err)
+	}
+	if got, err := s.GetUGCDocument(ctx, empty.Name); err != nil || len(got.Fields) != 0 {
+		t.Errorf("empty document: %+v, %v", got, err)
+	}
+
+	if err := s.DeleteUGCDocument(ctx, name); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.GetUGCDocument(ctx, name); !errors.Is(err, ErrNotFound) {
+		t.Errorf("get after delete: err = %v, want ErrNotFound", err)
+	}
+	if err := s.DeleteUGCDocument(ctx, name); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second delete: err = %v, want ErrNotFound", err)
 	}
 }

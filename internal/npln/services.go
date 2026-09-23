@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/switchnet/internal/ugcstore"
 	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
 	globalcounterpb "github.com/n-popescu/switchnet/proto/globalcounter/v1"
@@ -44,21 +45,32 @@ func (s *Server) register() {
 	globalcounterpb.RegisterGlobalCounterServiceServer(s.grpc, &globalcounterpb.UnimplementedGlobalCounterServiceServer{})
 	leaderboardpb.RegisterLeaderboardServiceServer(s.grpc, &leaderboardpb.UnimplementedLeaderboardServiceServer{})
 
+	callerID := func(ctx context.Context) (string, bool) {
+		c, ok := CallerFrom(ctx)
+		return c.UserID, ok
+	}
+
+	// The document store Splatoon 3 keeps its per-player records in. Shared
+	// with toyohr: GameRecord/InitializeAttributes creates documents the
+	// console then reads through this service.
+	docs := ugcstore.NewService(ugcstore.Options{
+		Store: s.store, Log: s.log, Tenant: s.tenant, Now: s.now, CallerID: callerID,
+	})
+	docs.Register(s.grpc)
+
 	// Splatoon 3's own services. They authenticate through the same
 	// interceptor as everything else -- a fest is announced to a console that
 	// proved who it is, not to anyone who asks.
 	toyohr.NewService(toyohr.Options{
-		Store:    s.store,
-		Log:      s.log,
-		Tenant:   s.tenant,
-		Now:      s.now,
-		Rotation: s.rotation,
+		Store:     s.store,
+		Log:       s.log,
+		Tenant:    s.tenant,
+		Now:       s.now,
+		Rotation:  s.rotation,
+		Documents: docs,
 		// The identity comes from this package's interceptor. toyohr cannot
 		// import it back without a cycle, so it is handed in.
-		CallerID: func(ctx context.Context) (string, bool) {
-			c, ok := CallerFrom(ctx)
-			return c.UserID, ok
-		},
+		CallerID: callerID,
 	}).Register(s.grpc)
 }
 

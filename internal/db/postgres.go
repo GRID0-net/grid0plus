@@ -668,6 +668,45 @@ func (p *Postgres) SetFavorite(ctx context.Context, userID, friendID string, fav
 	return nil
 }
 
+// ---- NPLN Ugcstore documents ----------------------------------------------
+
+// GetUGCDocument returns a Ugcstore document by name, or ErrNotFound.
+func (p *Postgres) GetUGCDocument(ctx context.Context, name string) (UGCDocument, error) {
+	var d UGCDocument
+	err := p.pool.QueryRow(ctx, `
+		SELECT name, owner, fields, create_time, update_time
+		FROM ugc_documents WHERE name = $1`, name).
+		Scan(&d.Name, &d.Owner, &d.Fields, &d.CreateTime, &d.UpdateTime)
+	return d, mapErr(err)
+}
+
+// PutUGCDocument creates or replaces a Ugcstore document.
+func (p *Postgres) PutUGCDocument(ctx context.Context, d UGCDocument) error {
+	if d.Fields == nil {
+		d.Fields = []byte{}
+	}
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO ugc_documents (name, owner, fields, create_time, update_time)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (name) DO UPDATE
+		SET owner = EXCLUDED.owner, fields = EXCLUDED.fields,
+		    create_time = EXCLUDED.create_time, update_time = EXCLUDED.update_time`,
+		d.Name, d.Owner, d.Fields, d.CreateTime, d.UpdateTime)
+	return mapErr(err)
+}
+
+// DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
+func (p *Postgres) DeleteUGCDocument(ctx context.Context, name string) error {
+	tag, err := p.pool.Exec(ctx, `DELETE FROM ugc_documents WHERE name = $1`, name)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ---- Nintendo Account refresh tokens -------------------------------------
 
 // CreateNARefreshToken stores a refresh token, and drops any that expired

@@ -12,7 +12,7 @@ import (
 )
 
 // TestAnUnregisteredServiceAnswersInTwoFrames pins the answer to a service this
-// server does not register (Ugcstore here). grpc-go's own default is a single
+// server does not register (Screening here). grpc-go's own default is a single
 // Trailers-Only frame -- no response headers at all -- which is the shape
 // measured crashing Splatoon 3 (2162-0001). Response headers arriving, with
 // npln-grpc-type in them, is what proves the reply was split in two.
@@ -22,9 +22,8 @@ func TestAnUnregisteredServiceAnswersInTwoFrames(t *testing.T) {
 	ctx := h.ctx(h.sessionFor(t, "ugc-user", "device-ugc"), "")
 
 	var header metadata.MD
-	_, err := ugcpb.NewUgcstoreClient(h.conn).GetDocument(ctx,
-		&ugcpb.GetDocumentRequest{Name: "tenants/" + testTenant + "/documents/x"},
-		grpc.Header(&header))
+	_, err := ugcpb.NewScreeningClient(h.conn).CreateReport(ctx,
+		&ugcpb.CreateReportRequest{}, grpc.Header(&header))
 	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("err = %v, want Unimplemented", err)
 	}
@@ -33,8 +32,7 @@ func TestAnUnregisteredServiceAnswersInTwoFrames(t *testing.T) {
 	}
 
 	// And it is still behind authentication, like every registered service.
-	_, err = ugcpb.NewUgcstoreClient(h.conn).GetDocument(h.ctx("", ""),
-		&ugcpb.GetDocumentRequest{Name: "tenants/" + testTenant + "/documents/x"})
+	_, err = ugcpb.NewScreeningClient(h.conn).CreateReport(h.ctx("", ""), &ugcpb.CreateReportRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("unauthenticated call: err = %v, want Unauthenticated", err)
 	}

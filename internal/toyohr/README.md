@@ -14,7 +14,11 @@ works if the console's asking is recorded.
 
 `backlog.go` carries a note on each unimplemented one saying what taking it on
 would involve. `GameRecord` is the one that matters most — battle results come
-from there, and battle results are the missing half of a fest verdict.
+from there, and battle results are the missing half of a fest verdict. Its
+`InitializeAttributes` is implemented (`game_record.go`): it creates the
+player's `VsUserAttribute`/`CoopUserAttribute` document in `internal/ugcstore`
+from only what the request carries, since the game keeps its own defaults for
+any key that is absent.
 
 | | |
 | --- | --- |

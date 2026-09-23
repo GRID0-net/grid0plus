@@ -42,6 +42,7 @@ type Memory struct {
 	matches []Match
 
 	naRefreshTokens map[string]NARefreshToken
+	ugcDocuments    map[string]UGCDocument
 
 	saveDataArchives map[string]SaveDataArchive
 	// componentFiles is keyed by archive id then component file id, the same
@@ -66,6 +67,7 @@ func NewMemory() *Memory {
 		images:         map[string]Image{},
 
 		naRefreshTokens: map[string]NARefreshToken{},
+		ugcDocuments:    map[string]UGCDocument{},
 
 		saveDataArchives: map[string]SaveDataArchive{},
 		componentFiles:   map[string]map[string]ComponentFile{},
@@ -552,6 +554,40 @@ func (m *Memory) SetFavorite(_ context.Context, userID, friendID string, favorit
 	}
 	f.Favorite = favorite
 	m.friendships[userID][friendID] = f
+	return nil
+}
+
+// ---- NPLN Ugcstore documents ----------------------------------------------
+
+// GetUGCDocument returns a Ugcstore document by name, or ErrNotFound.
+func (m *Memory) GetUGCDocument(_ context.Context, name string) (UGCDocument, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	d, ok := m.ugcDocuments[name]
+	if !ok {
+		return UGCDocument{}, ErrNotFound
+	}
+	d.Fields = append([]byte(nil), d.Fields...)
+	return d, nil
+}
+
+// PutUGCDocument creates or replaces a Ugcstore document.
+func (m *Memory) PutUGCDocument(_ context.Context, d UGCDocument) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d.Fields = append([]byte{}, d.Fields...)
+	m.ugcDocuments[d.Name] = d
+	return nil
+}
+
+// DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
+func (m *Memory) DeleteUGCDocument(_ context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.ugcDocuments[name]; !ok {
+		return ErrNotFound
+	}
+	delete(m.ugcDocuments, name)
 	return nil
 }
 

@@ -1,0 +1,202 @@
+package npln
+
+import (
+	"context"
+	"testing"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
+
+	commonpb "github.com/n-popescu/switchnet/proto/common"
+	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+)
+
+func intV(n int64) *commonpb.Value {
+	return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
+}
+
+func update(name string, fields map[string]*commonpb.Value, mask ...string) *ugcpb.WriteOperation {
+	u := &ugcpb.UpdateDocumentRequest{Document: &ugcpb.Document{Name: name, Fields: &commonpb.MapValue{Fields: fields}}}
+	if len(mask) > 0 {
+		u.UpdateMask = &fieldmaskpb.FieldMask{Paths: mask}
+	}
+	return &ugcpb.WriteOperation{OperationType: &ugcpb.WriteOperation_UpdateDocument{UpdateDocument: u}}
+}
+
+func ugcHarness(t *testing.T) (*harness, context.Context, ugcpb.UgcstoreClient) {
+	t.Helper()
+	h := newHarness(t)
+	h.createUser("ugc0000000000001", "device-ugc-1")
+	h.createUser("ugc0000000000002", "device-ugc-2")
+	ctx := h.ctx(h.sessionFor(t, "ugc0000000000001", "device-ugc-1"), "")
+	return h, ctx, ugcpb.NewUgcstoreClient(h.conn)
+}
+
+// TestAMissingDocumentIsATwoFrameNotFound: the answer a fresh player's first
+// read has to get. NotFound, with response headers of its own -- a single
+// Trailers-Only frame, or an empty Document, is what crashed Splatoon 3.
+func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
+	_, ctx, c := ugcHarness(t)
+	var header metadata.MD
+	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{
+		Name: "tenants/current/documents/services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data",
+	}, grpc.Header(&header))
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("GetDocument = %v, %v; want NotFound", doc, err)
+	}
+	if len(header.Get("npln-grpc-type")) == 0 {
+		t.Error("NotFound arrived as a single Trailers-Only frame")
+	}
+}
+
+// TestAWrittenDocumentReadsBackUnderEitherTenantForm: the game writes and
+// reads its own documents and may name its tenant "current" or in full.
+func TestAWrittenDocumentReadsBackUnderEitherTenantForm(t *testing.T) {
+	_, ctx, c := ugcHarness(t)
+	path := "/documents/services/Hammer/users/ugc0000000000001/UserAttribute/Data"
+	if _, err := c.CommitDocuments(ctx, &ugcpb.CommitDocumentsRequest{
+		WriteOperations: []*ugcpb.WriteOperation{update("tenants/current"+path,
+			map[string]*commonpb.Value{"level": intV(3)})},
+	}); err != nil {
+		t.Fatalf("CommitDocuments: %v", err)
+	}
+	for _, name := range []string{"tenants/current" + path, "tenants/" + testTenant + path} {
+		doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: name})
+		if err != nil {
+			t.Fatalf("GetDocument(%s): %v", name, err)
+		}
+		if doc.GetName() != name {
+			t.Errorf("name = %q, want the name asked for, %q", doc.GetName(), name)
+		}
+		if doc.GetFields().GetFields()["level"].GetIntegerValue() != 3 {
+			t.Errorf("fields = %v, want level=3", doc.GetFields())
+		}
+	}
+}
+
+// TestCommitAppliesMasksTransformsAndPreconditionsAllOrNothing covers the
+// write semantics, and that a refused operation leaves the batch unwritten.
+func TestCommitAppliesMasksTransformsAndPreconditionsAllOrNothing(t *testing.T) {
+	_, ctx, c := ugcHarness(t)
+	name := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/PointCardTotal/Data"
+	commit := func(ops ...*ugcpb.WriteOperation) (*ugcpb.CommitDocumentsResponse, error) {
+		return c.CommitDocuments(ctx, &ugcpb.CommitDocumentsRequest{WriteOperations: ops})
+	}
+	get := func() map[string]*commonpb.Value {
+		doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: name})
+		if err != nil {
+			t.Fatalf("GetDocument: %v", err)
+		}
+		return doc.GetFields().GetFields()
+	}
+
+	if _, err := commit(update(name, map[string]*commonpb.Value{"a": intV(1), "b": intV(2)})); err != nil {
+		t.Fatal(err)
+	}
+	// A mask changes only its paths: a listed path missing from the document
+	// is removed, an unlisted one is kept.
+	if _, err := commit(update(name, map[string]*commonpb.Value{"a": intV(10)}, "a", "b")); err != nil {
+		t.Fatal(err)
+	}
+	if f := get(); f["a"].GetIntegerValue() != 10 || f["b"] != nil {
+		t.Errorf("after masked update: %v, want a=10 and b removed", f)
+	}
+
+	inc := &ugcpb.WriteOperation{OperationType: &ugcpb.WriteOperation_TransformDocument{
+		TransformDocument: &ugcpb.TransformDocumentRequest{Name: name, FieldTransforms: []*ugcpb.FieldTransform{{
+			FieldPath:     "a",
+			TransformType: &ugcpb.FieldTransform_Increment{Increment: intV(5)},
+		}}},
+	}}
+	res, err := commit(inc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.GetWriteResults()[0].GetTransformResults()[0].GetIntegerValue(); got != 15 {
+		t.Errorf("increment result = %d, want 15 (and still an integer)", got)
+	}
+
+	// exists=false on a document that exists fails -- and the valid update
+	// before it in the same batch must not be written either.
+	mustNotExist := update(name, map[string]*commonpb.Value{"a": intV(99)})
+	mustNotExist.GetUpdateDocument().CurrentDocument = &ugcpb.Precondition{
+		ConditionType: &ugcpb.Precondition_Exists{Exists: false}}
+	_, err = commit(update(name, map[string]*commonpb.Value{"a": intV(50)}, "a"), mustNotExist)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("precondition: err = %v, want FailedPrecondition", err)
+	}
+	if f := get(); f["a"].GetIntegerValue() != 15 {
+		t.Errorf("a refused batch was partly written: a = %v, want 15", f["a"])
+	}
+}
+
+// TestAPlayerCannotWriteAnotherPlayersDocumentOrAnUnparseableName: the
+// identity rule, and the name rule that keeps a malformed document out of
+// storage (read back on every start, it would crash the game every time).
+func TestAPlayerCannotWriteAnotherPlayersDocumentOrAnUnparseableName(t *testing.T) {
+	_, ctx, c := ugcHarness(t)
+	_, err := c.CommitDocuments(ctx, &ugcpb.CommitDocumentsRequest{WriteOperations: []*ugcpb.WriteOperation{
+		update("tenants/current/documents/services/GameRecord/users/ugc0000000000002/VsUserAttribute/Data", nil),
+	}})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("writing another player's document: err = %v, want PermissionDenied", err)
+	}
+	for _, bad := range []string{
+		"tenants/current/users/current",
+		"tenants/current/documents/",
+		"tenants/t-other-lp1/documents/x",
+		"documents/x",
+	} {
+		_, err := c.CommitDocuments(ctx, &ugcpb.CommitDocumentsRequest{WriteOperations: []*ugcpb.WriteOperation{update(bad, nil)}})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("name %q: err = %v, want InvalidArgument", bad, err)
+		}
+	}
+}
+
+// TestInitializeAttributesCreatesTheDocumentTheConsoleReadsNext is the round
+// trip that stopped the game logging in: absent, initialise, read back.
+func TestInitializeAttributesCreatesTheDocumentTheConsoleReadsNext(t *testing.T) {
+	h, ctx, c := ugcHarness(t)
+	gr := toyohrpb.NewGameRecordClient(h.conn)
+
+	vs, err := gr.InitializeAttributes(ctx, &toyohrpb.InitializeAttributesRequest{
+		User:      "users/ugc0000000000001",
+		InitialVs: &toyohrpb.InitializeAttributesRequest_InitialVs{SeasonId: 7},
+	})
+	if err != nil {
+		t.Fatalf("InitializeAttributes (vs): %v", err)
+	}
+	if want := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data"; vs.GetDocument() != want {
+		t.Errorf("document = %q, want %q", vs.GetDocument(), want)
+	}
+	// Only what the request carries: the season. Nothing invented.
+	if f := vs.GetAttributes().GetFields(); len(f) != 1 || f["season_id"].GetIntegerValue() != 7 {
+		t.Errorf("attributes = %v, want exactly season_id=7", f)
+	}
+	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: vs.GetDocument()})
+	if err != nil || doc.GetFields().GetFields()["season_id"].GetIntegerValue() != 7 {
+		t.Fatalf("reading the initialised document back: %v, %v", doc, err)
+	}
+
+	// A Salmon Run request gets a Salmon Run record, never the Versus one.
+	coop, err := gr.InitializeAttributes(ctx, &toyohrpb.InitializeAttributesRequest{
+		CoopShift: &toyohrpb.InitializeAttributesRequest_CoopShift{ShiftId: "shift-1", JobType: "regular"},
+	})
+	if err != nil {
+		t.Fatalf("InitializeAttributes (coop): %v", err)
+	}
+	if want := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/CoopUserAttribute/Data"; coop.GetDocument() != want {
+		t.Errorf("coop document = %q, want %q", coop.GetDocument(), want)
+	}
+
+	// Nobody initialises somebody else's record.
+	_, err = gr.InitializeAttributes(ctx, &toyohrpb.InitializeAttributesRequest{User: "users/ugc0000000000002"})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("initialising another player: err = %v, want PermissionDenied", err)
+	}
+}
