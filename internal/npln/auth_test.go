@@ -69,6 +69,52 @@ func TestABAASIDTokenBuysAnNPLNSession(t *testing.T) {
 	}
 }
 
+// TestIssuePrearrangedUserTokenBuysAnNPLNSession is the same seam as
+// TestABAASIDTokenBuysAnNPLNSession, but for the RPC Splatoon 3 actually
+// calls first: confirmed on real hardware (2026-09-23 capture) as the first
+// gRPC call the console makes once its TLS handshake to the game server
+// succeeds. It differs from IssueToken by also returning a User message, and
+// by taking "tenant"/"user_index" fields that this handler intentionally
+// ignores for identity -- see the comment on the handler itself.
+func TestIssuePrearrangedUserTokenBuysAnNPLNSession(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("user-1", "device-account-1")
+
+	client := authpb.NewAuthClient(h.conn)
+	resp, err := client.IssuePrearrangedUserToken(h.ctx("", ""), &authpb.IssuePrearrangedUserTokenRequest{
+		Tenant:    "t-dce9377b-lp1",
+		UserIndex: 0,
+		ExternalIdToken: &authpb.ExternalIdToken{
+			Token: &authpb.ExternalIdToken_NsaIdToken{
+				NsaIdToken: h.baasIDToken("user-1", "device-account-1"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("IssuePrearrangedUserToken: %v", err)
+	}
+
+	if got, want := resp.GetUser().GetName(), "users/user-1"; got != want {
+		t.Errorf("user.name = %q, want %q", got, want)
+	}
+
+	access := resp.GetToken().GetAccessToken()
+	if access == "" {
+		t.Fatal("no access token in the response")
+	}
+	if got := resp.GetToken().GetUser(); got != "users/user-1" {
+		t.Errorf("token.user = %q, want users/user-1", got)
+	}
+
+	var claims nplnClaims
+	if err := sjwt.NewECVerifier(h.accessKey).Verify(access, &claims); err != nil {
+		t.Fatalf("the issued token does not verify against the gateway's key: %v", err)
+	}
+	if claims.Subject != "user-1" {
+		t.Errorf("sub = %q, want user-1", claims.Subject)
+	}
+}
+
 // TestABAASAccessTokenIsRefusedAtTheGameServerSeam is why BAAS signs id tokens
 // with a different key from access tokens.
 //

@@ -129,6 +129,54 @@ func (a *authService) IssueToken(
 	}, nil
 }
 
+// IssuePrearrangedUserToken is the first call a Splatoon 3 client makes once
+// its gRPC channel is up -- the game already knows which Nintendo Account it
+// wants (from its own BAAS login, "prearranged"), so this exists to trade
+// that identity for an NPLN session in one round trip instead of CreateUser
+// then IssueToken.
+//
+// The request also carries its own "tenant" and "user_index" fields. Neither
+// feeds identity: tenant is checked once, for every call, by the gateway
+// interceptor before a handler is ever reached (see enter()/sameTenant), and
+// user_index has no defensible reading here -- nothing in this codebase
+// tracks a per-tenant short id for a user, so inventing one would be exactly
+// the kind of plausible-looking Nintendo internal CLAUDE.md rules out. It is
+// read but not used, same as IssueToken's own now-documented "user" field.
+func (a *authService) IssuePrearrangedUserToken(
+	ctx context.Context, req *authpb.IssuePrearrangedUserTokenRequest,
+) (*authpb.IssuePrearrangedUserTokenResponse, error) {
+	caller, err := a.s.exchangeIDToken(ctx, req.GetExternalIdToken().GetNsaIdToken())
+	if err != nil {
+		return nil, err
+	}
+
+	access, ttl, err := a.s.issueAccessToken(caller, a.s.now())
+	if err != nil {
+		a.s.log.Error("npln: issue access token", "user", caller.UserID, "error", err)
+		return nil, ErrUnauthenticated
+	}
+
+	a.s.log.Info("npln: issued a prearranged session", "user", caller.UserID)
+
+	return &authpb.IssuePrearrangedUserTokenResponse{
+		User: &authpb.User{
+			Name: userResourceName(caller.UserID),
+			// Account, CreateTime, LastLoginTime and ShortId are left unset:
+			// nothing in internal/db.Store tracks them today, and TODO(capture-
+			// needed) below covers whether the client actually reads any of
+			// them here rather than from a later call. See docs/CAPTURES/README.md.
+		},
+		Token: &authpb.Token{
+			User:        userResourceName(caller.UserID),
+			AccessToken: access,
+			Ttl:         durationpb.New(ttl),
+			// TODO(capture-needed): same open question as IssueToken's Token
+			// above -- whether a refresh token belongs here. Change: this
+			// function and RefreshToken.
+		},
+	}, nil
+}
+
 // ValidateToken answers whether the caller's token is still good.
 //
 // Reaching the handler at all means the interceptor already authenticated the
