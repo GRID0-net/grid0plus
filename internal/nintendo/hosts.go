@@ -372,7 +372,10 @@ var Hosts = []Host{
 	{
 		Pattern: "god.hac.lp1.penne.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "push notifications (Penne) discovery",
+		Comment: "push notifications (Penne) accounts. npns registers here for " +
+			"the notification token the Nintendo Account link then PUTs to " +
+			"/1.0.0/push_channels -- internal/stubs answers that one path for " +
+			"real (Handler.notificationToken), everything else with {}",
 	},
 	{
 		Pattern: "consumer.lp1.npns.srv.nintendo.net",

@@ -29,6 +29,7 @@ things that are genuinely not part of this stack.
 | `.op2.` | `{"active": true, …}` | membership verification; every registered user may play |
 | `service-status` | everything up | if it were not, the console learning it here would not help |
 | `.dragons.` | mostly `{}`, one path is not — see below | eLicense; `aauth` accepts the token without looking at it |
+| `god.…penne` | `POST /v1/accounts/<id>/notification_tokens` → `{"notification_token": "<36 hex>"}`, every other path `{}` | npns hands this token to the account sysmodule for `PUT /1.0.0/push_channels`; `{}` left the Nintendo Account link stuck one request short. See `docs/CAPTURES/README.md` item 11 |
 | anything else | `{}` | well-formed JSON beats a 404 for a client whose expectations are unknown |
 
 Empty **lists**, not `null`: a console decoding `null` into a list type fails.

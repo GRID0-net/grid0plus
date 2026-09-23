@@ -403,6 +403,28 @@ token; these are not shown to be), so left unimplemented rather than
 copied blind — a real capture of an `application_auth_token` would settle
 whether they are present at all.
 
+### 11. `god.hac.lp1.penne` — `POST /v1/accounts/<id>/notification_tokens` — **shape documented, one detail open**
+
+The last request every hardware Nintendo Account link attempt makes. It is
+sent by npns, not the account sysmodule: decompiling `account` (fw 22.5.0)
+shows the link ends in `FUN_71000c8450`, which logs in, asks npns over IPC
+for a notification token (`FUN_710015b5d0`), and only then sends
+`PUT /1.0.0/push_channels/<user>/<device>` with it as `deviceToken`. The
+generic stub answered `{}`, so npns had nothing to return and the PUT — the
+very next request in the working 2026-08-27 capture — never happened.
+
+Now answered by `internal/stubs` (`Handler.notificationToken`) with
+`{"notification_token": "<36 hex digits>"}`, the shape on Kinnay's
+[Penne page](https://github.com/kinnay/NintendoClients/wiki/Penne-Servers#post-v1accountsidnotification_tokens),
+and the length of the one real value on record (a working server's
+`push_channels` body: `"deviceToken":"0009c95be1ac9b2c1e9d9d9fc8bf3302c7f5"`).
+
+**Still open:** whether the leading bytes (`0009…`) are structure npns
+checks. SwitchNet's token is a hash, so it has no such prefix. A capture of
+this exact response from a working server would settle it; if npns rejects
+ours, the push_channels PUT will still be missing and this is the first
+place to look.
+
 ---
 
 ## Phase 2 — Splatoon 3 (NPLN)
