@@ -9,6 +9,9 @@ function to change. `grep -rn 'TODO(capture-needed)' internal/` is the full list
 
 Static analysis has now settled several of the same questions without a
 capture — see
+[splat3-auth-client-trace-2026-09-23.md](splat3-auth-client-trace-2026-09-23.md)
+for the Auth stub dispatch and the open hall-error question after UDP latency
+probes began receiving replies; see
 [account-sysmodule-decompile.md](account-sysmodule-decompile.md) for the
 `account` sysmodule: the console's own validation of `nxAccount` and the error
 codes it raises, the response parsers behind each BAAS call, and the complete
