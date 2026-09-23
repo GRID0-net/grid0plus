@@ -1,9 +1,12 @@
 package npln
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/n-popescu/switchnet/internal/db"
 	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
@@ -207,74 +210,72 @@ func TestKeepAliveTouchesPresenceLiveness(t *testing.T) {
 	}
 }
 
-// TestKeepAliveAnswersOnItsOwnClockNotOnceProPing is the regression test for
-// the runaway-loop bug NextendoNetwork/splatoon-3 measured on real hardware
-// (facts only, not its code): acking every client ping immediately makes the
-// client re-send its next ping the instant it gets a reply, so the server
-// ends up setting an ever-faster pace instead of the client's own. A real
-// console's stream carried 1,362 messages each way in fifteen seconds under
-// that bug, during which the server received no other application call --
-// and the game eventually reported "A communication error has occurred" even
-// though the stream itself was never actually dropped.
-//
-// Several rapid pings in a row must therefore get, at most, one reply within
-// one keep-alive interval -- not one reply per ping.
-func TestKeepAliveAnswersOnItsOwnClockNotOncePerPing(t *testing.T) {
+// TestKeepAliveAcksEveryPingImmediately is the regression test for getting
+// this backwards once already, in this same session: an earlier version of
+// this function answered on its own independent timer instead of the
+// client's pings, on the theory that acking immediately would cause a
+// runaway loop. NextendoNetwork/splatoon-3's own hardware measurement (facts
+// only, not its code) says the opposite is true: a real Nintendo server
+// acks every single ping (128, 34 and 77 of them, across three real
+// sessions, one reply each), and answering on a slower independent clock is
+// what killed real streams at 59.998s / 1m0.001s with "a communication
+// error has occurred" -- because the FIRST reply is what announces the
+// {interval, deadline} contract the client's own patience is calibrated
+// against, and the client got no reply to its very first ping.
+func TestKeepAliveAcksEveryPingImmediately(t *testing.T) {
 	old := presenceKeepAlive
-	presenceKeepAlive = 100 * time.Millisecond
+	presenceKeepAlive = time.Hour // any tick firing would also pass a ping; keep it out of reach
 	t.Cleanup(func() { presenceKeepAlive = old })
 
 	h := newHarness(t)
-	h.createUser("keepalive0000002", "device-keepalive-2")
+	h.createUser("keepalive0000003", "device-keepalive-3")
 
-	rpcCtx := h.ctx(h.sessionFor(t, "keepalive0000002", "device-keepalive-2"), "")
+	rpcCtx := h.ctx(h.sessionFor(t, "keepalive0000003", "device-keepalive-3"), "")
 	stream, err := friendspb.NewPresenceServiceClient(h.conn).KeepAlive(rpcCtx)
 	if err != nil {
 		t.Fatalf("KeepAlive: %v", err)
 	}
 
-	const pings = 20
-	for i := 0; i < pings; i++ {
+	// The opening reply, before any ping is sent, announces the contract.
+	opening, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv opening heartbeat: %v", err)
+	}
+	if opening.GetHeartbeat() == nil {
+		t.Fatalf("opening message carries no heartbeat: %v", opening)
+	}
+
+	for i := 0; i < 3; i++ {
 		if err := stream.Send(&friendspb.KeepAliveRequest{
-			Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000002"}},
+			Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000003"}},
 		}); err != nil {
 			t.Fatalf("send %d: %v", i, err)
 		}
+		resp, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("recv %d: %v", i, err)
+		}
+		if resp.GetHeartbeat() == nil {
+			t.Errorf("ping %d: response carries no heartbeat: %v", i, resp)
+		}
 	}
+}
 
-	replies := make(chan *friendspb.KeepAliveResponse, pings)
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if err != nil {
-				close(replies)
-				return
-			}
-			replies <- resp
-		}
-	}()
-
-	// Well under two intervals: long enough for a correct implementation's
-	// one scheduled heartbeat, nowhere near enough for a broken one that
-	// would already have exchanged many times that under the old
-	// answer-every-ping behaviour.
-	deadline := time.After(150 * time.Millisecond)
-	count := 0
-loop:
-	for {
-		select {
-		case resp, ok := <-replies:
-			if !ok {
-				break loop
-			}
-			if resp.GetHeartbeat() != nil {
-				count++
-			}
-			if count > 1 {
-				t.Fatalf("replies = %d for %d pings within ~1.5 intervals, want at most 1 -- answering once per ping instead of once per interval", count, pings)
-			}
-		case <-deadline:
-			break loop
-		}
+// TestPresenceHeartbeatCarriesTheUndocumentedDeadlineField covers the field
+// this repository's own .proto has no name for: a real Heartbeat carries a
+// second, unknown field alongside Interval -- {2: {1: 50}}, the 50-second
+// deadline the client's own patience is calibrated against (see
+// presenceHeartbeatDeadline's doc comment for the capture this reproduces).
+// A Heartbeat missing it is a likely reason a client would fall back to a
+// shorter, internal default instead of the stated one.
+func TestPresenceHeartbeatCarriesTheUndocumentedDeadlineField(t *testing.T) {
+	hb := presenceHeartbeat()
+	raw, err := proto.Marshal(hb)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := []byte{0x12, 0x02, 0x08, 0x32}
+	if !bytes.Contains(raw, want) {
+		t.Errorf("encoded Heartbeat = % x, want it to contain the field-2 deadline % x", raw, want)
 	}
 }

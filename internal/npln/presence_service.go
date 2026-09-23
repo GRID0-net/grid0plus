@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -40,26 +41,49 @@ type presenceService struct {
 	s *Server
 }
 
+// presenceHeartbeatDeadline is field 2 of a real Heartbeat message -- a
+// nested {1: 50} carrying the 50-second deadline the client actually uses,
+// alongside the documented field 1 (Interval, 30s). Neither this repository's
+// nor NextendoNetwork/splatoon-3's reconstructed .proto names field 2 (it is
+// genuinely undocumented -- switchbrew and kinnay's wiki have nothing for
+// it), but its raw bytes are a directly observable fact of the wire, not a
+// guess: NextendoNetwork/splatoon-3 records capturing exactly
+// `{2: {1: 50}}` from a real Nintendo server (facts only, its code not used
+// here -- this is reconstructed independently against the same confirmed
+// byte sequence, protoreflect.RawFields([]byte{0x12, 0x02, 0x08, 0x32})).
+// Leaving it off is a likely reason a client would apply a shorter, internal
+// default deadline instead of the stated one.
+var presenceHeartbeatDeadline = protoreflect.RawFields([]byte{0x12, 0x02, 0x08, 0x32})
+
+// presenceHeartbeat builds the Heartbeat both KeepAlive and SubscribePresences
+// send, carrying the confirmed {30s interval, 50s deadline} pair.
+func presenceHeartbeat() *friendspb.Heartbeat {
+	hb := &friendspb.Heartbeat{Interval: durationpb.New(presenceKeepAlive)}
+	hb.ProtoReflect().SetUnknown(presenceHeartbeatDeadline)
+	return hb
+}
+
 // KeepAlive is a bidirectional liveness stream.
 //
-// Answers on ITS OWN clock (presenceKeepAlive, 30s), not once per client
-// ping -- acking every ping immediately was a real bug, not just a
-// theoretical one. NextendoNetwork/splatoon-3 measured it directly (facts
-// only, not its code): with one ack per ping, a real console's KeepAlive
-// stream carried 1,362 messages each way in fifteen seconds (the client
-// re-sends its next ping the instant it gets a reply, so an immediate ack
-// makes the SERVER the one setting the pace, faster and faster), the server
-// received no other application call for the whole time, and the game
-// eventually gave up with "A communication error has occurred" even though
-// nothing had actually been disconnected. Their own capture of a real
-// Nintendo server showed eleven replies in 293 seconds -- one every ~29.3s,
-// matching the {30s ping, 50s deadline} contract the first Heartbeat itself
-// announces. So the client's own deadline math is calibrated to a reply
-// roughly on that cadence, not to one immediately after every ping.
+// Answers every client ping with an immediate ack, on a real Nintendo
+// server's own confirmed behaviour: NextendoNetwork/splatoon-3 (facts only,
+// not its code) measured a real console sending 128, 34 and 77 pings across
+// three sessions and getting exactly one reply per ping, each. Their first
+// attempt at this RPC instead answered on its own independent 30s timer,
+// unrelated to the client's pings -- reasoning that acking immediately would
+// cause a runaway feedback loop -- and that was wrong: real KeepAlive
+// streams died at 59.998s / 1m0.001s with "a communication error has
+// occurred", because the FIRST reply is what announces the {30s, 50s}
+// contract (see presenceHeartbeat) the client times its own patience
+// against, and answering only every 30s left it waiting past its own
+// deadline for a reply to its very first ping.
 //
-// Every client message still counts as proof of life immediately (Ack or
-// UpdatePresence alike) -- draining and touching presence on receipt is
-// unrelated to the runaway-loop bug and stays as before.
+// The first reply is sent immediately, before any ping has even arrived, for
+// the same reason: it is the one that sets the client's clock. Every
+// subsequent client message (ping or UpdatePresence) gets an immediate ack
+// too. A ticker independently sends one on presenceKeepAlive even if the
+// client falls silent, so the stream does not go quiet if the client's own
+// pings ever stop.
 //
 // TODO(capture-needed): whether Splatoon 3 ever sends UpdatePresence over
 // this RPC to report richer, game-specific state (KeepAliveRequest carries a
@@ -86,11 +110,10 @@ func (p *presenceService) KeepAlive(
 	send := func() error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
-		return stream.Send(&friendspb.KeepAliveResponse{
-			Heartbeat: &friendspb.Heartbeat{Interval: durationpb.New(presenceKeepAlive)},
-		})
+		return stream.Send(&friendspb.KeepAliveResponse{Heartbeat: presenceHeartbeat()})
 	}
 
+	sendErr := make(chan error, 1)
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
@@ -104,14 +127,27 @@ func (p *presenceService) KeepAlive(
 				// cosmetic problem into a dropped connection.
 				p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
 			}
+			if err := send(); err != nil {
+				sendErr <- err
+				return
+			}
 		}
 	}()
+
+	// The opening reply: sent before any ping has arrived, because it is the
+	// one that announces the contract the client calibrates its own patience
+	// against.
+	if err := send(); err != nil {
+		return err
+	}
 
 	ticker := time.NewTicker(presenceKeepAlive)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case err := <-sendErr:
+			return err
 		case err := <-recvErr:
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return nil
@@ -205,7 +241,7 @@ func (p *presenceService) SubscribePresences(
 		case <-ticker.C:
 			if err := stream.Send(&friendspb.SubscribePresencesResponse{
 				Response: &friendspb.SubscribePresencesResponse_Heartbeat{
-					Heartbeat: &friendspb.Heartbeat{Interval: durationpb.New(presenceKeepAlive)},
+					Heartbeat: presenceHeartbeat(),
 				},
 			}); err != nil {
 				return err
