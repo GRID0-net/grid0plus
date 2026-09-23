@@ -59,6 +59,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -431,26 +432,17 @@ func randomToken(n int) (string, error) {
 // It writes nothing. See the handler for why silence is the answer here.
 const frontlinePoll = 5 * time.Second
 
-// frontline holds a connection open for as long as the console wants it.
+// frontline keeps the response open while the console's request body remains
+// active. The local reference server drains that body and ends the response when
+// the request stream ends; consuming it here also prevents unread client data
+// from stalling the bidirectional connection. The bytes are opaque, so we count
+// them but never record their contents. TODO(capture-needed): the frame format
+// and whether SwitchNet needs to act on any frame rather than just consume it.
 //
-// **Closing this is an error on the console**, not a clean end: 2307-2103 on
-// Splatoon 2 and 2321-* on Splatoon 3. So the handler does not return until the
-// console hangs up or the process is shutting down.
-//
-// It sends NOTHING after the response headers, and that is a deliberate choice
-// rather than an omission. TODO(capture-needed): the frame format. The reference
-// implementation logs these frames as opaque hex, so not even it knows what they
-// mean. Writing invented bytes into a stream whose framing is unknown is worse
-// than writing none: a console that receives nothing is a console waiting, and a
-// console that receives a malformed frame is one that has decided the server is
-// broken. Silence keeps the connection in the only state that is certainly
-// valid.
-//
-// The headers ARE flushed immediately, so the console sees the response begin.
-// A response that has not started is indistinguishable from a server that is
-// not there.
-//
-// Change: this function, once a capture shows the framing.
+// It sends NOTHING after the response headers. Writing invented bytes into a
+// stream whose framing is unknown risks turning a waiting client into a broken
+// one. The headers are flushed immediately so the console sees the response
+// begin rather than mistaking buffering for an absent server.
 func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -483,17 +475,34 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 			"host", wirelog.HostOnly(r.Host), "open", remaining)
 	}()
 
+	type bodyReadResult struct {
+		bytes int64
+		err   error
+	}
+	bodyDone := make(chan bodyReadResult, 1)
+	go func() {
+		n, err := io.Copy(io.Discard, r.Body)
+		bodyDone <- bodyReadResult{bytes: n, err: err}
+	}()
+
 	ticker := time.NewTicker(frontlinePoll)
 	defer ticker.Stop()
 
 	for {
 		select {
+		case result := <-bodyDone:
+			if result.bytes != 0 {
+				s.log.Info("nplnrest: frontline request body drained", "bytes", result.bytes)
+			}
+			if result.err != nil {
+				s.log.Warn("nplnrest: read frontline request body", "error", result.err)
+			}
+			return
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
-			// Nothing to send. The tick exists only so the goroutine notices a
-			// cancelled context promptly; r.Context() already fires on a
-			// disconnect, and this bounds how long a shutdown waits.
+			// Nothing to send. Keep the response open until the request body
+			// ends or the console disconnects.
 		}
 	}
 }

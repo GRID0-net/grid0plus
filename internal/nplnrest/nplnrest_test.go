@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -258,59 +259,77 @@ func TestAnUnknownHostIsAnsweredRatherThanRefused(t *testing.T) {
 	}
 }
 
-func TestTheFrontlineConnectionIsHeldOpenUntilTheConsoleHangsUp(t *testing.T) {
+type blockingFrontlineBody struct {
+	firstRead  chan struct{}
+	secondRead chan struct{}
+	release    chan struct{}
+	first      bool
+	closeOnce  sync.Once
+	secondOnce sync.Once
+}
+
+func (b *blockingFrontlineBody) Read(p []byte) (int, error) {
+	if !b.first {
+		b.first = true
+		n := copy(p, []byte("opaque-frame"))
+		close(b.firstRead)
+		return n, nil
+	}
+	b.secondOnce.Do(func() { close(b.secondRead) })
+	<-b.release
+	return 0, io.EOF
+}
+
+func (b *blockingFrontlineBody) Close() error {
+	b.closeOnce.Do(func() { close(b.release) })
+	return nil
+}
+
+func TestTheFrontlineDrainsRequestBodyAndStaysOpenUntilItEnds(t *testing.T) {
 	s := newServer(t, "")
-	srv := httptest.NewServer(s.Handler())
-	defer srv.Close()
-
+	body := &blockingFrontlineBody{
+		firstRead: make(chan struct{}), secondRead: make(chan struct{}), release: make(chan struct{}),
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/frontline", nil)
-	if err != nil {
-		t.Fatalf("request: %v", err)
-	}
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
+	req.Body = body
 	req.Host = frontlineHost
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// The headers arrive immediately, so the console sees the response begin. A
-	// response that has not started is indistinguishable from a server that is
-	// not there.
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
-	}
-	if s.Frontlines() != 1 {
-		t.Errorf("the server reports %d frontline connections, want 1", s.Frontlines())
-	}
-
-	// And then nothing is sent. Closing it, or writing an invented frame into a
-	// stream whose framing nobody has documented, are both worse than silence.
+	rec := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		buf := make([]byte, 1)
-		_, _ = resp.Body.Read(buf)
+		s.Handler().ServeHTTP(rec, req)
 	}()
+
+	select {
+	case <-body.firstRead:
+	case <-time.After(time.Second):
+		t.Fatal("frontline handler did not consume the request body")
+	}
+	select {
+	case <-body.secondRead:
+	case <-time.After(time.Second):
+		t.Fatal("frontline reader did not remain active after the first frame")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("frontline response body has %d bytes, want no unsolicited frame", rec.Body.Len())
+	}
+
 	select {
 	case <-done:
-		t.Error("the frontline connection sent something or closed; it must do neither")
-	case <-time.After(250 * time.Millisecond):
+		t.Fatal("frontline closed while the request body was still open")
+	case <-time.After(100 * time.Millisecond):
 	}
 
-	cancel()
-	<-done
-
-	// The count drops when the console goes away, which is what makes it usable
-	// as "did the console get this far".
-	deadline := time.Now().Add(2 * time.Second)
-	for s.Frontlines() != 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if s.Frontlines() != 0 {
-		t.Errorf("the frontline count stayed at %d after the console hung up", s.Frontlines())
+	_ = body.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("frontline did not close after the request body ended")
 	}
 }
 

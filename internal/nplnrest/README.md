@@ -47,21 +47,23 @@ npln:
 error decides the network is broken, and that surfaces somewhere unrelated to
 the request that failed. The same reasoning `internal/stubs` gives.
 
-**The frontline connection sends nothing.** Not as an omission — as the answer.
-The frame format is unknown; the reference implementation logs these frames as
-opaque hex, so not even it knows what they mean. A console receiving nothing is
-a console waiting. A console receiving a malformed frame is one that has decided
-the server is broken. Silence is the only state that is certainly valid.
+**The frontline response sends no application bytes.** The console does send
+opaque request-body frames; SwitchNet drains them without storing their
+contents. The local reference logs those inbound frames as hex but does not
+establish their meaning. Sending an invented response frame risks turning a
+waiting console into one that decides the server is broken, so the response
+remains silent until the client ends its body.
 
 The headers *are* flushed immediately, because a response that has not started
 is indistinguishable from a server that is not there.
 
-**And it is never closed from this side.** Closing is an error on the console —
-`2307-2103` on Splatoon 2, `2321-*` on Splatoon 3 — not a clean end. That is
-also why `cmd/npln` serves this listener with no read or write timeout, through
-`service.Serve` rather than `service.ServeHTTP`: the shared thirty-second write
-timeout that suits every other service would sever this one, and the player
-would see the game lose its connection for no reason.
+**It stays open for the request stream's lifetime.** Closing before the client
+ends its body is an error — `2307-2103` on Splatoon 2, `2321-*` on Splatoon 3.
+The reference returns when the request body ends, so SwitchNet follows that
+lifecycle. That is also why `cmd/npln` serves this listener with no read or
+write timeout, through `service.Serve` rather than `service.ServeHTTP`: the
+shared thirty-second write timeout that suits every other service would sever
+this one, and the player would see the game lose its connection for no reason.
 
 `Frontlines()` reports how many are open. It exists because it answers the first
 question anybody asks when Splatoon 3 will not connect: *did the console get

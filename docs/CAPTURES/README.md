@@ -602,14 +602,14 @@ this version deliberately names no number to keep stale).
   open: whether the console validates the ticket's own shape (the value
   itself is still an opaque placeholder, since nothing here can construct
   or validate a real Nintendo-signed one).
-- **A frontline connection's wire framing**
-  (`internal/nplnrest/nplnrest.go`, `frontline`): held open, nothing
-  sent down it -- confirmed safe (closing it reads as a failure, per a real
-  error-code capture already in `internal/nintendo/hosts.go`), but what a
-  real server sends once the connection is open is undocumented anywhere
-  this pass could find -- including in NextendoNetwork's own source, whose
-  own comment says their capture logs these frames as opaque hex, so not
-  even a real working server's own authors know what they mean.
+- **A frontline connection's stream behavior**
+  (`internal/nplnrest/nplnrest.go`, `frontline`): the response stays open while
+  the console's request body is active; SwitchNet drains the opaque body and
+  sends no application bytes. The local Nextendo source confirms its handler
+  also reads client frames and returns when that body ends, but logs those
+  frames as opaque hex and does not establish their meaning. A two-way capture
+  is still needed to tell whether SwitchNet must act on any client frame or
+  send a server frame; do not invent one before then.
 - **`FestEntry`'s resource-name shape**
   (`internal/toyohr/entries.go`, `festEntryProto`): follows the same
   `tenants/<t>/fests/<ID>/...` convention `GetFestDecryptionKey` already
@@ -772,7 +772,7 @@ mitmproxy, and it does need the console.
 | Capture | Why |
 | --- | --- |
 | game boot, from the very first vermillion request through the NPLN auth handshake | confirms whether vermillion is actually contacted (and needed) for Splatoon 3 specifically, penne's real request bodies and this server's guessed response fields, and what the tenant expects in `authorization`/`uid` metadata once the gRPC channel opens |
-| a frontline connection, bytes on the wire after the HTTP response headers | the one thing `internal/nplnrest`'s `frontline` could not implement at all: what, if anything, is sent down an open frontline connection |
+| a frontline connection, bytes in both directions after the HTTP response headers | whether the console's opaque request-body frames need server-side action, and whether a working server sends any application frames back |
 | entering the lobby | `Schedule`'s four Vs/season RPCs (currently answered empty; `SelectCoopSchedules` is no longer on this list -- see above), the first things the lobby draws |
 | a matchmaking request, and the session response | the station info each client needs for its Pia/ICE handshake |
 | the in-game friends list | `Friends.ListFriendUsers` and `PresenceService`, and specifically whether `presence_deliverable` / `presence_receivable` are set |
