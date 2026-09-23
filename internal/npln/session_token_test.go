@@ -1,6 +1,7 @@
 package npln
 
 import (
+	"github.com/google/uuid"
 	"strings"
 	"testing"
 
@@ -110,9 +111,16 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 		if gs["uid"] != userID {
 			t.Errorf("%s: gamesync.uid = %v", userID, gs["uid"])
 		}
-		if gs["usid"] != userID {
-			t.Errorf("%s: gamesync.usid = %v, want the user session name's last segment (%s)",
-				userID, gs["usid"], userID)
+		// usid is the user session's own id -- the last segment of the name
+		// the ticket hands out -- and, as in the capture, a UUID distinct
+		// from uid.
+		usid, _ := gs["usid"].(string)
+		if want := lastSegment(m.GetUserSession()); usid != want {
+			t.Errorf("%s: gamesync.usid = %q, want the user session name's last segment %q",
+				userID, usid, want)
+		}
+		if _, err := uuid.Parse(usid); err != nil || usid == userID {
+			t.Errorf("%s: gamesync.usid = %q, want a UUID distinct from uid", userID, usid)
 		}
 		if gs["tid"] != testTenant {
 			t.Errorf("%s: gamesync.tid = %v, want the tenant %q", userID, gs["tid"], testTenant)

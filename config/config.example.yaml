@@ -425,6 +425,15 @@ npln:
   # it, so a typo here is caught immediately.
   frontline_host: "fro-3.hac.lp1.penne.srv.nintendo.net"
 
+  # Where a match tells each console to open its gamesync session
+  # (GameSession.host and .port). The tenant host on 443: nginx sends the
+  # Gamesync service path there to gamesync. A working reference server
+  # measured that a literal address on gamesync's own :7575 accepts TLS and
+  # then never gets a request (2321-4992), while the tenant name on :443
+  # works. Must be a name the console's hosts file redirects.
+  session_host: "t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
+  session_port: 443
+
   # Record every JSON front-end request and response to this directory.
   #
   # The vermillion, penne and frontline shapes are undocumented, and this is how

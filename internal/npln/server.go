@@ -41,6 +41,12 @@ type Server struct {
 	store db.Store
 	log   *slog.Logger
 
+	// sessionHost and sessionPort are where a match sends each console to open
+	// its gamesync session: GameSession.host and .port. See
+	// config.NPLN.SessionHost.
+	sessionHost string
+	sessionPort int32
+
 	// tokens verifies the ES256 access tokens this server issues; issuer signs
 	// them. Both wrap the same key.
 	tokens *sjwt.ECVerifier
@@ -180,6 +186,8 @@ func New(opts Options) (*Server, error) {
 		issuer:         sjwt.NewECIssuer(opts.AccessKey, opts.Config.JWKSURL),
 		idTokens:       sjwt.NewVerifier(opts.BAASIDKey),
 		tenant:         opts.Config.Tenant,
+		sessionHost:    opts.Config.SessionHost,
+		sessionPort:    int32(opts.Config.SessionPort),
 		issuerName:     opts.Config.Issuer,
 		accessTokenTTL: opts.Config.AccessTokenTTL,
 		env:            opts.Env,

@@ -664,6 +664,21 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
 }
 
 func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames []string) string {
+	// The tenant host also answers Gamesync. A match tells each console where
+	// to open its gamesync session (GameSession.host/port), and the address
+	// that is known to work is the tenant host on the edge port:
+	// NextendoNetwork/splatoon-3 measured on hardware that the same service
+	// reached by a literal address on :7575 accepts TLS and then never gets a
+	// request (2321-4992), while the tenant name on :443 does. gRPC names the
+	// service in the path, so the split needs no second listener.
+	gamesync := ""
+	if upstream == "npln" {
+		gamesync = `
+    location /nn.npln.gamesync.v1.Gamesync/ {
+        grpc_pass grpc://switchnet_gamesync;
+    }
+`
+	}
 	return fmt.Sprintf(`server {
     listen %d ssl;
     http2 on;
@@ -671,12 +686,12 @@ func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames [
 
     ssl_certificate     /etc/switchnet/certs/edge.crt;
     ssl_certificate_key /etc/switchnet/certs/edge.key;
-
+%s
     location / {
         grpc_pass grpc://switchnet_%s;
     }
 }
-`, port, strings.Join(serverNames, "\n                "), upstream)
+`, port, strings.Join(serverNames, "\n                "), gamesync, upstream)
 }
 
 // listenPort returns the port a service's hosts are reached on.

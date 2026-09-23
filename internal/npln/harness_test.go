@@ -57,6 +57,9 @@ type harness struct {
 	now time.Time
 }
 
+// testSessionHost is what a match announces as the gamesync session host.
+const testSessionHost = "t-test-lp1.lp1.t.npln.srv.nintendo.net"
+
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	return newHarnessWith(t, nil)
@@ -110,6 +113,8 @@ func newHarnessWith(t *testing.T, adjust func(*config.NPLN)) *harness {
 		AccessTokenTTL:  10800,
 		PlayersPerMatch: 2,
 		TicketTTL:       180,
+		SessionHost:     testSessionHost,
+		SessionPort:     443,
 	}
 	if adjust != nil {
 		adjust(&cfg)

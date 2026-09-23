@@ -337,6 +337,19 @@ type NPLN struct {
 	// internal/nplnrest refuses to start rather than allow it.
 	FrontlineHost string `yaml:"frontline_host"`
 
+	// SessionHost and SessionPort are what a match puts in GameSession.host
+	// and .port: where each console opens its gamesync session for that match.
+	//
+	// The tenant host on 443, not gamesync's own :7575. NextendoNetwork/
+	// splatoon-3 measured the difference on hardware: announced as a literal
+	// address on :7575 the session channel completes TLS and then never sends
+	// a request (2321-4992); announced as the tenant name on :443 it works.
+	// nginx sends the Gamesync service path on the tenant host to gamesync
+	// (see switchnetctl's grpcServerBlock), so nothing else has to move. Like
+	// FrontlineHost, it must be a name the console's hosts file redirects.
+	SessionHost string `yaml:"session_host"`
+	SessionPort int    `yaml:"session_port"`
+
 	// Rotation is the stage and mode rotation the Schedule service serves.
 	//
 	// Empty is legitimate: the schedule handlers then answer with no schedules,
@@ -645,6 +658,8 @@ func Default() Config {
 			// the frontline to. Any of fro-1..4 is redirected and carries a
 			// certificate SAN; this one is the least likely to surprise.
 			FrontlineHost: "fro-3.hac.lp1.penne.srv.nintendo.net",
+			SessionHost:   "t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
+			SessionPort:   443,
 		},
 		BCAT: BCAT{
 			ConverterTimeout: 120,
@@ -757,6 +772,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
 	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
 	envStr("SWITCHNET_NPLN_FRONTLINE_HOST", &c.NPLN.FrontlineHost)
+	envStr("SWITCHNET_NPLN_SESSION_HOST", &c.NPLN.SessionHost)
 	envStr("SWITCHNET_NPLN_REST_RECORD_DIR", &c.NPLN.RestRecordDir)
 	envInt("SWITCHNET_NPLN_PLAYERS_PER_MATCH", &c.NPLN.PlayersPerMatch)
 	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)

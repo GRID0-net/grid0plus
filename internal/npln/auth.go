@@ -310,10 +310,9 @@ func (s *Server) issueSessionToken(userID, sessionID string) (string, error) {
 			TID:  s.tenant,
 			Typ:  1,
 			UID:  userID,
-			// The user session's own id: the last segment of
-			// userSessionName, which here is the user id, because a session
-			// is addressed by the player it belongs to.
-			USID: userID,
+			// The user session's own id, the last segment of
+			// userSessionName: a UUID distinct from uid, as in the capture.
+			USID: userSessionID(sessionID, userID),
 		},
 	})
 	if err != nil {

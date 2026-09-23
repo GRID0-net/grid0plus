@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"strings"
 	"time"
 
@@ -598,15 +599,16 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		CanParticipate:          false,
 		IsPublic:                false,
 		State:                   mmpb.GameSession_ACTIVE,
-		// Host names the player whose console the others connect to, not an
-		// address. Gameplay is peer-to-peer and SwitchNet is not in the path
-		// once a match starts -- all this does is say who to reach, and ICE
-		// works out how.
-		Host: userResourceName(sess.Host),
-		// Port is zero until the host publishes one over SyncGameSession --
-		// see gameSessionService.SyncGameSession. A joiner reading zero knows
-		// to wait rather than dial nothing.
-		Port:         sess.HostPort,
+		// Host and Port are the address each console opens its gamesync
+		// session to for this match -- a server, not a player. This used to
+		// name the host player ("users/<id>") with the port it published via
+		// SyncGameSession, a reading nothing on the wire supported; a console
+		// given a user name to dial opens no session and reports 2321-4992.
+		// The working reference (NextendoNetwork/splatoon-3) announces its
+		// session server here, and measured that the tenant name on :443 is
+		// the form that works. See config.NPLN.SessionHost.
+		Host:         s.sessionHost,
+		Port:         s.sessionPort,
 		CreateTime:   timestamppb.New(sess.CreatedAt),
 		UserSessions: s.userSessions(sess),
 	}
@@ -664,8 +666,22 @@ func (s *Server) matchedUserSessions(sess matchmaking.Session) ([]*mmpb.MatchedU
 }
 
 func (s *Server) userSessionName(sessionID, userID string) string {
-	return s.tenantPath() + "/gameSessions/" + sessionID + "/userSessions/" + userID
+	return s.tenantPath() + "/gameSessions/" + sessionID + "/userSessions/" + userSessionID(sessionID, userID)
 }
+
+// userSessionID is one player's user-session id within one game session.
+//
+// A UUID, and not the user id it used to be: in the capture of a working
+// server the session token's usid is a UUID of its own, distinct from uid,
+// and the console builds its gamesync session from both. Name-based (v5)
+// over the game session and the user, so it needs no storage, is the same in
+// the resource name and in the token, and differs per match.
+func userSessionID(sessionID, userID string) string {
+	return uuid.NewSHA1(userSessionNamespace, []byte(sessionID+"/"+userID)).String()
+}
+
+// userSessionNamespace scopes userSessionID; any fixed UUID would do.
+var userSessionNamespace = uuid.MustParse("6f0b4c3e-5d1a-4c2e-9b7a-2a1e8c4d5f60")
 
 // ticketState maps a queue state onto the wire enum.
 //

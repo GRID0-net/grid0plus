@@ -76,10 +76,11 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 		t.Errorf("the two players were told to connect to different hosts: %q and %q",
 			gotOne.GetGameSession().GetHost(), gotTwo.GetGameSession().GetHost())
 	}
-	// The longest-waiting player hosts, and player one queued first.
-	if want := userResourceName("player-one"); gotOne.GetGameSession().GetHost() != want {
-		t.Errorf("host = %q, want the player who queued first, %q",
-			gotOne.GetGameSession().GetHost(), want)
+	// Host/port is where each console opens its gamesync session: the
+	// configured session server, never a player. A player resource name here
+	// is an address the console cannot dial, and 2321-4992.
+	if gs := gotOne.GetGameSession(); gs.GetHost() != testSessionHost || gs.GetPort() != 443 {
+		t.Errorf("session endpoint = %s:%d, want %s:443", gs.GetHost(), gs.GetPort(), testSessionHost)
 	}
 	if n := gotOne.GetGameSession().GetCurrentParticipantCount(); n != 2 {
 		t.Errorf("participant count = %d, want 2", n)
@@ -277,11 +278,10 @@ func TestAGameSessionIsNotReadableByAPlayerWhoIsNotInIt(t *testing.T) {
 	}
 }
 
-// TestSyncGameSessionPublishesTheHostsPortToOtherPlayers is the property
-// SyncGameSession exists for: the host reports its listening port, and a
-// joiner reading the session back sees it -- without the joiner needing host
-// privileges just to read.
-func TestSyncGameSessionPublishesTheHostsPortToOtherPlayers(t *testing.T) {
+// TestSyncGameSessionFromTheHostDoesNotMoveTheSessionEndpoint: the host may
+// report a port, a joiner may read the session without host privileges, and
+// neither changes where consoles open their gamesync session.
+func TestSyncGameSessionFromTheHostDoesNotMoveTheSessionEndpoint(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("host0000000000001", "device-host")
 	h.createUser("joiner00000000001", "device-joiner")
@@ -298,13 +298,6 @@ func TestSyncGameSessionPublishesTheHostsPortToOtherPlayers(t *testing.T) {
 		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
 	}
 	name := matched.GetGameSession().GetName()
-	if matched.GetGameSession().GetHost() != userResourceName("host0000000000001") {
-		t.Fatalf("host = %q, want host0000000000001 to have hosted (queued first)",
-			matched.GetGameSession().GetHost())
-	}
-	if matched.GetGameSession().GetPort() != 0 {
-		t.Errorf("port = %d before SyncGameSession, want 0", matched.GetGameSession().GetPort())
-	}
 
 	sessions := mmpb.NewGameSessionServiceClient(h.conn)
 
@@ -327,8 +320,11 @@ func TestSyncGameSessionPublishesTheHostsPortToOtherPlayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGameSession (joiner, after sync): %v", err)
 	}
-	if got.GetPort() != 45000 {
-		t.Errorf("port = %d, want 45000 (published by the host)", got.GetPort())
+	// The host's own port is recorded, but it does not redirect anybody:
+	// every console's session channel still goes to the session server.
+	if got.GetHost() != testSessionHost || got.GetPort() != 443 {
+		t.Errorf("after the host's sync the session endpoint is %s:%d, want %s:443 unchanged",
+			got.GetHost(), got.GetPort(), testSessionHost)
 	}
 }
 
@@ -367,8 +363,8 @@ func TestSyncGameSessionRefusesAPortUpdateFromANonHostPlayer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGameSession: %v", err)
 	}
-	if got.GetPort() != 0 {
-		t.Errorf("port = %d after a refused update, want unchanged at 0", got.GetPort())
+	if got.GetPort() != 443 {
+		t.Errorf("port = %d after a refused update, want the session server's 443", got.GetPort())
 	}
 }
 
