@@ -85,15 +85,54 @@ closed by the console at 19:46:08, followed immediately by a successful refresh
 and a new stream. The STUN responder does not log individual packets, and no
 packet capture was running for this attempt, so STUN receipt/reply is unknown
 for this test. The exact resource-name difference is now ruled out as the sole
-cause; the next capture needs to include UDP 3478 again.
+cause; this uncertainty was resolved by the focused 20:10 UDP capture below.
+
+A focused follow-up at 20:10 UTC captured UDP 3478 while using the exact
+reference resource IDs. The console sent 35 STUN Binding Requests in 0.62 s;
+the VM sent 35 Binding Success responses, and all 35 response transaction IDs
+matched their requests. Each response carried an XOR-MAPPED-ADDRESS. In the
+same attempt, `IssuePrearrangedUserToken` and
+`ListLatencyMeasurementServers` returned OK at 20:10:20, then
+`ValidateToken` returned OK at 20:10:35. No matchmaking RPC followed, and the
+hall still reloaded. This rules out missing or mismatched UDP replies as the
+immediate blocker. It does not prove the game accepted the measured latency
+results or selected a region.
+
+The VM's REST log for this same interval shows `GET /v1/frontlines` returning
+200, followed by the console opening and holding a Frontline connection. That
+connection remained open during the NPLN calls and STUN probes, then closed
+when the console reloaded the hall. This makes a failed Frontline bootstrap
+less likely, but does not establish what messages, if any, the client expected
+on that stream. Reviewing the local Nextendo handler exposed a concrete
+transport difference: it drains client request-body frames and holds the
+response until that body ends; SwitchNet had left the request body unread. The
+server-side handler now drains the opaque body without storing it or logging
+its contents, and ends the response when the request body ends. This is a
+reference-supported change, not yet hardware-verified.
+
+The local Nextendo implementation constructs the same five
+`LatencyMeasurementServer` fields that SwitchNet returns: resource name,
+region, host, port, and UDP protocol. Its source comment says its working
+client proceeds with a non-empty list even when probes time out. This supports
+the current response shape, though it is reference-source evidence rather than
+a byte-for-byte response capture.
+
+The client-side RE pass also examined the generated matchmaking stubs. The
+`CreateMatchmakingTicket` stub constructor at `0x7100628800` registers the
+method path alongside `TrackMatchmakingTicket`, `CancelMatchmakingTicket`, and
+`CreateAcceptance`; the `ListLatencyMeasurementServers` stub is built by
+`0x71005ec2d0`. Their nearby data is protobuf/RPC descriptor metadata, not a
+per-method application callback table. This pass therefore still has not
+recovered the game's completion handler or the condition that gates the first
+ticket request.
 
 ## Remaining question
 
-The generated Auth stub and protobuf descriptor both stop at generic SDK
-dispatch. Static references from the method-name strings do not identify the
-game's completion callback, and the observed `ValidateToken` interval alone
-does not prove a retry loop waiting on auth. A useful next experiment is a
-targeted hardware run that records the plaintext NPLN HTTP/2 request/response
-frames, UDP 3478 traffic, and a single controlled change to the latency-server
-list. That can distinguish a rejected latency result from a failure in a later
-client-only step. Keep any credentials and packet payloads out of this repo.
+The generated Auth and matchmaking stubs and protobuf descriptors stop at
+generic SDK dispatch. Static references from the method-name strings do not
+identify the game's completion callback. The remaining RE target is the
+caller's handling of the successful latency-list response and probe results:
+what condition gates the first `CreateMatchmakingTicket` call? The 20:10
+capture proves the server returned matching STUN responses but cannot prove
+the client accepted them. Keep credentials and raw packet payloads out of this
+repo.
