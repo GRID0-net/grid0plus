@@ -107,7 +107,7 @@ func (s *Server) listFriends(w http.ResponseWriter, r *http.Request, c *caller) 
 			Friend:     friendUserResponse(user, pres, vis),
 			IsFavorite: f.Favorite,
 			Channels:   map[string]any{},
-			Extras:     db.EmptyExtras(),
+			Extras:     friendshipExtras(f.Extras),
 			FriendNote: "",
 			ETag:       "",
 			CreatedAt:  f.BecameFriendAt.Unix(),
@@ -126,10 +126,14 @@ func (s *Server) presenceVisibleTo(ctx context.Context, owner db.User, viewerID 
 
 // ---- PATCH /2.0.0/users/<id>/friends/<id> -------------------------------
 
-// patchFriend sets the favourite flag on one friend.
+// patchFriend changes one direction of a friendship: the favourite flag, and
+// anything under /extras/<scope>/<key>.
 //
-// The flag is per-direction: A marking B as a favourite says nothing about what
-// B sees.
+// Both are per-direction: A marking B as a favourite, or as seen, says nothing
+// about what B sees. The extras paths are what the console itself sends -- a
+// 2026-09-23 hardware session showed it PATCH /extras/self/isConfirmed onto a
+// new friend, which this answered 400 until then. Their meaning is the
+// console's; this stores them and hands them back on the friend list.
 func (s *Server) patchFriend(w http.ResponseWriter, r *http.Request, c *caller) {
 	if !s.requireSelf(w, r, c) {
 		return
@@ -137,48 +141,95 @@ func (s *Server) patchFriend(w http.ResponseWriter, r *http.Request, c *caller) 
 	other := strings.ToLower(r.PathValue("other"))
 
 	ops, err := parseJSONPatch(w, r)
-	if err != nil {
+	if err != nil || len(ops) == 0 {
 		writeError(w, r, errInvalidParams)
 		return
 	}
 
-	favorite := false
-	seen := false
+	var favorite *bool
+	var extras db.ExtrasByScope
 	for _, op := range ops {
-		switch op.Path {
-		case "/isFavorite", "/favorite":
+		if op.Path == "/isFavorite" || op.Path == "/favorite" {
 			v, ok := op.boolValue()
 			if !ok {
 				writeError(w, r, errInvalidParams)
 				return
 			}
-			favorite = v
-			seen = true
-		default:
+			favorite = &v
+			continue
+		}
+		scope, key, ok := parseExtrasPath(op.Path)
+		if !ok {
 			s.log.Warn("baas: unsupported friend patch path",
 				"user", c.UserID, "friend", other, "path", op.Path)
 			writeError(w, r, errInvalidParams)
 			return
 		}
-	}
-	if !seen {
-		writeError(w, r, errInvalidParams)
-		return
+		if extras == nil {
+			f, err := s.store.GetFriendship(r.Context(), c.UserID, other)
+			switch {
+			case errors.Is(err, db.ErrNotFound):
+				writeError(w, r, errResourceNotFound)
+				return
+			case err != nil:
+				writeInternalError(s.log, w, r, "load friendship", err)
+				return
+			}
+			extras = f.Extras
+			if extras == nil {
+				extras = db.ExtrasByScope{}
+			}
+		}
+		if op.Op == "remove" {
+			delete(extras[scope], key)
+			continue
+		}
+		if extras[scope] == nil {
+			extras[scope] = map[string]any{}
+		}
+		extras[scope][key] = op.Value
 	}
 
-	err = s.store.SetFavorite(r.Context(), c.UserID, other, favorite)
-	switch {
-	case errors.Is(err, db.ErrNotFound):
-		writeError(w, r, errResourceNotFound)
-		return
-	case err != nil:
-		writeInternalError(s.log, w, r, "set favourite", err)
-		return
+	if favorite != nil {
+		switch err := s.store.SetFavorite(r.Context(), c.UserID, other, *favorite); {
+		case errors.Is(err, db.ErrNotFound):
+			writeError(w, r, errResourceNotFound)
+			return
+		case err != nil:
+			writeInternalError(s.log, w, r, "set favourite", err)
+			return
+		}
+	}
+	if extras != nil {
+		switch err := s.store.SetFriendshipExtras(r.Context(), c.UserID, other, extras); {
+		case errors.Is(err, db.ErrNotFound):
+			writeError(w, r, errResourceNotFound)
+			return
+		case err != nil:
+			writeInternalError(s.log, w, r, "set friendship extras", err)
+			return
+		}
 	}
 
-	s.log.Info("baas: friend favourite changed",
-		"user", c.UserID, "friend", other, "favorite", favorite)
+	s.log.Info("baas: friendship updated", "user", c.UserID, "friend", other,
+		"favorite", favorite != nil, "extras", extras != nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// friendshipExtras is a friend-list entry's extras: the default scopes every
+// entry has always carried, with whatever the console stored on this direction
+// of the friendship on top.
+func friendshipExtras(stored db.ExtrasByScope) db.ExtrasByScope {
+	out := db.EmptyExtras()
+	for scope, kv := range stored {
+		if out[scope] == nil {
+			out[scope] = map[string]any{}
+		}
+		for k, v := range kv {
+			out[scope][k] = v
+		}
+	}
+	return out
 }
 
 // ---- DELETE /2.0.0/users/<id>/friends/<id> ------------------------------

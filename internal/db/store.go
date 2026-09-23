@@ -190,6 +190,10 @@ type Friendship struct {
 	FriendID       string
 	Favorite       bool
 	BecameFriendAt time.Time
+	// Extras is what the console has PATCHed onto this direction of the
+	// friendship (e.g. extras.self.isConfirmed). Nil or empty when it has
+	// set nothing.
+	Extras ExtrasByScope
 }
 
 // Friend request states.
@@ -679,6 +683,8 @@ type Store interface {
 	GetFriendship(ctx context.Context, userID, friendID string) (Friendship, error)
 	// SetFavorite sets the favourite flag on one direction only.
 	SetFavorite(ctx context.Context, userID, friendID string, favorite bool) error
+	// SetFriendshipExtras replaces the extras on one direction only.
+	SetFriendshipExtras(ctx context.Context, userID, friendID string, extras ExtrasByScope) error
 
 	// ---- friend requests ----
 

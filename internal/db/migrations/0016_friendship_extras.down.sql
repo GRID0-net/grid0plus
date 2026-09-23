@@ -1,0 +1,1 @@
+ALTER TABLE friendships DROP COLUMN IF EXISTS extras;

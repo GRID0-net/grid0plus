@@ -493,6 +493,7 @@ func (m *Memory) ListFriends(_ context.Context, userID string, limit int) ([]Fri
 
 	var out []Friendship
 	for _, f := range m.friendships[userID] {
+		f.Extras = cloneFriendshipExtras(f.Extras)
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -518,7 +519,22 @@ func (m *Memory) GetFriendship(_ context.Context, userID, friendID string) (Frie
 	if !ok {
 		return Friendship{}, ErrNotFound
 	}
+	f.Extras = cloneFriendshipExtras(f.Extras)
 	return f, nil
+}
+
+// SetFriendshipExtras replaces the extras on one direction only.
+func (m *Memory) SetFriendshipExtras(_ context.Context, userID, friendID string, extras ExtrasByScope) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	f, ok := m.friendships[userID][friendID]
+	if !ok {
+		return ErrNotFound
+	}
+	f.Extras = cloneFriendshipExtras(extras)
+	m.friendships[userID][friendID] = f
+	return nil
 }
 
 // SetFavorite sets the favourite flag on one direction only.
@@ -1033,6 +1049,16 @@ func clonePresence(p Presence) Presence {
 		p.LogoutAt = &t
 	}
 	return p
+}
+
+// cloneFriendshipExtras copies a friendship's extras. Unlike cloneExtras, nil
+// stays nil: a friendship nobody has patched has no extras, not a user's
+// default ones.
+func cloneFriendshipExtras(e ExtrasByScope) ExtrasByScope {
+	if e == nil {
+		return nil
+	}
+	return cloneExtras(e)
 }
 
 func cloneExtras(e ExtrasByScope) ExtrasByScope {

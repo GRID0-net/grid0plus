@@ -765,6 +765,35 @@ func testFriendships(t *testing.T, s Store) {
 	if err := s.SetFavorite(ctx, a.ID, b.ID, true); !errors.Is(err, ErrNotFound) {
 		t.Errorf("favourite a non-friend: err = %v, want ErrNotFound", err)
 	}
+
+	// Friendship extras: per direction, round-trip, and no row, no write.
+	if err := s.AddFriendship(ctx, a.ID, b.ID, now); err != nil {
+		t.Fatalf("re-add friendship: %v", err)
+	}
+	if err := s.SetFriendshipExtras(ctx, a.ID, b.ID, ExtrasByScope{"self": {"isConfirmed": true}}); err != nil {
+		t.Fatalf("set friendship extras: %v", err)
+	}
+	f, err = s.GetFriendship(ctx, a.ID, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Extras["self"]["isConfirmed"] != true {
+		t.Errorf("friendship extras = %v, want self.isConfirmed true", f.Extras)
+	}
+	listed, err := s.ListFriends(ctx, a.ID, 0)
+	if err != nil || len(listed) != 1 || listed[0].Extras["self"]["isConfirmed"] != true {
+		t.Errorf("ListFriends did not carry the extras: %+v, %v", listed, err)
+	}
+	reverse, err = s.GetFriendship(ctx, b.ID, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reverse.Extras["self"]) != 0 {
+		t.Errorf("friendship extras leaked into the other direction: %v", reverse.Extras)
+	}
+	if err := s.SetFriendshipExtras(ctx, a.ID, "0000000000000000", ExtrasByScope{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("extras on a non-friend: err = %v, want ErrNotFound", err)
+	}
 }
 
 func testFriendRequests(t *testing.T, s Store) {

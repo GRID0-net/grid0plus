@@ -829,3 +829,72 @@ func (h *harness) relationship(t *testing.T, self account, other string) Relatio
 	decode(t, resp, &out)
 	return out
 }
+
+// TestPatchingAFriendsExtrasSticksAndIsOneDirectional pins what the console
+// actually sends after showing a new friend: PATCH
+// .../friends/<id> with /extras/self/isConfirmed. That was answered 400 until
+// 2026-09-23. It has to be accepted, handed back on the patcher's friend
+// list, and stay out of the other direction. Asserted on the wire.
+func TestPatchingAFriendsExtrasSticksAndIsOneDirectional(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	h.befriend(a, b)
+
+	resp := h.do(request{
+		method: "PATCH", path: "/2.0.0/users/" + a.UserID + "/friends/" + b.UserID,
+		token: a.AccessToken,
+		patch: `[{"op":"add","path":"/extras/self/isConfirmed","value":true}]`,
+	})
+	requireStatus(t, resp, 204)
+
+	extrasOf := func(self account, friend string) map[string]any {
+		t.Helper()
+		resp := h.do(request{method: "GET", path: "/2.0.0/users/" + self.UserID + "/friends", token: self.AccessToken})
+		requireStatus(t, resp, 200)
+		var body struct {
+			Items []struct {
+				FriendID string                    `json:"friendId"`
+				Extras   map[string]map[string]any `json:"extras"`
+			} `json:"items"`
+		}
+		decode(t, resp, &body)
+		for _, it := range body.Items {
+			if it.FriendID == friend {
+				return it.Extras["self"]
+			}
+		}
+		t.Fatalf("%s is not on %s's friend list", friend, self.UserID)
+		return nil
+	}
+
+	if got := extrasOf(a, b.UserID)["isConfirmed"]; got != true {
+		t.Errorf("A's view of B: extras.self.isConfirmed = %v, want true", got)
+	}
+	if got := extrasOf(a, b.UserID)["playLog"]; got != "" {
+		t.Errorf("the default playLog key was lost when stored extras were layered on: %v", got)
+	}
+	if _, leaked := extrasOf(b, a.UserID)["isConfirmed"]; leaked {
+		t.Error("isConfirmed leaked into B's view of A")
+	}
+
+	// Removing it works, and a stranger cannot be patched.
+	resp = h.do(request{
+		method: "PATCH", path: "/2.0.0/users/" + a.UserID + "/friends/" + b.UserID,
+		token: a.AccessToken,
+		patch: `[{"op":"remove","path":"/extras/self/isConfirmed"}]`,
+	})
+	requireStatus(t, resp, 204)
+	if _, still := extrasOf(a, b.UserID)["isConfirmed"]; still {
+		t.Error("isConfirmed survived a remove")
+	}
+	c := h.newAccount()
+	resp = h.do(request{
+		method: "PATCH", path: "/2.0.0/users/" + a.UserID + "/friends/" + c.UserID,
+		token: a.AccessToken,
+		patch: `[{"op":"add","path":"/extras/self/isConfirmed","value":true}]`,
+	})
+	if resp.StatusCode == 204 {
+		t.Error("patching a non-friend's extras succeeded")
+	}
+}

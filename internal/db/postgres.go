@@ -589,7 +589,7 @@ func (p *Postgres) RemoveFriendship(ctx context.Context, a, b string) error {
 
 // ListFriends returns one user's friendships.
 func (p *Postgres) ListFriends(ctx context.Context, userID string, limit int) ([]Friendship, error) {
-	sql := `SELECT user_id, friend_id, favorite, became_friend_at
+	sql := `SELECT user_id, friend_id, favorite, became_friend_at, extras
 	        FROM friendships WHERE user_id = $1
 	        ORDER BY favorite DESC, became_friend_at`
 	args := []any{userID}
@@ -605,9 +605,9 @@ func (p *Postgres) ListFriends(ctx context.Context, userID string, limit int) ([
 
 	var out []Friendship
 	for rows.Next() {
-		var f Friendship
-		if err := rows.Scan(&f.UserID, &f.FriendID, &f.Favorite, &f.BecameFriendAt); err != nil {
-			return nil, mapErr(err)
+		f, err := scanFriendship(rows)
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, f)
 	}
@@ -616,12 +616,42 @@ func (p *Postgres) ListFriends(ctx context.Context, userID string, limit int) ([
 
 // GetFriendship returns one direction of a friendship.
 func (p *Postgres) GetFriendship(ctx context.Context, userID, friendID string) (Friendship, error) {
+	return scanFriendship(p.pool.QueryRow(ctx, `
+		SELECT user_id, friend_id, favorite, became_friend_at, extras
+		FROM friendships WHERE user_id = $1 AND friend_id = $2`, userID, friendID))
+}
+
+func scanFriendship(row pgx.Row) (Friendship, error) {
 	var f Friendship
-	err := p.pool.QueryRow(ctx, `
-		SELECT user_id, friend_id, favorite, became_friend_at
-		FROM friendships WHERE user_id = $1 AND friend_id = $2`, userID, friendID).
-		Scan(&f.UserID, &f.FriendID, &f.Favorite, &f.BecameFriendAt)
-	return f, mapErr(err)
+	var extras []byte
+	if err := row.Scan(&f.UserID, &f.FriendID, &f.Favorite, &f.BecameFriendAt, &extras); err != nil {
+		return Friendship{}, mapErr(err)
+	}
+	if err := json.Unmarshal(extras, &f.Extras); err != nil {
+		return Friendship{}, fmt.Errorf("decode friendship extras %s -> %s: %w", f.UserID, f.FriendID, err)
+	}
+	return f, nil
+}
+
+// SetFriendshipExtras replaces the extras on one direction only.
+func (p *Postgres) SetFriendshipExtras(ctx context.Context, userID, friendID string, extras ExtrasByScope) error {
+	if extras == nil {
+		extras = ExtrasByScope{}
+	}
+	buf, err := json.Marshal(extras)
+	if err != nil {
+		return err
+	}
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE friendships SET extras = $3
+		WHERE user_id = $1 AND friend_id = $2`, userID, friendID, buf)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetFavorite sets the favourite flag on one direction only.
