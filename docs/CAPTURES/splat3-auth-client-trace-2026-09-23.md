@@ -76,6 +76,17 @@ checks its own account-verification state, which is not a useful distinction for
 this local SwitchNet account flow; both observed calls succeeded at the RPC
 level.
 
+A further hardware attempt used the exact seven resource IDs, region labels,
+and single UDP endpoint from that reference. At 19:45:07 UTC, both
+`IssuePrearrangedUserToken` and `ListLatencyMeasurementServers` returned OK;
+`ValidateToken` returned OK at 19:45:25 and 19:45:31. The console again showed
+the hall reload loop, and no matchmaking RPC appeared. The Frontline stream was
+closed by the console at 19:46:08, followed immediately by a successful refresh
+and a new stream. The STUN responder does not log individual packets, and no
+packet capture was running for this attempt, so STUN receipt/reply is unknown
+for this test. The exact resource-name difference is now ruled out as the sole
+cause; the next capture needs to include UDP 3478 again.
+
 ## Remaining question
 
 The generated Auth stub and protobuf descriptor both stop at generic SDK
