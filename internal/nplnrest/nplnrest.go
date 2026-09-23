@@ -453,7 +453,7 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.rec.Record(r, nil, http.StatusOK, "frontline: held open")
+	s.rec.RecordStream(r, http.StatusOK, "frontline: held open")
 
 	// Chunked, unbuffered, and not cached anywhere between here and the
 	// console. Without X-Accel-Buffering an nginx in front holds the stream
@@ -469,10 +469,11 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	// when Splatoon 3 will not connect: did the console get as far as the
 	// frontline?
 	s.log.Info("nplnrest: frontline connection open", "host", wirelog.HostOnly(r.Host), "open", open)
+	closeReason := "request_body_eof"
 	defer func() {
 		remaining := s.frontlines.Add(-1)
-		s.log.Info("nplnrest: frontline connection closed by the console",
-			"host", wirelog.HostOnly(r.Host), "open", remaining)
+		s.log.Info("nplnrest: frontline connection closed",
+			"host", wirelog.HostOnly(r.Host), "open", remaining, "reason", closeReason)
 	}()
 
 	type bodyReadResult struct {
@@ -491,14 +492,13 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case result := <-bodyDone:
-			if result.bytes != 0 {
-				s.log.Info("nplnrest: frontline request body drained", "bytes", result.bytes)
-			}
-			if result.err != nil {
-				s.log.Warn("nplnrest: read frontline request body", "error", result.err)
+			s.log.Info("nplnrest: frontline request body ended", "bytes", result.bytes, "error", result.err)
+			if result.err != nil && !errors.Is(result.err, io.EOF) {
+				closeReason = "request_body_error"
 			}
 			return
 		case <-r.Context().Done():
+			closeReason = "request_context_done"
 			return
 		case <-ticker.C:
 			// Nothing to send. Keep the response open until the request body

@@ -286,7 +286,7 @@ func (b *blockingFrontlineBody) Close() error {
 }
 
 func TestTheFrontlineDrainsRequestBodyAndStaysOpenUntilItEnds(t *testing.T) {
-	s := newServer(t, "")
+	s := newServer(t, t.TempDir())
 	body := &blockingFrontlineBody{
 		firstRead: make(chan struct{}), secondRead: make(chan struct{}), release: make(chan struct{}),
 	}

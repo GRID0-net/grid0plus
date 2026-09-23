@@ -77,7 +77,21 @@ func (r *Recorder) Record(req *http.Request, response []byte, status int, note s
 		"host", HostOnly(req.Host), "method", req.Method, "path", req.URL.Path,
 		"query", req.URL.RawQuery, "bytes", len(body), "truncated", truncated,
 		"status", status, "note", note)
+	r.writeTranscript(req, response, status, note, body, truncated, false)
+}
 
+// RecordStream records request metadata without touching the body. It is for
+// long-lived or streaming requests whose body must remain owned by the handler.
+func (r *Recorder) RecordStream(req *http.Request, status int, note string) {
+	r.log.Info("request stream",
+		"host", HostOnly(req.Host), "method", req.Method, "path", req.URL.Path,
+		"query", req.URL.RawQuery, "content_length", req.ContentLength,
+		"transfer_encoding", strings.Join(req.TransferEncoding, ","),
+		"status", status, "note", note)
+	r.writeTranscript(req, nil, status, note, nil, false, true)
+}
+
+func (r *Recorder) writeTranscript(req *http.Request, response []byte, status int, note string, body []byte, truncated, bodyOmitted bool) {
 	if r.dir == "" {
 		return
 	}
@@ -99,6 +113,12 @@ func (r *Recorder) Record(req *http.Request, response []byte, status int, note s
 	fmt.Fprintf(f, "%s %s HTTP/%d.%d\n", req.Method, req.URL.RequestURI(),
 		req.ProtoMajor, req.ProtoMinor)
 	fmt.Fprintf(f, "Host: %s\n", req.Host)
+	if len(req.TransferEncoding) != 0 {
+		fmt.Fprintf(f, "Transfer-Encoding: %s\n", strings.Join(req.TransferEncoding, ", "))
+	}
+	if req.ContentLength >= 0 {
+		fmt.Fprintf(f, "Content-Length: %d\n", req.ContentLength)
+	}
 	for _, key := range sortedHeaderKeys(req.Header) {
 		for _, v := range req.Header[key] {
 			// Bearer tokens and device credentials go through these hosts. The
@@ -113,7 +133,11 @@ func (r *Recorder) Record(req *http.Request, response []byte, status int, note s
 			fmt.Fprintf(f, "%s: %s\n", key, v)
 		}
 	}
-	fmt.Fprintf(f, "\n%s\n", Hexdump(body))
+	if bodyOmitted {
+		fmt.Fprintln(f, "\n# request body omitted: streaming body remains owned by the handler")
+	} else {
+		fmt.Fprintf(f, "\n%s\n", Hexdump(body))
+	}
 	if truncated {
 		fmt.Fprintf(f, "\n# body truncated at %d bytes\n", maxBody)
 	}

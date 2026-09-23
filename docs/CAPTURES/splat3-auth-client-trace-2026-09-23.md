@@ -136,3 +136,15 @@ what condition gates the first `CreateMatchmakingTicket` call? The 20:10
 capture proves the server returned matching STUN responses but cannot prove
 the client accepted them. Keep credentials and raw packet payloads out of this
 repo.
+
+
+## Frontline body observation correction
+
+A later hardware retry still showed the same hall reload loop. The apparent
+instant EOF in the preceding attempt was not reliable evidence: the generic
+wire recorder reads request bodies synchronously, and the Frontline handler had
+called it before starting its own body reader. Frontline now uses a metadata-only
+recorder that leaves the streaming body untouched; its transcript explicitly
+marks the body as omitted. The handler logs the actual body byte count and why
+the stream ended. The earlier request-body timing should therefore be discarded.
+The corrected path needs a fresh hardware attempt before drawing conclusions.
