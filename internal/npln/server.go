@@ -376,6 +376,13 @@ func (s *Server) unaryInterceptor(
 	resp, err := handler(ctx, req)
 	s.noteUnimplemented(info.FullMethod, err)
 	s.noteFirstSeen(info.FullMethod, err)
+	// Every call, not just the first: while this codebase's own hall-entry
+	// sequence is still being worked out on hardware, a call repeating (as
+	// ValidateToken did, invisibly, during the 2026-09-23 KeepAlive
+	// misdiagnosis -- noteFirstSeen's dedup hid the retry loop entirely) is
+	// exactly the kind of thing worth seeing without another deploy-and-retry
+	// cycle. Cheap at this deployment's traffic; revisit if it ever isn't.
+	s.log.Info("npln: call", "method", info.FullMethod, "code", status.Code(err))
 	return resp, err
 }
 
