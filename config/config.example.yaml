@@ -418,6 +418,11 @@ npln:
   # players are present.
   coop_grace_period: 30
 
+  # Experimental: advertise seven measured latency regions, all mapped to
+  # the first reachable STUN endpoint (or network.public_ip:3478). Leave
+  # disabled unless investigating this compatibility path.
+  regional_latency_servers: false
+
   # How long a matchmaking ticket waits before giving up, in seconds. A ticket
   # that never resolves leaves the player on a spinner with no way back, so
   # timing out is what lets the game offer to try again.

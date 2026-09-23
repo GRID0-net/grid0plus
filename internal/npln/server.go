@@ -84,6 +84,8 @@ type Server struct {
 
 	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
 	iceServers []config.IceServer
+	// regionalLatencyServers enables the seven-region hardware experiment.
+	regionalLatencyServers bool
 	// publicIP is network.public_ip -- ListLatencyMeasurementServers' fallback
 	// target when no ice_servers are configured (the LAN-only default).
 	publicIP string
@@ -192,24 +194,25 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		store:          opts.Store,
-		log:            opts.Log,
-		tokens:         sjwt.NewECVerifier(opts.AccessKey),
-		issuer:         sjwt.NewECIssuer(opts.AccessKey, opts.Config.JWKSURL),
-		idTokens:       sjwt.NewVerifier(opts.BAASIDKey),
-		tenant:         opts.Config.Tenant,
-		sessionHost:    opts.Config.SessionHost,
-		sessionPort:    int32(opts.Config.SessionPort),
-		issuerName:     opts.Config.Issuer,
-		appID:          opts.Config.AppID,
-		accessTokenTTL: opts.Config.AccessTokenTTL,
-		env:            opts.Env,
-		queue:          matchmaking.New(queueConfig(opts.Config), opts.Now),
-		matchModes:     opts.Config.ModePlayers,
-		iceServers:     iceServersFrom(opts.Config.IceServers),
-		publicIP:       opts.PublicIP,
-		adminToken:     opts.Config.AdminToken,
-		messages:       messaging.New(opts.Now),
+		store:                  opts.Store,
+		log:                    opts.Log,
+		tokens:                 sjwt.NewECVerifier(opts.AccessKey),
+		issuer:                 sjwt.NewECIssuer(opts.AccessKey, opts.Config.JWKSURL),
+		idTokens:               sjwt.NewVerifier(opts.BAASIDKey),
+		tenant:                 opts.Config.Tenant,
+		sessionHost:            opts.Config.SessionHost,
+		sessionPort:            int32(opts.Config.SessionPort),
+		issuerName:             opts.Config.Issuer,
+		appID:                  opts.Config.AppID,
+		accessTokenTTL:         opts.Config.AccessTokenTTL,
+		env:                    opts.Env,
+		queue:                  matchmaking.New(queueConfig(opts.Config), opts.Now),
+		matchModes:             opts.Config.ModePlayers,
+		iceServers:             iceServersFrom(opts.Config.IceServers),
+		regionalLatencyServers: opts.Config.RegionalLatencyServers,
+		publicIP:               opts.PublicIP,
+		adminToken:             opts.Config.AdminToken,
+		messages:               messaging.New(opts.Now),
 		presence: presence.Resolver{
 			Store:      opts.Store,
 			ReportTTL:  opts.PresenceTTL,

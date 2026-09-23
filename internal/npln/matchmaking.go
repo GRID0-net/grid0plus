@@ -479,46 +479,83 @@ func (g *gameSessionService) ListLatencyMeasurementServers(
 	}
 
 	out := &mmpb.ListLatencyMeasurementServersResponse{}
-	for i, cfgServer := range g.s.iceServers {
-		if cfgServer.Kind != "stun" {
-			continue
+	if g.s.regionalLatencyServers {
+		host, port, protocol, ok := g.latencyTarget()
+		if ok {
+			for i, region := range latencyServerRegions {
+				out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
+					Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(i),
+					Region:   region,
+					Host:     host,
+					Port:     port,
+					Protocol: protocol,
+				})
+			}
 		}
-		out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
-			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(i),
-			Region:   latencyServerRegion,
-			Host:     cfgServer.Host,
-			Port:     int32(cfgServer.Port),
-			Protocol: latencyProtocol(cfgServer.Protocol),
-		})
-	}
+	} else {
+		for i, cfgServer := range g.s.iceServers {
+			if cfgServer.Kind != "stun" {
+				continue
+			}
+			out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
+				Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(i),
+				Region:   latencyServerRegion,
+				Host:     cfgServer.Host,
+				Port:     int32(cfgServer.Port),
+				Protocol: latencyProtocol(cfgServer.Protocol),
+			})
+		}
 
-	// No stun entries -- the LAN-only default AllocateIceServerSet documents
-	// as fine for ICE, but which this RPC's own doc comment says the console
-	// does not tolerate as an empty list. network.public_ip is already this
-	// deployment's one required "the console can reach this" address (natcheck
-	// advertises it the same way), so it is the fallback target here rather
-	// than leaving the list empty.
-	if len(out.LatencyMeasurementServers) == 0 && g.s.publicIP != "" {
-		out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
-			Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(0),
-			Region:   latencyServerRegion,
-			Host:     g.s.publicIP,
-			Port:     3478,
-			Protocol: mmpb.LatencyMeasurementServer_UDP,
-		})
+		// No stun entries -- the LAN-only default AllocateIceServerSet documents
+		// as fine for ICE, but which this RPC's own doc comment says the console
+		// does not tolerate as an empty list. network.public_ip is already this
+		// deployment's one required "the console can reach this" address (natcheck
+		// advertises it the same way), so it is the fallback target here rather
+		// than leaving the list empty.
+		if len(out.LatencyMeasurementServers) == 0 && g.s.publicIP != "" {
+			out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
+				Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(0),
+				Region:   latencyServerRegion,
+				Host:     g.s.publicIP,
+				Port:     3478,
+				Protocol: mmpb.LatencyMeasurementServer_UDP,
+			})
+		}
 	}
 	g.s.log.Info("npln: answered ListLatencyMeasurementServers",
 		"user", caller.UserID, "servers", len(out.LatencyMeasurementServers))
 	return out, nil
 }
 
-// latencyServerRegion is a real GCP region identifier NextendoNetwork/
-// splatoon-3 records as part of the set Nintendo's own latency servers use
-// (facts only, not its code) -- a real-looking value rather than an invented
-// one, on the theory that the resource-name/region parser this project has
-// already found to be strict elsewhere (see internal/ugcstore's README) may
-// validate this field too.
+// latencyServerRegions are the seven identifiers observed in the working
+// reference implementation. The experiment changes list shape while keeping
+// every address and port pointed at this deployment's one reachable endpoint.
 const latencyServerRegion = "europe-west2"
+
+var latencyServerRegions = []string{
+	"europe-central2",
+	"europe-west2",
+	"northamerica-northeast1",
+	"us-west2",
+	"asia-northeast1",
+	"asia-southeast1",
+	"australia-southeast1",
+}
+
+// latencyTarget chooses the one endpoint repeated for the regional-list
+// experiment. It reflects measured server behavior without claiming there are
+// seven physical latency servers in this deployment.
+func (g *gameSessionService) latencyTarget() (string, int32, mmpb.LatencyMeasurementServer_Protocol, bool) {
+	for _, cfgServer := range g.s.iceServers {
+		if cfgServer.Kind == "stun" {
+			return cfgServer.Host, int32(cfgServer.Port), latencyProtocol(cfgServer.Protocol), true
+		}
+	}
+	if g.s.publicIP != "" {
+		return g.s.publicIP, 3478, mmpb.LatencyMeasurementServer_UDP, true
+	}
+	return "", 0, mmpb.LatencyMeasurementServer_UDP, false
+}
 
 // latencyServerID renders a dot-free slug for the resource name's last
 // segment -- an IP address there would put dots where the console's

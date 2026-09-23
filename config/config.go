@@ -339,6 +339,10 @@ type NPLN struct {
 	// two players are present. A lone player is never on this clock.
 	CoopGracePeriod int `yaml:"coop_grace_period"`
 
+	// RegionalLatencyServers advertises one reachable latency endpoint under
+	// seven measured regions for a controlled hardware compatibility check.
+	RegionalLatencyServers bool `yaml:"regional_latency_servers"`
+
 	// TicketTTL is how long a matchmaking ticket waits before giving up, in
 	// seconds. A ticket that never resolves shows the player a spinner with no
 	// way out.
@@ -816,6 +820,7 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)
 	envInt("SWITCHNET_NPLN_VERSUS_GRACE_PERIOD", &c.NPLN.VersusGracePeriod)
 	envInt("SWITCHNET_NPLN_COOP_GRACE_PERIOD", &c.NPLN.CoopGracePeriod)
+	envBool("SWITCHNET_NPLN_REGIONAL_LATENCY_SERVERS", &c.NPLN.RegionalLatencyServers)
 	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
 	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
