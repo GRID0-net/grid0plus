@@ -543,6 +543,43 @@ func TestListLatencyMeasurementServersFallsBackToPublicIPWhenUnconfigured(t *tes
 	}
 }
 
+func TestRegionalLatencyServersMatchReferenceResourceNames(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("player", "device")
+	h.srv.publicIP = "203.0.113.9"
+	h.srv.regionalLatencyServers = true
+	ctx := h.ctx(h.sessionFor(t, "player", "device"), "")
+
+	got, err := mmpb.NewGameSessionServiceClient(h.conn).
+		ListLatencyMeasurementServers(ctx, &mmpb.ListLatencyMeasurementServersRequest{})
+	if err != nil {
+		t.Fatalf("ListLatencyMeasurementServers: %v", err)
+	}
+	want := []struct{ id, region string }{
+		{"eu-01-udp", "europe-central2"},
+		{"eu-02-udp", "europe-west2"},
+		{"us-01-udp", "northamerica-northeast1"},
+		{"us-02-udp", "us-west2"},
+		{"jp-01-udp", "asia-northeast1"},
+		{"sg-01-udp", "asia-southeast1"},
+		{"au-01-udp", "australia-southeast1"},
+	}
+	if len(got.GetLatencyMeasurementServers()) != len(want) {
+		t.Fatalf("servers = %d, want %d", len(got.GetLatencyMeasurementServers()), len(want))
+	}
+	for i, server := range got.GetLatencyMeasurementServers() {
+		if server.GetName() != h.srv.tenantPath()+"/latencyMeasurementServers/"+want[i].id {
+			t.Errorf("server %d name = %q, want id %q", i, server.GetName(), want[i].id)
+		}
+		if server.GetRegion() != want[i].region {
+			t.Errorf("server %d region = %q, want %q", i, server.GetRegion(), want[i].region)
+		}
+		if server.GetHost() != "203.0.113.9" || server.GetPort() != 3478 || server.GetProtocol() != mmpb.LatencyMeasurementServer_UDP {
+			t.Errorf("server %d endpoint = %s:%d/%v, want 203.0.113.9:3478/UDP", i, server.GetHost(), server.GetPort(), server.GetProtocol())
+		}
+	}
+}
+
 // TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented is the regression
 // test for the failure NextendoNetwork/splatoon-3 measured on real hardware
 // against a different NPLN title: a client that calls this RPC at all reads

@@ -482,10 +482,10 @@ func (g *gameSessionService) ListLatencyMeasurementServers(
 	if g.s.regionalLatencyServers {
 		host, port, protocol, ok := g.latencyTarget()
 		if ok {
-			for i, region := range latencyServerRegions {
+			for _, region := range latencyServerRegions {
 				out.LatencyMeasurementServers = append(out.LatencyMeasurementServers, &mmpb.LatencyMeasurementServer{
-					Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + latencyServerID(i),
-					Region:   region,
+					Name:     g.s.tenantPath() + "/latencyMeasurementServers/" + region.id,
+					Region:   region.region,
 					Host:     host,
 					Port:     port,
 					Protocol: protocol,
@@ -527,19 +527,20 @@ func (g *gameSessionService) ListLatencyMeasurementServers(
 	return out, nil
 }
 
-// latencyServerRegions are the seven identifiers observed in the working
-// reference implementation. The experiment changes list shape while keeping
-// every address and port pointed at this deployment's one reachable endpoint.
+// latencyServerRegions are the resource ids and region labels observed in the
+// working reference implementation. The experiment changes list shape while
+// keeping every address and port pointed at this deployment's one reachable
+// endpoint.
 const latencyServerRegion = "europe-west2"
 
-var latencyServerRegions = []string{
-	"europe-central2",
-	"europe-west2",
-	"northamerica-northeast1",
-	"us-west2",
-	"asia-northeast1",
-	"asia-southeast1",
-	"australia-southeast1",
+var latencyServerRegions = []struct{ id, region string }{
+	{"eu-01-udp", "europe-central2"},
+	{"eu-02-udp", "europe-west2"},
+	{"us-01-udp", "northamerica-northeast1"},
+	{"us-02-udp", "us-west2"},
+	{"jp-01-udp", "asia-northeast1"},
+	{"sg-01-udp", "asia-southeast1"},
+	{"au-01-udp", "australia-southeast1"},
 }
 
 // latencyTarget chooses the one endpoint repeated for the regional-list

@@ -37,7 +37,7 @@ or a client-side retry condition. It has not established a check on
 `User.name`, `Token.access_token`, or any other
 `IssuePrearrangedUserTokenResponse` field.
 
-## What the latest hardware attempt establishes
+## What the hardware attempts establish
 
 At 18:00:11 UTC the server logged `IssuePrearrangedUserToken` as OK, followed
 by `ListLatencyMeasurementServers` as OK with one server. It logged
@@ -45,20 +45,36 @@ by `ListLatencyMeasurementServers` as OK with one server. It logged
 gRPC call visible to the NPLN backend during that attempt. The console still
 showed the hall's communication error.
 
-The Azure packet capture shows five 20-byte STUN Binding requests to UDP 3478
-from the console's public address between 18:00:11.471 and 18:00:11.884.
-The VM sent a 32-byte Binding Success response with the matching transaction
-ID and an XOR-MAPPED-ADDRESS for each request. This proves the VM answered the
-probes on the wire. It does not prove the console accepted the replies, nor that
-latency measurement succeeded. It rules out the previous observation of
-requests receiving only ICMP port-unreachable as the entire explanation for
-the hall error.
+The Azure packet capture for that attempt shows five 20-byte STUN Binding
+requests to UDP 3478 from the console's public address between 18:00:11.471 and
+18:00:11.884. The VM sent a 32-byte Binding Success response with the matching
+transaction ID and an XOR-MAPPED-ADDRESS for each request. This proves the VM
+answered those probes on the wire, but not that the console accepted the replies
+or considered latency measurement successful. It ruled out the earlier
+ICMP-port-unreachable result as the complete explanation.
 
-Nextendo's server, used here only as a behavioral reference, advertises seven
-latency measurement server resources. SwitchNet currently advertises one.
-Neither this binary pass nor the Azure capture establishes a minimum count, so
-that difference is a question for a controlled hardware test, not a confirmed
-fix.
+A controlled follow-up enabled seven regional latency resources, using the
+same region labels and endpoint as the local Nextendo reference. SwitchNet's
+resource IDs in that test were still its own `switchnet-NN-udp` values, so this
+was not yet an exact copy of the reference's resource names. At 19:17:53 UTC,
+SwitchNet logged successful
+`IssuePrearrangedUserToken` and `ListLatencyMeasurementServers` calls; it then
+logged successful `ValidateToken` calls at 19:18:08 and 19:18:13. The capture
+contains 35 STUN Binding Requests to UDP 3478, each answered with a Binding
+Success response. The console still entered the hall reload/communication-error
+loop, and no matchmaking RPC reached the backend. Therefore, changing the
+count and region labels did not resolve the failure. This test did not settle
+whether the resource IDs matter; SwitchNet now uses the reference IDs for the
+next hardware attempt. The capture still cannot prove the client accepted the
+STUN results.
+
+The local Nextendo implementation uses the same seven region labels and
+addresses all entries to its configured UDP endpoint. Its `ValidateToken`
+returns `google.protobuf.Empty` on success. SwitchNet also returns that empty
+message after the authenticated caller reaches the handler. Nextendo additionally
+checks its own account-verification state, which is not a useful distinction for
+this local SwitchNet account flow; both observed calls succeeded at the RPC
+level.
 
 ## Remaining question
 
