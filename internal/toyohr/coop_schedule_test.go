@@ -228,7 +228,7 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 	// Other entries are the live-generated Normal rotation
 	// (liveNormalCoopShifts) filling slots nothing was stored for -- this
 	// test only cares about the one team_contest shift it stored.
-	got := findCoopScheduleByShiftID(t, resp.GetSchedules(), shift.ID())
+	got := findCoopScheduleByNameID(t, resp.GetSchedules(), shift.ID())
 	if got.GetNormal() != nil {
 		t.Error("a team_contest shift set CoopSchedule.Normal")
 	}
@@ -278,7 +278,7 @@ func TestCoopScheduleNameCarriesATargetsSegment(t *testing.T) {
 		t.Fatalf("SelectCoopSchedules: %v", err)
 	}
 
-	name := findCoopScheduleByShiftID(t, resp.GetSchedules(), shift.ID()).GetName()
+	name := findCoopScheduleByNameID(t, resp.GetSchedules(), shift.ID()).GetName()
 	if !strings.Contains(name, "/targets/") || !strings.Contains(name, "/coopSchedules/") {
 		t.Errorf("name = %q, want a targets/<target>/coopSchedules/<id> shape -- this is what crashes a real console", name)
 	}
@@ -309,17 +309,56 @@ func TestParseCoopShiftKindRejectsGarbage(t *testing.T) {
 	}
 }
 
-// findCoopScheduleByShiftID picks out one entry from a SelectCoopSchedules
-// response by its ShiftId -- since liveNormalCoopShifts now fills in Normal
+// findCoopScheduleByNameID picks out one entry from a SelectCoopSchedules
+// response by the last segment of Name -- since liveNormalCoopShifts fills in Normal
 // slots nothing was stored for, a response can legitimately carry entries a
 // test did not itself store.
-func findCoopScheduleByShiftID(t *testing.T, schedules []*toyohrpb.CoopSchedule, id string) *toyohrpb.CoopSchedule {
+func findCoopScheduleByNameID(t *testing.T, schedules []*toyohrpb.CoopSchedule, id string) *toyohrpb.CoopSchedule {
 	t.Helper()
 	for _, s := range schedules {
-		if s.GetShiftId() == id {
+		if strings.HasSuffix(s.GetName(), "/"+id) {
 			return s
 		}
 	}
-	t.Fatalf("no schedule with shift id %q among %d schedules", id, len(schedules))
+	t.Fatalf("no schedule with name ending in %q among %d schedules", id, len(schedules))
 	return nil
+}
+
+// Both working hall captures omit shift_id and identify each shift by its
+// resource name while sharing one schedule-set version across the window.
+func TestCoopSchedulesShareOneSetWithoutShiftIDs(t *testing.T) {
+	at := time.Date(2026, 9, 5, 1, 0, 0, 0, time.UTC)
+	svc, _ := newService(t, at)
+	first := validNormalShift()
+	first.End = first.Start.Add(2 * time.Hour)
+	second := first
+	second.Start = first.End
+	second.End = second.Start.Add(2 * time.Hour)
+	for _, shift := range []CoopShift{first, second} {
+		if err := svc.SaveCoopShift(context.Background(), shift); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp, err := (&scheduleService{s: svc}).SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.GetSchedules()) != 2 {
+		t.Fatalf("got %d shifts, want two", len(resp.GetSchedules()))
+	}
+	setID := resp.GetSchedules()[0].GetScheduleSetId()
+	if setID == "" {
+		t.Fatal("missing schedule-set id")
+	}
+	if setID == scheduleSetID(AlignToSlot(at)) {
+		t.Error("Coop and Versus share a schedule-set id; the captures keep them separate")
+	}
+	if resp.GetSchedules()[0].GetName() == resp.GetSchedules()[1].GetName() {
+		t.Fatal("two distinct shifts have the same resource name")
+	}
+	for _, schedule := range resp.GetSchedules() {
+		if schedule.GetShiftId() != "" || schedule.GetScheduleSetId() != setID {
+			t.Errorf("shift_id=%q, set_id=%q; want absent shift id and shared set %q", schedule.GetShiftId(), schedule.GetScheduleSetId(), setID)
+		}
+	}
 }

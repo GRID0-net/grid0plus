@@ -452,3 +452,26 @@ func TestVersusWindowUsesOneSetAndFourDistinctRankedModes(t *testing.T) {
 		}
 	}
 }
+
+func TestRotationEtagChangesWithXAndLeagueSettings(t *testing.T) {
+	at := time.Date(2026, 9, 5, 13, 0, 0, 0, time.UTC)
+	base := Rotation{RegularStages: []int32{1, 2}, BankaraStages: []int32{3, 4, 5, 6}, BankaraRules: []int32{1, 2, 3, 4}}
+	read := func(rot Rotation) string {
+		t.Helper()
+		resp, err := scheduleServiceFor(t, at, rot).SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.GetEtag()
+	}
+	initial := read(base)
+	base.BankaraRules[2] = 5
+	if read(base) == initial {
+		t.Error("changing X settings left the schedule ETag unchanged")
+	}
+	base.BankaraRules[2] = 3
+	base.BankaraRules[3] = 5
+	if read(base) == initial {
+		t.Error("changing League settings left the schedule ETag unchanged")
+	}
+}

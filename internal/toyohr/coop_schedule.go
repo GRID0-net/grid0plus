@@ -343,10 +343,12 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 // different target than the one the console requested.
 func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.CoopSchedule {
 	name := s.tenantPath() + "/targets/" + target + "/coopSchedules/" + r.ID
+	// Both working hall captures use one schedule-set id for the whole
+	// current Coop window and leave ShiftId absent. The resource Name keeps
+	// each shift distinct without inventing another wire identifier.
 	out := &toyohrpb.CoopSchedule{
 		Name:          name,
-		ScheduleSetId: r.ID,
-		ShiftId:       r.ID,
+		ScheduleSetId: "coop-" + scheduleSetID(AlignToSlot(s.now())),
 		StartTime:     timestamppb.New(r.StartAt),
 		EndTime:       timestamppb.New(r.EndAt),
 		Timestamp:     timestamppb.New(s.now()),

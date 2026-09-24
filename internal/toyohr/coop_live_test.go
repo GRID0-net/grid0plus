@@ -68,7 +68,7 @@ func TestSelectCoopSchedulesLiveFillsGapsNotOverridesStoredSlots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectCoopSchedules: %v", err)
 	}
-	got := findCoopScheduleByShiftID(t, resp.GetSchedules(), override.ID())
+	got := findCoopScheduleByNameID(t, resp.GetSchedules(), override.ID())
 	if got.GetNormal().GetStage() != override.StageID {
 		t.Errorf("stored override for a live-covered slot was not returned as-is: got stage %d, want %d",
 			got.GetNormal().GetStage(), override.StageID)

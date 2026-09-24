@@ -415,6 +415,14 @@ func etagOf(schedules []*toyohrpb.VsSchedule) string {
 			fmt.Fprintf(h, "r%d:", b.GetRule())
 			writeStages(h, b.GetStages())
 		}
+		if x := s.GetXSettings(); x != nil {
+			fmt.Fprintf(h, "x%d:", x.GetRule())
+			writeStages(h, x.GetStages())
+		}
+		if league := s.GetLeagueSettings(); league != nil {
+			fmt.Fprintf(h, "l%d:", league.GetRule())
+			writeStages(h, league.GetStages())
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
