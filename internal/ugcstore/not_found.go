@@ -20,7 +20,7 @@ func missingDocument(name string) error {
 	if _, rel, ok := strings.Cut(name, documentsSegment); ok {
 		path = rel
 	}
-	message := `NotFound. reason: "Document:` + path + `" Not Found`
+	message := `NotFound. reason: "Document:"` + path + `" Not Found"`
 
 	markers := make([]byte, 24)
 	if _, err := rand.Read(markers); err != nil {

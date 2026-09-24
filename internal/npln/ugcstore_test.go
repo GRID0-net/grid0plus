@@ -2,7 +2,6 @@ package npln
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -61,8 +60,9 @@ func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 		t.Error("missing captured NError status detail")
 	}
 	st, _ := status.FromError(err)
-	if !strings.Contains(st.Message(), "GameRecord/users/ugc0000000000001/VsUserAttribute/Data") || strings.Contains(st.Message(), "tenants/current") {
-		t.Errorf("NotFound message = %q, want relative document path", st.Message())
+	wantMessage := `NotFound. reason: "Document:"services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data" Not Found"`
+	if st.Message() != wantMessage {
+		t.Errorf("NotFound message = %q, want captured grammar %q", st.Message(), wantMessage)
 	}
 	if got := st.Details(); len(got) != 1 {
 		t.Errorf("NotFound details count = %d, want one NError", len(got))
