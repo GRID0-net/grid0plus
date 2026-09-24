@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
 )
 
@@ -35,5 +36,33 @@ func TestAnUnregisteredServiceAnswersInTwoFrames(t *testing.T) {
 	_, err = ugcpb.NewScreeningClient(h.conn).CreateReport(h.ctx("", ""), &ugcpb.CreateReportRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("unauthenticated call: err = %v, want Unauthenticated", err)
+	}
+}
+
+// A missing violation must have its own response headers. A named violation
+// declares the player sanctioned; a Trailers-Only error can crash this client.
+func TestNoViolationIsATwoFrameNotFound(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("screening-user", "device-screening")
+	ctx := h.ctx(h.sessionFor(t, "screening-user", "device-screening"), "")
+	client := toyohrpb.NewUserScreeningClient(h.conn)
+
+	var header metadata.MD
+	violation, err := client.GetViolation(ctx,
+		&toyohrpb.GetViolationRequest{Name: "tenants/current/users/current/violations/inappropriate_nickname"},
+		grpc.Header(&header))
+	if violation != nil || status.Code(err) != codes.NotFound {
+		t.Fatalf("GetViolation = %v, %v; want no violation and NotFound", violation, err)
+	}
+	if got := header.Get("npln-grpc-type"); len(got) != 1 || got[0] != "Unary" {
+		t.Errorf("response headers = %v; want Unary header before status trailers", header)
+	}
+	if got := header.Get("content-length"); len(got) != 1 || got[0] != "0" {
+		t.Errorf("response headers = %v; want the measured empty-body content-length", header)
+	}
+
+	_, err = client.GetViolation(h.ctx("", ""), &toyohrpb.GetViolationRequest{})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("unauthenticated GetViolation = %v; want Unauthenticated", err)
 	}
 }

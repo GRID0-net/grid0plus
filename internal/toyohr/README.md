@@ -191,19 +191,15 @@ outcome of a report is that the operator hears about it.
 nobody to issue them, and a private server that silently banned one of the
 operator's own consoles would be a bug with no way to see it.
 
-**The response must still carry its own resource name.** Upstream's own
-proto marked `GetViolationResponse`'s fields `[UNKNOWN]`, and this used to be
-answered as a genuinely empty message — reasoned as unambiguous, since
-"no violation" and "here is your violation" are the same bytes when there
-are no fields to tell them apart. NextendoNetwork/splatoon-3 measured
-(facts only, not its code) that Splatoon 3's own client parses this
-response's resource name and hard-aborts in its resource-path parser when
-it is empty — an empty message decodes to a zero-value `GetViolationResponse`
-whose `name` defaults to `""`. Reproduced on SwitchNet's own hardware on
-2026-09-24. The upstream `.proto` now carries the confirmed `name` field
-(`.proto-upstream/latest/proto/toyohr/v1/userscreening.proto`, regenerated
-via `scripts/gen-proto.sh`), and the handler always resolves it to
-`tenants/<t>/users/<uid>/violations/current` — never a real violation.
+**An absent violation must be NotFound with response headers before the
+status trailers.** A named successful response means a violation exists and
+can block a fresh player from the hall. A successful response without a
+message decodes to an empty resource name and can crash Splatoon 3's
+resource-path parser, as observed on SwitchNet hardware. The working
+Nextendo implementation uses a two-frame NotFound for a player without a
+violation. SwitchNet now does the same, and a gRPC test checks both the
+status and the opening `npln-grpc-type` header. The upstream proto retains
+the `name` field for a real violation if this server ever supports one.
 
 ## The vote is measured; the battle ratios are not
 

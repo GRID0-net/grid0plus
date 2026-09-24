@@ -431,7 +431,13 @@ func (s *Server) noteFirstSeen(method string, err error) {
 // carries no live stream, e.g. a test invoking a handler directly): that
 // failure is expected and not this call's to report.
 func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string) {
-	if err := grpc.SendHeader(ctx, metadata.Pairs("npln-grpc-type", "Unary")); err != nil {
+	header := metadata.Pairs("npln-grpc-type", "Unary")
+	if method == "/nn.npln.toyohr.v1.UserScreening/GetViolation" {
+		// The no-violation answer has no message; the working capture's
+		// opening headers explicitly declare an empty body.
+		header.Set("content-length", "0")
+	}
+	if err := grpc.SendHeader(ctx, header); err != nil {
 		log.Debug("npln: send header", "method", method, "error", err)
 	}
 }

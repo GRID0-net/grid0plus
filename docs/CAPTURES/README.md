@@ -928,6 +928,15 @@ in the client's resource-path parser rather than three unrelated bugs:
   string) and was regenerated via `scripts/gen-proto.sh`; the handler
   always resolves it to `tenants/<t>/users/<uid>/violations/current`.
 
+**Later correction, 2026-09-24:** The named `/violations/current` reply
+prevents the empty-name crash but tells the game the player is sanctioned.
+The current working Nextendo server handles "no violation" as a two-frame
+NotFound: it sends response headers before the status trailers. Its source
+records a fresh player being blocked from the hall by the named form.
+SwitchNet now uses the absent-resource form, covered by a gRPC framing test.
+The exact Nintendo trailer status was not visible in the capture format, so
+this is a reference-implementation behavior, not a direct Nintendo-wire claim.
+
 A fourth VM-side loopback capture, taken after the `GetViolation` fix,
 showed the console making it further still — every RPC through
 `Schedule/SelectVsParams` firing cleanly, `PresenceService/KeepAlive`
