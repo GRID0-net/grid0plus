@@ -319,15 +319,11 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 
 // coopScheduleProto renders a stored shift as the wire message.
 //
-// Three fields are an operator-local assumption rather than a confirmed
-// shape, in the same spirit as festEntryProto's resource-name guess --
-// documented in docs/QUESTIONS.md rather than left unexplained:
-//
-//   - Name, ScheduleSetId and ShiftId follow the "tenants/<t>/..." pattern
-//     GetFestDecryptionKey already confirms for a different resource, since
-//     no capture shows what these three actually carry for a CoopSchedule.
-//   - RewardType is left "" (unset) rather than guessed, since no source
-//     this project has seen says what the real enum-like strings are.
+// A shift with no operator-selected reward uses one real gear pair from
+// CoopRewardGears, selected deterministically by slot. Every Normal entry
+// in both working captures includes reward_type (Head, Clothes, or Shoes)
+// and a nonzero reward_gear_id. This is SwitchNet's own reward rotation,
+// not a reconstruction of Nintendo's selection policy.
 //
 // Name is NOT just a cosmetic mismatch if it is wrong, unlike the claim this
 // comment used to make. A 2026-09-24 decompile of Splatoon 3 v11.3.0 (real
@@ -360,6 +356,7 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 		Timestamp:     timestamppb.New(s.now()),
 	}
 	attrs := coopKumaWeaponsAttribute(r.KumaWeaponID)
+	reward := coopRewardForShift(r.RewardGearID, r.StartAt)
 	switch r.Kind {
 	case "big_run":
 		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
@@ -385,7 +382,8 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 			Stage:        r.StageID,
 			Boss:         r.Boss,
 			MainWeapons:  append([]int64(nil), r.Weapons...),
-			RewardGearId: r.RewardGearID,
+			RewardType:   reward.Kind,
+			RewardGearId: reward.ID,
 			Attributes:   attrs,
 		}
 	}

@@ -1,5 +1,7 @@
 package toyohr
 
+import "time"
+
 // CoopRewardGear is one real gear piece Salmon Run can hand out as a shift
 // reward.
 type CoopRewardGear struct {
@@ -57,4 +59,35 @@ var CoopRewardGears = []CoopRewardGear{
 	{ID: 25005, Kind: "Shoes"},
 	{ID: 25006, Kind: "Shoes"},
 	{ID: 25007, Kind: "Shoes"},
+}
+
+// coopRewardForShift fills a missing reward with a stable, real gear pair.
+// Both working hall captures set reward_type and reward_gear_id on every
+// Normal shift. The public GearInfo tables confirm the three category names
+// and the ids in CoopRewardGears; the slot-to-reward policy is SwitchNet's.
+// A nonzero operator-selected id is preserved. If its category is ambiguous
+// or absent from our small catalog, leave its type unset rather than invent it.
+func coopRewardForShift(selected int32, start time.Time) CoopRewardGear {
+	if selected != 0 {
+		var kind string
+		for _, gear := range CoopRewardGears {
+			if gear.ID != selected {
+				continue
+			}
+			if kind != "" && kind != gear.Kind {
+				return CoopRewardGear{ID: selected}
+			}
+			kind = gear.Kind
+		}
+		return CoopRewardGear{ID: selected, Kind: kind}
+	}
+	kinds := [...]string{"Head", "Clothes", "Shoes"}
+	slot := start.UTC().Unix() / int64(DefaultCoopShiftDuration/time.Second)
+	kind := kinds[((slot%int64(len(kinds)))+int64(len(kinds)))%int64(len(kinds))]
+	for _, gear := range CoopRewardGears {
+		if gear.Kind == kind {
+			return gear
+		}
+	}
+	return CoopRewardGear{}
 }
