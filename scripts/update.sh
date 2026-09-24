@@ -172,7 +172,10 @@ for svc in $go_restart; do
 done
 if echo "$restart" | grep -q nginx; then
     command -v docker >/dev/null || die "docker is not installed (needed for the nginx edge)"
-    docker compose exec nginx nginx -s reload
+    # Git can replace the host-side config inode during pull. A bind-mounted
+    # file keeps the old inode inside the running container, so nginx -s reload
+    # silently reloads stale config. Recreate nginx to remount the new file.
+    docker compose up -d --no-deps --force-recreate nginx
 fi
 
 if [ -n "$go_restart" ]; then
