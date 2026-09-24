@@ -19,9 +19,9 @@ import (
 // makes the game create nothing and loop on a communication error; a
 // genuinely empty success makes it stop dead -- no CreateSaveRecord, no
 // FestSchedule, no documents; only a real, structurally-complete record made
-// everything resume. This is the same crash family as noFestSentinel in
-// service.go, on the RPC that fires immediately before the console's first
-// gRPC calls go silent on SwitchNet's own hardware on 2026-09-24.
+// everything resume. This is the same class of early-session failure as the older fest-response experiment,
+// on the RPC immediately before the console's first gRPC calls went silent
+// on SwitchNet hardware on 2026-09-24.
 //
 // SaveData is deliberately EMPTY, not seeded: CLAUDE.md is explicit that a
 // game dump or save data is something to ask the operator about rather than

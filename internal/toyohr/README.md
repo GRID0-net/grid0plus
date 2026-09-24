@@ -295,7 +295,7 @@ its parameters" and stops advancing. Reproduced on SwitchNet's own hardware
 on 2026-09-24: the console called this RPC successfully and then went silent
 before ever calling `PresenceService/SubscribePresences`, the next call in
 the confirmed reference sequence — the same crash family as
-`noFestSentinel` and `GetSaveRecord`'s real `SaveRecord`.
+`GetSaveRecord`'s real `SaveRecord`.
 
 `SelectVsParams` now answers a real, non-nil `VsParams`, timestamped off the
 current clock so it is never stale. `Attributes` — the one field whose real
@@ -433,7 +433,7 @@ a genuinely empty success makes it stop dead, with no `CreateSaveRecord`, no
 `FestSchedule`, no documents; only a real, structurally-complete record made
 everything resume. This reproduced on SwitchNet's own hardware on
 2026-09-24: the console went silent immediately after this RPC, the same
-crash family as `SelectFestSchedule`'s `noFestSentinel` below.
+crash family as `SelectFestSchedule`'s earlier empty-response experiment.
 
 `GetSaveRecord` now answers a real `SaveRecord` for the caller, with an
 empty-but-present `SaveData` `MapValue`. A cloud save is still real player
@@ -475,26 +475,15 @@ time regardless.
 the already authenticated caller and stores the document under that caller's
 actual user ID. It does not use the literal alias as a shared document owner.
 
-## `SelectFestSchedule` never answers empty, even with no fest configured
+## `SelectFestSchedule` without an active fest
 
-The obvious "honest" answer to "no fest is running" looks like an empty
-response. It is not: NextendoNetwork/splatoon-3 measured (facts only, not its
-code) that both of its real Nintendo captures always answer with a real,
-non-empty schedule -- the current fest, or the last one, never nothing -- and
-that sending an empty one crashes Splatoon 3 about two seconds later
-(`2162-0001` in `nn.npln.Worker`), right after it loads `FestRegion`,
-`Fest` and `FestRecord` from its own save and asks for the matching
-schedule. Reproduced on SwitchNet's own hardware on 2026-09-24: the console
-showed the Splatfest region prompt (reading those same save keys) and
-crashed under a second later, against a server that answered empty.
-
-`noFestSentinel` in `service.go` is what's sent instead whenever there's no
-operator fest to announce -- started at the Unix epoch, so its 42-day
-publication window closed decades before any real console asks, which keeps
-it from ever being "announced" in the sense that would make a client try to
-fetch its decryption key. It carries no Nintendo or Nextendo content: no
-team names, no banners, no real BCAT pack. Just the mechanical shape a
-schedule needs to not be nil.
+Both preserved successful hall captures answer with an empty protobuf when no
+fest is active. SwitchNet previously returned a synthetic expired fest instead.
+A one-account hardware probe of the empty answer removed a BCAT 2122-1058
+error on boot, although the hall still returned Splatoon's communication error.
+The earlier empty-response crash occurred with an older set of responses; it
+cannot be attributed to the no-fest answer alone. A configured fest still
+receives its real schedule during its publication window.
 
 `LobbyMessaging/RecvMessage` sends its idle keepalive every 20 seconds, as
 measured in both successful 2026-09-23 hall captures; see

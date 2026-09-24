@@ -194,7 +194,7 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // hardware on 2026-09-24: the console called this RPC successfully and then
 // went silent before ever calling PresenceService/SubscribePresences, the
 // next call in the confirmed reference sequence -- the same crash family as
-// noFestSentinel and GetSaveRecord's real SaveRecord.
+// GetSaveRecord's real SaveRecord.
 //
 // A real VsParams is answered instead, timestamped off the current clock so
 // it is never stale, but Attributes is left an honestly empty MapValue and

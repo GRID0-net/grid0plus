@@ -11,13 +11,10 @@ import (
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
-func TestEmptyFestProbeIsLimitedToOneAuthenticatedPlayer(t *testing.T) {
-	caller := "probe-player"
+func TestNoFestResponseIsEmptyForEveryPlayer(t *testing.T) {
 	svc := NewService(Options{
 		Store: db.NewMemory(), Log: discardLogger(), Tenant: testTenant,
-		Now:                     func() time.Time { return time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC) },
-		CallerID:                func(context.Context) (string, bool) { return caller, caller != "" },
-		DiagnosticEmptyFestUser: "probe-player",
+		Now: func() time.Time { return time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC) },
 	})
 	get := func() *toyohrpb.SelectFestScheduleResponse {
 		t.Helper()
@@ -29,31 +26,22 @@ func TestEmptyFestProbeIsLimitedToOneAuthenticatedPlayer(t *testing.T) {
 		return resp
 	}
 
-	b, err := proto.Marshal(get())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(b) != 0 {
-		t.Fatalf("probe response has %d protobuf body bytes, want the captured empty message", len(b))
-	}
-
-	caller = "another-player"
-	if get().GetSchedule() == nil {
-		t.Fatal("another player lost the normal sentinel")
-	}
-	caller = ""
-	if get().GetSchedule() == nil {
-		t.Fatal("unauthenticated caller received the diagnostic response")
+	for _, caller := range []string{"probe-player", "another-player"} {
+		b, err := proto.Marshal(get())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b) != 0 {
+			t.Fatalf("%s: no-fest response has %d protobuf body bytes, want the captured empty message", caller, len(b))
+		}
 	}
 
-	// A configured fest, when one exists, always takes precedence over this
-	// probe: the opt-in compares only the otherwise-sentinel branch.
-	caller = "probe-player"
+	// A configured fest is still announced while its publication window is open.
 	fest := NewFest(time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC), nil)
 	if err := svc.SaveFest(context.Background(), fest, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	if get().GetSchedule() == nil {
-		t.Fatal("the probe hid an active operator fest")
+		t.Fatal("an active operator fest was not announced")
 	}
 }
