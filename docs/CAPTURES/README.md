@@ -956,6 +956,24 @@ crash address alone:
   carries the shift's own `Kind` as a stable SwitchNet placeholder, not
   reconstructed Nintendo data.
 
+A fifth VM-side loopback capture -- and, once those pcaps had aged out of the
+scratch directory, a fifth real crash report -- was reproduced with the
+coop shifts deliberately deleted (ruling out the fix above) and still hit
+the exact same generic abort, at yet another `[28c4287a]` return address:
+
+- **`VsParams.Name` needed the same `targets/<target>` segment
+  `CoopSchedule.Name` did — settled by decompile, and now fixed.** The
+  crash's `ReturnAddress[04]` this time was `[28c4287a] + 0x7d2434`, inside
+  a second resource-name parser (`FUN_71007d2034`) in the same source
+  region, checking for the literal segment `"vsParams"` after
+  `targets/<target>/` exactly the way the coop one checks for
+  `"coopSchedules"`. `SelectVsParams`'s own fix earlier in this file
+  answered `tenants/<t>/vsParams/<id>` — missing that segment — and
+  reproduced this crash on real hardware. Unlike `CoopSchedule`, `<target>`
+  here is not invented: `SelectVsParamsRequest` already carries a `Target`
+  field the client itself sends, echoed back into the response's `Name`
+  rather than guessed.
+
 ---
 
 ## Documenting a capture

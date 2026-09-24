@@ -178,6 +178,17 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // inside, and does not invent them. TODO(capture-needed): a capture of a
 // real VsParams payload's Attributes content -- see
 // docs/CAPTURES/README.md.
+//
+// Name carries a "targets/<target>" segment -- settled by decompile, not a
+// guess. A 2026-09-24 decompile of Splatoon 3 v11.3.0's own main.nso (this
+// project's own hardware dump) found the client's resource-name parser for
+// a VsParams requires the literal shape
+// "tenants/<t>/targets/<target>/vsParams/<rest>" and hard-aborts when the
+// parse fails -- the first fix here answered "tenants/<t>/vsParams/<id>",
+// omitting that segment, and reproduced this exact crash on real hardware.
+// <target> is the request's own Target field, echoed back rather than
+// invented: the client is the one naming which matchmaking target it wants
+// parameters for, and SwitchNet has no independent source for that id.
 func (sc *scheduleService) SelectVsParams(
 	ctx context.Context, req *toyohrpb.SelectVsParamsRequest,
 ) (*toyohrpb.SelectVsParamsResponse, error) {
@@ -187,9 +198,17 @@ func (sc *scheduleService) SelectVsParams(
 
 	now := sc.s.now()
 	setID := scheduleSetID(AlignToSlot(now))
+	target := req.GetTarget()
+	if target == "" {
+		// Unexpected: every real request this project has seen names a
+		// target. A stable SwitchNet placeholder rather than an empty path
+		// segment, which the client's parser treats as no segment at all.
+		sc.s.log.Warn("toyohr: SelectVsParams request carried no target")
+		target = "vs"
+	}
 	return &toyohrpb.SelectVsParamsResponse{
 		Params: &toyohrpb.VsParams{
-			Name:        sc.s.tenantPath() + "/vsParams/" + setID,
+			Name:        sc.s.tenantPath() + "/targets/" + target + "/vsParams/" + setID,
 			Timestamp1:  timestamppb.New(now),
 			Timestamp2:  timestamppb.New(now),
 			Attributes:  &common.MapValue{Fields: map[string]*common.Value{}},

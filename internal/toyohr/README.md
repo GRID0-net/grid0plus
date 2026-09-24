@@ -298,6 +298,18 @@ current clock so it is never stale. `Attributes` — the one field whose real
 content is genuinely undocumented — stays an honestly empty `MapValue`
 rather than a guess (`TODO(capture-needed)`, in `schedule.go`).
 
+**`VsParams.Name` needed a `targets/<target>` segment too — settled by
+decompile, and now fixed.** The fix above still crashed real hardware, just
+one call later. A 2026-09-24 decompile of Splatoon 3 v11.3.0's own
+`main.nso` (this project's own hardware dump) found the client's
+resource-name parser for a `VsParams` requires the same literal shape
+`CoopSchedule.Name` does, below: `tenants/<t>/targets/<target>/vsParams/<rest>`.
+The fix's own first answer, `tenants/<t>/vsParams/<id>`, omitted the
+`targets/<target>` segment and reproduced the crash on real hardware.
+Unlike `CoopSchedule`, `<target>` here is not a SwitchNet placeholder:
+`SelectVsParamsRequest` already carries a `Target` field the client itself
+sends, and the response echoes it back rather than inventing one.
+
 **`CoopSchedule.Name` needs a `targets/<target>` segment it did not have —
 settled by decompile, and now fixed.** A 2026-09-24 decompile of Splatoon 3
 v11.3.0 (this project's own console, real hardware) found the client's
