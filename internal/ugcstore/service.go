@@ -14,9 +14,11 @@
 //     read and it re-initialises forever;
 //   - a name that does not parse is never stored.
 //
-// GetDocument and CommitDocuments are served. Queries, bulk reads and
-// attachments stay Unimplemented until a console asks for them -- the
-// gateway's "unimplemented" log is the list.
+// GetDocument, CommitDocuments and RunQuery are served -- RunQuery always
+// with zero matches, see its own doc comment for why that is a real answer
+// and not a placeholder. Bulk reads and attachments stay Unimplemented
+// until a console asks for them -- the gateway's "unimplemented" log is the
+// list.
 package ugcstore
 
 import (
@@ -108,6 +110,33 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	return doc, nil
+}
+
+// RunQuery answers every structured query with zero matches, never
+// Unimplemented.
+//
+// Confirmed against a real capture (docs/CAPTURES/raw's Nextendo second
+// session, RunQuery against a live Splatoon 3 account, PolyForm
+// Shield-licensed source -- facts only, no code taken): a real server's
+// response to a query with no matches is exactly one streamed
+// RunQueryResponse carrying only read_time, with document and
+// skipped_results left unset. That is what SwitchNet answers here --
+// SwitchNet keeps no document collections a StructuredQuery could actually
+// match against (GetDocument/CommitDocuments address one document by name,
+// never a collection), so "zero matches, structurally correct" is not a
+// placeholder, it is this server's honest answer. Reproduced on real
+// hardware on 2026-09-24: Unimplemented here (grpc-status 12) is what the
+// console reads as a communication error right after entering the lobby --
+// this was the last RPC in the confirmed boot sequence still unanswered.
+func (s *Service) RunQuery(
+	req *ugcpb.RunQueryRequest, stream grpc.ServerStreamingServer[ugcpb.RunQueryResponse],
+) error {
+	if _, err := s.caller(stream.Context()); err != nil {
+		return err
+	}
+	return stream.Send(&ugcpb.RunQueryResponse{
+		ReadTime: timestamppb.New(s.now()),
+	})
 }
 
 // pending is one document's state while a commit is being applied.

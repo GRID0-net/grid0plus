@@ -38,4 +38,18 @@ Fields are stored as the encoded `MapValue`, so value types survive exactly.
 | --- | --- |
 | `GetDocument` | yes |
 | `CommitDocuments` | update (with or without a field mask, with preconditions), delete, field transforms (`increment`, `maximum`, `minimum`, `set_server_value: REQUEST_TIME`); attachment operations refuse the batch |
-| `BulkGetDocuments`, `RunQuery`, attachments, short aliases, `IssueUploadUri` | **no** — `Unimplemented`, logged once by the gateway when a console asks |
+| `RunQuery` | always zero matches — see its own doc comment in `service.go` for why that is a real answer, confirmed against a real capture, and not a placeholder |
+| `BulkGetDocuments`, attachments, short aliases, `IssueUploadUri` | **no** — `Unimplemented`, logged once by the gateway when a console asks |
+
+**`RunQuery` used to be Unimplemented too, and that broke the lobby.** It is
+the last RPC in the confirmed boot sequence, called right after
+`Locker/SelectDocuments` — `Unimplemented` here (grpc-status 12) reproduced
+on real hardware on 2026-09-24 as "a communication error has occurred,"
+landing the console in the plaza instead of the hall. A real capture
+(`docs/CAPTURES/raw`'s Nextendo second session, PolyForm Shield-licensed —
+facts only, no code taken) shows a real server answering a query with no
+matches as exactly one streamed `RunQueryResponse` carrying only
+`read_time`, `document` and `skipped_results` both left unset — which is
+what SwitchNet has no honest alternative to anyway: it keeps no document
+collections a `StructuredQuery` could match against (`GetDocument`/
+`CommitDocuments` address one document by name, never a collection).

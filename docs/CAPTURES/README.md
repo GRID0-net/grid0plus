@@ -1013,6 +1013,29 @@ identically to a missing one. Fixed by taking only `Target`'s own last path
 segment (`schedule.go`'s existing `lastSegment` helper) rather than the
 field verbatim.
 
+With that fix deployed, the console stopped crashing entirely and reached
+the plaza -- but "a communication error has occurred" (no error code)
+still appeared on entering the lobby, landing in the plaza instead of
+looping back to the hall. A ninth VM-side loopback capture, and a
+cross-check against two real Nextendo captures already sitting under
+`docs/CAPTURES/raw/` from earlier in this project (PolyForm Shield-licensed
+Nextendo source and its own real-hardware captures -- facts only, no code
+ever taken), pinned it down:
+
+- **`Ugcstore.RunQuery` answering `Unimplemented` — settled, and now
+  fixed.** It is the last RPC in the confirmed boot sequence, called right
+  after `Locker/SelectDocuments`, and was the only one of the whole
+  sequence still genuinely unanswered (`Canola`/`Locker.SelectDocuments`
+  were confirmed fine on the wire, `grpc-status: 0`). Both the VM-side
+  capture and a real Nextendo capture of a live account (`docs/CAPTURES/raw`'s
+  second session) show what a real server answers when a query matches
+  nothing: exactly one streamed `RunQueryResponse` carrying only
+  `read_time`. SwitchNet keeps no document collections a `StructuredQuery`
+  could actually match against, so "zero matches" is this server's honest
+  answer, not a placeholder -- `Unimplemented` (grpc-status 12) was the
+  actual bug, confirmed independently by Nextendo's own comment
+  (`ugcstore_runquery.go`) using the identical shape for the same case.
+
 ---
 
 ## Documenting a capture
