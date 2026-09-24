@@ -28,6 +28,9 @@ import (
 // warm does not require resending the presences themselves.
 var presenceKeepAlive = 30 * time.Second
 
+// Captured SubscribePresences sends every 20s while advertising a 30s interval.
+var presenceStreamTick = 20 * time.Second
+
 // maxSubscribedPresences bounds how many presence names one SubscribePresences
 // call may watch, the same shape as internal/baas's page-size caps: a console
 // asking for an unreasonable number is capped rather than iterated without
@@ -182,7 +185,7 @@ func (p *presenceService) KeepAlive(
 		return err
 	}
 
-	ticker := time.NewTicker(presenceKeepAlive)
+	ticker := time.NewTicker(presenceStreamTick)
 	defer ticker.Stop()
 
 	for {
@@ -253,6 +256,16 @@ func (p *presenceService) SubscribePresences(
 		})
 	}
 
+	// Both working captures send the heartbeat contract before the initial
+	// presence page. The game can then distinguish an open stream from a
+	// silent one while the page is still being assembled.
+	if err := stream.Send(&friendspb.SubscribePresencesResponse{
+		Response: &friendspb.SubscribePresencesResponse_Heartbeat{
+			Heartbeat: presenceHeartbeat(),
+		},
+	}); err != nil {
+		return err
+	}
 	if err := send(); err != nil {
 		return err
 	}
@@ -272,7 +285,7 @@ func (p *presenceService) SubscribePresences(
 		watchedSet[id] = true
 	}
 
-	ticker := time.NewTicker(presenceKeepAlive)
+	ticker := time.NewTicker(presenceStreamTick)
 	defer ticker.Stop()
 
 	for {

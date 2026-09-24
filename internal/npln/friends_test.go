@@ -235,3 +235,37 @@ func TestActivateCurrentUserStillRequiresTheCallersToken(t *testing.T) {
 		}
 	}
 }
+
+// A captured healthy stream advertises 50s but sends a tiny, unchanged-list
+// keepalive every 20s. A full snapshot on that tick is a different message.
+func TestSubscribeFriendUsersSendsALightweightKeepalive(t *testing.T) {
+	old := friendsStreamTick
+	friendsStreamTick = 20 * time.Millisecond
+	t.Cleanup(func() { friendsStreamTick = old })
+
+	h := newHarness(t)
+	h.createUser("heartbeat0000001", "device-heartbeat")
+	rpcCtx := h.ctx(h.sessionFor(t, "heartbeat0000001", "device-heartbeat"), "")
+	stream, err := friendspb.NewFriendsClient(h.conn).SubscribeFriendUsers(rpcCtx,
+		&friendspb.SubscribeFriendUsersRequest{User: "users/heartbeat0000001"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := recvWithTimeout(t, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := initial.GetKeepAliveInterval().AsDuration(); got != 50*time.Second {
+		t.Fatalf("initial advertised interval = %s, want 50s", got)
+	}
+	pulse, err := recvWithTimeout(t, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pulse.GetKeepAliveInterval().AsDuration(); got != 50*time.Second {
+		t.Fatalf("keepalive advertised interval = %s, want 50s", got)
+	}
+	if len(pulse.GetFriendAccounts()) != 0 || len(pulse.GetBlockingAccounts()) != 0 {
+		t.Fatalf("unchanged friend list was resent on the keepalive tick: %v", pulse)
+	}
+}

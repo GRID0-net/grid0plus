@@ -492,3 +492,7 @@ it from ever being "announced" in the sense that would make a client try to
 fetch its decryption key. It carries no Nintendo or Nextendo content: no
 team names, no banners, no real BCAT pack. Just the mechanical shape a
 schedule needs to not be nil.
+
+`LobbyMessaging/RecvMessage` sends its idle keepalive every 20 seconds, as
+measured in both successful 2026-09-23 hall captures; see
+[the capture comparison](../../docs/CAPTURES/npln-stream-liveness-2026-09-24.md).

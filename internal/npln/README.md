@@ -366,3 +366,9 @@ and `messaging.go` is where a `Message` or `Ack` becomes a
 `Friends/ActivateUser` accepts `tenants/current/users/current` as the already
 authenticated caller. An explicit different user is refused; the alias cannot
 establish identity without a valid token.
+
+The 2026-09-23 successful captures show `SubscribeMaintenanceSchedules`,
+`SubscribeFriendUsers`, and `SubscribePresences` sending lightweight pulses
+about every 20 seconds. Friend responses advertise 50 seconds; presence
+heartbeats advertise 30 seconds. These values differ from the pulse cadence;
+see [the capture comparison](../../docs/CAPTURES/npln-stream-liveness-2026-09-24.md).

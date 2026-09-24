@@ -40,6 +40,10 @@ func TestSubscribePresencesOnlyServesSelfAndFriends(t *testing.T) {
 		t.Fatalf("SubscribePresences: %v", err)
 	}
 
+	opening, err := stream.Recv()
+	if err != nil || opening.GetHeartbeat() == nil {
+		t.Fatalf("recv opening heartbeat: %v, %v", opening, err)
+	}
 	first, err := stream.Recv()
 	if err != nil {
 		t.Fatalf("recv: %v", err)
@@ -106,6 +110,10 @@ func TestSubscribePresencesRespectsAFriendsPresencePrivacySetting(t *testing.T) 
 		t.Fatalf("SubscribePresences: %v", err)
 	}
 
+	opening, err := stream.Recv()
+	if err != nil || opening.GetHeartbeat() == nil {
+		t.Fatalf("recv opening heartbeat: %v, %v", opening, err)
+	}
 	first, err := stream.Recv()
 	if err != nil {
 		t.Fatalf("recv: %v", err)
@@ -142,6 +150,9 @@ func TestSubscribePresencesPushesOnAFreshReport(t *testing.T) {
 		})
 	if err != nil {
 		t.Fatalf("SubscribePresences: %v", err)
+	}
+	if opening, err := stream.Recv(); err != nil || opening.GetHeartbeat() == nil {
+		t.Fatalf("recv opening heartbeat: %v, %v", opening, err)
 	}
 	if _, err := stream.Recv(); err != nil { // initial Presences
 		t.Fatalf("recv initial: %v", err)
@@ -339,5 +350,42 @@ func TestPresenceHeartbeatCarriesTheUndocumentedDeadlineField(t *testing.T) {
 	want := []byte{0x12, 0x02, 0x08, 0x32}
 	if !bytes.Contains(raw, want) {
 		t.Errorf("encoded Heartbeat = % x, want it to contain the field-2 deadline % x", raw, want)
+	}
+}
+
+func TestSubscribePresencesAnnouncesThirtySecondsButPulsesAfterTwenty(t *testing.T) {
+	old := presenceStreamTick
+	presenceStreamTick = 20 * time.Millisecond
+	t.Cleanup(func() { presenceStreamTick = old })
+
+	h := newHarness(t)
+	h.createUser("prespulse0000001", "device-prespulse")
+	rpcCtx := h.ctx(h.sessionFor(t, "prespulse0000001", "device-prespulse"), "")
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).SubscribePresences(rpcCtx,
+		&friendspb.SubscribePresencesRequest{
+			User:      "users/prespulse0000001",
+			Presences: []string{"tenants/" + testTenant + "/users/prespulse0000001/presence"},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opening, err := recvWithTimeout(t, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opening.GetHeartbeat() == nil || opening.GetHeartbeat().GetInterval().AsDuration() != 30*time.Second {
+		t.Fatalf("opening frame = %v, want heartbeat advertising 30s", opening)
+	}
+	page, err := recvWithTimeout(t, stream)
+	if err != nil || page.GetPresences() == nil {
+		t.Fatalf("presence page = %v, error = %v", page, err)
+	}
+	done, err := recvWithTimeout(t, stream)
+	if err != nil || done.GetEnumerationDone() == nil {
+		t.Fatalf("enumeration done = %v, error = %v", done, err)
+	}
+	pulse, err := recvWithTimeout(t, stream)
+	if err != nil || pulse.GetHeartbeat() == nil {
+		t.Fatalf("20s heartbeat = %v, error = %v", pulse, err)
 	}
 }

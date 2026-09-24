@@ -144,9 +144,9 @@ func (h *messageHub) subscriberCount(userID string) int {
 //
 // The response carries a KeepAlive in its own oneof, which is the protocol
 // saying outright that silence is not a valid state: a stream that goes quiet is
-// treated as dead and the client stops trusting it. Thirty seconds, matching
-// SubscribeMaintenanceSchedules and inside any reasonable proxy idle timeout.
-const messageKeepAlive = 30 * time.Second
+// treated as dead and the client stops trusting it. Both working captures
+// send a keepalive every 20 seconds.
+const messageKeepAlive = 20 * time.Second
 
 // RecvMessage streams the messages sent to a player.
 //

@@ -238,9 +238,8 @@ type maintenanceService struct {
 // quiet is treated as dead and the client stops trusting it — ROADMAP §2.5
 // records this for the friends streams, and it is the same rule here.
 //
-// Thirty seconds is well inside any reasonable idle timeout, including the
-// nginx defaults the edge is generated with.
-const maintenanceKeepAlive = 30 * time.Second
+// Both working 2026-09-23 captures send this response every 20 seconds.
+const maintenanceKeepAlive = 20 * time.Second
 
 // SubscribeMaintenanceSchedules reports that there is no maintenance, and keeps
 // saying so.

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/n-popescu/switchnet/internal/db"
@@ -27,16 +28,12 @@ const (
 	maxFriendsPageSize     = 1000
 )
 
-// friendsKeepAlive is how often SubscribeFriendUsers resends its snapshot
-// when nothing has changed.
-//
-// SubscribeFriendUsersResponse carries no separate heartbeat-only variant --
-// every message on the stream is a full friend_accounts/blocking_accounts
-// snapshot, unlike PresenceService's own stream. So "keeping it warm" here
-// means periodically resending everything, not a lightweight ping. ROADMAP
-// §2.5: "a stream that goes quiet is treated as dead and the friend list
-// stops updating with nothing in the log."
-const friendsKeepAlive = 30 * time.Second
+// A working 2026-09-23 capture advertises 50 seconds in every friend-stream
+// response, but sends a lightweight heartbeat every 20 seconds. The two
+// values are deliberately independent.
+const friendsKeepAlive = 50 * time.Second
+
+var friendsStreamTick = 20 * time.Second
 
 // ---- nn.npln.friends.v1.Friends -------------------------------------------
 
@@ -187,7 +184,7 @@ func (f *friendsService) SubscribeFriendUsers(
 		}
 	}
 
-	ticker := time.NewTicker(friendsKeepAlive)
+	ticker := time.NewTicker(friendsStreamTick)
 	defer ticker.Stop()
 
 	for {
@@ -195,11 +192,21 @@ func (f *friendsService) SubscribeFriendUsers(
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			snapshot, friendIDs, err = f.s.friendsSnapshot(ctx, caller.UserID)
+			next, nextIDs, err := f.s.friendsSnapshot(ctx, caller.UserID)
 			if err != nil {
 				f.s.log.Error("npln: build friends snapshot", "user", caller.UserID, "error", err)
 				return errInternal()
 			}
+			if proto.Equal(snapshot, next) {
+				// The captured server does not resend an unchanged friend list.
+				if err := stream.Send(&friendspb.SubscribeFriendUsersResponse{
+					KeepAliveInterval: durationpb.New(friendsKeepAlive),
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+			snapshot, friendIDs = next, nextIDs
 			if err := stream.Send(snapshot); err != nil {
 				return err
 			}
