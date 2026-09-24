@@ -105,6 +105,7 @@ func (sc *scheduleService) SelectVsSchedules(
 	}
 
 	return &toyohrpb.SelectVsSchedulesResponse{
+		Unk:       true,
 		Schedules: schedules,
 		Etag:      etagOf(schedules),
 	}, nil
@@ -244,6 +245,7 @@ func (sc *scheduleService) SelectVsParams(
 		target = "vs"
 	}
 	return &toyohrpb.SelectVsParamsResponse{
+		Unk: true,
 		Params: &toyohrpb.VsParams{
 			Name:        sc.s.tenantPath() + "/targets/" + target + "/vsParams/" + setID,
 			Timestamp1:  timestamppb.New(windowStart),
@@ -310,6 +312,7 @@ func (sc *scheduleService) SelectCoopSchedules(
 	for _, shift := range shifts {
 		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(RowFromCoopShift(shift), scheduleTarget(req.GetTarget())))
 	}
+	resp.Unk = len(resp.Schedules) > 0
 	resp.Etag, err = coopScheduleEtag(resp.Schedules)
 	if err != nil {
 		sc.s.log.Error("toyohr: version coop schedule", "error", err)
@@ -352,6 +355,7 @@ func (sc *scheduleService) SelectSeasonSchedules(
 	}
 
 	return &toyohrpb.SelectSeasonSchedulesResponse{
+		Unk:       true,
 		Schedules: schedules,
 		Etag:      seasonEtag(schedules),
 	}, nil
