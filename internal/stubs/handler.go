@@ -122,21 +122,25 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.serviceStatus(w)
 
 	case strings.HasPrefix(host, "bcat-topics"):
-		// The System news feed -- a different, confirmed-shape endpoint from
-		// the unconfirmed BCAT delivery-cache experiment the other two
-		// bcat-* hosts are (case below). Checked first: bcat-topics also
-		// matches the "bcat-" prefix, and would otherwise fall into the
-		// probe's generic 200-empty-body answer, which is not what a real
-		// server sends here. See h.newsTopics.
+		// The System news feed -- confirmed shape, not the generic BCAT
+		// probe (case below). Checked first: bcat-topics also matches the
+		// "bcat-" prefix. See h.newsTopics.
 		h.newsTopics(w, r)
 
 	case strings.HasPrefix(host, "bcat-"):
-		// Unreachable until an operator flips the remaining two bcat-* hosts
-		// away from ServiceBlackhole. Wired up in advance because the
-		// experiment those hosts exist for is a five-minute job once a
-		// console is available and weeks of nothing if the server has to be
-		// written first -- see internal/bcat.Probe.
-		h.bcat.ServeHTTP(w, r)
+		// bcat-list-lp1 and bcat-data-lp1, the unconfirmed BCAT
+		// delivery-cache hosts. NextendoNetwork/Prelude's own commit
+		// history (facts only, not its code) documents a real hard
+		// failure from leaving these unreachable -- Splatoon 3 raised
+		// 2122-2403 (module 122 = bcat) -- and their fix is the same
+		// unconditional 304 as newsTopics: "your cache is current," no
+		// data sent. See h.newsTopics's own doc comment and hosts.go's
+		// "BCAT: answered with 304" section. internal/bcat.Probe still
+		// exists for an operator to swap in deliberately, when actually
+		// answering real delivery-cache content becomes the question --
+		// see its own doc comment -- but it is not what these hosts
+		// answer with day to day any more.
+		h.newsTopics(w, r)
 
 	case strings.Contains(host, ".dragons.nintendo.net"):
 		// eLicenses. Most paths here are a fine empty object; one is not.
@@ -181,29 +185,42 @@ func (h *Handler) emptyObject(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
-// newsTopics answers GET /api/nx/v1/titles/<id>/topics, the System news
-// feed a title polls right at the start of its own boot sequence.
+// newsTopics answers every bcat-* host (list, data and topics) with an
+// unconditional 304 Not Modified, empty body.
 //
-// A real capture against Nextendo (facts only, not its code) on
-// 2026-09-24 -- `docs/CAPTURES/raw/nextendo-second-20260923T210513Z` --
-// caught this exact exchange: the console's request carries no
-// conditional-GET header at all (no If-None-Match, no If-Modified-Since),
-// just an X-Nintendo-DenebEdgeToken it expects nobody to verify (CLAUDE.md
-// is explicit that a Nintendo-issued credential is accepted without being
+// Named for its first confirmed case -- GET /api/nx/v1/titles/<id>/topics,
+// the System news feed a title polls right at the start of its own boot
+// sequence -- but not specific to it any more. A real capture against
+// Nextendo (facts only, not its code) on 2026-09-24 --
+// `docs/CAPTURES/raw/nextendo-second-20260923T210513Z` -- caught the topics
+// exchange in full: the console's request carries no conditional-GET
+// header at all (no If-None-Match, no If-Modified-Since), just an
+// X-Nintendo-DenebEdgeToken it expects nobody to verify (CLAUDE.md is
+// explicit that a Nintendo-issued credential is accepted without being
 // looked at, never forged or checked), and the real server's answer is 304
-// Not Modified with an empty body regardless. This is not conditional-GET
-// cache validation in the ordinary HTTP sense -- there is nothing here to
+// with an empty body regardless. This is not conditional-GET cache
+// validation in the ordinary HTTP sense -- there is nothing here to
 // validate against -- it is the endpoint's own permanent "nothing new"
 // answer, confirmed on the wire, not inferred.
 //
-// Reproduced on SwitchNet's own hardware the same day: this host was
-// null-routed (ServiceBlackhole), the console's very first request of its
-// boot sequence failed outright, and "a communication error has occurred"
-// appeared instantly on opening the hall -- before IssuePrearrangedUserToken
-// even fires. Answering 304 costs nothing to get right: there is no body to
-// invent, and SwitchNet has no news content of its own to serve regardless.
+// NextendoNetwork/Prelude's own commit history (facts only, not its code)
+// independently confirms the same 304-always shape for bcat-list-lp1 and
+// bcat-data-lp1 too, and documents why it matters even without content:
+// Splatoon 3 raised a hard error, 2122-2403 (module 122 = bcat), when
+// bcat-list-lp1 was left unreachable instead. "Your cache is current" is
+// not the same as "here is your data" -- a player with nothing in their
+// BCAT cache still gets nothing -- it only stops that absence from being a
+// hard failure the game surfaces to the player.
+//
+// Reproduced on SwitchNet's own hardware on 2026-09-24 for bcat-topics-lp1
+// specifically: null-routed (ServiceBlackhole), the console's very first
+// request of its own boot sequence failed outright, and "a communication
+// error has occurred" appeared instantly on opening the hall -- before
+// IssuePrearrangedUserToken even fires. Answering 304 costs nothing to get
+// right: there is no body to invent, and SwitchNet has no real BCAT or news
+// content of its own to serve regardless.
 func (h *Handler) newsTopics(w http.ResponseWriter, r *http.Request) {
-	h.log.Info("stubs: news topics", "host", hostOnly(r.Host), "path", r.URL.Path)
+	h.log.Info("stubs: bcat host answered 304", "host", hostOnly(r.Host), "path", r.URL.Path)
 	w.WriteHeader(http.StatusNotModified)
 }
 

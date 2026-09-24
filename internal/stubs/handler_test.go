@@ -288,37 +288,61 @@ func TestLogBodiesDoesNotBreakTheResponse(t *testing.T) {
 	}
 }
 
-// TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants guards the handler
-// TODO.md §2.4's experiment depends on.
-//
-// The hosts are null-routed, so nothing reaches this in a normal deployment.
-// The point is that it works the moment they are flipped, because that
-// experiment needs a console and the console-time is the scarce thing — not the
-// server.
+// TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants guards the
+// probe itself, reached directly (h.bcat), not through routing any more:
+// bcat-list-lp1 and bcat-data-lp1 answer 304 like bcat-topics-lp1 in normal
+// operation (TestBCATHostsAnswer304NotModified), and the probe is now
+// something an operator swaps in deliberately -- see newsTopics's own doc
+// comment for why, and TODO.md §2.4 for the open question it still serves.
 func TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants(t *testing.T) {
+	h, err := New(Config{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "http://bcat-list-lp1.cdn.nintendo.net/api/nx/v1/list/splatoon3", nil)
+	req.Host = "bcat-list-lp1.cdn.nintendo.net"
+	rec := httptest.NewRecorder()
+	h.bcat.ServeHTTP(rec, req)
+
+	// 200, because an error tells the console the server is broken and it
+	// may stop asking — which loses the only thing the probe collects.
+	if rec.Code != http.StatusOK {
+		t.Errorf("code = %d, want 200", rec.Code)
+	}
+	// Empty, because a fabricated container would be rejected for a reason
+	// nobody can name and the experiment's result would mean nothing.
+	if rec.Body.Len() != 0 {
+		t.Errorf("answered %d bytes; the probe must not invent a container", rec.Body.Len())
+	}
+	// No content type: claiming one would be claiming to know what the
+	// console expects, which is the open question.
+	if got := rec.Header().Get("Content-Type"); got != "" {
+		t.Errorf("claimed content type %q", got)
+	}
+}
+
+// TestBCATHostsAnswer304NotModified is the regression test for a real,
+// documented hard failure: NextendoNetwork/Prelude's own commit history
+// (facts only, not its code) ties leaving bcat-list-lp1 unreachable
+// directly to Splatoon 3 raising 2122-2403 (module 122 = bcat). All three
+// bcat-* hosts answer the same unconditional 304 in normal routing now —
+// see newsTopics's own doc comment.
+func TestBCATHostsAnswer304NotModified(t *testing.T) {
 	h := newTestHandler(t)
 
 	for _, host := range []string{
 		"bcat-list-lp1.cdn.nintendo.net",
 		"bcat-data-lp1.cdn.nintendo.net",
+		"bcat-topics-lp1.cdn.nintendo.net",
 	} {
 		rec := get(t, h, host, "/api/nx/v1/list/splatoon3")
-
-		// 200, because an error tells the console the server is broken and it
-		// may stop asking — which loses the only thing the probe collects.
-		if rec.Code != http.StatusOK {
-			t.Errorf("%s answered %d, want 200", host, rec.Code)
+		if rec.Code != http.StatusNotModified {
+			t.Errorf("%s answered %d, want %d -- this is what raised 2122-2403 on real hardware",
+				host, rec.Code, http.StatusNotModified)
 		}
-		// Empty, because a fabricated container would be rejected for a reason
-		// nobody can name and the experiment's result would mean nothing.
 		if rec.Body.Len() != 0 {
-			t.Errorf("%s answered %d bytes; the probe must not invent a container",
-				host, rec.Body.Len())
-		}
-		// No content type: claiming one would be claiming to know what the
-		// console expects, which is the open question.
-		if got := rec.Header().Get("Content-Type"); got != "" {
-			t.Errorf("%s claimed content type %q", host, got)
+			t.Errorf("%s answered %d bytes, want 0 -- there is no data to invent", host, rec.Body.Len())
 		}
 	}
 }
@@ -348,12 +372,15 @@ func TestNewsTopicsAnswers304NotModified(t *testing.T) {
 
 func TestTheBCATProbeWritesATranscriptWhenAskedTo(t *testing.T) {
 	dir := t.TempDir()
-	h := newHandler(t, Config{BCATRecordDir: dir})
+	h, err := New(Config{BCATRecordDir: dir}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
 
 	req := httptest.NewRequest("GET",
 		"http://bcat-list-lp1.cdn.nintendo.net/api/nx/v1/list/splatoon3?lang=EUen", nil)
 	req.Host = "bcat-list-lp1.cdn.nintendo.net"
-	h.ServeHTTP(httptest.NewRecorder(), req)
+	h.bcat.ServeHTTP(httptest.NewRecorder(), req)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

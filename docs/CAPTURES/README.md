@@ -1093,6 +1093,32 @@ confirmed already decoded in this same second Nextendo capture:
   have answered a blanket `200` instead. This is also, independently, why
   the operator never once saw the in-game news screen on SwitchNet.
 
+That fix alone did not clear the error: the missing `TLS: true` flag on the
+new host entry silently excluded it from the certificate's SAN list and
+nginx's routing table generation, and separately, switchnet-nro's own
+bundled hosts file still null-routed the same host client-side -- deploying
+to the VM never touches what is already written to a console's SD card.
+Both were fixed and a new switchnet-nro release shipped (v0.5.1), but the
+operator still hit the identical error afterward. Asked to check how
+NextendoNetwork/Prelude routes the same hosts (facts only, not its code)
+rather than keep guessing from SwitchNet's own side alone, this turned up
+the real remaining gap:
+
+- **`bcat-list-lp1` and `bcat-data-lp1` were also null-routed, and that is
+  a real, documented hard failure, not a safe default — settled, and now
+  fixed.** NextendoNetwork/Prelude's own commit history documents Splatoon 3
+  raising `2122-2403` (module 122 = bcat) when `bcat-list-lp1` was
+  unreachable -- a hard error, not silence, the same class of bug as
+  `bcat-topics-lp1` above. Their fix, applied to all three `bcat-*` hosts
+  uniformly, is the identical unconditional `304 Not Modified` this project
+  had already confirmed independently for topics alone. `internal/stubs.newsTopics`
+  now answers all three; `internal/bcat.Probe` (the TODO.md §2.4 experiment
+  about serving real delivery-cache content) is reached directly by an
+  operator on purpose now, not through routing any `bcat-*` host answers
+  with day to day. The now-vestigial `switchnetctl hosts -bcat-probe` flag,
+  which only ever affected `ServiceBlackhole` hosts, was removed rather
+  than left silently doing nothing.
+
 ---
 
 ## Documenting a capture

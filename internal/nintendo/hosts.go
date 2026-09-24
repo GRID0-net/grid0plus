@@ -604,46 +604,49 @@ var Hosts = []Host{
 		Comment: "error reports",
 	},
 
-	// ---- BCAT: null-route, not passthrough -------------------------------
+	// ---- BCAT: answered with 304, never left unreachable -----------------
 	// Observed 2026-08-26 reaching a real Nintendo IP (88.221.83.x)
 	// during a real-hardware capture: it was not in this list at all, so with
 	// add_defaults_to_dns_hosts off it fell through to ordinary upstream DNS
 	// instead of being redirected or null-routed. That is a violation of this
 	// deployment's isolation policy (see CLAUDE.md and the
-	// emuMMC-never-talks-to-real-Nintendo rule) -- not a feature gap, since it
-	// is not needed for Phase 1: background content-delivery discovery.
+	// emuMMC-never-talks-to-real-Nintendo rule).
 	//
-	// Null-routed rather than stubbed, and this is CONTINGENT rather than
-	// settled. Null-routing fails immediately, which is the right answer while
-	// SwitchNet cannot answer these usefully -- redirecting to a server that
-	// responds without delivering anything risks turning an immediate failure
-	// into a wait.
+	// These three used to be null-routed, reasoned as the safe choice while
+	// SwitchNet cannot answer BCAT usefully. That reasoning turned out to be
+	// wrong: NextendoNetwork/Prelude's own commit history (facts only, not
+	// its code) documents a real, hard failure from exactly this choice --
+	// Splatoon 3 raised 2122-2403 (module 122 = bcat) when bcat-list-lp1 was
+	// unreachable, not silence. Their fix, applied to all three hosts, is a
+	// generic 304 Not Modified on every request: the console reads "your
+	// cache is current" and falls back to whatever it already has locally.
+	// This sends no data -- a player with nothing in their BCAT cache still
+	// gets nothing -- it only stops that absence from being a hard error.
+	// Reproduced independently on SwitchNet's own hardware on 2026-09-24 for
+	// bcat-topics-lp1 specifically (see internal/stubs.newsTopics): a real
+	// capture against Nextendo showed the identical 304-always shape, and
+	// null-routing it made the console's very first boot request fail
+	// outright. list/data get the same answer for the same reason, not
+	// because their own failure mode has been separately reproduced here.
 	//
-	// TODO.md §2.4's experiment needs list/data flipped to ServiceStubs, where
-	// internal/bcat.Probe is already waiting: it logs every request and answers
-	// 200 with an empty body, which is how anybody first learns what the console
-	// asks BCAT for. Flipping either means amending TestBlackholedHostsAreAccountedFor
-	// too -- deliberately, in a commit that says why. It needs a console, so it
-	// is the operator's to run.
+	// internal/bcat.Probe (TODO.md §2.4's actual open question -- whether
+	// SwitchNet could serve real delivery-cache content, not just "nothing
+	// changed") is unaffected: it is a diagnostic tool for an operator to
+	// reach for deliberately, not what these hosts answer with day to day.
 	{
 		Pattern: "bcat-list-lp1.cdn.nintendo.net",
-		Service: ServiceBlackhole,
-		Comment: "BCAT background content delivery, list discovery",
+		Service: ServiceStubs, TLS: true,
+		Comment: "BCAT background content delivery, list discovery -- 304, never null-routed",
 	},
 	{
 		Pattern: "bcat-data-lp1.cdn.nintendo.net",
-		Service: ServiceBlackhole,
-		Comment: "BCAT background content delivery, data",
+		Service: ServiceStubs, TLS: true,
+		Comment: "BCAT background content delivery, data -- 304, never null-routed",
 	},
-	// topics is different from list/data above: it is not the unconfirmed BCAT
-	// delivery-cache experiment, it is the System news feed, and a real
-	// capture against Nextendo (facts only, not its code) on 2026-09-24
-	// settled its shape completely -- see internal/stubs.newsTopics's own doc
-	// comment. Flipped to ServiceStubs rather than left null-routed.
 	{
 		Pattern: "bcat-topics-lp1.cdn.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "System news/topics feed -- confirmed real shape, not the generic BCAT probe",
+		Comment: "System news/topics feed -- confirmed real shape, 304, never null-routed",
 	},
 
 	// ---- eShop (phase 3) ------------------------------------------------

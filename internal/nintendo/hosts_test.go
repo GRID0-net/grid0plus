@@ -187,14 +187,9 @@ func TestBlackholedHostsAreAccountedFor(t *testing.T) {
 		"atumn.hac.lp1.d4c.nintendo.net":    true,
 		"aqua.hac.lp1.d4c.nintendo.net":     true,
 		"cdn.accounts.nintendo.com":         true,
-		// Contingent, not settled: TODO.md §2.4's experiment flips these to
-		// ServiceStubs, where internal/bcat.Probe already answers. When that
-		// happens, move them out of this map in the same commit rather than
-		// treating their presence here as a rule. bcat-topics-lp1 already
-		// moved out, 2026-09-24 -- its shape is confirmed, not an open
-		// experiment; see internal/stubs.newsTopics.
-		"bcat-list-lp1.cdn.nintendo.net": true,
-		"bcat-data-lp1.cdn.nintendo.net": true,
+		// All three bcat-* hosts moved out of this map 2026-09-24: none are
+		// null-routed any more. See internal/stubs.newsTopics and
+		// hosts.go's own "BCAT: answered with 304" section for why.
 	}
 
 	hosts := ServiceHosts(ServiceBlackhole)
