@@ -642,7 +642,7 @@ var Hosts = []Host{
 	// comment. Flipped to ServiceStubs rather than left null-routed.
 	{
 		Pattern: "bcat-topics-lp1.cdn.nintendo.net",
-		Service: ServiceStubs,
+		Service: ServiceStubs, TLS: true,
 		Comment: "System news/topics feed -- confirmed real shape, not the generic BCAT probe",
 	},
 
