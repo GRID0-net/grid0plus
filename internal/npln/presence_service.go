@@ -83,8 +83,8 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 //
 // The first reply is sent immediately, before any ping has even arrived, for
 // the same reason: it is the one that sets the client's clock. Every
-// subsequent client message (ping or UpdatePresence) gets an immediate ack
-// too. A ticker independently sends one on presenceKeepAlive even if the
+// subsequent client message (ping or UpdatePresence) gets its own paced ack.
+// A ticker independently sends one on presenceStreamTick even if the
 // client falls silent, so the stream does not go quiet if the client's own
 // pings ever stop.
 //
@@ -98,25 +98,15 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 // unread field.
 // Change: this function, if a capture shows attributes the client actually
 // depends on.
-// presenceKeepAliveAckMinInterval throttles how often a ping the client sends
-// on KeepAlive actually gets acked.
-//
-// The client resends its next ping the instant it receives our response to
-// the last one -- confirmed on real hardware on 2026-09-24: a mitmproxy
-// capture of SwitchNet's own console showed 101 ping/ack round trips in 2
-// seconds (~50Hz) against this deployment's real network path, immediately
-// followed by the console resetting every one of its long-lived NPLN
-// streams at once and the game showing "a communication error has
-// occurred" with nothing actually disconnected. NextendoNetwork/splatoon-3
-// measured the same mechanism (facts only, not its code): acking
-// immediately makes the loop spin as fast as the round trip allows, and
-// their own comment ties a worsened version of it directly to a faster
-// transport, not a fixed client-side interval. A real Nintendo server sits
-// far enough away that network latency alone throttles this; SwitchNet
-// cannot assume that, so it throttles explicitly instead. Every ping is
-// still drained and still updates presence immediately -- only how often an
-// ACK actually goes out is capped, which is what breaks the feedback loop.
-const presenceKeepAliveAckMinInterval = 1 * time.Second
+// presenceKeepAliveAckMinInterval paces replies without dropping any ping.
+// A 2026-09-24 SwitchNet capture saw 101 ping/ack round trips in two seconds
+// (~50Hz), followed by a hall communication error. Dropping pings during a
+// one-second throttle was also wrong: the client waits for the reply before
+// sending its next ping, so it got only the opening response and abandoned
+// the stream before the next 20-second tick. Both working Nextendo captures
+// show essentially one reply per ping, about 20 per second. A 50ms floor
+// preserves that exchange while bounding the feedback loop.
+const presenceKeepAliveAckMinInterval = 50 * time.Millisecond
 
 func (p *presenceService) KeepAlive(
 	stream grpc.BidiStreamingServer[friendspb.KeepAliveRequest, friendspb.KeepAliveResponse],
@@ -140,21 +130,17 @@ func (p *presenceService) KeepAlive(
 	send := func() error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
+		if wait := presenceKeepAliveAckMinInterval - time.Since(lastSent); wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			}
+		}
 		lastSent = time.Now()
 		return stream.Send(&friendspb.KeepAliveResponse{Heartbeat: presenceHeartbeat()})
-	}
-	// ackIfDue answers a client ping, but only if the last answer was more
-	// than presenceKeepAliveAckMinInterval ago -- see that constant's own
-	// doc comment. A skipped ack is not an error: the client's own patience
-	// is the ticker below's 30s/50s contract, not this ping.
-	ackIfDue := func() error {
-		sendMu.Lock()
-		due := time.Since(lastSent) >= presenceKeepAliveAckMinInterval
-		sendMu.Unlock()
-		if !due {
-			return nil
-		}
-		return send()
 	}
 
 	sendErr := make(chan error, 1)
@@ -171,7 +157,7 @@ func (p *presenceService) KeepAlive(
 				// cosmetic problem into a dropped connection.
 				p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
 			}
-			if err := ackIfDue(); err != nil {
+			if err := send(); err != nil {
 				sendErr <- err
 				return
 			}

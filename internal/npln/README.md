@@ -330,16 +330,14 @@ seconds (~50Hz), ending with the console resetting every one of its
 long-lived NPLN streams at once and the game showing "a communication error
 has occurred" — with nothing actually disconnected.
 
-`presenceKeepAliveAckMinInterval` (`presence_service.go`) caps how often an
-ack actually goes out to one per second, using real wall-clock time
-(`time.Now`), not the mockable `s.now()` other business logic reads — the
-throttle is about real round-trip speed, which a frozen test clock cannot
-represent. Every ping is still drained and still updates presence
-immediately; only the ack itself is throttled, which is what breaks the
-feedback loop. The opening reply (before any ping arrives) is never
-throttled — it is the one that announces the `{30s interval, 50s deadline}`
-contract the client calibrates its own patience against, and skipping it
-was an earlier, different bug (see `TestKeepAliveAcksAPingAfterTheOpeningReply`).
+`presenceKeepAliveAckMinInterval` (`presence_service.go`) delays each reply
+until at least 50ms after the preceding one, using real wall-clock time.
+It never drops a ping: the client waits for that reply before sending the
+next one, so the former one-second drop window left it with only the opening
+heartbeat and another hall error. Both working captures show essentially one
+response per ping at roughly 20 per second. The opening reply is sent before
+any ping arrives and announces the `{30s interval, 50s deadline}` contract.
+See `docs/CAPTURES/npln-keepalive-ack-pacing-2026-09-24.md`.
 
 ## Messaging
 

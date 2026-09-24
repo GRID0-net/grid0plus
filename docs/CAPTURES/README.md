@@ -1060,10 +1060,10 @@ nginx's summarized logs:
   as fast as the round trip allows. The capture measured it directly: 101
   ping/ack round trips in 2 seconds (~50Hz), ending in the exact instant of
   the four-to-six-stream reset burst and the "communication error." Fixed
-  with `presenceKeepAliveAckMinInterval` (`internal/npln/presence_service.go`)
-  throttling acks to at most one per second using real wall-clock time —
-  every ping is still drained and still updates presence immediately, only
-  the ack itself is capped. NextendoNetwork/splatoon-3 measured the same
+  initially with a one-second ack drop window. That workaround was itself
+  wrong: it discarded the one response the client was waiting for. The
+  current implementation delays each reply by at least 50ms without dropping
+  any; see `npln-keepalive-ack-pacing-2026-09-24.md`. NextendoNetwork/splatoon-3 measured the same
   underlying mechanism (facts only, not its code): their own comment ties a
   worsened version of this exact loop directly to a faster transport, not a
   fixed client-side interval, matching a real Nintendo server's distance

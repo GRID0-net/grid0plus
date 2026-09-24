@@ -277,15 +277,42 @@ func TestKeepAliveAcksAPingAfterTheOpeningReply(t *testing.T) {
 	}
 }
 
-// TestKeepAliveThrottlesARapidPingBurst is the regression test for a real
-// crash: a mitmproxy capture of SwitchNet's own console on 2026-09-24 showed
-// 101 ping/ack round trips in 2 seconds (~50Hz) on KeepAlive -- the client
-// resends its next ping the instant it gets a reply to the last one, so
-// acking every single one unconditionally makes the loop spin as fast as
-// the round trip allows. That burst ended with the console resetting every
-// one of its long-lived NPLN streams at once and the game showing "a
-// communication error has occurred," with nothing actually disconnected.
-// See presenceKeepAliveAckMinInterval's own doc comment.
+// TestKeepAlivePacesButNeverDropsAnImmediatePing covers the hall failure
+// observed after a one-second drop window: the game waits for each ack before
+// sending its next ping, so dropping one leaves the stream silent until its
+// deadline. The successful captures show a response for every request.
+func TestKeepAlivePacesButNeverDropsAnImmediatePing(t *testing.T) {
+	old := presenceKeepAlive
+	presenceKeepAlive = time.Hour
+	t.Cleanup(func() { presenceKeepAlive = old })
+
+	h := newHarness(t)
+	h.createUser("keepalive0000005", "device-keepalive-5")
+	base := h.ctx(h.sessionFor(t, "keepalive0000005", "device-keepalive-5"), "")
+	rpcCtx, cancel := context.WithTimeout(base, 500*time.Millisecond)
+	defer cancel()
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).KeepAlive(rpcCtx)
+	if err != nil {
+		t.Fatalf("KeepAlive: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("opening reply: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := stream.Send(&friendspb.KeepAliveRequest{
+			Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000005"}},
+		}); err != nil {
+			t.Fatalf("send ping %d: %v", i, err)
+		}
+		if reply, err := stream.Recv(); err != nil || reply.GetHeartbeat() == nil {
+			t.Fatalf("reply to immediate ping %d: %v, %v", i, reply, err)
+		}
+	}
+}
+
+// TestKeepAliveThrottlesARapidPingBurst keeps the feedback loop bounded
+// while preserving every acknowledgment. The console's own next ping is
+// triggered by the previous response, so one lost response can stall it.
 func TestKeepAliveThrottlesARapidPingBurst(t *testing.T) {
 	old := presenceKeepAlive
 	presenceKeepAlive = time.Hour
