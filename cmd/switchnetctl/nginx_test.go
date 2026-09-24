@@ -36,6 +36,34 @@ func TestNoGeneratedServerBlockHasAnEmptyServerName(t *testing.T) {
 	}
 }
 
+// The console's BCAT/topics and telemetry connections reached nginx but
+// closed during TLS before sending HTTP when nginx requested a client cert.
+func TestBCATAndTelemetryDoNotRequestClientCertificates(t *testing.T) {
+	conf := nginxConf(testConfig())
+	for _, host := range []string{
+		"bcat-list-lp1.cdn.nintendo.net",
+		"bcat-data-lp1.cdn.nintendo.net",
+		"bcat-topics-lp1.cdn.nintendo.net",
+		"receive-lp1.dg.srv.nintendo.net",
+		"receive-lp1.er.srv.nintendo.net",
+	} {
+		found := false
+		for _, block := range strings.Split(conf, "server {")[1:] {
+			if !strings.Contains(block, host) || !strings.Contains(block, "server_name") {
+				continue
+			}
+			found = true
+			if strings.Contains(block, "ssl_verify_client optional_no_ca;") {
+				t.Errorf("%s requests a client certificate", host)
+			}
+			break
+		}
+		if !found {
+			t.Errorf("%s has no nginx server block", host)
+		}
+	}
+}
+
 // TestEveryProxiedServiceAppearsInTheGeneratedConfig catches a service that was
 // added to ProxiedServices but never given a name or a backend: it would render
 // as "# ---- ----" with an upstream called switchnet_ and no hosts.

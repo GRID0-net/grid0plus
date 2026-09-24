@@ -605,15 +605,18 @@ var Hosts = []Host{
 	// discards it, and answers 200 immediately. Telemetry still never
 	// reaches real Nintendo -- only the synchronous wait the applet blocks
 	// on is satisfied. See internal/stubs.telemetrySink.
+	// A 2026-09-24 Ethernet trace showed receive-lp1.dg complete TLS then
+	// close before sending HTTP, matching bcat-topics below. Neither service
+	// uses a client certificate here, so nginx must not request one.
 	{
 		Pattern: "receive-%.dg.srv.nintendo.net",
-		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Service: ServiceStubs, Wildcard: true, TLS: true, NoClientCertRequest: true,
 		TLSNames: []string{"receive-lp1.dg.srv.nintendo.net"},
 		Comment:  "play reports -- read and discarded, answered 200 so the NSO applet does not hang",
 	},
 	{
 		Pattern: "receive-%.er.srv.nintendo.net",
-		Service: ServiceStubs, Wildcard: true, TLS: true,
+		Service: ServiceStubs, Wildcard: true, TLS: true, NoClientCertRequest: true,
 		TLSNames: []string{"receive-lp1.er.srv.nintendo.net"},
 		Comment:  "error reports -- read and discarded, answered 200 so the NSO applet does not hang",
 	},
@@ -647,19 +650,22 @@ var Hosts = []Host{
 	// SwitchNet could serve real delivery-cache content, not just "nothing
 	// changed") is unaffected: it is a diagnostic tool for an operator to
 	// reach for deliberately, not what these hosts answer with day to day.
+	// The 2026-09-24 Ethernet capture proved the topics host was reached but
+	// its TLS connection closed before HTTP; nginx had asked for a client
+	// certificate. Do not issue CertificateRequest on these CDN hosts.
 	{
 		Pattern: "bcat-list-lp1.cdn.nintendo.net",
-		Service: ServiceStubs, TLS: true,
+		Service: ServiceStubs, TLS: true, NoClientCertRequest: true,
 		Comment: "BCAT background content delivery, list discovery -- 304, never null-routed",
 	},
 	{
 		Pattern: "bcat-data-lp1.cdn.nintendo.net",
-		Service: ServiceStubs, TLS: true,
+		Service: ServiceStubs, TLS: true, NoClientCertRequest: true,
 		Comment: "BCAT background content delivery, data -- 304, never null-routed",
 	},
 	{
 		Pattern: "bcat-topics-lp1.cdn.nintendo.net",
-		Service: ServiceStubs, TLS: true,
+		Service: ServiceStubs, TLS: true, NoClientCertRequest: true,
 		Comment: "System news/topics feed -- confirmed real shape, 304, never null-routed",
 	},
 
