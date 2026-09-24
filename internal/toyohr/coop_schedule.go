@@ -179,9 +179,15 @@ func (c CoopShift) Validate() error {
 
 	seen := make(map[int64]bool, len(c.Weapons))
 	for i, id := range c.Weapons {
-		if _, ok := CoopWeaponByID(id); !ok {
+		_, normal := CoopWeaponByID(id)
+		_, grizzco := CoopKumaWeaponByID(id)
+		if !normal && !grizzco {
+			// A main weapon slot being a Grizzco weapon is SwitchNet's own
+			// generation policy (grizzcoWeaponChance, coop_generate.go), not
+			// a claim about Nintendo's own rotation -- so it must validate
+			// as real, exactly like an ordinary CoopWeapons id.
 			return fmt.Errorf("coop shift weapon %d (slot %d) is not a real Salmon Run weapon; "+
-				"see toyohr.CoopWeapons", id, i)
+				"see toyohr.CoopWeapons and toyohr.CoopKumaWeapons", id, i)
 		}
 		if seen[id] {
 			return fmt.Errorf("coop shift weapon %d appears more than once; a real rotation "+

@@ -225,11 +225,10 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectCoopSchedules: %v", err)
 	}
-	if len(resp.GetSchedules()) != 1 {
-		t.Fatalf("got %d schedules, want 1", len(resp.GetSchedules()))
-	}
-
-	got := resp.GetSchedules()[0]
+	// Other entries are the live-generated Normal rotation
+	// (liveNormalCoopShifts) filling slots nothing was stored for -- this
+	// test only cares about the one team_contest shift it stored.
+	got := findCoopScheduleByShiftID(t, resp.GetSchedules(), shift.ID())
 	if got.GetNormal() != nil {
 		t.Error("a team_contest shift set CoopSchedule.Normal")
 	}
@@ -278,11 +277,8 @@ func TestCoopScheduleNameCarriesATargetsSegment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectCoopSchedules: %v", err)
 	}
-	if len(resp.GetSchedules()) != 1 {
-		t.Fatalf("got %d schedules, want 1", len(resp.GetSchedules()))
-	}
 
-	name := resp.GetSchedules()[0].GetName()
+	name := findCoopScheduleByShiftID(t, resp.GetSchedules(), shift.ID()).GetName()
 	if !strings.Contains(name, "/targets/") || !strings.Contains(name, "/coopSchedules/") {
 		t.Errorf("name = %q, want a targets/<target>/coopSchedules/<id> shape -- this is what crashes a real console", name)
 	}
@@ -311,4 +307,19 @@ func TestParseCoopShiftKindRejectsGarbage(t *testing.T) {
 	if _, err := ParseCoopShiftKind("bigrun"); err == nil {
 		t.Error("expected an error for an unrecognised kind string")
 	}
+}
+
+// findCoopScheduleByShiftID picks out one entry from a SelectCoopSchedules
+// response by its ShiftId -- since liveNormalCoopShifts now fills in Normal
+// slots nothing was stored for, a response can legitimately carry entries a
+// test did not itself store.
+func findCoopScheduleByShiftID(t *testing.T, schedules []*toyohrpb.CoopSchedule, id string) *toyohrpb.CoopSchedule {
+	t.Helper()
+	for _, s := range schedules {
+		if s.GetShiftId() == id {
+			return s
+		}
+	}
+	t.Fatalf("no schedule with shift id %q among %d schedules", id, len(schedules))
+	return nil
 }

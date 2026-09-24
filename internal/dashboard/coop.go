@@ -62,6 +62,14 @@ func (s *Server) coopShiftRows(ctx context.Context) ([]coopShiftRow, error) {
 			}
 			if w, ok := toyohr.CoopWeaponByID(id); ok {
 				weaponNames = append(weaponNames, w.Name)
+				continue
+			}
+			// A main weapon slot can now legitimately be a Grizzco weapon
+			// (grizzcoWeaponChance's own generation policy) -- without this
+			// fallback such a slot silently disappeared from the row's
+			// names instead of showing what it actually is.
+			if w, ok := toyohr.CoopKumaWeaponByID(id); ok {
+				weaponNames = append(weaponNames, w.Name)
 			}
 		}
 

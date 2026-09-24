@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -227,7 +228,8 @@ func (sc *scheduleService) SelectVsParams(
 }
 
 // SelectCoopSchedules answers the Salmon Run rotation -- every operator-
-// scheduled shift that has not fully ended yet, soonest first.
+// scheduled shift that has not fully ended yet, soonest first, with any
+// Normal slot nothing has been stored for filled in live.
 //
 // Unlike currentFest, this does not pick just one: a console reasonably
 // wants to know about more than the shift live right now (Splatoon 3 shows
@@ -244,6 +246,17 @@ func (sc *scheduleService) SelectVsParams(
 // discriminated by __typename). Real stage/weapon/boss content and an
 // authoring path come from SaveCoopShift and coop_ids.go -- see
 // internal/toyohr/README.md.
+//
+// The Normal rotation itself no longer needs an operator to pre-generate
+// it: liveNormalCoopShifts (coop_live.go) computes it the same way
+// SelectVsSchedules computes Turf War/Anarchy, live and deterministic from
+// the clock, nothing stored. A stored Normal shift for a given slot -- hand
+// authored, or written earlier by `switchnetctl coop generate` -- still
+// wins over the live fallback for that slot: this only fills gaps, it never
+// overrides what ListCoopShiftsForOperator's own additive-generation
+// guarantee already promises an operator. Big Run and Team Contest are
+// unaffected -- they stay exactly what SaveCoopShift/the store already
+// documents as calendar events, not a rotation to synthesize entries for.
 func (sc *scheduleService) SelectCoopSchedules(
 	ctx context.Context, _ *toyohrpb.SelectCoopSchedulesRequest,
 ) (*toyohrpb.SelectCoopSchedulesResponse, error) {
@@ -259,12 +272,25 @@ func (sc *scheduleService) SelectCoopSchedules(
 
 	now := sc.s.now()
 	resp := &toyohrpb.SelectCoopSchedulesResponse{}
+	storedNormalStarts := map[int64]bool{}
 	for _, row := range rows {
 		if !row.EndAt.After(now) {
 			continue
 		}
 		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(row))
+		if row.Kind == CoopShiftNormal.String() {
+			storedNormalStarts[row.StartAt.UTC().Unix()] = true
+		}
 	}
+	for _, shift := range liveNormalCoopShifts(now, coopLiveHorizonShifts) {
+		if !shift.End.After(now) || storedNormalStarts[shift.Start.UTC().Unix()] {
+			continue
+		}
+		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(RowFromCoopShift(shift)))
+	}
+	sort.Slice(resp.Schedules, func(i, j int) bool {
+		return resp.Schedules[i].StartTime.AsTime().Before(resp.Schedules[j].StartTime.AsTime())
+	})
 	return resp, nil
 }
 
