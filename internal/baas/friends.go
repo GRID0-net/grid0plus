@@ -1,10 +1,8 @@
 package baas
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -358,6 +356,26 @@ func (s *Server) getRelationship(w http.ResponseWriter, r *http.Request, c *call
 // JSON are both accepted for the same reason: which one the sysmodule uses is
 // not documented, and refusing the wrong guess would be a dead end during
 // bring-up.
+//
+// ReceiverID is the shape actually measured from a real console on
+// 2026-09-24, sending by friend code: after the console resolves a friend
+// code to a profile itself (the preceding GET /1.0.0/users and
+// GET /2.0.0/users/<id>/relationships/<id> calls), the create POST names the
+// target directly, not by code, with the exact real body:
+//
+//	{"channels":["FRIEND_CODE"],"senderId":"<caller>","receiverId":"<target>",
+//	 "extras":{"sender":{"route:sender":"me"}}}
+//
+// i.e. the same senderId/receiverId/channels/extras shape
+// FriendRequestResponse itself carries, not a lookup payload. FriendCode/
+// UserID/NSAID were this server's own pre-capture guess at what a create
+// request would look like and were never confirmed; kept alongside
+// ReceiverID rather than removed, since nothing has shown they are wrong,
+// only that they are not what this particular flow (friend-code entry) uses.
+// senderId is read but not required to equal the caller: the caller's own
+// identity is what authorizes the request either way (requireSelf-style
+// fail-closed identity), so a mismatched senderId is not itself trusted for
+// anything, just present for symmetry with the response shape.
 type createFriendRequestBody struct {
 	// FriendCode is the twelve-digit code, with or without dashes and with or
 	// without the "SW-" prefix.
@@ -366,21 +384,15 @@ type createFriendRequestBody struct {
 	UserID string `json:"userId"`
 	// NSAID is another name the console uses for the same thing.
 	NSAID string `json:"nsaId"`
+	// ReceiverID is the target's BAAS user id, in the shape a real console
+	// sends when it already resolved the target itself. See this type's own
+	// doc comment above.
+	ReceiverID string `json:"receiverId"`
 }
 
 // createFriendRequest sends a friend request.
 func (s *Server) createFriendRequest(w http.ResponseWriter, r *http.Request, c *caller) {
-	// DEBUG(2026-09-24): diagnosing 2121-2001 on a real send-by-friend-code
-	// attempt -- remove once the real body shape is known.
-	rawBody, _ := io.ReadAll(r.Body)
-	r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(rawBody))
-	s.log.Info("baas: DEBUG createFriendRequest raw", "content_type", r.Header.Get("Content-Type"),
-		"body", string(rawBody), "url_raw_query", r.URL.RawQuery)
-
 	body, err := s.parseFriendRequestBody(r)
-	s.log.Info("baas: DEBUG createFriendRequest parsed", "parsed_friendCode", body.FriendCode,
-		"parsed_userId", body.UserID, "parsed_nsaId", body.NSAID, "parse_err", err)
 	if err != nil {
 		writeError(w, r, errInvalidParams)
 		return
@@ -483,6 +495,7 @@ func (s *Server) parseFriendRequestBody(r *http.Request) (createFriendRequestBod
 	body.FriendCode = f.Get("friendCode")
 	body.UserID = f.Get("userId")
 	body.NSAID = f.Get("nsaId")
+	body.ReceiverID = f.Get("receiverId")
 	return body, nil
 }
 
@@ -511,6 +524,9 @@ func (s *Server) resolveTarget(w http.ResponseWriter, r *http.Request, body crea
 	id := strings.ToLower(body.UserID)
 	if id == "" {
 		id = strings.ToLower(body.NSAID)
+	}
+	if id == "" {
+		id = strings.ToLower(body.ReceiverID)
 	}
 	if len(id) != 16 {
 		writeError(w, r, errInvalidParams)

@@ -329,6 +329,41 @@ func TestFriendRequestByFormEncodedBody(t *testing.T) {
 	requireStatus(t, resp, 201)
 }
 
+// TestFriendRequestByReceiverID is the regression test for a real,
+// reproducible bug on real hardware: sending a friend request by entering a
+// friend code returned 400/2121-2001 every time. The console does not repeat
+// the friend code on this call -- it already resolved the target through the
+// preceding GET /1.0.0/users and GET .../relationships/<id> calls (see the
+// GET side of that flow elsewhere in this file) -- and posts, byte for byte,
+// measured from a real console on 2026-09-24:
+//
+//	{"channels":["FRIEND_CODE"],"senderId":"<caller>","receiverId":"<target>",
+//	 "extras":{"sender":{"route:sender":"me"}}}
+//
+// This server only recognised friendCode/userId/nsaId, none of which this
+// body carries, so target resolution silently failed with invalid_params
+// every time -- the friend-request screen could show a resolved profile and
+// still refuse to ever send a request to it.
+func TestFriendRequestByReceiverID(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+
+	resp := h.do(request{
+		method: "POST", path: "/2.0.0/friend_requests",
+		token: a.AccessToken,
+		json: `{"channels":["FRIEND_CODE"],"senderId":"` + a.UserID + `","receiverId":"` +
+			b.UserID + `","extras":{"sender":{"route:sender":"me"}}}`,
+	})
+	requireStatus(t, resp, 201)
+
+	var got FriendRequestResponse
+	decode(t, resp, &got)
+	if got.SenderID != a.UserID || got.ReceiverID != b.UserID {
+		t.Errorf("request ids = %q/%q, want %q/%q", got.SenderID, got.ReceiverID, a.UserID, b.UserID)
+	}
+}
+
 func TestUnknownFriendCodeIsNotFoundAndAMalformedOneIsRejected(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
