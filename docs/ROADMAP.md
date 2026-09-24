@@ -1,6 +1,6 @@
 # Roadmap
 
-Three phases. Each one is only worth starting when the previous one has been
+Five phases. Each one is only worth starting when the previous one has been
 confirmed working on real hardware, because otherwise a failure has two possible
 causes and no way to tell them apart.
 
@@ -16,12 +16,17 @@ cost of the decision and is worth stating plainly.
 | [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | code complete, **awaiting hardware verification** |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
 | [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **awaiting hardware verification and a capture** |
+| [5](#phase-5--account-system-refactor--a-discord-bot) | account creation/linking refactor, a Discord bot as the primary registration and per-user control surface | **planned, not started** |
 
 Phase 3 is scoped differently from 1 and 2: it is not going into `internal/`
 here at all. See its section below for why and what that means in practice.
 Phase 4 stays in this repository (unlike phase 3, it needs no game dumps and
 carries none of phase 3's distribution-of-copyrighted-content exposure), but
-depends on phase 1 the same way phase 3 does, for the same reason.
+depends on phase 1 the same way phase 3 does, for the same reason. Phase 5
+also depends on phase 1 — it replaces part of the account-creation path phase
+1 built — but does not depend on phase 1 being hardware-verified first the
+way 3 and 4 do: nothing about it is Splatoon- or NPLN-specific, and it can be
+designed (though not safely *finished*) in parallel.
 
 ---
 
@@ -742,6 +747,227 @@ Same boundary as phase 3's, for the same reason: this backs up save data for
 consoles the operator owns, on the operator's own network. It is not a
 general-purpose backup service and should never be reachable by anyone else's
 console.
+
+---
+
+## Phase 5 — account system refactor + a Discord bot
+
+**Not started. This section is a plan, not a design that has been implemented
+or validated against real hardware.** It records a decision to make later,
+not a decision already made — everything below is free to change once actual
+implementation starts and runs into something this plan did not anticipate.
+
+**Depends on phase 1's code** (the account/login/friend-code layer this
+touches), **but not on phase 1's hardware verification** the way phases 3 and
+4 do. Nothing here is Splatoon- or NPLN-specific, so the design work — and
+probably the bot's non-account commands — can proceed in parallel with
+phase 1's hardware test. Actually *changing* how accounts are created and
+linked should still wait until phase 1 is confirmed working end-to-end,
+since it touches the exact code path
+([`internal/baas/nalink.go`](../internal/baas/nalink.go),
+[`accounts.go`](../internal/baas/accounts.go)) that test is meant to
+validate — breaking it silently while "just adding a bot" would erase the
+hardware test's own signal.
+
+### 5.1 What's wrong today, concretely
+
+Two real problems in the current account-creation path, both confirmed by
+reading the code rather than assumed:
+
+1. **Linking a Nintendo Account leaves an orphaned "throwaway" user
+   behind.** A console's own account-creation flow always calls
+   `POST /1.0.0/users` first — `registerUser`
+   ([`accounts.go:111`](../internal/baas/accounts.go)) — which has no choice
+   but to invent a brand new `db.User` + `db.DeviceAccount` on the spot,
+   before anyone has said who the real person is (see nalink.go's own
+   package comment, "the disposable identity registerUser had to invent
+   before any id token existed"). When that person then links through the
+   Nintendo Account page with their real SwitchNet login, `completeLogin`
+   ([`accounts.go:414`](../internal/baas/accounts.go)) calls
+   `ReassignDeviceAccount` to move the *device account* onto their real,
+   persistent `User` — but the disposable `User` row `registerUser` created
+   is never touched. It sits in the `users` table forever, with zero device
+   accounts pointing at it, showing up in the dashboard's Players list and
+   in every user count. This is the "second throwaway account" problem: it
+   is not a bug in the sense of broken behavior (login still works
+   correctly), it is a bookkeeping leak in a process meant to run once per
+   *console*, not stay invisible once per *person*.
+2. **There is no operator-facing way to create a person's SwitchNet
+   identity that isn't "wait for a console to invent one."** The self-
+   registration website (`website.go`'s `CreateUserWithLogin`) already
+   creates a `User` with `LoginUsername`/`LoginPasswordHash` and *no* device
+   account, lazily minting one on first login
+   (`deviceAccountForLogin`, [`accounts.go:319`](../internal/baas/accounts.go))
+   — which is most of what a bot-driven `/register` needs, but it is a
+   public HTML form today, not something a Discord command can drive
+   without scraping its own page.
+
+### 5.2 Discord bot as the primary registration path
+
+`/register` (Discord slash command, one per Discord account):
+
+- Takes the caller's Discord **username** (not display name/nickname — the
+  stable, unique one) as the SwitchNet `LoginUsername`.
+- Generates an 8-character password from `[a-z0-9A-Z]` server-side (the
+  same kind of random-credential generation `newDevicePassword` already does
+  for device accounts, just a human-typeable alphabet instead of that
+  function's own), shows it to the caller **once**, and never stores it in
+  plaintext or logs it — same handling `registerUser`'s response already
+  gives a device account password.
+- Creates the `User` + `LoginPasswordHash` (bcrypt, matching
+  `CreateUserWithLogin`'s existing hashing) the same way the website does
+  today, through the same store call — this needs no new account-creation
+  logic, only a new caller for the existing one, reachable from the bot
+  process rather than only from an HTTP form.
+- Records the Discord user ID against the new `User` row (a new
+  `DiscordUserID` column, unique, nullable for accounts that never went
+  through the bot) so every other command below can resolve "the caller" to
+  a SwitchNet user without asking them to re-authenticate per command.
+
+The password the bot hands out is typed into the Switch's own "link a
+Nintendo Account" flow exactly the way a website-registered person already
+would — `nalink.go`'s login page already checks a SwitchNet
+username/password, not a device-account id/password, so nothing about the
+console-facing protocol changes; only the source of the credentials does.
+
+**Optional, not required for v1** (the user's own words): letting a person
+rotate their password after first use, e.g. `/reset-password`, generating a
+new one the same way and invalidating device-account tokens minted before
+it the same way `TokensRevokedBefore` already does elsewhere in this
+codebase. Worth having, not blocking.
+
+### 5.3 Redesigning the throwaway-account problem
+
+The actual ask: stop counting a console's disposable pre-link identity as a
+real user, without breaking the fact that `registerUser` structurally has to
+create *something* the instant a console asks for an account, before it can
+possibly know who that will turn out to be.
+
+Proposed shape (a plan to validate against the real `Store` interface when
+this is implemented, not a final schema):
+
+- A new, separate table — `device_provisioning_identities` or similar —
+  holds exactly what a disposable pre-link identity needs to exist at all:
+  an id, its one `DeviceAccount`, and nothing else. Not a `User` row, so it
+  never appears in `ListUsers`/the dashboard's Players count/anywhere a real
+  person is counted.
+- `registerUser` creates a row here instead of a `db.User`, the very first
+  time a console asks for an account with no prior link.
+- `db.User` gains a field naming its **current** provisioning identity (a
+  nullable FK) — the row a console's device account is presently attached
+  to before or absent a link, exactly one at a time.
+- When `completeLogin`'s federation path reassigns a device account onto a
+  real person (today's `ReassignDeviceAccount`), the *old* provisioning
+  identity that device account used to belong to is hard-deleted in the same
+  transaction, once nothing still points at it. "Hard-deleted," per the
+  request explicitly — not soft-deleted, not kept for audit: it never held
+  anything but a disposable device-account credential nobody needs a record
+  of once it is superseded.
+- A person can still end up with **no** provisioning identity at all (the
+  bot-registered case, same as today's website registration): the FK is
+  nullable, and `deviceAccountForLogin`'s existing lazy-mint-on-first-login
+  behavior is unaffected either way.
+
+What this does *not* change: the wire protocol, `nalink.go`'s login page, or
+`completeLogin`'s password-then-reassign security property (a device account
+is only ever reassigned after proving its own password, never on an id
+token's claim alone — see that function's own comment). This is a storage
+and bookkeeping change, not a protocol change.
+
+### 5.4 Avatars from Discord instead of the static placeholder
+
+Today, an account with no uploaded thumbnail falls back to
+`ensureDefaultAvatar` — a generated solid-colour square
+([`internal/baas/images.go`](../internal/baas/images.go)). The plan: at
+`/register` (and optionally on a later `/avatar` re-sync command), the bot
+fetches the caller's Discord avatar, converts it to JPEG, and stores it the
+same way an uploaded thumbnail already is — through the existing
+`POST /1.0.0/image_upload` shape/`cfg.ImageDir`
+([`internal/baas/images.go`](../internal/baas/images.go)) rather than a
+second, parallel image store. `cfg.ImageDir` already exists as exactly the
+"don't scatter files at repo root" folder the request asks for; nothing new
+needs creating there beyond what this endpoint already writes into it. Real
+dimensions to resize to (Discord avatars come in several sizes; the
+`imageUploadRequest.RawContent` shape this reuses expects a single JPEG) are
+an implementation detail to pin down against `images.go`'s own handling when
+this is actually built, not decided here.
+
+### 5.5 Other bot commands, grounded in what SwitchNet already stores
+
+Every command below reads or writes data that already exists in `internal/db`
+and `internal/baas` — nothing here proposes tracking anything new besides
+5.2's `DiscordUserID` link and 5.3's provisioning-identity table:
+
+- **`/fc`** — the caller's own friend code (`db.FriendCode`,
+  `internal/baas/friendcodes.go`).
+- **`/fc-add <user>`** — send a friend request, accepting either a mention
+  of another Discord account that has itself run `/register` (resolved
+  through `DiscordUserID`) or a raw friend code
+  (`XXXX-XXXX-XXXX-XXXX`) for a SwitchNet account that never touched the
+  bot at all — friend codes are already how the stock friends applet adds
+  someone, so this is the same lookup, just from a slash command
+  (`internal/baas/friends.go`, `FriendRequest`).
+- **`/fc-pending`** — list the caller's outgoing and incoming
+  `RequestPending` rows (`db.FriendRequest`).
+- **`/fc-remove <user>`** — end a friendship or cancel/deny a pending
+  request — the same operations the stock applet already exposes, via the
+  bot instead.
+- **`/whoami`** — the caller's own SwitchNet nickname, friend code, and
+  linked-console count (`len(ListDeviceAccounts)`), so a person can check
+  what the bot has for them without opening the dashboard.
+- **`/online`** — who in the group is currently online/playing
+  (`db.Presence`, the same states `internal/presence` already resolves for
+  the dashboard's live view) — a Discord-native version of "who's on."
+  Consider a `/status` variant scoped to just the caller's own friends list,
+  not the whole group, if privacy turns out to matter once real people are
+  using this.
+- **`/status`** — service health, reusing exactly what the dashboard's
+  `/api/health` already reports (`internal/dashboard/servicehealth.go`) —
+  which services are up, plus a current online-player count — so an
+  operator (or anyone in the Discord) can check "is SwitchNet up" without
+  opening the dashboard.
+- **`/matches`** *(maybe)* — the caller's own recent match history
+  (`db.Match`, already recorded by `internal/npln`'s `recordMatch`) once
+  phase 2 is confirmed working — low priority, and only worth it if Splatoon
+  3 is actually confirmed on hardware, since the data is otherwise empty.
+
+Commands intentionally NOT proposed: anything that would need inventing a
+Nintendo-side value (a fake presence state, a fake match result) or that
+duplicates a *destructive* dashboard control (deleting an account, revoking
+tokens) without the same care `internal/dashboard`'s own confirm-dialog UX
+gives those actions today — if bot-driven account moderation is wanted
+later, it needs its own authorization story (who in Discord is allowed to
+run it), not assumed here.
+
+### 5.6 Open questions to settle before implementation starts
+
+- **Where does the bot process live?** A new `cmd/discordbot`, using Go the
+  same as everything else in this repo (a client library exists,
+  `bwmarrin/discordgo`), talking to `internal/baas`/`internal/db` in-process
+  the way `cmd/switchnetctl` already does, rather than over HTTP — avoids
+  inventing a new admin API surface purely for the bot's own use. This
+  matches CLAUDE.md's polyglot-per-layer approach (Go for servers) and phase
+  4's precedent (stayed in this repo because it is the operator's own
+  infrastructure, not distributed content) more than it matches phase 3's
+  "lives outside this repository" reasoning (which was about copyrighted
+  game content, not applicable here) — but this is a call to make when the
+  work actually starts, not fixed by writing it down now.
+- **Discord bot token / server management** is itself operator
+  configuration (`config.yaml`, a new `discord:` section) — needs a decision
+  on which guild(s)/roles are allowed to run which commands, especially
+  anything moderation-adjacent.
+- **Exact avatar resize dimensions and format**, deferred to 5.4.
+- **Whether `/register` should be rate-limited or invite-gated** the way
+  `cfg.AllowRegistration` already gates the website/console path — an open
+  Discord server with a working `/register` is a different exposure than a
+  private HTML form URL.
+
+### 5.7 Scope note
+
+This is account-layer and operator-tooling work, not game-protocol work — it
+does not touch `internal/toyohr`, `internal/npln`, or anything Splatoon-3-
+specific, and nothing in it needs a game dump or copyrighted content the way
+phase 3 does. It stays in this repository.
 
 ---
 
