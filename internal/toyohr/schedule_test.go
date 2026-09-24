@@ -415,3 +415,40 @@ func TestScheduleNamesOnTheWireUseTheRequestedTarget(t *testing.T) {
 		}
 	}
 }
+
+// A working hall response names the previous slot as well as the live one,
+// keeps one schedule-set id across the window, and divides four ranked rules
+// between two Anarchy variants, X, and League.
+func TestVersusWindowUsesOneSetAndFourDistinctRankedModes(t *testing.T) {
+	at := time.Date(2026, 9, 24, 15, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{
+		RegularStages: []int32{1, 2, 3, 4},
+		BankaraRules:  []int32{1, 2, 3, 4},
+		BankaraStages: []int32{5, 6, 7, 8, 9, 10, 11, 12},
+	})
+	resp, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.GetSchedules()) != 12 {
+		t.Fatalf("got %d slots, want 12", len(resp.GetSchedules()))
+	}
+	if got := resp.GetSchedules()[0].GetStartTime().AsTime(); !got.Equal(time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)) {
+		t.Errorf("first slot starts %s; want the slot before the current one", got)
+	}
+	setID := resp.GetSchedules()[0].GetScheduleSetId()
+	names := map[string]bool{}
+	for i, slot := range resp.GetSchedules() {
+		if slot.GetScheduleSetId() != setID || setID == "" {
+			t.Errorf("slot %d set id = %q, want shared %q", i, slot.GetScheduleSetId(), setID)
+		}
+		if names[slot.GetName()] {
+			t.Errorf("slot %d repeats resource name %q", i, slot.GetName())
+		}
+		names[slot.GetName()] = true
+		if len(slot.GetBankaraSettings()) != 2 || slot.GetXSettings() == nil || slot.GetLeagueSettings() == nil {
+			t.Errorf("slot %d ranked modes: Bankara=%d X=%v League=%v", i,
+				len(slot.GetBankaraSettings()), slot.GetXSettings() != nil, slot.GetLeagueSettings() != nil)
+		}
+	}
+}

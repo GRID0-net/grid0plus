@@ -59,17 +59,18 @@ const scheduleSlot = slotSeconds * time.Second
 
 // scheduleHorizon is how far ahead schedules are generated.
 //
-// Twelve slots — a day. The game asks for a window and shows the next few
-// rotations; generating more costs nothing but says less about what is actually
-// planned, and generating fewer leaves the lobby's "coming up" list short.
+// Twelve slots, beginning with the previous two-hour slot. Both working hall
+// captures include that slot and the next eleven, with one schedule-set id
+// shared by the whole window. A shorter horizon leaves the "coming up" list
+// incomplete.
 const scheduleHorizon = 12
 
 // SelectVsSchedules returns the versus rotation.
 //
 // Generated rather than stored: a rotation is a deterministic function of the
-// clock and the operator's stage list, so there is nothing to keep in sync. The
-// same request at the same time always produces the same answer, which is what
-// makes the etag meaningful.
+// clock and the operator's stage list. The working capture has distinct slot
+// resource names but one schedule-set id across all twelve slots; that id is
+// anchored to the current slot so the same window retains a stable etag.
 func (sc *scheduleService) SelectVsSchedules(
 	ctx context.Context, req *toyohrpb.SelectVsSchedulesRequest,
 ) (*toyohrpb.SelectVsSchedulesResponse, error) {
@@ -83,7 +84,9 @@ func (sc *scheduleService) SelectVsSchedules(
 		return &toyohrpb.SelectVsSchedulesResponse{}, nil
 	}
 
-	from := AlignToSlot(sc.s.now())
+	current := AlignToSlot(sc.s.now())
+	from := current.Add(-scheduleSlot)
+	setID := scheduleSetID(current)
 	slots := scheduleHorizon
 	if d := req.GetSelectDuration().AsDuration(); d > 0 {
 		// The client says how much it wants. Honoured up to the horizon: a
@@ -99,7 +102,7 @@ func (sc *scheduleService) SelectVsSchedules(
 	schedules := make([]*toyohrpb.VsSchedule, 0, slots)
 	for i := 0; i < slots; i++ {
 		start := from.Add(time.Duration(i) * scheduleSlot)
-		schedules = append(schedules, sc.s.vsSchedule(start, i, rot, target))
+		schedules = append(schedules, sc.s.vsSchedule(start, i, rot, target, setID))
 	}
 
 	return &toyohrpb.SelectVsSchedulesResponse{
@@ -123,12 +126,12 @@ func scheduleTarget(path string) string {
 // path parser aborts if targets/<target> is absent; both working 2026-09-23
 // captures use targets/default for this request.
 // vsSchedule renders one two-hour slot.
-func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target string) *toyohrpb.VsSchedule {
+func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target, setID string) *toyohrpb.VsSchedule {
 	end := start.Add(scheduleSlot)
-	setID := scheduleSetID(start)
+	nameID := scheduleSetID(start)
 
 	out := &toyohrpb.VsSchedule{
-		Name:          s.tenantPath() + "/targets/" + target + "/vsSchedules/" + setID,
+		Name:          s.tenantPath() + "/targets/" + target + "/vsSchedules/" + nameID,
 		StartTime:     timestamppb.New(start),
 		EndTime:       timestamppb.New(end),
 		ScheduleSetId: setID,
@@ -137,14 +140,19 @@ func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target st
 		out.RegularSettings = &toyohrpb.RegularSettings{Stages: stages}
 	}
 	if stages := pick(rot.BankaraStages, index, rot.stagesPerSlot()); len(stages) > 0 {
-		// One BankaraSettings per rule the operator listed. Anarchy runs two
-		// modes at once — Series and Open — and a slot offering one rule is a
-		// lobby with half its buttons inert.
+		// The four configured ranked rules belong to four distinct modes:
+		// two Anarchy variants, then X and League. Sending all four as
+		// BankaraSettings differs from the working schedule's wire shape.
 		for r, rule := range rot.BankaraRules {
-			out.BankaraSettings = append(out.BankaraSettings, &toyohrpb.BankaraSettings{
-				Rule:   rule,
-				Stages: pick(rot.BankaraStages, index+r, rot.stagesPerSlot()),
-			})
+			stages := pick(rot.BankaraStages, index+r, rot.stagesPerSlot())
+			switch r {
+			case 0, 1:
+				out.BankaraSettings = append(out.BankaraSettings, &toyohrpb.BankaraSettings{Rule: rule, Stages: stages})
+			case 2:
+				out.XSettings = &toyohrpb.XSettings{Rule: rule, Stages: stages}
+			case 3:
+				out.LeagueSettings = &toyohrpb.LeagueSettings{Rule: rule, Stages: stages}
+			}
 		}
 	}
 	return out

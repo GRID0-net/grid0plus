@@ -20,11 +20,13 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 	if slots <= 0 {
 		slots = scheduleHorizon
 	}
-	from := AlignToSlot(now)
+	current := AlignToSlot(now)
+	from := current.Add(-scheduleSlot)
+	setID := scheduleSetID(current)
 	out := make([]*toyohrpb.VsSchedule, 0, slots)
 	for i := 0; i < slots; i++ {
 		start := from.Add(time.Duration(i) * scheduleSlot)
-		out = append(out, s.vsSchedule(start, i, rot, "default"))
+		out = append(out, s.vsSchedule(start, i, rot, "default", setID))
 	}
 	return out
 }
