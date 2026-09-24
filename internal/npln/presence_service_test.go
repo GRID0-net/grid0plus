@@ -210,19 +210,21 @@ func TestKeepAliveTouchesPresenceLiveness(t *testing.T) {
 	}
 }
 
-// TestKeepAliveAcksEveryPingImmediately is the regression test for getting
-// this backwards once already, in this same session: an earlier version of
-// this function answered on its own independent timer instead of the
-// client's pings, on the theory that acking immediately would cause a
+// TestKeepAliveAcksAPingAfterTheOpeningReply is the regression test for
+// getting this backwards once already, in this same session: an earlier
+// version of this function answered on its own independent timer instead of
+// the client's pings, on the theory that acking immediately would cause a
 // runaway loop. NextendoNetwork/splatoon-3's own hardware measurement (facts
-// only, not its code) says the opposite is true: a real Nintendo server
-// acks every single ping (128, 34 and 77 of them, across three real
-// sessions, one reply each), and answering on a slower independent clock is
-// what killed real streams at 59.998s / 1m0.001s with "a communication
-// error has occurred" -- because the FIRST reply is what announces the
-// {interval, deadline} contract the client's own patience is calibrated
-// against, and the client got no reply to its very first ping.
-func TestKeepAliveAcksEveryPingImmediately(t *testing.T) {
+// only, not its code) says a real Nintendo server does ack the client's
+// pings rather than ignoring them, and answering on a slower independent
+// clock is what killed real streams at 59.998s / 1m0.001s with "a
+// communication error has occurred" -- because the FIRST reply is what
+// announces the {interval, deadline} contract the client's own patience is
+// calibrated against, and the client got no reply to its very first ping.
+//
+// This does not re-test "every ping instantly," which turned out to be
+// wrong the other direction -- see TestKeepAliveThrottlesARapidPingBurst.
+func TestKeepAliveAcksAPingAfterTheOpeningReply(t *testing.T) {
 	old := presenceKeepAlive
 	presenceKeepAlive = time.Hour // any tick firing would also pass a ping; keep it out of reach
 	t.Cleanup(func() { presenceKeepAlive = old })
@@ -245,7 +247,10 @@ func TestKeepAliveAcksEveryPingImmediately(t *testing.T) {
 		t.Fatalf("opening message carries no heartbeat: %v", opening)
 	}
 
+	// Spaced well outside the ack throttle, so each of these pings gets its
+	// own reply rather than being folded into the last one.
 	for i := 0; i < 3; i++ {
+		time.Sleep(presenceKeepAliveAckMinInterval + 100*time.Millisecond)
 		if err := stream.Send(&friendspb.KeepAliveRequest{
 			Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000003"}},
 		}); err != nil {
@@ -258,6 +263,63 @@ func TestKeepAliveAcksEveryPingImmediately(t *testing.T) {
 		if resp.GetHeartbeat() == nil {
 			t.Errorf("ping %d: response carries no heartbeat: %v", i, resp)
 		}
+	}
+}
+
+// TestKeepAliveThrottlesARapidPingBurst is the regression test for a real
+// crash: a mitmproxy capture of SwitchNet's own console on 2026-09-24 showed
+// 101 ping/ack round trips in 2 seconds (~50Hz) on KeepAlive -- the client
+// resends its next ping the instant it gets a reply to the last one, so
+// acking every single one unconditionally makes the loop spin as fast as
+// the round trip allows. That burst ended with the console resetting every
+// one of its long-lived NPLN streams at once and the game showing "a
+// communication error has occurred," with nothing actually disconnected.
+// See presenceKeepAliveAckMinInterval's own doc comment.
+func TestKeepAliveThrottlesARapidPingBurst(t *testing.T) {
+	old := presenceKeepAlive
+	presenceKeepAlive = time.Hour
+	t.Cleanup(func() { presenceKeepAlive = old })
+
+	h := newHarness(t)
+	h.createUser("keepalive0000004", "device-keepalive-4")
+
+	rpcCtx := h.ctx(h.sessionFor(t, "keepalive0000004", "device-keepalive-4"), "")
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).KeepAlive(rpcCtx)
+	if err != nil {
+		t.Fatalf("KeepAlive: %v", err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatalf("recv opening heartbeat: %v", err)
+	}
+
+	// A burst of pings sent back to back, the way a fast local round trip
+	// drives the client to -- this is what reproduced the crash.
+	const burst = 20
+	for i := 0; i < burst; i++ {
+		if err := stream.Send(&friendspb.KeepAliveRequest{
+			Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000004"}},
+		}); err != nil {
+			t.Fatalf("send %d: %v", i, err)
+		}
+	}
+
+	// Give the server a moment to process the whole burst, then send one
+	// more ping spaced past the throttle window and confirm the stream is
+	// still alive and answers it -- the burst must not have wedged the
+	// stream, only slowed how many of its pings got individual acks.
+	time.Sleep(200 * time.Millisecond)
+	time.Sleep(presenceKeepAliveAckMinInterval)
+	if err := stream.Send(&friendspb.KeepAliveRequest{
+		Request: &friendspb.KeepAliveRequest_Ack{Ack: &friendspb.Ack{User: "users/keepalive0000004"}},
+	}); err != nil {
+		t.Fatalf("send after burst: %v", err)
+	}
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv after burst: %v -- the burst wedged the stream", err)
+	}
+	if resp.GetHeartbeat() == nil {
+		t.Errorf("response after burst carries no heartbeat: %v", resp)
 	}
 }
 

@@ -1036,6 +1036,39 @@ ever taken), pinned it down:
   actual bug, confirmed independently by Nextendo's own comment
   (`ugcstore_runquery.go`) using the identical shape for the same case.
 
+With `RunQuery` fixed, the console reliably completed the full boot
+sequence with no crash and no error, but a *new* "a communication error has
+occurred" still appeared some seconds after the hall finished loading, with
+nginx's own logs showing four to six `client canceled stream` events fired
+in the same instant across every one of the console's long-lived NPLN
+streams (`RecvMessage`, `KeepAlive`, `SubscribeMaintenanceSchedules`,
+`SubscribeFriendUsers`, `SubscribePresences`), immediately followed by one
+raw HTTP 400 on a reopened stream — a proxy-layer rejection, not a gRPC
+error, happening before the request ever reached SwitchNet's own Go
+backend.
+
+A dedicated mitmproxy capture against SwitchNet itself (the operator's own
+console, redirected the same way the two Nextendo captures were, but at
+the SwitchNet VM's own IP instead — `docs/CAPTURES/raw/switchnet-hall-20260924T071622Z`)
+settled the mechanism directly, at the console's own TLS layer rather than
+nginx's summarized logs:
+
+- **`PresenceService.KeepAlive` acking every ping unconditionally — settled,
+  and now fixed.** The client resends its next ping the instant it receives
+  a reply to the last one; acking immediately, with no real network latency
+  between console and server to naturally pace it, makes the exchange spin
+  as fast as the round trip allows. The capture measured it directly: 101
+  ping/ack round trips in 2 seconds (~50Hz), ending in the exact instant of
+  the four-to-six-stream reset burst and the "communication error." Fixed
+  with `presenceKeepAliveAckMinInterval` (`internal/npln/presence_service.go`)
+  throttling acks to at most one per second using real wall-clock time —
+  every ping is still drained and still updates presence immediately, only
+  the ack itself is capped. NextendoNetwork/splatoon-3 measured the same
+  underlying mechanism (facts only, not its code): their own comment ties a
+  worsened version of this exact loop directly to a faster transport, not a
+  fixed client-side interval, matching a real Nintendo server's distance
+  self-limiting a behavior SwitchNet cannot assume away.
+
 ---
 
 ## Documenting a capture

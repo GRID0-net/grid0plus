@@ -317,6 +317,30 @@ is read down to `ONLINE` here, on the theory that BAAS's richer detail (title
 id, app field) is what the friends applet reads separately rather than
 through this service. Both are `TODO(capture-needed)`.
 
+### `KeepAlive` acks the client's pings, but throttled
+
+The client pings on this bidi stream and resends its next ping the instant
+it receives a reply to the last one — so acking every single ping
+unconditionally makes the whole exchange spin as fast as the round trip
+allows, not at any pace the client sets on its own. A real Nintendo server
+sits far enough away that network latency alone keeps this slow; SwitchNet
+cannot assume that. Confirmed on real hardware on 2026-09-24: a mitmproxy
+capture of SwitchNet's own console showed 101 ping/ack round trips in 2
+seconds (~50Hz), ending with the console resetting every one of its
+long-lived NPLN streams at once and the game showing "a communication error
+has occurred" — with nothing actually disconnected.
+
+`presenceKeepAliveAckMinInterval` (`presence_service.go`) caps how often an
+ack actually goes out to one per second, using real wall-clock time
+(`time.Now`), not the mockable `s.now()` other business logic reads — the
+throttle is about real round-trip speed, which a frozen test clock cannot
+represent. Every ping is still drained and still updates presence
+immediately; only the ack itself is throttled, which is what breaks the
+feedback loop. The opening reply (before any ping arrives) is never
+throttled — it is the one that announces the `{30s interval, 50s deadline}`
+contract the client calibrates its own patience against, and skipping it
+was an earlier, different bug (see `TestKeepAliveAcksAPingAfterTheOpeningReply`).
+
 ## Messaging
 
 `messaging.go` relays opaque payloads between two authenticated users:

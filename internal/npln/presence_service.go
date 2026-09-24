@@ -95,6 +95,26 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 // unread field.
 // Change: this function, if a capture shows attributes the client actually
 // depends on.
+// presenceKeepAliveAckMinInterval throttles how often a ping the client sends
+// on KeepAlive actually gets acked.
+//
+// The client resends its next ping the instant it receives our response to
+// the last one -- confirmed on real hardware on 2026-09-24: a mitmproxy
+// capture of SwitchNet's own console showed 101 ping/ack round trips in 2
+// seconds (~50Hz) against this deployment's real network path, immediately
+// followed by the console resetting every one of its long-lived NPLN
+// streams at once and the game showing "a communication error has
+// occurred" with nothing actually disconnected. NextendoNetwork/splatoon-3
+// measured the same mechanism (facts only, not its code): acking
+// immediately makes the loop spin as fast as the round trip allows, and
+// their own comment ties a worsened version of it directly to a faster
+// transport, not a fixed client-side interval. A real Nintendo server sits
+// far enough away that network latency alone throttles this; SwitchNet
+// cannot assume that, so it throttles explicitly instead. Every ping is
+// still drained and still updates presence immediately -- only how often an
+// ACK actually goes out is capped, which is what breaks the feedback loop.
+const presenceKeepAliveAckMinInterval = 1 * time.Second
+
 func (p *presenceService) KeepAlive(
 	stream grpc.BidiStreamingServer[friendspb.KeepAliveRequest, friendspb.KeepAliveResponse],
 ) error {
@@ -106,11 +126,32 @@ func (p *presenceService) KeepAlive(
 
 	// A gRPC stream does not allow two concurrent Sends: the drain loop below
 	// and this function's own ticker both go through send().
+	//
+	// lastSent is real wall-clock time (time.Now), not p.s.now() -- the same
+	// choice the ticker below already makes. p.s.now() is a mockable
+	// business clock tests can freeze; the throttle it would gate is
+	// inherently about real round-trip speed, and freezing it would make
+	// every ping after the first look simultaneous forever.
 	var sendMu sync.Mutex
+	var lastSent time.Time
 	send := func() error {
 		sendMu.Lock()
 		defer sendMu.Unlock()
+		lastSent = time.Now()
 		return stream.Send(&friendspb.KeepAliveResponse{Heartbeat: presenceHeartbeat()})
+	}
+	// ackIfDue answers a client ping, but only if the last answer was more
+	// than presenceKeepAliveAckMinInterval ago -- see that constant's own
+	// doc comment. A skipped ack is not an error: the client's own patience
+	// is the ticker below's 30s/50s contract, not this ping.
+	ackIfDue := func() error {
+		sendMu.Lock()
+		due := time.Since(lastSent) >= presenceKeepAliveAckMinInterval
+		sendMu.Unlock()
+		if !due {
+			return nil
+		}
+		return send()
 	}
 
 	sendErr := make(chan error, 1)
@@ -127,7 +168,7 @@ func (p *presenceService) KeepAlive(
 				// cosmetic problem into a dropped connection.
 				p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
 			}
-			if err := send(); err != nil {
+			if err := ackIfDue(); err != nil {
 				sendErr <- err
 				return
 			}
