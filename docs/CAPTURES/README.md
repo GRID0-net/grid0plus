@@ -1153,6 +1153,9 @@ A later comparison of both working hall captures found one more response
 mismatch: `SelectVsParams` carried a stable, quoted server ETag while every
 request omitted one. SwitchNet had echoed the empty request ETag. See
 [`npln-vsparams-etag-2026-09-24.md`](npln-vsparams-etag-2026-09-24.md).
+Both captures also show the client's current time strictly inside the
+returned `VsParams` timestamp window, while SwitchNet had returned equal
+endpoints; see [`npln-vsparams-window-2026-09-24.md`](npln-vsparams-window-2026-09-24.md).
 
 ## Documenting a capture
 

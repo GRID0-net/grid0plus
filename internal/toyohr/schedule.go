@@ -222,7 +222,12 @@ func (sc *scheduleService) SelectVsParams(
 	}
 
 	now := sc.s.now()
-	setID := scheduleSetID(AlignToSlot(now))
+	// In both working captures, timestamp1 < the client's current_time <
+	// timestamp2. Equal endpoints made this server's params validity window
+	// empty. Our window spans the same rotation horizon we already return.
+	windowStart := AlignToSlot(now)
+	windowEnd := windowStart.Add(scheduleHorizon * scheduleSlot)
+	setID := scheduleSetID(windowStart)
 	target := lastSegment(req.GetTarget())
 	if target == "" {
 		// Unexpected: every real request this project has seen names a
@@ -234,8 +239,8 @@ func (sc *scheduleService) SelectVsParams(
 	return &toyohrpb.SelectVsParamsResponse{
 		Params: &toyohrpb.VsParams{
 			Name:        sc.s.tenantPath() + "/targets/" + target + "/vsParams/" + setID,
-			Timestamp1:  timestamppb.New(now),
-			Timestamp2:  timestamppb.New(now),
+			Timestamp1:  timestamppb.New(windowStart),
+			Timestamp2:  timestamppb.New(windowEnd),
 			Attributes:  &common.MapValue{Fields: map[string]*common.Value{}},
 			ParamsSetId: setID,
 		},

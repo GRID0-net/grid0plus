@@ -248,6 +248,10 @@ func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 			t.Errorf("%s = %v, want it riding the current clock rather than a stale fixed value", name, ts)
 		}
 	}
+	if !params.GetTimestamp1().AsTime().Before(at) || !params.GetTimestamp2().AsTime().After(at) {
+		t.Errorf("VsParams window [%v, %v] does not contain the client's current time %v",
+			params.GetTimestamp1().AsTime(), params.GetTimestamp2().AsTime(), at)
+	}
 	if params.GetAttributes() == nil {
 		t.Error("attributes is nil, want an empty-but-present MapValue")
 	}
@@ -260,6 +264,10 @@ func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 	}
 	if repeat.GetEtag() != resp.GetEtag() {
 		t.Errorf("etag changed with request ETag: %q -> %q", resp.GetEtag(), repeat.GetEtag())
+	}
+	if !proto.Equal(repeat.GetParams().GetTimestamp1(), params.GetTimestamp1()) ||
+		!proto.Equal(repeat.GetParams().GetTimestamp2(), params.GetTimestamp2()) {
+		t.Error("repeated VsParams read changed its validity window within a slot")
 	}
 }
 
