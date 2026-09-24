@@ -55,6 +55,7 @@ func (s *Server) register() {
 	// console then reads through this service.
 	docs := ugcstore.NewService(ugcstore.Options{
 		Store: s.store, Log: s.log, Tenant: s.tenant, Now: s.now, CallerID: callerID,
+		Diagnostic: s.diagnostic,
 	})
 	docs.Register(s.grpc)
 
@@ -62,12 +63,13 @@ func (s *Server) register() {
 	// interceptor as everything else -- a fest is announced to a console that
 	// proved who it is, not to anyone who asks.
 	toyohr.NewService(toyohr.Options{
-		Store:     s.store,
-		Log:       s.log,
-		Tenant:    s.tenant,
-		Now:       s.now,
-		Rotation:  s.rotation,
-		Documents: docs,
+		Store:      s.store,
+		Log:        s.log,
+		Tenant:     s.tenant,
+		Now:        s.now,
+		Rotation:   s.rotation,
+		Documents:  docs,
+		Diagnostic: s.diagnostic,
 		// The identity comes from this package's interceptor. toyohr cannot
 		// import it back without a cycle, so it is handed in.
 		CallerID: callerID,

@@ -21,6 +21,7 @@ import (
 
 	"github.com/n-popescu/switchnet/internal/bcat"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/splatdiag"
 	"github.com/n-popescu/switchnet/internal/ugcstore"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
@@ -70,7 +71,8 @@ type Service struct {
 	rotation Rotation
 
 	// docs is where GameRecord documents are created. See Options.Documents.
-	docs *ugcstore.Service
+	docs       *ugcstore.Service
+	diagnostic *splatdiag.Bundle
 
 	// messages delivers lobby messages between connected players. In memory:
 	// a lobby message is worth nothing to a player who was not connected.
@@ -97,7 +99,8 @@ type Options struct {
 	// Documents is the Ugcstore the console reads its GameRecord documents
 	// from. GameRecord/InitializeAttributes creates them there; nil leaves
 	// that RPC unimplemented.
-	Documents *ugcstore.Service
+	Documents  *ugcstore.Service
+	Diagnostic *splatdiag.Bundle
 
 	Now func() time.Time
 }
@@ -108,14 +111,15 @@ func NewService(opts Options) *Service {
 		opts.Now = time.Now
 	}
 	return &Service{
-		store:    opts.Store,
-		log:      opts.Log,
-		tenant:   opts.Tenant,
-		now:      opts.Now,
-		callerID: opts.CallerID,
-		rotation: opts.Rotation,
-		docs:     opts.Documents,
-		messages: newMessageHub(),
+		store:      opts.Store,
+		log:        opts.Log,
+		tenant:     opts.Tenant,
+		now:        opts.Now,
+		callerID:   opts.CallerID,
+		rotation:   opts.Rotation,
+		docs:       opts.Documents,
+		diagnostic: opts.Diagnostic,
+		messages:   newMessageHub(),
 	}
 }
 

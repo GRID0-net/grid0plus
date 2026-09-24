@@ -44,6 +44,15 @@ func (s *Service) GetSaveRecord(
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
+	if s.diagnostic != nil && s.diagnostic.UserID == uid {
+		user, err := s.store.GetUser(ctx, uid)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "diagnostic user unavailable")
+		}
+		rec, _ := s.diagnostic.SaveFor(uid, s.tenant, user.Nickname, s.now())
+		s.log.Info("toyohr: private diagnostic save served", "keys", len(rec.GetSaveData().GetFields()))
+		return rec, nil
+	}
 	now := timestamppb.New(s.now())
 	return &toyohrpb.SaveRecord{
 		Name:       s.tenantPath() + "/saveRecords/" + uid,

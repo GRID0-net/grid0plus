@@ -33,6 +33,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/messaging"
 	"github.com/n-popescu/switchnet/internal/presence"
 	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/switchnet/internal/splatdiag"
 	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
@@ -113,6 +114,8 @@ type Server struct {
 	// service serves. Parsed in New, so a typo in config fails at startup
 	// rather than on the first request from a console.
 	rotation toyohr.Rotation
+	// A private, single-user response comparison, nil in normal operation.
+	diagnostic *splatdiag.Bundle
 
 	// now is overridable so tests can control expiry without sleeping.
 	now func() time.Time
@@ -192,6 +195,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	diagnostic, err := splatdiag.FromEnvironment()
+	if err != nil {
+		return nil, fmt.Errorf("npln: private diagnostic: %w", err)
+	}
 
 	s := &Server{
 		store:                  opts.Store,
@@ -218,10 +225,11 @@ func New(opts Options) (*Server, error) {
 			ReportTTL:  opts.PresenceTTL,
 			ConsoleTTL: opts.ConsolePresenceTTL,
 		},
-		bus:      opts.Bus,
-		rotation: rotation,
-		now:      opts.Now,
-		stop:     make(chan struct{}),
+		bus:        opts.Bus,
+		rotation:   rotation,
+		diagnostic: diagnostic,
+		now:        opts.Now,
+		stop:       make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(

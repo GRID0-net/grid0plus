@@ -34,6 +34,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/splatdiag"
 	commonpb "github.com/n-popescu/switchnet/proto/common"
 	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
 )
@@ -42,11 +43,12 @@ import (
 type Service struct {
 	ugcpb.UnimplementedUgcstoreServer
 
-	store    db.Store
-	log      *slog.Logger
-	tenant   string
-	callerID func(context.Context) (string, bool)
-	now      func() time.Time
+	store      db.Store
+	log        *slog.Logger
+	tenant     string
+	callerID   func(context.Context) (string, bool)
+	now        func() time.Time
+	diagnostic *splatdiag.Bundle
 }
 
 // Options configures the service.
@@ -56,8 +58,9 @@ type Options struct {
 	Tenant string
 	// CallerID resolves the authenticated player behind an RPC. Nil makes
 	// every call refuse: identity is fail-closed.
-	CallerID func(context.Context) (string, bool)
-	Now      func() time.Time
+	CallerID   func(context.Context) (string, bool)
+	Now        func() time.Time
+	Diagnostic *splatdiag.Bundle
 }
 
 // NewService builds the service.
@@ -69,7 +72,7 @@ func NewService(opts Options) *Service {
 		opts.Log = slog.Default()
 	}
 	return &Service{store: opts.Store, log: opts.Log, tenant: opts.Tenant,
-		callerID: opts.CallerID, now: opts.Now}
+		callerID: opts.CallerID, now: opts.Now, diagnostic: opts.Diagnostic}
 }
 
 // Register attaches the service to a gRPC server.
@@ -88,7 +91,8 @@ func (s *Service) caller(ctx context.Context) (string, error) {
 
 // GetDocument returns one document by name.
 func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest) (*ugcpb.Document, error) {
-	if _, err := s.caller(ctx); err != nil {
+	uid, err := s.caller(ctx)
+	if err != nil {
 		return nil, err
 	}
 	key, ok := s.canonicalName(req.GetName())
@@ -99,6 +103,10 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 	d, err := s.store.GetUGCDocument(ctx, key)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
+		if doc, enabled := s.diagnostic.AttributeFor(uid, key, s.now()); enabled {
+			s.log.Info("ugcstore: private diagnostic attribute served", "name", key)
+			return doc, nil
+		}
 		s.log.Info("ugcstore: requested document is absent", "name", key)
 		return nil, missingDocument(req.GetName())
 	case err != nil:
