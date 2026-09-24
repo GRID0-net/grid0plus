@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
@@ -337,5 +338,65 @@ func TestARotationWithATypoIsRefusedRatherThanReadAsStageZero(t *testing.T) {
 	}
 	if rot.StagesPerSlot != 1 {
 		t.Errorf("stages per slot = %d, want 1", rot.StagesPerSlot)
+	}
+}
+
+// A real console requests the target as a full alias path. Its returned
+// resource names must have the captured target segment, or the game's path
+// parser aborts on the NPLN worker thread before the hall finishes booting.
+func TestScheduleNamesOnTheWireUseTheRequestedTarget(t *testing.T) {
+	at := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	svc, _ := newService(t, at)
+	svc.rotation = Rotation{RegularStages: []int32{1, 2}}
+	sc := &scheduleService{s: svc}
+	const target = "tenants/current/targets/default"
+	prefix := svc.tenantPath() + "/targets/default/"
+
+	vs, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := proto.Marshal(vs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receivedVs toyohrpb.SelectVsSchedulesResponse
+	if err := proto.Unmarshal(encoded, &receivedVs); err != nil {
+		t.Fatal(err)
+	}
+	if len(receivedVs.GetSchedules()) == 0 {
+		t.Fatal("no versus schedules on the wire")
+	}
+	for _, entry := range receivedVs.GetSchedules() {
+		if !strings.HasPrefix(entry.GetName(), prefix+"vsSchedules/") {
+			t.Fatalf("versus name %q does not match the captured path shape", entry.GetName())
+		}
+	}
+
+	shift := validTeamContestShift()
+	shift.Start = at
+	shift.End = at.Add(8 * time.Hour)
+	if err := svc.SaveCoopShift(context.Background(), shift); err != nil {
+		t.Fatal(err)
+	}
+	coop, err := sc.SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{Target: target})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = proto.Marshal(coop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receivedCoop toyohrpb.SelectCoopSchedulesResponse
+	if err := proto.Unmarshal(encoded, &receivedCoop); err != nil {
+		t.Fatal(err)
+	}
+	if len(receivedCoop.GetSchedules()) == 0 {
+		t.Fatal("no Salmon Run schedules on the wire")
+	}
+	for _, entry := range receivedCoop.GetSchedules() {
+		if !strings.HasPrefix(entry.GetName(), prefix+"coopSchedules/") {
+			t.Fatalf("Salmon Run name %q does not match the captured path shape", entry.GetName())
+		}
 	}
 }

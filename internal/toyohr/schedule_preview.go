@@ -24,7 +24,7 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 	out := make([]*toyohrpb.VsSchedule, 0, slots)
 	for i := 0; i < slots; i++ {
 		start := from.Add(time.Duration(i) * scheduleSlot)
-		out = append(out, s.vsSchedule(start, i, rot))
+		out = append(out, s.vsSchedule(start, i, rot, "default"))
 	}
 	return out
 }

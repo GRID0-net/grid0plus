@@ -93,10 +93,11 @@ func (sc *scheduleService) SelectVsSchedules(
 		}
 	}
 
+	target := scheduleTarget(req.GetTarget())
 	schedules := make([]*toyohrpb.VsSchedule, 0, slots)
 	for i := 0; i < slots; i++ {
 		start := from.Add(time.Duration(i) * scheduleSlot)
-		schedules = append(schedules, sc.s.vsSchedule(start, i, rot))
+		schedules = append(schedules, sc.s.vsSchedule(start, i, rot, target))
 	}
 
 	return &toyohrpb.SelectVsSchedulesResponse{
@@ -105,13 +106,27 @@ func (sc *scheduleService) SelectVsSchedules(
 	}, nil
 }
 
+// The working console requests a full target resource name; only its final
+// segment belongs inside a returned schedule name. Empty target is used by
+// operator previews and older clients, for which the observed target is default.
+func scheduleTarget(path string) string {
+	target := lastSegment(path)
+	if target == "" {
+		return "default"
+	}
+	return target
+}
+
+// vsSchedule names its resource under the requested target. Splatoon 3's
+// path parser aborts if targets/<target> is absent; both working 2026-09-23
+// captures use targets/default for this request.
 // vsSchedule renders one two-hour slot.
-func (s *Service) vsSchedule(start time.Time, index int, rot Rotation) *toyohrpb.VsSchedule {
+func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target string) *toyohrpb.VsSchedule {
 	end := start.Add(scheduleSlot)
 	setID := scheduleSetID(start)
 
 	out := &toyohrpb.VsSchedule{
-		Name:          s.tenantPath() + "/vsSchedules/" + setID,
+		Name:          s.tenantPath() + "/targets/" + target + "/vsSchedules/" + setID,
 		StartTime:     timestamppb.New(start),
 		EndTime:       timestamppb.New(end),
 		ScheduleSetId: setID,
@@ -257,7 +272,7 @@ func (sc *scheduleService) SelectVsParams(
 // unaffected -- they stay exactly what SaveCoopShift/the store already
 // documents as calendar events, not a rotation to synthesize entries for.
 func (sc *scheduleService) SelectCoopSchedules(
-	ctx context.Context, _ *toyohrpb.SelectCoopSchedulesRequest,
+	ctx context.Context, req *toyohrpb.SelectCoopSchedulesRequest,
 ) (*toyohrpb.SelectCoopSchedulesResponse, error) {
 	if _, ok := sc.s.caller(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
@@ -271,7 +286,7 @@ func (sc *scheduleService) SelectCoopSchedules(
 
 	resp := &toyohrpb.SelectCoopSchedulesResponse{}
 	for _, shift := range shifts {
-		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(RowFromCoopShift(shift)))
+		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(RowFromCoopShift(shift), scheduleTarget(req.GetTarget())))
 	}
 	return resp, nil
 }

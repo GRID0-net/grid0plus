@@ -337,14 +337,12 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 // does not parse that way. The previous shape here,
 // "tenants/<t>/coopSchedules/<id>", omits the "targets/<target>" segment
 // entirely and reproduced this crash on real hardware the same day, with
-// four real coop shifts seeded. <target> is opaque to the parser -- it is
-// extracted and stored, never compared against a literal -- so this uses
-// the shift's own Kind ("normal"/"big_run"/"team_contest") as a stable,
-// self-consistent SwitchNet placeholder, not reconstructed Nintendo data.
-// TODO(capture-needed): a real capture would confirm or replace it -- see
-// docs/CAPTURES/README.md.
-func (s *Service) coopScheduleProto(r db.CoopShift) *toyohrpb.CoopSchedule {
-	name := s.tenantPath() + "/targets/" + r.Kind + "/coopSchedules/" + r.ID
+// four real coop shifts seeded. Both 2026-09-23 successful Nextendo
+// captures use the last segment of the request Target ("default") in this
+// position. The old shift.Kind value passed the path parser but named a
+// different target than the one the console requested.
+func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.CoopSchedule {
+	name := s.tenantPath() + "/targets/" + target + "/coopSchedules/" + r.ID
 	out := &toyohrpb.CoopSchedule{
 		Name:          name,
 		ScheduleSetId: r.ID,

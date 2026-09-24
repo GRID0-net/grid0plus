@@ -1240,3 +1240,26 @@ not.
 ## Setting up a capture
 
 The mechanics are in [`../PACKET_CAPTURE.md`](../PACKET_CAPTURE.md).
+
+## 2026-09-24 boot crash: the Versus schedule resource name
+
+A crash at 13:25:01 UTC (`main` build `28C4287A…`, `nn.npln.Worker`,
+`ReturnAddress[04] = main+0x7d2a64`) followed successful `SelectVsSchedules`
+and `SelectCoopSchedules` calls on the VM. Disassembly shows `main+0x7d2a60`
+calling `AbortImpl` when its call to the parser at `main+0x7d2440`
+returns false. That parser requires the literal `tenants` / `targets` /
+`vsSchedules` segments. The crash address immediately precedes the separate
+CoopSchedule parser at `main+0x7d2a70`; proximity alone had misleadingly
+implicated Salmon Run.
+
+SwitchNet sent `tenants/<t>/vsSchedules/<id>`, omitting the target segment.
+Both preserved, successful Nextendo captures show a request for
+`tenants/current/targets/default` and responses named
+`tenants/<t>/targets/default/vsSchedules/<id>`. They also show
+`targets/default/coopSchedules/<id>`, while SwitchNet used the shift kind
+in the target position. Both response builders now use the last segment of
+the requested Target; a wire-serialization regression test checks the names.
+No captured schedule content or player identifiers were copied into source.
+The fix needs a fresh hardware boot test; a crash at the same generic abort
+address would require another wire comparison, not an assumption that the
+Versus name remains wrong.
