@@ -422,11 +422,18 @@ type NPLN struct {
 
 // Rotation is the stage and mode rotation Splatoon 3's lobby shows.
 //
-// **The identifiers are Splatoon 3's own internal numbering, and nothing public
-// documents them** — so they are operator input rather than a table in
-// SwitchNet's source. Given as strings so that a typo is reported with the
-// offending value: stage 0 is a plausible valid id, so a zero produced by a
-// failed parse would be indistinguishable from an intended one.
+// **The identifiers are Splatoon 3's own internal numbering.** Stage ids are
+// public and documented -- internal/toyohr.VsStages, sourced from
+// github.com/Leanny/splat3's own VersusSceneInfo.json, the same public data
+// dump CoopStages already uses -- so RegularStages/BankaraStages are real,
+// checkable ids, not a guess. Rule ids (Splat Zones/Tower Control/Rainmaker/
+// Clam Blitz as the wire's own int32) are a different question and remain
+// genuinely undocumented: neither that data dump (game content, not NPLN
+// wire protocol) nor kinnay/NPLN-Protocols' own schedule.proto gives real
+// numbers for BankaraRules. Given as strings so that a typo is reported
+// with the offending value: stage 0 is a plausible valid id, so a zero
+// produced by a failed parse would be indistinguishable from an intended
+// one.
 //
 // The mechanics around them — two-hour slot alignment, windowing, ordering, the
 // etag — are SwitchNet's and live in internal/toyohr.

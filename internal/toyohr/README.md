@@ -273,13 +273,21 @@ a warning rather than picking arbitrarily.
 alternative is a to-do-list log line where a working boot query should be.
 
 The content those RPCs would normally carry — which stages, which mode — is
-Nintendo's own game design data. Unlike a fest, which the operator authors
-and `SaveFest` validates, there is no equivalent authoring path for a normal
-Vs rotation and no dump of one. CLAUDE.md is explicit that a genuinely
-undocumented shape must not be filled with an invented-but-plausible
-Nintendo internal, so these stay honestly empty (`TODO(capture-needed)`, in
-`schedule.go`) rather than serving a fabricated rotation nothing here would
-ever catch as wrong.
+Nintendo's own game design data, and unlike a fest (which the operator
+authors and `SaveFest` validates) there is no equivalent authoring path for
+a normal Vs rotation. **Which stages** is not actually undocumented, though
+— `vs_ids.go`'s `VsStages` has all 24 real stage ids and names, sourced the
+same way `coop_ids.go` is (see its own doc comment), and
+`config.example.yaml`'s `rotation.regular_stages`/`bankara_stages` can be
+filled in with real ids today. **Which mode** (the `BankaraSettings.Rule`
+wire value for Splat Zones/Tower Control/Rainmaker/Clam Blitz) is the part
+still genuinely undocumented: neither that data dump nor
+kinnay/NPLN-Protocols' own `schedule.proto` (`int32 rule = 1`, no enum)
+gives real numbers for it. An empty `Rotation` still answers honestly
+empty (`TODO(capture-needed)`, in `schedule.go`) rather than a fabricated
+one nothing here would catch as wrong — but an operator who fills in real
+stage ids and is willing to guess at rule numbers is no longer guessing at
+the stages too.
 
 **`SelectVsParams` used to be the fourth empty one, and that was wrong.**
 Unlike an empty schedule list, `params` left unset is not what a real server
