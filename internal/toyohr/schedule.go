@@ -402,11 +402,15 @@ func (sc *scheduleService) SelectSeasonSchedules(
 	now := sc.s.now().UTC()
 	schedules := make([]*toyohrpb.SeasonSchedule, 0, count)
 	start := seasonStart(now)
+	// Both working captures set fields 2 and 3 to 16 on every Season
+	// entry; the schema does not identify what they mean.
 	for i := 0; i < count; i++ {
 		end := start.AddDate(0, 3, 0)
 		setID := scheduleSetID(start)
 		schedules = append(schedules, &toyohrpb.SeasonSchedule{
 			Name:          sc.s.tenantPath() + "/seasonSchedules/" + setID,
+			Unk2:          16,
+			Unk3:          16,
 			StartTime:     timestamppb.New(start),
 			EndTime:       timestamppb.New(end),
 			ScheduleSetId: setID,

@@ -349,8 +349,11 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	// Both working hall captures use one schedule-set id for the whole
 	// current Coop window and leave ShiftId absent. The resource Name keeps
 	// each shift distinct without inventing another wire identifier.
+	// Every populated Coop entry in both working hall captures carries
+	// protobuf field 2 as 1; its semantic name is still unknown.
 	out := &toyohrpb.CoopSchedule{
 		Name:          name,
+		Unk:           1,
 		ScheduleSetId: "coop-" + scheduleSetID(AlignToSlot(s.now())),
 		StartTime:     timestamppb.New(r.StartAt),
 		EndTime:       timestamppb.New(r.EndAt),
