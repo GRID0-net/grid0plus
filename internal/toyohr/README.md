@@ -298,6 +298,24 @@ current clock so it is never stale. `Attributes` — the one field whose real
 content is genuinely undocumented — stays an honestly empty `MapValue`
 rather than a guess (`TODO(capture-needed)`, in `schedule.go`).
 
+**`CoopSchedule.Name` needs a `targets/<target>` segment it did not have —
+settled by decompile, and now fixed.** A 2026-09-24 decompile of Splatoon 3
+v11.3.0 (this project's own console, real hardware) found the client's
+resource-name parser for a `CoopSchedule` requires the literal shape
+`tenants/<t>/targets/<target>/coopSchedules/<rest>` — checked with a hard
+`memcmp` against `"targets"` and `"coopSchedules"` as the third and fifth
+path segments — and hard-aborts (User Break, `nn.npln.Worker`) when a name
+does not parse that way. `coopScheduleProto`'s old name,
+`tenants/<t>/coopSchedules/<id>`, omitted the `targets/<target>` segment
+entirely and reproduced this crash on real hardware with four real coop
+shifts seeded — the doc comment there used to claim a wrong Name only "costs
+a cosmetic mismatch, not a broken RPC", which this decompile disproves.
+`<target>` is opaque to the parser — extracted and stored, never compared
+against a literal — so it now carries the shift's own `Kind`
+(`"normal"`/`"big_run"`/`"team_contest"`), a stable SwitchNet placeholder,
+not reconstructed Nintendo data (`TODO(capture-needed)`, in
+`coop_schedule.go`).
+
 **`SelectCoopSchedules` is the fifth RPC, and it is different**, because the
 usual blocker for a Vs/Coop rotation — no known wire shape — did not actually
 apply here: `nn.npln.toyohr.v1.CoopSchedule`'s own decompiled proto

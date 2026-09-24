@@ -254,6 +254,47 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 	}
 }
 
+// TestCoopScheduleNameCarriesATargetsSegment is the regression test for a
+// real crash: a 2026-09-24 decompile of Splatoon 3 v11.3.0 found the
+// client's resource-name parser for a CoopSchedule requires the literal
+// shape "tenants/<t>/targets/<target>/coopSchedules/<rest>" and hard-aborts
+// when a name does not parse that way. The old shape here,
+// "tenants/<t>/coopSchedules/<id>", omitted the "targets/<target>" segment
+// entirely and reproduced on SwitchNet's own hardware with four real coop
+// shifts seeded.
+func TestCoopScheduleNameCarriesATargetsSegment(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	svc, _ := newService(t, at)
+	sc := &scheduleService{s: svc}
+
+	shift := validNormalShift()
+	shift.Start = at
+	shift.End = at.Add(8 * time.Hour)
+	if err := svc.SaveCoopShift(context.Background(), shift); err != nil {
+		t.Fatalf("SaveCoopShift: %v", err)
+	}
+
+	resp, err := sc.SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("SelectCoopSchedules: %v", err)
+	}
+	if len(resp.GetSchedules()) != 1 {
+		t.Fatalf("got %d schedules, want 1", len(resp.GetSchedules()))
+	}
+
+	name := resp.GetSchedules()[0].GetName()
+	if !strings.Contains(name, "/targets/") || !strings.Contains(name, "/coopSchedules/") {
+		t.Errorf("name = %q, want a targets/<target>/coopSchedules/<id> shape -- this is what crashes a real console", name)
+	}
+	// "targets" must land as its own path segment, not merely appear as a
+	// substring (e.g. inside a shift id) -- the client's parser walks
+	// segments by '/', not by substring search.
+	segs := strings.Split(strings.TrimPrefix(name, svc.tenantPath()+"/"), "/")
+	if len(segs) < 4 || segs[0] != "targets" || segs[2] != "coopSchedules" {
+		t.Errorf("name segments = %v, want [targets <target> coopSchedules <id>]", segs)
+	}
+}
+
 func TestParseCoopShiftKindRoundTripsWithString(t *testing.T) {
 	for _, k := range []CoopShiftKind{CoopShiftNormal, CoopShiftBigRun, CoopShiftTeamContest} {
 		parsed, err := ParseCoopShiftKind(k.String())

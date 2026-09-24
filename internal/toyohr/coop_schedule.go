@@ -317,12 +317,28 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 //   - Name, ScheduleSetId and ShiftId follow the "tenants/<t>/..." pattern
 //     GetFestDecryptionKey already confirms for a different resource, since
 //     no capture shows what these three actually carry for a CoopSchedule.
-//     Unlike Fest.Resource, nothing here derives a decryption IV from the
-//     string, so a wrong guess costs a cosmetic mismatch, not a broken RPC.
 //   - RewardType is left "" (unset) rather than guessed, since no source
 //     this project has seen says what the real enum-like strings are.
+//
+// Name is NOT just a cosmetic mismatch if it is wrong, unlike the claim this
+// comment used to make. A 2026-09-24 decompile of Splatoon 3 v11.3.0 (real
+// hardware, this project's own console) found the client's resource-name
+// parser for a CoopSchedule (main.nso, the function this response's Name
+// reaches) requires the literal shape
+// "tenants/<t>/targets/<target>/coopSchedules/<rest>" -- checked with a
+// hard memcmp against "targets" and "coopSchedules" as the third and fifth
+// path segments -- and hard-aborts (User Break, nn.npln.Worker) when a name
+// does not parse that way. The previous shape here,
+// "tenants/<t>/coopSchedules/<id>", omits the "targets/<target>" segment
+// entirely and reproduced this crash on real hardware the same day, with
+// four real coop shifts seeded. <target> is opaque to the parser -- it is
+// extracted and stored, never compared against a literal -- so this uses
+// the shift's own Kind ("normal"/"big_run"/"team_contest") as a stable,
+// self-consistent SwitchNet placeholder, not reconstructed Nintendo data.
+// TODO(capture-needed): a real capture would confirm or replace it -- see
+// docs/CAPTURES/README.md.
 func (s *Service) coopScheduleProto(r db.CoopShift) *toyohrpb.CoopSchedule {
-	name := s.tenantPath() + "/coopSchedules/" + r.ID
+	name := s.tenantPath() + "/targets/" + r.Kind + "/coopSchedules/" + r.ID
 	out := &toyohrpb.CoopSchedule{
 		Name:          name,
 		ScheduleSetId: r.ID,

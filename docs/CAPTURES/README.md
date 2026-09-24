@@ -928,6 +928,34 @@ in the client's resource-path parser rather than three unrelated bugs:
   string) and was regenerated via `scripts/gen-proto.sh`; the handler
   always resolves it to `tenants/<t>/users/<uid>/violations/current`.
 
+A fourth VM-side loopback capture, taken after the `GetViolation` fix,
+showed the console making it further still — every RPC through
+`Schedule/SelectVsParams` firing cleanly, `PresenceService/KeepAlive`
+open and answering — before crashing at a DIFFERENT return address inside
+Splatoon 3's own module ([28c4287a] + 0x7d3094 this time, not the
++0x7d5ec4 `GetViolation` reproduced) — confirming a fourth, distinct
+instance of the same generic-parser bug rather than a regression. This one
+was run down with a real Ghidra decompile of the game's own `main` (NSO
+build id `28c4287a...`, this project's own hardware dump, already
+extracted from earlier RE work under `switchnet-re/`), not a guess from the
+crash address alone:
+
+- **`CoopSchedule.Name` is missing a `targets/<target>` path segment —
+  settled by decompile, and now fixed.** Disassembling
+  `[28c4287a] + 0x7d3094`'s caller found a resource-name parser
+  (`FUN_71007d2a70`) that requires the literal shape
+  `tenants/<t>/targets/<target>/coopSchedules/<rest>` — a hard `memcmp`
+  against `"targets"` and `"coopSchedules"` as the third and fifth path
+  segments — and its caller hard-aborts when the parse fails.
+  `coopScheduleProto`'s old name, `tenants/<t>/coopSchedules/<id>`, omits
+  the `targets/<target>` segment entirely. This reproduced on real hardware
+  with four real coop shifts seeded (an empty Salmon Run rotation never
+  reaches this code path at all, which is why earlier attempts with no
+  shifts configured never hit it). `<target>` is opaque to the parser — it
+  is extracted and stored, never compared against a literal — so it now
+  carries the shift's own `Kind` as a stable SwitchNet placeholder, not
+  reconstructed Nintendo data.
+
 ---
 
 ## Documenting a capture
