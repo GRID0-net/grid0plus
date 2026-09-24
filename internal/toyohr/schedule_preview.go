@@ -29,9 +29,42 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 	return out
 }
 
+// liveCoopFillEnabled gates whether PreviewCoopSchedule fills gaps with
+// liveNormalCoopShifts at all.
+//
+// Disabled (false) as of 2026-09-24: a real hardware test crashed twice in a
+// row right as the hall would render Salmon Run content, and a real,
+// decoded working capture (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z,
+// analysis/decoded-private.json's SelectCoopSchedules response) shows why --
+// a real CoopSchedule_Normal always carries a populated `attributes` MapValue
+// with a "CoopUsedRewardGears" key (an array of real gear id/kind pairs,
+// ~24 entries observed), while coopScheduleProto (coop_schedule.go) has
+// never set Attributes at all -- CoopSchedule_Normal.Attributes is field 7
+// of this project's own compiled proto (proto/toyohr/v1/resources.pb.go),
+// sent nil on every response. This gap predates today: SelectCoopSchedules
+// only ever answered non-empty when an operator had manually stored a
+// shift, so no hardware test before today's live-fill change (coop_live.go)
+// had ever actually exercised a console rendering CoopSchedule content at
+// all. Correlation, not a confirmed root cause -- disabling this stopped
+// short of proving it -- but it is the most structurally sound lead found:
+// a real, populated field the client evidently expects, that this project
+// has always sent empty, now reachable for the first time.
+//
+// Leanny/splat3's GearInfoHead/Clothes/Shoes.json data dumps give real gear
+// ids the same way vs_ids.go/coop_ids.go's tables were sourced, so building
+// CoopUsedRewardGears correctly (rather than guessing at it) is possible --
+// just not done under time pressure mid hardware-test-session. Re-enable
+// once that exists, or once a capture/hardware test clears this as the
+// cause.
+// A var, not a const, so tests that exist specifically to cover the live-fill
+// behavior (coop_live_test.go, schedule_preview_test.go) can still exercise
+// it without that behavior being reachable from a real request.
+var liveCoopFillEnabled = false
+
 // PreviewCoopSchedule returns the same merge SelectCoopSchedules serves a
-// console -- every stored shift not yet ended, plus a live Normal shift for
-// any slot nothing was stored for -- for the dashboard's schedule viewer.
+// console -- every stored shift not yet ended, plus (while
+// liveCoopFillEnabled) a live Normal shift for any slot nothing was stored
+// for -- for the dashboard's schedule viewer.
 func (s *Service) PreviewCoopSchedule(ctx context.Context, now time.Time) ([]CoopShift, error) {
 	rows, err := s.store.ListCoopShifts(ctx)
 	if err != nil {
@@ -49,11 +82,13 @@ func (s *Service) PreviewCoopSchedule(ctx context.Context, now time.Time) ([]Coo
 			storedNormalStarts[row.StartAt.UTC().Unix()] = true
 		}
 	}
-	for _, shift := range liveNormalCoopShifts(now, coopLiveHorizonShifts) {
-		if !shift.End.After(now) || storedNormalStarts[shift.Start.UTC().Unix()] {
-			continue
+	if liveCoopFillEnabled {
+		for _, shift := range liveNormalCoopShifts(now, coopLiveHorizonShifts) {
+			if !shift.End.After(now) || storedNormalStarts[shift.Start.UTC().Unix()] {
+				continue
+			}
+			out = append(out, shift)
 		}
-		out = append(out, shift)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
 	return out, nil

@@ -48,14 +48,12 @@ func TestScheduleViewerServesTheSameVsAndCoopContentAsTheWire(t *testing.T) {
 	if got := body.Vs[0].Regular; len(got) == 0 || got[0].Name == "" {
 		t.Errorf("first Vs slot's regular stages = %+v, want real names", got)
 	}
-	// A fresh install has no stored coop shifts, so every row here must be
-	// live-filled -- the whole point of liveNormalCoopShifts.
-	if len(body.Coop) == 0 {
-		t.Error("got no coop shifts with nothing stored -- live fill did not run")
-	}
-	for _, row := range body.Coop {
-		if !row.Generated {
-			t.Errorf("row %q is not marked generated, but nothing was stored", row.ID)
-		}
+	// Coop's live-fill is currently disabled (toyohr.liveCoopFillEnabled,
+	// see its own doc comment: a real hardware crash correlated with the
+	// live-generated CoopSchedule's missing Attributes field), so a fresh
+	// install with nothing stored shows no coop rows at all right now --
+	// the same as before that feature existed.
+	if len(body.Coop) != 0 {
+		t.Errorf("got %d coop shifts with nothing stored and live-fill disabled, want 0", len(body.Coop))
 	}
 }

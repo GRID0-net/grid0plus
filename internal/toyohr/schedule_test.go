@@ -170,18 +170,19 @@ func TestNoConfiguredRotationIsAnEmptyScheduleRatherThanAnError(t *testing.T) {
 		t.Errorf("got %d slots from an empty rotation", len(resp.GetSchedules()))
 	}
 
-	// Unlike Vs, Coop content never depended on Rotation -- coop_ids.go's
-	// tables are real ids regardless of operator config, and
-	// liveNormalCoopShifts (coop_live.go) generates the Normal rotation live
-	// off the clock alone, the same way Vs would if it had no undocumented
-	// rule-id gap to work around. So an empty Rotation still yields a real,
-	// live-generated Salmon Run schedule, not an empty one.
+	// Coop is unaffected by Rotation either way -- coop_ids.go's tables are
+	// real ids regardless of operator config. With liveCoopFillEnabled
+	// currently disabled (schedule_preview.go's own doc comment: a real
+	// hardware crash correlated with the live-generated CoopSchedule's
+	// missing Attributes/CoopUsedRewardGears field), an empty Rotation and
+	// no stored shifts both still answer empty, same as before the live-fill
+	// feature existed.
 	coop, err := sc.SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{})
 	if err != nil {
 		t.Fatalf("select coop: %v", err)
 	}
-	if got, want := len(coop.GetSchedules()), coopLiveHorizonShifts; got != want {
-		t.Errorf("got %d co-op shifts with no rotation configured, want %d live-generated Normal shifts", got, want)
+	if got := len(coop.GetSchedules()); got != 0 {
+		t.Errorf("got %d co-op shifts with nothing stored and live-fill disabled, want 0", got)
 	}
 }
 
