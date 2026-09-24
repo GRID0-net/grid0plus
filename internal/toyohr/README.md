@@ -304,7 +304,10 @@ the confirmed reference sequence — the same crash family as
 `SelectVsParams` now answers a real, non-nil `VsParams`, timestamped off the
 current clock so it is never stale. `Attributes` — the one field whose real
 content is genuinely undocumented — stays an honestly empty `MapValue`
-rather than a guess (`TODO(capture-needed)`, in `schedule.go`).
+rather than a guess (`TODO(capture-needed)`, in `schedule.go`). Both working
+captures return a nonempty, quoted ETag even when the request has none;
+SwitchNet derives one from its own target and parameter-set id instead of
+echoing the request. See `docs/CAPTURES/npln-vsparams-etag-2026-09-24.md`.
 
 **`VsParams.Name` needed a `targets/<target>` segment too — settled by
 decompile, and now fixed.** The fix above still crashed real hardware, just

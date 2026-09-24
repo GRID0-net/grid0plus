@@ -1149,6 +1149,11 @@ scope note:
 
 ---
 
+A later comparison of both working hall captures found one more response
+mismatch: `SelectVsParams` carried a stable, quoted server ETag while every
+request omitted one. SwitchNet had echoed the empty request ETag. See
+[`npln-vsparams-etag-2026-09-24.md`](npln-vsparams-etag-2026-09-24.md).
+
 ## Documenting a capture
 
 Add one file per endpoint under `docs/CAPTURES/`, named after the path:

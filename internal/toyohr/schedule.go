@@ -3,6 +3,8 @@ package toyohr
 import (
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -237,8 +239,16 @@ func (sc *scheduleService) SelectVsParams(
 			Attributes:  &common.MapValue{Fields: map[string]*common.Value{}},
 			ParamsSetId: setID,
 		},
-		Etag: req.GetEtag(),
+		Etag: vsParamsEtag(target, setID),
 	}, nil
+}
+
+// The captured server assigns its own quoted 24-character version even when
+// the request sends no ETag. The slot id is this server's parameters version;
+// hashing it with the target keeps that version stable across repeat reads.
+func vsParamsEtag(target, setID string) string {
+	h := sha256.Sum256([]byte("vsParams:" + target + ":" + setID))
+	return `"` + base64.RawURLEncoding.EncodeToString(h[:16]) + `"`
 }
 
 // SelectCoopSchedules answers the Salmon Run rotation -- every operator-

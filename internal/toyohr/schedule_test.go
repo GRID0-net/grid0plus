@@ -215,9 +215,6 @@ func TestLeagueAndVsParamsAnswerRatherThanUnimplemented(t *testing.T) {
 	if params.GetParams() == nil {
 		t.Error("params is nil -- this is what stalls a real console before it ever calls SubscribePresences")
 	}
-	if params.GetEtag() != "abc" {
-		t.Errorf("etag = %q, want the request's own %q echoed back", params.GetEtag(), "abc")
-	}
 }
 
 // TestSelectVsParamsNeverAnswersEmptyOrStale is the regression test for a
@@ -253,6 +250,16 @@ func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 	}
 	if params.GetAttributes() == nil {
 		t.Error("attributes is nil, want an empty-but-present MapValue")
+	}
+	if len(resp.GetEtag()) != 24 || !strings.HasPrefix(resp.GetEtag(), `"`) || !strings.HasSuffix(resp.GetEtag(), `"`) {
+		t.Errorf("etag = %q, want a server-generated quoted 24-character version", resp.GetEtag())
+	}
+	repeat, err := sc.SelectVsParams(context.Background(), &toyohrpb.SelectVsParamsRequest{Etag: "client-version"})
+	if err != nil {
+		t.Fatalf("repeat select vs params: %v", err)
+	}
+	if repeat.GetEtag() != resp.GetEtag() {
+		t.Errorf("etag changed with request ETag: %q -> %q", resp.GetEtag(), repeat.GetEtag())
 	}
 }
 
