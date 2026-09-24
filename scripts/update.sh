@@ -2,15 +2,26 @@
 #
 # Pull the latest changes and restart only the services they actually affect.
 #
-# "Affect" is computed, not guessed. Each service's Go package graph is read with
-# `go list -deps`, so a change to internal/db restarts every service that imports
-# it and a change to internal/baas restarts only baas. Guessing from directory
-# names instead is how a shared package changes and half the stack keeps running
-# the old code -- which then shows up as an inconsistency nobody can reproduce.
+# "Affect" is computed, not guessed. Each service's Go package graph is read
+# with `go list -deps`, so a change to internal/db restarts every service
+# that imports it and a change to internal/baas restarts only baas. Guessing
+# from directory names instead is how a shared package changes and half the
+# stack keeps running the old code -- which then shows up as an
+# inconsistency nobody can reproduce.
+#
+# No `make check` gate: this operator's own call is that the test suite
+# never runs against this deployment, so a broken commit reaching
+# `systemctl restart` has nothing standing in the way except the build
+# itself. Run `make check` yourself before pushing if you want that safety
+# net -- it belongs in CI or a pre-push hook, not this script.
 #
 #   scripts/update.sh              pull, then restart what changed
 #   scripts/update.sh --dry-run    say what would restart, change nothing
 #   scripts/update.sh --all        restart everything regardless
+#
+# Already on the latest commit? There is nothing to diff against to work out
+# which services a pull touched, so this rebuilds and restarts everything
+# rather than reporting "up to date" and exiting -- the same as --all.
 #
 set -euo pipefail
 
@@ -22,7 +33,7 @@ for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY=1 ;;
         --all) ALL=1 ;;
-        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "update.sh: unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -54,9 +65,13 @@ git pull --ff-only origin "$BRANCH"
 
 AFTER=$(git rev-parse HEAD)
 
-if [ "$BEFORE" = "$AFTER" ] && [ "$ALL" -eq 0 ]; then
-    say "==> already up to date; nothing to restart"
-    exit 0
+if [ "$BEFORE" = "$AFTER" ]; then
+    # Nothing new to diff against for affected-service detection -- rebuild
+    # and restart everything instead of doing nothing, since the point of
+    # running this at all is to end up with freshly-built binaries running,
+    # not to report that git had nothing to pull.
+    say "==> already on the latest commit; rebuilding and restarting everything anyway"
+    ALL=1
 fi
 
 if [ "$BEFORE" != "$AFTER" ]; then
@@ -94,13 +109,6 @@ else
             for file in $CHANGED; do
                 # Walk UP from the changed file until a directory is one of the
                 # packages this binary compiles in.
-                #
-                # Up, not just the file's own directory: assets embedded with
-                # embed.FS live in a subdirectory that is not itself a Go package
-                # -- internal/dashboard/assets and .../templates are compiled
-                # into the dashboard binary but would match nothing. Missing
-                # those means a CSS change does not restart the dashboard and
-                # the operator concludes the update did not work.
                 dir=$(dirname "$file")
                 while [ "$dir" != "." ] && [ "$dir" != "/" ]; do
                     if echo "$deps" | grep -qx "$dir"; then
@@ -147,17 +155,10 @@ fi
 
 go_restart=$(echo "$restart" | tr ' ' '\n' | grep -v '^nginx$' | tr '\n' ' ')
 
-# ---- build and gate ---------------------------------------------------
+# ---- build (no test gate) --------------------------------------------------
 
-# The replacement for the old Dockerfile's `go vet && go test` image-build
-# gate: with no image build in the loop at all, this is the only thing
-# standing between a broken commit and `systemctl restart` running it.
-# Restart=on-failure would otherwise just crash-loop it in production.
 if [ -n "$go_restart" ]; then
-    say "==> checking (fmt, vet, test)"
-    make check
-
-    say "==> building: $go_restart"
+    say "==> building (no fmt/vet/test gate): $go_restart"
     for svc in $go_restart; do
         go build -o "bin/$svc" "./cmd/$svc"
     done
@@ -171,9 +172,6 @@ for svc in $go_restart; do
 done
 if echo "$restart" | grep -q nginx; then
     command -v docker >/dev/null || die "docker is not installed (needed for the nginx edge)"
-    # A reload, not a restart: nginx serves generated configuration and static
-    # files, and `docker compose restart` would drop in-flight connections a
-    # reload does not need to.
     docker compose exec nginx nginx -s reload
 fi
 
@@ -185,10 +183,6 @@ fi
 
 # ---- did they come back? ---------------------------------------------------
 
-# npln's /healthz only exists once npln.admin_token is set -- that is the
-# only thing that starts its admin listener at all (see cmd/npln) -- so
-# probing it on an install that has not set that token would always read as
-# "NOT healthy" for a reason that has nothing to do with this update.
 ADMIN_TOKEN=$(sed -n 's/^[[:space:]]*admin_token:[[:space:]]*"\(.*\)".*/\1/p' config/config.yaml | head -1)
 
 say "==> waiting for services"
