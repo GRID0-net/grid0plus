@@ -11,6 +11,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/health"
 	"github.com/n-popescu/switchnet/internal/presencebus"
 	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/switchnet/internal/toyohr"
 )
 
 func main() {
@@ -52,11 +53,22 @@ func main() {
 			"for both baas and the dashboard, or the page will never update.")
 	}
 
+	rotation, err := toyohr.RotationFromStrings(
+		cfg.NPLN.Rotation.RegularStages,
+		cfg.NPLN.Rotation.BankaraRules,
+		cfg.NPLN.Rotation.BankaraStages,
+		cfg.NPLN.Rotation.StagesPerSlot,
+	)
+	if err != nil {
+		service.Fatal(log, "parse rotation", err)
+	}
+
 	srv, err := dashboard.New(dashboard.Options{
 		Store:              store,
 		Bus:                bus,
 		Log:                log,
 		Tenant:             cfg.NPLN.Tenant,
+		Rotation:           rotation,
 		SeedDir:            cfg.BCAT.SeedDir,
 		PresenceTTL:        time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
 		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,

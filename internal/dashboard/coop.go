@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/toyohr"
@@ -41,14 +42,42 @@ type coopShiftRow struct {
 	// console is not told about a closed shift) so the operator can see what
 	// already ran rather than have it vanish the moment it does.
 	Status string `json:"status"`
+	// Generated marks a Normal shift nobody stored -- toyohr.liveNormalCoopShifts
+	// filled it in live, the same shift a console is currently being told
+	// about. Nothing to delete or edit here: it is not a row in the store,
+	// recomputed fresh on every request, so the page must not offer a
+	// delete button for one (deleting it would do nothing and reappear on
+	// the next refresh).
+	Generated bool `json:"generated"`
 }
 
 func (s *Server) coopShiftRows(ctx context.Context) ([]coopShiftRow, error) {
-	shifts, err := s.fests.ListCoopShiftsForOperator(ctx)
+	stored, err := s.fests.ListCoopShiftsForOperator(ctx)
 	if err != nil {
 		return nil, err
 	}
 	now := s.now()
+
+	// Same slots a console would be shown right now (toyohr.PreviewCoopSchedule),
+	// so the operator's own list never falls behind what SelectCoopSchedules
+	// is actually answering -- stored shifts already past their end are kept
+	// here (the operator's own history), live-only ones are not, since there
+	// is nothing to keep a record of once they end.
+	live, err := s.fests.PreviewCoopSchedule(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	storedIDs := make(map[string]bool, len(stored))
+	for _, c := range stored {
+		storedIDs[c.ID()] = true
+	}
+	shifts := append([]toyohr.CoopShift(nil), stored...)
+	for _, c := range live {
+		if !storedIDs[c.ID()] {
+			shifts = append(shifts, c)
+		}
+	}
+	sort.Slice(shifts, func(i, j int) bool { return shifts[i].Start.Before(shifts[j].Start) })
 
 	out := make([]coopShiftRow, 0, len(shifts))
 	for _, c := range shifts {
@@ -94,6 +123,7 @@ func (s *Server) coopShiftRows(ctx context.Context) ([]coopShiftRow, error) {
 			StartAt:        c.Start.UTC().Format(time.RFC3339),
 			EndAt:          c.End.UTC().Format(time.RFC3339),
 			Status:         status,
+			Generated:      !storedIDs[c.ID()],
 		})
 	}
 	return out, nil

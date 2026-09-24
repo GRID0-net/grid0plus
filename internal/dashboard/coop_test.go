@@ -59,9 +59,31 @@ func TestCoopShiftsCanBeGeneratedAndNeverOverwriteAManualOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("coopShiftRows: %v", err)
 	}
-	if len(rows) != 3 {
-		t.Fatalf("got %d shifts stored total, want 3", len(rows))
+	// Other rows may be present too -- coopShiftRows also live-fills any
+	// Normal slot nothing was stored for (Generated=true), the same gap
+	// SelectCoopSchedules fills for the console. This test only cares about
+	// what actually got stored.
+	stored := 0
+	for _, r := range rows {
+		if !r.Generated {
+			stored++
+		}
 	}
+	if stored != 3 {
+		t.Fatalf("got %d shifts stored total, want 3", stored)
+	}
+}
+
+// findCoopShiftRow picks out one row by id -- coopShiftRows can now legitimately
+// return more rows than a test itself created, since it live-fills any
+// Normal slot nothing was stored for.
+func findCoopShiftRow(rows []coopShiftRow, id string) (coopShiftRow, bool) {
+	for _, r := range rows {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return coopShiftRow{}, false
 }
 
 func TestGenerateCoopShiftsRejectsAZeroCount(t *testing.T) {
@@ -115,10 +137,12 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("coopShiftRows: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
+	// Other rows may be present too -- see the comment in
+	// TestCoopShiftsCanBeGeneratedAndNeverOverwriteAManualOne.
+	row, ok := findCoopShiftRow(rows, created.ID)
+	if !ok {
+		t.Fatalf("no row with id %q among %d rows", created.ID, len(rows))
 	}
-	row := rows[0]
 	if row.StageName != "Wahoo World" {
 		t.Errorf("stageName = %q, want the name coop_ids.go gives stage 100", row.StageName)
 	}

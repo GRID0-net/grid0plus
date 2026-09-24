@@ -46,6 +46,13 @@ type Options struct {
 	// Tenant is the NPLN tenant the fest controls act on.
 	Tenant string
 
+	// Rotation is the same Vs stage/rule rotation cfg.NPLN's Schedule
+	// service serves consoles -- passed through so the schedule viewer tab
+	// shows the real Turf War/Anarchy rotation rather than always-empty.
+	// Left zero, PreviewVsSchedule answers no slots, same as the wire RPC
+	// would for an unconfigured rotation.
+	Rotation toyohr.Rotation
+
 	// SeedDir is where `switchnetctl fest build` writes its seed folders. When
 	// set, the dashboard serves them to the console-side installer -- see
 	// seed.go and switch/bcat-installer/.
@@ -145,6 +152,7 @@ func New(opts Options) (*Server, error) {
 		// through this service, so its player-scoped handlers stay fail-closed.
 		fests: toyohr.NewService(toyohr.Options{
 			Store: opts.Store, Log: opts.Log, Tenant: opts.Tenant, Now: opts.Now,
+			Rotation: opts.Rotation,
 		}),
 		tenant:  opts.Tenant,
 		seedDir: opts.SeedDir,
@@ -185,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/coop-shifts/generate", s.guard(s.handleGenerateCoopShifts))
 	mux.HandleFunc("DELETE /api/coop-shifts/{id}", s.guard(s.handleDeleteCoopShift))
 	mux.HandleFunc("GET /api/coop-reference", s.guard(s.handleCoopReference))
+	mux.HandleFunc("GET /api/schedule-viewer", s.guard(s.handleScheduleViewer))
 	mux.HandleFunc("GET /api/health", s.guard(s.handleHealth))
 	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))

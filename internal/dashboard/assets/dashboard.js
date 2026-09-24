@@ -367,6 +367,7 @@ function renderCoopShifts(shifts) {
           <div class="fid">${escape(c.stageName)}
             <span class="pill">${COOP_KIND_LABEL[c.kind] || c.kind}</span>
             <span class="pill ${statusPill}">${COOP_STATUS_LABEL[c.status] || c.status}</span>
+            ${c.generated ? '<span class="pill" title="Not stored -- computed live off the clock, the same as a console currently sees. Nothing to delete.">auto</span>' : ""}
           </div>
           <div class="meta">${c.weaponNames.map(escape).join(" · ")}${
             c.kumaWeaponName ? " · kuma: " + escape(c.kumaWeaponName) : ""
@@ -374,11 +375,76 @@ function renderCoopShifts(shifts) {
           <div class="meta">${c.boss ? "boss: " + escape(c.boss) + " · " : ""}${new Date(c.startAt).toLocaleString()} &rarr; ${new Date(c.endAt).toLocaleString()}</div>
         </div>
         <div class="actions">
-          <button class="btn btn-ghost btn-danger" data-delete-coop="${escape(c.id)}">Delete</button>
+          ${c.generated ? "" : `<button class="btn btn-ghost btn-danger" data-delete-coop="${escape(c.id)}">Delete</button>`}
         </div>`;
       return card;
     })
   );
+}
+
+// ---- schedule viewer --------------------------------------------------
+
+/** One Turf War/Anarchy slot, or one Salmon Run shift, rendered as a card --
+ * the same fest-card look the Salmon Run tab already uses, since this is
+ * the same kind of content, just read-only. */
+function renderVsSchedule(slots) {
+  $("#schedule-vs-empty").hidden = slots.length > 0;
+  $("#schedule-vs-list").replaceChildren(
+    ...slots.map((s) => {
+      const card = document.createElement("div");
+      card.className = "fest-card";
+      const regular = (s.regular || []).map((st) => escape(st.name)).join(" · ");
+      const anarchy = (s.anarchy || [])
+        .map((r) => `${escape(r.name)}: ${r.stages.map((st) => escape(st.name)).join(" · ")}`)
+        .join("<br>");
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${new Date(s.startAt).toLocaleString()} &rarr; ${new Date(s.endAt).toLocaleString()}</div>
+          ${regular ? `<div class="meta">Turf War: ${regular}</div>` : ""}
+          ${anarchy ? `<div class="meta">${anarchy}</div>` : ""}
+        </div>`;
+      return card;
+    })
+  );
+}
+
+/** Reuses renderCoopShifts' card markup for the read-only viewer too --
+ * same data, same shape (coopShiftRow), just a different list element and
+ * with delete buttons never shown here regardless of c.generated. */
+function renderScheduleCoop(shifts) {
+  $("#schedule-coop-empty").hidden = shifts.length > 0;
+  $("#schedule-coop-list").replaceChildren(
+    ...shifts.map((c) => {
+      const card = document.createElement("div");
+      card.className = "fest-card" + (c.status === "live" ? " live" : "");
+      const statusPill = c.status === "live" ? "on" : c.status === "ended" ? "warn" : "";
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${escape(c.stageName)}
+            <span class="pill">${COOP_KIND_LABEL[c.kind] || c.kind}</span>
+            <span class="pill ${statusPill}">${COOP_STATUS_LABEL[c.status] || c.status}</span>
+            ${c.generated ? '<span class="pill" title="Not stored -- computed live off the clock.">auto</span>' : ""}
+          </div>
+          <div class="meta">${c.weaponNames.map(escape).join(" · ")}${
+            c.kumaWeaponName ? " · kuma: " + escape(c.kumaWeaponName) : ""
+          }</div>
+          <div class="meta">${c.boss ? "boss: " + escape(c.boss) + " · " : ""}${new Date(c.startAt).toLocaleString()} &rarr; ${new Date(c.endAt).toLocaleString()}</div>
+        </div>`;
+      return card;
+    })
+  );
+}
+
+async function loadScheduleViewer() {
+  try {
+    const data = await api("/api/schedule-viewer");
+    renderVsSchedule(data.vs || []);
+    renderScheduleCoop(data.coop || []);
+  } catch (err) {
+    // Read-only, low-priority tab: fail quietly rather than alert()ing
+    // whoever happens to have this tab open when a poll misses.
+    console.error("schedule viewer:", err);
+  }
 }
 
 $("#coop-list").addEventListener("click", async (e) => {
@@ -1387,6 +1453,11 @@ setInterval(loadHealth, 15000);
 // needs to update between one poll and the next.
 loadDebugStats();
 setInterval(loadDebugStats, 30000);
+
+// Same slow, low-priority cadence as loadDebugStats -- this is a viewer,
+// not a control, so nothing here needs to update between polls.
+loadScheduleViewer();
+setInterval(loadScheduleViewer, 30000);
 
 connect();
 // Presence arrives on the stream; this catches everything else -- a fest

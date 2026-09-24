@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -264,33 +263,16 @@ func (sc *scheduleService) SelectCoopSchedules(
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
 
-	rows, err := sc.s.store.ListCoopShifts(ctx)
+	shifts, err := sc.s.PreviewCoopSchedule(ctx, sc.s.now())
 	if err != nil {
 		sc.s.log.Error("toyohr: list coop shifts", "error", err)
 		return nil, status.Error(codes.Internal, "")
 	}
 
-	now := sc.s.now()
 	resp := &toyohrpb.SelectCoopSchedulesResponse{}
-	storedNormalStarts := map[int64]bool{}
-	for _, row := range rows {
-		if !row.EndAt.After(now) {
-			continue
-		}
-		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(row))
-		if row.Kind == CoopShiftNormal.String() {
-			storedNormalStarts[row.StartAt.UTC().Unix()] = true
-		}
-	}
-	for _, shift := range liveNormalCoopShifts(now, coopLiveHorizonShifts) {
-		if !shift.End.After(now) || storedNormalStarts[shift.Start.UTC().Unix()] {
-			continue
-		}
+	for _, shift := range shifts {
 		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(RowFromCoopShift(shift)))
 	}
-	sort.Slice(resp.Schedules, func(i, j int) bool {
-		return resp.Schedules[i].StartTime.AsTime().Before(resp.Schedules[j].StartTime.AsTime())
-	})
 	return resp, nil
 }
 

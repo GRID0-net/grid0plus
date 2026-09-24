@@ -55,6 +55,7 @@
   <button role="tab" aria-selected="false" data-view="health">Health</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
   <button role="tab" aria-selected="false" data-view="coop">Salmon Run</button>
+  <button role="tab" aria-selected="false" data-view="schedule">Schedule</button>
   <button role="tab" aria-selected="false" data-view="debug">Debug</button>
 </nav>
 
@@ -378,6 +379,27 @@
         resolve.
       </p>
     </div>
+  </section>
+
+  <!-- Schedule viewer -->
+  <section id="view-schedule" class="view">
+    <div class="panel panel-note">
+      <p>
+        What a console would actually be told right now for each mode --
+        computed the same way the wire RPCs answer (nothing here is a
+        separate copy), so this is read-only: edit the rotation in
+        <code>config.yaml</code>, or schedule a Salmon Run shift from the
+        Salmon Run tab.
+      </p>
+    </div>
+
+    <h3>Turf War / Anarchy</h3>
+    <div id="schedule-vs-list" class="fest-list"></div>
+    <p class="empty" id="schedule-vs-empty" hidden>No rotation configured (rotation: in config.yaml is empty).</p>
+
+    <h3>Salmon Run</h3>
+    <div id="schedule-coop-list" class="fest-list"></div>
+    <p class="empty" id="schedule-coop-empty" hidden>Nothing scheduled.</p>
   </section>
 
   <!-- Debug -->
