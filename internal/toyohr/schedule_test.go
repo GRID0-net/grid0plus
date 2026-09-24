@@ -484,6 +484,34 @@ func TestSeasonScheduleCarriesTheCapturedLeaderboardFixTime(t *testing.T) {
 	}
 }
 
+// TestSeasonScheduleCarriesTheTargetField is the regression test for a real
+// gap: both preserved working hall captures carry an eighth field on every
+// SeasonSchedule entry -- decoding to "default" -- entirely absent from
+// upstream's own reconstructed proto (which stops at field 7) as well as
+// from what SwitchNet was sending. See README.md's own section on this.
+func TestSeasonScheduleCarriesTheTargetField(t *testing.T) {
+	at := time.Date(2026, 9, 24, 18, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
+
+	resp, err := sc.SelectSeasonSchedules(context.Background(),
+		&toyohrpb.SelectSeasonSchedulesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.GetSchedules()[0].GetTarget(); got != "default" {
+		t.Errorf("target with no request target = %q, want %q", got, "default")
+	}
+
+	resp, err = sc.SelectSeasonSchedules(context.Background(),
+		&toyohrpb.SelectSeasonSchedulesRequest{Target: "tenants/current/targets/event"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.GetSchedules()[0].GetTarget(); got != "event" {
+		t.Errorf("target with a requested target = %q, want %q", got, "event")
+	}
+}
+
 func TestTheSeasonIsAQuarterAndIsAligned(t *testing.T) {
 	// Mid-quarter, so the answer cannot come from the clock by accident.
 	at := time.Date(2026, 8, 28, 21, 22, 0, 0, time.UTC)

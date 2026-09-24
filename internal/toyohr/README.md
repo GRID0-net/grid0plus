@@ -421,6 +421,21 @@ from, not a rotation to synthesize entries for. Three fields on the wire
 message are an operator-local assumption rather than a confirmed shape —
 `coopScheduleProto` documents which, and `docs/QUESTIONS.md` has the entry.
 
+## `SeasonSchedule.target`: a field missing from upstream's own reconstruction
+
+Both preserved working hall captures carry an eighth field on every
+`SeasonSchedule` entry that decodes to the raw string `"default"` -- absent
+from kinnay/NPLN-Protocols' own `resources.proto` (it stops at field 7,
+`schedule_set_id`) as well as from what SwitchNet had been sending. This is
+the same target concept `VsSchedule`/`LeagueSchedule` already embed in their
+own resource names' `targets/default` segment, just carried as a dedicated
+field here instead. Patched locally into `.proto-upstream` (see
+`scripts/gen-proto.sh`'s own comment on why, and reapply if the upstream
+fetch is ever re-run) as `string target = 8`, and `SelectSeasonSchedules`
+now sets it from the request's own `Target` field via the same
+`scheduleTarget` helper `SelectVsSchedules`/`SelectCoopSchedules` already
+use, rather than a bare hardcoded `"default"`.
+
 ## `CloudSave.GetSaveRecord`: a real, empty record, never `NotFound`
 
 This used to answer `NotFound` for every account, reasoned as the correct

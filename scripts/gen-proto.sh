@@ -10,13 +10,16 @@
 # Do not hand-edit anything under proto/. Every file there carries a
 # "Code generated ... DO NOT EDIT." header and the next run overwrites it.
 #
-# .proto-upstream itself carries one local patch, not tracked by git (the
+# .proto-upstream itself carries local patches, not tracked by git (the
 # directory is gitignored -- fetch-proto.sh pins and checks out an upstream
-# commit there): userscreening.proto's GetViolationResponse has a `name`
-# field added, upstream's own copy still marking it "[UNKNOWN]". Re-running
-# fetch-proto.sh discards that patch. See internal/toyohr/README.md's
-# GetViolation section and docs/CAPTURES/README.md before regenerating, and
-# reapply the field first.
+# commit there):
+#   - userscreening.proto's GetViolationResponse has a `name` field added,
+#     upstream's own copy still marking it "[UNKNOWN]".
+#   - resources.proto's SeasonSchedule has a `target` field (8) added,
+#     entirely absent from upstream's own reconstruction.
+# Re-running fetch-proto.sh discards both patches. See
+# internal/toyohr/README.md's GetViolation and SeasonSchedule sections and
+# docs/CAPTURES/README.md before regenerating, and reapply both fields first.
 set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

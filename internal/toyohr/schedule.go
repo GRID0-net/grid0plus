@@ -499,6 +499,7 @@ func (sc *scheduleService) SelectSeasonSchedules(
 	}
 
 	now := sc.s.now().UTC()
+	target := scheduleTarget(req.GetTarget())
 	schedules := make([]*toyohrpb.SeasonSchedule, 0, count)
 	start := seasonStart(now)
 	// Both working captures set fields 2 and 3 to 16 on every Season
@@ -516,6 +517,7 @@ func (sc *scheduleService) SelectSeasonSchedules(
 				"LastSeasonLeaderboardFixTime": {ValueType: &common.Value_IntegerValue{IntegerValue: lastSeasonLeaderboardFixTime}},
 			}},
 			ScheduleSetId: setID,
+			Target:        target,
 		})
 		start = end
 	}
