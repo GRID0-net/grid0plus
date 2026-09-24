@@ -619,12 +619,12 @@ var Hosts = []Host{
 	// responds without delivering anything risks turning an immediate failure
 	// into a wait.
 	//
-	// TODO.md §2.4's experiment needs them flipped to ServiceStubs, where
+	// TODO.md §2.4's experiment needs list/data flipped to ServiceStubs, where
 	// internal/bcat.Probe is already waiting: it logs every request and answers
 	// 200 with an empty body, which is how anybody first learns what the console
-	// asks BCAT for. Flipping them means amending
-	// TestBlackholedHostsAreAccountedFor too -- deliberately, in a commit that
-	// says why. It needs a console, so it is the operator's to run.
+	// asks BCAT for. Flipping either means amending TestBlackholedHostsAreAccountedFor
+	// too -- deliberately, in a commit that says why. It needs a console, so it
+	// is the operator's to run.
 	{
 		Pattern: "bcat-list-lp1.cdn.nintendo.net",
 		Service: ServiceBlackhole,
@@ -635,10 +635,15 @@ var Hosts = []Host{
 		Service: ServiceBlackhole,
 		Comment: "BCAT background content delivery, data",
 	},
+	// topics is different from list/data above: it is not the unconfirmed BCAT
+	// delivery-cache experiment, it is the System news feed, and a real
+	// capture against Nextendo (facts only, not its code) on 2026-09-24
+	// settled its shape completely -- see internal/stubs.newsTopics's own doc
+	// comment. Flipped to ServiceStubs rather than left null-routed.
 	{
 		Pattern: "bcat-topics-lp1.cdn.nintendo.net",
-		Service: ServiceBlackhole,
-		Comment: "BCAT background content delivery, topics",
+		Service: ServiceStubs,
+		Comment: "System news/topics feed -- confirmed real shape, not the generic BCAT probe",
 	},
 
 	// ---- eShop (phase 3) ------------------------------------------------

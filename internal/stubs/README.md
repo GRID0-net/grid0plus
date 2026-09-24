@@ -71,21 +71,40 @@ here through a `default_server` block, so a host that was redirected on the
 console but has no server block shows up as a log line rather than getting an
 answer from whichever service nginx happened to list first.
 
+## News/topics: `bcat-topics-lp1`, answered for real
+
+`bcat-topics-lp1.cdn.nintendo.net` looks like a fourth BCAT host by name, but
+it is not part of the unconfirmed delivery-cache experiment below — it is
+the System news feed a title polls right at the start of its own boot
+sequence, and its shape is confirmed, not guessed. `h.newsTopics` (in
+`handler.go`) answers it directly, checked ahead of the generic `bcat-`
+prefix case so it never falls into the probe's blanket `200`.
+
+A real capture against Nextendo (facts only, not its code — see
+`docs/CAPTURES/raw/nextendo-second-20260923T210513Z`) shows the exchange in
+full: the console's request carries no conditional-GET header at all, and
+the real server answers `304 Not Modified` with an empty body regardless —
+its own permanent "nothing new" answer, not ordinary cache validation. This
+host used to be null-routed like its two siblings; reproduced on real
+hardware on 2026-09-24, that made the console's very first boot request
+fail outright, and "a communication error has occurred" appeared instantly
+on opening the hall, before `IssuePrearrangedUserToken` even fires.
+
 ## The BCAT probe
 
 `internal/bcat.Probe` (built there, wired into this package's `Handler` on the
-three `bcat-*` hosts) is an **instrument, not a service**. It is always
-registered, but reachable only when an operator flips those hosts away from
-their default null route.
+two remaining `bcat-*` hosts, `list` and `data`) is an **instrument, not a
+service**. It is always registered, but reachable only when an operator
+flips those hosts away from their default null route.
 
-SwitchNet cannot serve BCAT. The `list` response body is undocumented, and
+SwitchNet cannot serve BCAT delivery-cache content. The `list` response body is undocumented, and
 whether the console verifies the delivery container's RSA-2048 signature has
 never been established — switchbrew documents the *field* and says nothing about
 a verification step. A console running SwitchNet already has sigpatches, so the
 check may well be bypassed; nobody has looked.
 
-The probe settles the cheap half of that. Reached, it answers the three
-`bcat-*` hosts, logs each request — method, path, headers, a hexdump of the
+The probe settles the cheap half of that. Reached, it answers the two
+remaining `bcat-*` hosts, logs each request — method, path, headers, a hexdump of the
 body — and replies `200` with an **empty body**. The empty body is deliberate:
 anything else would be an invented protocol shape. What the console does next
 is itself the finding. Setting `stubs.bcat_record_dir` also writes a hexdumped

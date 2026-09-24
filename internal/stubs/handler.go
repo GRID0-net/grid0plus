@@ -121,12 +121,21 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// console finding out from here would not help.
 		h.serviceStatus(w)
 
+	case strings.HasPrefix(host, "bcat-topics"):
+		// The System news feed -- a different, confirmed-shape endpoint from
+		// the unconfirmed BCAT delivery-cache experiment the other two
+		// bcat-* hosts are (case below). Checked first: bcat-topics also
+		// matches the "bcat-" prefix, and would otherwise fall into the
+		// probe's generic 200-empty-body answer, which is not what a real
+		// server sends here. See h.newsTopics.
+		h.newsTopics(w, r)
+
 	case strings.HasPrefix(host, "bcat-"):
-		// Unreachable until an operator flips the three bcat-* hosts away from
-		// ServiceBlackhole. Wired up in advance because the experiment those
-		// hosts exist for is a five-minute job once a console is available and
-		// weeks of nothing if the server has to be written first -- see
-		// internal/bcat.Probe.
+		// Unreachable until an operator flips the remaining two bcat-* hosts
+		// away from ServiceBlackhole. Wired up in advance because the
+		// experiment those hosts exist for is a five-minute job once a
+		// console is available and weeks of nothing if the server has to be
+		// written first -- see internal/bcat.Probe.
 		h.bcat.ServeHTTP(w, r)
 
 	case strings.Contains(host, ".dragons.nintendo.net"):
@@ -170,6 +179,32 @@ func (h *Handler) emptyList(w http.ResponseWriter) {
 
 func (h *Handler) emptyObject(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+// newsTopics answers GET /api/nx/v1/titles/<id>/topics, the System news
+// feed a title polls right at the start of its own boot sequence.
+//
+// A real capture against Nextendo (facts only, not its code) on
+// 2026-09-24 -- `docs/CAPTURES/raw/nextendo-second-20260923T210513Z` --
+// caught this exact exchange: the console's request carries no
+// conditional-GET header at all (no If-None-Match, no If-Modified-Since),
+// just an X-Nintendo-DenebEdgeToken it expects nobody to verify (CLAUDE.md
+// is explicit that a Nintendo-issued credential is accepted without being
+// looked at, never forged or checked), and the real server's answer is 304
+// Not Modified with an empty body regardless. This is not conditional-GET
+// cache validation in the ordinary HTTP sense -- there is nothing here to
+// validate against -- it is the endpoint's own permanent "nothing new"
+// answer, confirmed on the wire, not inferred.
+//
+// Reproduced on SwitchNet's own hardware the same day: this host was
+// null-routed (ServiceBlackhole), the console's very first request of its
+// boot sequence failed outright, and "a communication error has occurred"
+// appeared instantly on opening the hall -- before IssuePrearrangedUserToken
+// even fires. Answering 304 costs nothing to get right: there is no body to
+// invent, and SwitchNet has no news content of its own to serve regardless.
+func (h *Handler) newsTopics(w http.ResponseWriter, r *http.Request) {
+	h.log.Info("stubs: news topics", "host", hostOnly(r.Host), "path", r.URL.Path)
+	w.WriteHeader(http.StatusNotModified)
 }
 
 // dragons answers the eLicense host by path, rather than one blanket empty

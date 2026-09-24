@@ -1069,6 +1069,30 @@ nginx's summarized logs:
   fixed client-side interval, matching a real Nintendo server's distance
   self-limiting a behavior SwitchNet cannot assume away.
 
+With the `KeepAlive` throttle deployed, the reset burst stopped: a full wire
+trace of the next attempt (07:26:05–07:28:07) showed every request
+answered `200`, including the reconnect, `blocks`, `save_data_archives` and
+`frontlines`/`penne` calls after it. But the operator reported the exact
+same "a communication error has occurred," now appearing *instantly* on
+opening the hall — before `IssuePrearrangedUserToken` even fires. That
+timing pointed at the very first request of the whole boot sequence,
+confirmed already decoded in this same second Nextendo capture:
+
+- **`bcat-topics-lp1.cdn.nintendo.net` (the System news feed) was
+  null-routed — settled, and now fixed.** Despite the `bcat-` name, this
+  host is not part of the unconfirmed BCAT delivery-cache experiment its
+  two siblings (`bcat-list-lp1`, `bcat-data-lp1`) still are — it is a
+  separate, already-decoded exchange in `nextendo-second`'s own
+  `stream-events.jsonl`: the console's request carries no conditional-GET
+  header at all, and the real server answers `304 Not Modified` with an
+  empty body regardless, its own permanent "nothing new" answer. SwitchNet
+  had this host `ServiceBlackhole`d, so the console's very first request of
+  its own boot sequence failed outright. Flipped to `ServiceStubs` with a
+  dedicated handler (`internal/stubs.newsTopics`) that always answers `304`
+  — checked ahead of the generic `bcat-` prefix case, which would otherwise
+  have answered a blanket `200` instead. This is also, independently, why
+  the operator never once saw the in-game news screen on SwitchNet.
+
 ---
 
 ## Documenting a capture

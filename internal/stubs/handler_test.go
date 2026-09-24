@@ -301,7 +301,6 @@ func TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants(t *testing.T) {
 	for _, host := range []string{
 		"bcat-list-lp1.cdn.nintendo.net",
 		"bcat-data-lp1.cdn.nintendo.net",
-		"bcat-topics-lp1.cdn.nintendo.net",
 	} {
 		rec := get(t, h, host, "/api/nx/v1/list/splatoon3")
 
@@ -321,6 +320,29 @@ func TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants(t *testing.T) {
 		if got := rec.Header().Get("Content-Type"); got != "" {
 			t.Errorf("%s claimed content type %q", host, got)
 		}
+	}
+}
+
+// TestNewsTopicsAnswers304NotModified is the regression test for a real
+// crash: bcat-topics-lp1.cdn.nintendo.net was null-routed, the console's
+// very first request of its own boot sequence failed outright, and "a
+// communication error has occurred" appeared instantly on opening the
+// hall. A real capture against Nextendo (facts only, not its code) shows
+// the real server answers 304 Not Modified with an empty body
+// unconditionally, with no conditional-GET header in the request to
+// justify it in the ordinary HTTP sense -- it is the endpoint's own
+// permanent "nothing new" answer. See newsTopics's own doc comment.
+func TestNewsTopicsAnswers304NotModified(t *testing.T) {
+	h := newTestHandler(t)
+
+	rec := get(t, h, "bcat-topics-lp1.cdn.nintendo.net",
+		"/api/nx/v1/titles/0100c2500fc20000/topics")
+
+	if rec.Code != http.StatusNotModified {
+		t.Errorf("code = %d, want %d -- this is what crashes a real console", rec.Code, http.StatusNotModified)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("body has %d bytes, want 0 -- there is no news content to invent", rec.Body.Len())
 	}
 }
 
