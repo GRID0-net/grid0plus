@@ -1,6 +1,9 @@
 package toyohr
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 // TestVsStagesAreAllRealAndUnique guards the table against a typo:
 // duplicate ids or names would mean two rows describe the same real stage
@@ -36,5 +39,21 @@ func TestVsStageByID(t *testing.T) {
 	}
 	if _, ok := VsStageByID(9999); ok {
 		t.Error("VsStageByID(9999) = true, want false")
+	}
+}
+
+// TestVsRuleNameNeverGuessesAName is the regression test for the whole
+// point of VsRuleIDs/VsRuleName: a wrong-but-valid rule id is not a
+// protocol error, but a made-up name would be a wrong claim of knowledge
+// this project does not have. See VsRuleIDs' own doc comment.
+func TestVsRuleNameNeverGuessesAName(t *testing.T) {
+	for _, id := range []int32{1, 2, 3, 4} {
+		want := fmt.Sprintf("Rule %d", id)
+		if got := VsRuleName(id); got != want {
+			t.Errorf("VsRuleName(%d) = %q, want %q", id, got, want)
+		}
+	}
+	if got := VsRuleName(5); got != "" {
+		t.Errorf("VsRuleName(5) = %q, want empty -- 5 is not a confirmed-valid id", got)
 	}
 }

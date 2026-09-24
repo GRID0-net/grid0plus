@@ -1,5 +1,7 @@
 package toyohr
 
+import "fmt"
+
 // The real stage ids Turf War and Anarchy's rotation content uses.
 //
 // Unlike the *shape* of nn.npln.toyohr.v1.VsSchedule (an operator-authored
@@ -85,4 +87,39 @@ func VsStageByID(id int32) (stage VsStage, ok bool) {
 		}
 	}
 	return VsStage{}, false
+}
+
+// VsRuleIDs are the confirmed-valid BankaraSettings/XSettings/LeagueSettings
+// `rule` wire values -- 1, 2, 3, 4, one per real rule (Splat Zones, Tower
+// Control, Rainmaker, Clam Blitz).
+//
+// Not from a data dump like VsStages: read directly off a real capture
+// already sitting in this project (facts only, decoded here from the wire
+// bytes themselves, not from Nextendo's or anyone else's code) --
+// docs/CAPTURES/raw/nextendo-hall-20260923T205738Z's own
+// SelectVsSchedules response. Across every VsSchedule entry in it, all
+// three of those fields' values are drawn from exactly {1, 2, 3, 4} and
+// nothing else -- confirming the valid range, not a guess at it.
+//
+// WHICH number is which named rule is NOT confirmed by this: the console
+// resolves the display name from its own local strings, the same way it
+// does for VsStages' names, so the wire never carries "Splat Zones" as a
+// string. A wrong-but-valid id here is not a protocol error -- the console
+// still gets a real rule it can play -- only this project's own labels
+// would be wrong, and nothing here guesses at them (see VsRuleName).
+// TODO(capture-needed): watch which id renders as which rule on real
+// hardware and rename these once known.
+var VsRuleIDs = []int32{1, 2, 3, 4}
+
+// VsRuleName is deliberately just "Rule <n>" for every id in VsRuleIDs --
+// not a guess at Splat Zones/Tower Control/Rainmaker/Clam Blitz. See
+// VsRuleIDs' own doc comment for why guessing costs nothing on the wire but
+// would still be wrong to write down as if it were known.
+func VsRuleName(id int32) string {
+	for _, r := range VsRuleIDs {
+		if r == id {
+			return fmt.Sprintf("Rule %d", id)
+		}
+	}
+	return ""
 }
