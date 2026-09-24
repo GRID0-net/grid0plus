@@ -61,9 +61,40 @@ var CoopRewardGears = []CoopRewardGear{
 	{ID: 25007, Kind: "Shoes"},
 }
 
+// coopUsedRewardGears is the capture-derived advertised catalog used in
+// VsParams and CoopSchedule attributes, separate from a shift's single
+// reward. Both preserved captures agree on these first eleven pairs and on
+// the 23-pair list for the first Coop entry. Other Coop entries vary, so this
+// stable list reproduces the observed shape and known IDs without claiming to
+// reproduce Nintendo's per-shift selection.
+var coopUsedRewardGears = []CoopRewardGear{
+	{ID: 21010, Kind: "Head"},
+	{ID: 21011, Kind: "Head"},
+	{ID: 21015, Kind: "Head"},
+	{ID: 21013, Kind: "Head"},
+	{ID: 21012, Kind: "Head"},
+	{ID: 21014, Kind: "Head"},
+	{ID: 21012, Kind: "Clothes"},
+	{ID: 21016, Kind: "Head"},
+	{ID: 21011, Kind: "Clothes"},
+	{ID: 21017, Kind: "Head"},
+	{ID: 21018, Kind: "Head"},
+	{ID: 21013, Kind: "Clothes"},
+	{ID: 21014, Kind: "Clothes"},
+	{ID: 21008, Kind: "Shoes"},
+	{ID: 21020, Kind: "Head"},
+	{ID: 21016, Kind: "Clothes"},
+	{ID: 21007, Kind: "Shoes"},
+	{ID: 21015, Kind: "Clothes"},
+	{ID: 21021, Kind: "Head"},
+	{ID: 21009, Kind: "Shoes"},
+	{ID: 21017, Kind: "Clothes"},
+	{ID: 21022, Kind: "Head"},
+	{ID: 21023, Kind: "Head"},
+}
+
 // The two preserved working hall captures carry 23 reward candidates in each
-// CoopSchedule and 11 in VsParams. Which gear IDs Nintendo chooses is its own
-// rotation; SwitchNet selects real IDs from its independent public-data table.
+// CoopSchedule and 11 in VsParams.
 const (
 	coopScheduleRewardGearCount = 23
 	vsParamsRewardGearCount     = 11

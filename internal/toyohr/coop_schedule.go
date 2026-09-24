@@ -398,25 +398,20 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 //     this project previously set. Every observed working capture entry's
 //     kuma_weapon field is absent, not merely zero, which is why it is
 //     dropped here entirely rather than sent alongside the attribute.
-//     One capture entry carried all eight real CoopKumaWeapons ids at once
-//     instead of a single one -- plausibly the real "?" wildcard/all-random
-//     weapon mechanic researched earlier this session (Inkipedia's Salmon
-//     Run Next Wave page), never confirmed, and not reproduced here: every
-//     shift this project generates gets exactly the one Grizzco weapon it
-//     already picked (coop_generate.go/coop_live.go), same as the common
-//     case in both captures.
+//     One captured entry carried eight IDs while the others carried one.
+//     The captures establish that variation, but not the selection rule, so
+//     SwitchNet advertises the one weapon already selected for each generated
+//     shift rather than inventing a wildcard policy.
 //
-//   - "CoopUsedRewardGears": real gear ids from CoopRewardGears
-//     (coop_reward_gears.go) -- present on every populated CoopSchedule in
-//     both captures, absent from every SwitchNet response until now. The
+//   - "CoopUsedRewardGears": the capture-derived gear pairs from
+//     coop_reward_gears.go -- present on every populated CoopSchedule in
+//     both captures. The
 //     hall investigation found the console never attempts the
 //     GameRecord-document-read phase that follows a schedule fetch in both
-//     working captures; this field's total absence is the leading
-//     candidate for why. CoopRewardGears' own comment is explicit that
-//     this is SwitchNet's own small, real-id subset, not a reproduction of
-//     Nintendo's actual per-shift selection.
+//     working captures; its absence was a candidate for why. Per-shift
+//     variation remains unmodelled.
 func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
-	gears := CoopRewardGears[:min(coopScheduleRewardGearCount, len(CoopRewardGears))]
+	gears := coopUsedRewardGears[:min(coopScheduleRewardGearCount, len(coopUsedRewardGears))]
 	gearValues := make([]*common.Value, len(gears))
 	for i, g := range gears {
 		gearValues[i] = &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{

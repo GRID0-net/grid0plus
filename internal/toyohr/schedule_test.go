@@ -2,6 +2,8 @@ package toyohr
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -127,6 +129,108 @@ func TestTheSameRequestAtTheSameTimeGivesTheSameEtag(t *testing.T) {
 	}
 	if changed.GetEtag() == first.GetEtag() {
 		t.Error("changing the stages did not change the etag")
+	}
+}
+
+func TestAnAbsoluteVsSlotKeepsItsStagesWhenTheWindowRolls(t *testing.T) {
+	rot := Rotation{
+		RegularStages: []int32{1, 2, 3, 4, 5, 6, 7, 8},
+		BankaraRules:  []int32{1, 2, 3, 4},
+		BankaraStages: []int32{9, 10, 11, 12, 13, 14, 15, 16},
+	}
+	read := func(at time.Time, wantStart time.Time) *toyohrpb.VsSchedule {
+		t.Helper()
+		resp, err := scheduleServiceFor(t, at, rot).SelectVsSchedules(
+			context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, slot := range resp.GetSchedules() {
+			if slot.GetStartTime().AsTime().Equal(wantStart) {
+				return slot
+			}
+		}
+		t.Fatalf("response at %s did not include slot beginning %s", at, wantStart)
+		return nil
+	}
+
+	// At 13:00 the noon slot is position 1; after 14:00 it is position 0.
+	// Its selected stages must remain a function of that absolute slot.
+	start := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	before := read(time.Date(2026, 9, 24, 13, 0, 0, 0, time.UTC), start)
+	after := read(time.Date(2026, 9, 24, 14, 30, 0, 0, time.UTC), start)
+	if !proto.Equal(before.GetRegularSettings(), after.GetRegularSettings()) {
+		t.Errorf("regular stages changed for the same absolute slot: %v then %v",
+			before.GetRegularSettings().GetStages(), after.GetRegularSettings().GetStages())
+	}
+	if len(before.GetBankaraSettings()) != len(after.GetBankaraSettings()) {
+		t.Fatalf("Bankara settings count changed: %d then %d",
+			len(before.GetBankaraSettings()), len(after.GetBankaraSettings()))
+	}
+	for i := range before.GetBankaraSettings() {
+		if !proto.Equal(before.GetBankaraSettings()[i], after.GetBankaraSettings()[i]) {
+			t.Errorf("Bankara stages changed for the same absolute slot at mode %d", i)
+		}
+	}
+	if !proto.Equal(before.GetXSettings(), after.GetXSettings()) {
+		t.Errorf("X stages changed for the same absolute slot")
+	}
+	if !proto.Equal(before.GetLeagueSettings(), after.GetLeagueSettings()) {
+		t.Errorf("League stages changed for the same absolute slot")
+	}
+}
+
+func TestRankedRulesAreStablePerSlotAndRotateAcrossSlots(t *testing.T) {
+	rules := []int32{1, 2, 3, 4}
+	first := permuteRules(rules, 206500)
+	if got := permuteRules(rules, 206500); !slices.Equal(got, first) {
+		t.Fatalf("rule order changed for the same slot: %v then %v", first, got)
+	}
+	var changed bool
+	for slot := int64(206501); slot < 206521; slot++ {
+		if got := permuteRules(rules, slot); !slices.Equal(got, first) {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		t.Fatalf("ranked rule order did not change across twenty slots: %v", first)
+	}
+	if len(first) != len(rules) {
+		t.Fatalf("got %d rules, want %d", len(first), len(rules))
+	}
+	for _, rule := range rules {
+		if !slices.Contains(first, rule) {
+			t.Errorf("permutation omitted configured rule %d: %v", rule, first)
+		}
+	}
+}
+
+func TestAWeekOfGeneratedModesDoesNotRepeatAStageWithinASlot(t *testing.T) {
+	rot := Rotation{
+		RegularStages: []int32{6, 23, 7, 3, 5, 2, 21, 20},
+		BankaraRules:  []int32{1, 2, 3, 4},
+		BankaraStages: []int32{22, 17, 21, 16, 4, 6, 20, 7},
+	}
+	base := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 84; i++ {
+		slot := (&Service{}).vsSchedule(base.Add(time.Duration(i)*scheduleSlot), rot, "default", "test")
+		seen := map[int32]string{}
+		check := func(mode string, stages []int32) {
+			t.Helper()
+			for _, stage := range stages {
+				if prior, ok := seen[stage]; ok {
+					t.Errorf("slot %d repeats stage %d in %s and %s", i, stage, prior, mode)
+				}
+				seen[stage] = mode
+			}
+		}
+		check("regular", slot.GetRegularSettings().GetStages())
+		for j, setting := range slot.GetBankaraSettings() {
+			check(fmt.Sprintf("bankara-%d", j), setting.GetStages())
+		}
+		check("X", slot.GetXSettings().GetStages())
+		check("league", slot.GetLeagueSettings().GetStages())
 	}
 }
 
@@ -340,18 +444,43 @@ func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
 		t.Errorf("XRankingRegionRestrict.Pacific = %v, want empty", pac)
 	}
 
-	// CoopUsedRewardGears: present, real ids, from CoopRewardGears -- see
-	// its own doc comment (coop_reward_gears.go) for why this is SwitchNet's
-	// own small real-id subset, not Nintendo's actual selection.
+	// Both preserved successful responses advertise the same first eleven
+	// CoopUsedRewardGears pairs in VsParams.
 	gears := fields["CoopUsedRewardGears"].GetArrayValue().GetValues()
 	if len(gears) != vsParamsRewardGearCount {
 		t.Errorf("CoopUsedRewardGears has %d entries, want %d", len(gears), vsParamsRewardGearCount)
 	}
 	if len(gears) > 0 {
 		g := gears[0].GetMapValue().GetFields()
-		if g["GearID"].GetIntegerValue() != int64(CoopRewardGears[0].ID) || g["GearKind"].GetStringValue() != CoopRewardGears[0].Kind {
-			t.Errorf("CoopUsedRewardGears[0] = %v, want GearID=%d GearKind=%q", g, CoopRewardGears[0].ID, CoopRewardGears[0].Kind)
+		if g["GearID"].GetIntegerValue() != int64(coopUsedRewardGears[0].ID) || g["GearKind"].GetStringValue() != coopUsedRewardGears[0].Kind {
+			t.Errorf("CoopUsedRewardGears[0] = %v, want GearID=%d GearKind=%q", g, coopUsedRewardGears[0].ID, coopUsedRewardGears[0].Kind)
 		}
+	}
+}
+
+func TestSeasonScheduleCarriesTheCapturedLeaderboardFixTime(t *testing.T) {
+	at := time.Date(2026, 9, 24, 18, 0, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
+	resp, err := sc.SelectSeasonSchedules(context.Background(),
+		&toyohrpb.SelectSeasonSchedulesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.GetSchedules()) != 1 {
+		t.Fatalf("got %d season schedules, want 1", len(resp.GetSchedules()))
+	}
+	wire, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded toyohrpb.SelectSeasonSchedulesResponse
+	if err := proto.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	attrs := decoded.GetSchedules()[0].GetAttributes().GetFields()
+	got := attrs["LastSeasonLeaderboardFixTime"].GetIntegerValue()
+	if got != lastSeasonLeaderboardFixTime {
+		t.Errorf("LastSeasonLeaderboardFixTime = %d, want captured value 1780288878", got)
 	}
 }
 

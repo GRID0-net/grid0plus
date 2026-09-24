@@ -64,6 +64,10 @@ const scheduleSlot = slotSeconds * time.Second
 // incomplete.
 const scheduleHorizon = 12
 
+// lastSeasonLeaderboardFixTime is the value returned by both preserved
+// successful hall captures. It is season metadata, not the current time.
+const lastSeasonLeaderboardFixTime int64 = 1780288878
+
 // SelectVsSchedules returns the versus rotation.
 //
 // Generated rather than stored: a rotation is a deterministic function of the
@@ -101,7 +105,7 @@ func (sc *scheduleService) SelectVsSchedules(
 	schedules := make([]*toyohrpb.VsSchedule, 0, slots)
 	for i := 0; i < slots; i++ {
 		start := from.Add(time.Duration(i) * scheduleSlot)
-		schedules = append(schedules, sc.s.vsSchedule(start, i, rot, target, setID))
+		schedules = append(schedules, sc.s.vsSchedule(start, rot, target, setID))
 	}
 
 	return &toyohrpb.SelectVsSchedulesResponse{
@@ -126,9 +130,14 @@ func scheduleTarget(path string) string {
 // path parser aborts if targets/<target> is absent; both working 2026-09-23
 // captures use targets/default for this request.
 // vsSchedule renders one two-hour slot.
-func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target, setID string) *toyohrpb.VsSchedule {
+func (s *Service) vsSchedule(start time.Time, rot Rotation, target, setID string) *toyohrpb.VsSchedule {
 	end := start.Add(scheduleSlot)
 	nameID := scheduleSetID(start)
+	// The slot's stage choice must not depend on where it happens to sit in
+	// this response's rolling window. The same absolute slot moves from index
+	// 1 to index 0 when the two-hour window advances; using that relative index
+	// would silently change its stages on a refetch.
+	slotIndex := int(start.UTC().Unix() / slotSeconds)
 
 	out := &toyohrpb.VsSchedule{
 		Name:          s.tenantPath() + "/targets/" + target + "/vsSchedules/" + nameID,
@@ -136,15 +145,24 @@ func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target, s
 		EndTime:       timestamppb.New(end),
 		ScheduleSetId: setID,
 	}
-	if stages := pick(rot.RegularStages, index, rot.stagesPerSlot()); len(stages) > 0 {
+	if stages := pick(rot.RegularStages, slotIndex, rot.stagesPerSlot()); len(stages) > 0 {
 		out.RegularSettings = &toyohrpb.RegularSettings{Stages: stages}
 	}
-	if stages := pick(rot.BankaraStages, index, rot.stagesPerSlot()); len(stages) > 0 {
+	usedStages := make(map[int32]bool)
+	for _, stage := range out.GetRegularSettings().GetStages() {
+		usedStages[stage] = true
+	}
+	if len(rot.BankaraStages) > 0 {
 		// The four configured ranked rules belong to four distinct modes:
 		// two Anarchy variants, then X and League. Sending all four as
 		// BankaraSettings differs from the working schedule's wire shape.
-		for r, rule := range rot.BankaraRules {
-			stages := pick(rot.BankaraStages, index+r, rot.stagesPerSlot())
+		rules := permuteRules(rot.BankaraRules, int64(slotIndex))
+		allConfiguredStages := uniqueStages(rot.RegularStages, rot.BankaraStages)
+		for r, rule := range rules {
+			stages := pickExcluding(rot.BankaraStages, slotIndex+r, rot.stagesPerSlot(), usedStages, allConfiguredStages)
+			for _, stage := range stages {
+				usedStages[stage] = true
+			}
 			switch r {
 			case 0, 1:
 				out.BankaraSettings = append(out.BankaraSettings, &toyohrpb.BankaraSettings{Rule: rule, Stages: stages})
@@ -154,6 +172,90 @@ func (s *Service) vsSchedule(start time.Time, index int, rot Rotation, target, s
 				out.LeagueSettings = &toyohrpb.LeagueSettings{Rule: rule, Stages: stages}
 			}
 		}
+	}
+	return out
+}
+
+// pickExcluding walks a configured stage pool from this slot's stable offset,
+// skipping stages already assigned to another mode in the same schedule.
+// If an operator's pool is too small to fill the slot without reuse, it falls
+// back to the ordinary cyclic picker rather than returning an incomplete map
+// list.
+func pickExcluding(from []int32, index, n int, excluded map[int32]bool, fallback []int32) []int32 {
+	if len(from) == 0 || n <= 0 {
+		return nil
+	}
+	if n > len(from) {
+		n = len(from)
+	}
+	start := (index * n) % len(from)
+	if start < 0 {
+		start += len(from)
+	}
+	out := make([]int32, 0, n)
+	selected := make(map[int32]bool, n)
+	appendAvailable := func(pool []int32, offset int) {
+		if len(pool) == 0 {
+			return
+		}
+		for i := 0; i < len(pool) && len(out) < n; i++ {
+			stage := pool[(offset+i)%len(pool)]
+			if excluded[stage] || selected[stage] {
+				continue
+			}
+			out = append(out, stage)
+			selected[stage] = true
+		}
+	}
+	appendAvailable(from, start)
+	appendAvailable(fallback, start)
+	if len(out) == n {
+		return out
+	}
+	for _, stage := range pick(from, index, n) {
+		if len(out) == n {
+			break
+		}
+		if !selected[stage] {
+			out = append(out, stage)
+			selected[stage] = true
+		}
+	}
+	return out
+}
+
+func uniqueStages(groups ...[]int32) []int32 {
+	seen := make(map[int32]bool)
+	var out []int32
+	for _, group := range groups {
+		for _, stage := range group {
+			if seen[stage] {
+				continue
+			}
+			seen[stage] = true
+			out = append(out, stage)
+		}
+	}
+	return out
+}
+
+// permuteRules gives every configured ranked mode one rule in a stable,
+// slot-specific order. The working captures show all four rule IDs permuted
+// between slots; keying the shuffle by the absolute slot keeps refetches and
+// future schedule previews consistent.
+func permuteRules(rules []int32, slot int64) []int32 {
+	out := append([]int32(nil), rules...)
+	state := uint64(slot) ^ 0x9e3779b97f4a7c15
+	next := func() uint64 {
+		state += 0x9e3779b97f4a7c15
+		z := state
+		z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+		z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+		return z ^ (z >> 31)
+	}
+	for i := len(out) - 1; i > 0; i-- {
+		j := int(next() % uint64(i+1))
+		out[i], out[j] = out[j], out[i]
 	}
 	return out
 }
@@ -257,9 +359,8 @@ func (sc *scheduleService) SelectVsParams(
 	}, nil
 }
 
-// vsParamsAttributes is VsParams.Attributes, populated with the ten
-// non-CoopUsedRewardGears keys both preserved working Nextendo hall
-// captures agree on byte-for-byte
+// vsParamsAttributes is VsParams.Attributes, populated with the keys both
+// preserved working Nextendo hall captures agree on byte-for-byte
 // (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z and
 // nextendo-second-20260923T210513Z, analysis/decoded-private.json's
 // SelectVsParams responses): fixed server config values, not anything
@@ -269,11 +370,8 @@ func (sc *scheduleService) SelectVsParams(
 // absence) is unconfirmed -- correlated with the persistent hall
 // disconnect, not proven to cause it.
 //
-// CoopUsedRewardGears (both captures also agree on this key, with real gear
-// id/kind pairs) is deliberately left out: it needs a real Splatoon 3 gear
-// id table this project has not built yet (Leanny/splat3's
-// GearInfoHead/Clothes/Shoes.json can source one, the same way
-// vs_ids.go/coop_ids.go's tables were) -- not something to invent here.
+// CoopUsedRewardGears uses the fixed pair list captured from working
+// responses. Its per-shift variation is not modelled.
 func vsParamsAttributes() *common.MapValue {
 	intVal := func(v int64) *common.Value {
 		return &common.Value{ValueType: &common.Value_IntegerValue{IntegerValue: v}}
@@ -281,7 +379,7 @@ func vsParamsAttributes() *common.MapValue {
 	boolVal := func(v bool) *common.Value {
 		return &common.Value{ValueType: &common.Value_BooleanValue{BooleanValue: v}}
 	}
-	gears := CoopRewardGears[:min(vsParamsRewardGearCount, len(CoopRewardGears))]
+	gears := coopUsedRewardGears[:min(vsParamsRewardGearCount, len(coopUsedRewardGears))]
 	gearValues := make([]*common.Value, len(gears))
 	for i, g := range gears {
 		gearValues[i] = &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{
@@ -409,11 +507,14 @@ func (sc *scheduleService) SelectSeasonSchedules(
 		end := start.AddDate(0, 3, 0)
 		setID := scheduleSetID(start)
 		schedules = append(schedules, &toyohrpb.SeasonSchedule{
-			Name:          sc.s.tenantPath() + "/seasonSchedules/" + setID,
-			Unk2:          16,
-			Unk3:          16,
-			StartTime:     timestamppb.New(start),
-			EndTime:       timestamppb.New(end),
+			Name:      sc.s.tenantPath() + "/seasonSchedules/" + setID,
+			Unk2:      16,
+			Unk3:      16,
+			StartTime: timestamppb.New(start),
+			EndTime:   timestamppb.New(end),
+			Attributes: &common.MapValue{Fields: map[string]*common.Value{
+				"LastSeasonLeaderboardFixTime": {ValueType: &common.Value_IntegerValue{IntegerValue: lastSeasonLeaderboardFixTime}},
+			}},
 			ScheduleSetId: setID,
 		})
 		start = end
