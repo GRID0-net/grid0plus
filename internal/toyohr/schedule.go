@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -311,6 +310,11 @@ func (sc *scheduleService) SelectCoopSchedules(
 	for _, shift := range shifts {
 		resp.Schedules = append(resp.Schedules, sc.s.coopScheduleProto(RowFromCoopShift(shift), scheduleTarget(req.GetTarget())))
 	}
+	resp.Etag, err = coopScheduleEtag(resp.Schedules)
+	if err != nil {
+		sc.s.log.Error("toyohr: version coop schedule", "error", err)
+		return nil, status.Error(codes.Internal, "")
+	}
 	return resp, nil
 }
 
@@ -424,7 +428,13 @@ func etagOf(schedules []*toyohrpb.VsSchedule) string {
 			writeStages(h, league.GetStages())
 		}
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return quotedScheduleEtag(h.Sum(nil))
+}
+
+// The working responses use a quoted 24-character version, including the
+// quotes. A stable digest lets the client avoid reloading an unchanged window.
+func quotedScheduleEtag(sum []byte) string {
+	return `"` + base64.RawURLEncoding.EncodeToString(sum[:16]) + `"`
 }
 
 func seasonEtag(schedules []*toyohrpb.SeasonSchedule) string {
@@ -433,7 +443,7 @@ func seasonEtag(schedules []*toyohrpb.SeasonSchedule) string {
 		fmt.Fprintf(h, "%s|%d|%d|", s.ScheduleSetId,
 			s.StartTime.GetSeconds(), s.EndTime.GetSeconds())
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return quotedScheduleEtag(h.Sum(nil))
 }
 
 func writeStages(h interface{ Write([]byte) (int, error) }, stages []int32) {

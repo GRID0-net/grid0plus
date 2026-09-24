@@ -2,11 +2,13 @@ package toyohr
 
 import (
 	"context"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"math/rand/v2"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/internal/db"
@@ -383,4 +385,21 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 		}
 	}
 	return out
+}
+
+// The timestamp field reports response time and must not invalidate the
+// window's version on every poll. Hash the actual stable schedule messages,
+// including their content and order, with that field removed.
+func coopScheduleEtag(schedules []*toyohrpb.CoopSchedule) (string, error) {
+	h := sha1.New()
+	for _, schedule := range schedules {
+		stable := proto.Clone(schedule).(*toyohrpb.CoopSchedule)
+		stable.Timestamp = nil
+		encoded, err := (proto.MarshalOptions{Deterministic: true}).Marshal(stable)
+		if err != nil {
+			return "", fmt.Errorf("marshal Coop schedule for ETag: %w", err)
+		}
+		h.Write(encoded)
+	}
+	return quotedScheduleEtag(h.Sum(nil)), nil
 }

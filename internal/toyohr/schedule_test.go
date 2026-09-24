@@ -110,8 +110,8 @@ func TestTheSameRequestAtTheSameTimeGivesTheSameEtag(t *testing.T) {
 
 	// The etag is what a client's conditional request compares. One that moves
 	// for no reason costs a needless refetch.
-	if first.GetEtag() == "" {
-		t.Fatal("no etag, so a client cannot cache the rotation")
+	if got := first.GetEtag(); len(got) != 24 || !strings.HasPrefix(got, `"`) || !strings.HasSuffix(got, `"`) {
+		t.Errorf("Versus ETag = %q, want the captured quoted 24-character version", got)
 	}
 	if first.GetEtag() != second.GetEtag() {
 		t.Errorf("the same rotation produced two etags: %s and %s",
@@ -311,6 +311,9 @@ func TestTheSeasonIsAQuarterAndIsAligned(t *testing.T) {
 	}
 	if len(resp.GetSchedules()) != 2 {
 		t.Fatalf("got %d seasons, want 2", len(resp.GetSchedules()))
+	}
+	if got := resp.GetEtag(); len(got) != 24 || !strings.HasPrefix(got, `"`) || !strings.HasSuffix(got, `"`) {
+		t.Errorf("Season ETag = %q, want the captured quoted 24-character version", got)
 	}
 
 	first := resp.GetSchedules()[0]

@@ -346,6 +346,9 @@ func TestCoopSchedulesShareOneSetWithoutShiftIDs(t *testing.T) {
 	if len(resp.GetSchedules()) != 2 {
 		t.Fatalf("got %d shifts, want two", len(resp.GetSchedules()))
 	}
+	if got := resp.GetEtag(); len(got) != 24 || !strings.HasPrefix(got, `"`) || !strings.HasSuffix(got, `"`) {
+		t.Errorf("Coop ETag = %q, want the captured quoted 24-character version", got)
+	}
 	setID := resp.GetSchedules()[0].GetScheduleSetId()
 	if setID == "" {
 		t.Fatal("missing schedule-set id")
