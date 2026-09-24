@@ -982,11 +982,9 @@ session. It then called `CloudSave/WriteSaveRecord` twice, got
 `grpc-status: 12` (`Unimplemented`) both times, and went silent for good
 shortly after -- and a sixth crash report showed the identical
 `[28c4287a] + 0x7d2434` return address once more, this time with
-`SelectVsParams` itself proven innocent by the capture. The likely
-mechanism, not yet independently confirmed by a further capture: the
-client re-derives the same `targets/<target>/vsParams/...`-shaped name from
-pieces of its own state when it retries after `WriteSaveRecord` fails, so
-the fix is the same shape either way.
+`SelectVsParams` itself proven innocent by the capture, at the time this
+was written. That turned out to be the wrong read of "innocent" -- see the
+next entry.
 
 - **`CloudSave.WriteSaveRecord` answering `Unimplemented` — settled, and
   now fixed.** NextendoNetwork/splatoon-3's own proto comment (facts only,
@@ -1000,6 +998,20 @@ the fix is the same shape either way.
   so acknowledging costs nothing this server does not already have, and
   nothing is stored, the same "no game dump, no save data" boundary
   `GetSaveRecord` draws.
+
+A seventh and eighth crash report, deployed on top of the `WriteSaveRecord`
+fix, still hit the identical `[28c4287a] + 0x7d2434` address -- proving the
+`WriteSaveRecord` theory above wrong. A seventh capture explained why:
+`SelectVsParamsRequest`'s `Target` field is not a bare id, it is a full
+alias path, `tenants/current/targets/default` -- the same `tenants/current/...`
+convention `GameRecord/InitializeAttributes` and `Friends/ActivateUser`
+already resolve elsewhere in this codebase. The `VsParams.Name` fix above
+echoed `Target` back *whole*, building
+`tenants/<t>/targets/tenants/current/targets/default/vsParams/<id>` — two
+nested `targets` segments, which fails the parser's segment-position check
+identically to a missing one. Fixed by taking only `Target`'s own last path
+segment (`schedule.go`'s existing `lastSegment` helper) rather than the
+field verbatim.
 
 ---
 

@@ -308,7 +308,18 @@ The fix's own first answer, `tenants/<t>/vsParams/<id>`, omitted the
 `targets/<target>` segment and reproduced the crash on real hardware.
 Unlike `CoopSchedule`, `<target>` here is not a SwitchNet placeholder:
 `SelectVsParamsRequest` already carries a `Target` field the client itself
-sends, and the response echoes it back rather than inventing one.
+sends.
+
+**That fix's own first answer still crashed — `Target` is a full alias
+path, not a bare id.** Echoing `Target` back whole was still wrong: a
+VM-side loopback capture caught its real value, `tenants/current/targets/default`
+— the same `tenants/current/...` alias convention
+`GameRecord/InitializeAttributes` and `Friends/ActivateUser` already
+resolve elsewhere in this package, not a bare id. Echoing it whole built
+`tenants/<t>/targets/tenants/current/targets/default/vsParams/<id>` — two
+nested `targets` segments — which reproduced the identical crash address a
+third time, even after the segment-shape fix above had already shipped.
+Only `Target`'s own last path segment (`default`) belongs in the response.
 
 **`CoopSchedule.Name` needs a `targets/<target>` segment it did not have —
 settled by decompile, and now fixed.** A 2026-09-24 decompile of Splatoon 3

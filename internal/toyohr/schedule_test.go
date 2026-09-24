@@ -250,26 +250,30 @@ func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 }
 
 // TestSelectVsParamsNameCarriesTheRequestsOwnTarget is the regression test
-// for a second real crash on the same RPC: a 2026-09-24 decompile of
-// Splatoon 3 v11.3.0's own main.nso found the client's resource-name parser
-// for a VsParams requires the literal shape
-// "tenants/<t>/targets/<target>/vsParams/<rest>", and the first fix above
-// answered "tenants/<t>/vsParams/<id>" -- missing that segment -- which
-// reproduced the crash on real hardware. The target segment is the
-// request's own Target field, echoed back.
+// for a second and third real crash on the same RPC: a 2026-09-24 decompile
+// of Splatoon 3 v11.3.0's own main.nso found the client's resource-name
+// parser for a VsParams requires the literal shape
+// "tenants/<t>/targets/<target>/vsParams/<rest>". The first fix answered
+// "tenants/<t>/vsParams/<id>", missing that segment. The second fix echoed
+// the request's Target field back whole -- but a VM-side loopback capture
+// caught its real value, "tenants/current/targets/default", a full
+// resource path using the same "current" alias convention this package
+// resolves elsewhere, not a bare id; echoing it whole built a name with two
+// nested "targets" segments and reproduced the identical crash address a
+// third time. Only the target's own last segment belongs in the response.
 func TestSelectVsParamsNameCarriesTheRequestsOwnTarget(t *testing.T) {
 	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})
 
 	resp, err := sc.SelectVsParams(context.Background(),
-		&toyohrpb.SelectVsParamsRequest{Target: "bankara_challenge"})
+		&toyohrpb.SelectVsParamsRequest{Target: "tenants/current/targets/default"})
 	if err != nil {
 		t.Fatalf("select vs params: %v", err)
 	}
 	name := resp.GetParams().GetName()
 	segs := strings.Split(strings.TrimPrefix(name, sc.s.tenantPath()+"/"), "/")
-	if len(segs) < 4 || segs[0] != "targets" || segs[1] != "bankara_challenge" || segs[2] != "vsParams" {
-		t.Errorf("name segments = %v, want [targets bankara_challenge vsParams <id>] -- this is what crashes a real console", segs)
+	if len(segs) < 4 || segs[0] != "targets" || segs[1] != "default" || segs[2] != "vsParams" {
+		t.Errorf("name segments = %v, want [targets default vsParams <id>] -- this is what crashes a real console", segs)
 	}
 }
 

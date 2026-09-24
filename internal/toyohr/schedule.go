@@ -186,9 +186,17 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // "tenants/<t>/targets/<target>/vsParams/<rest>" and hard-aborts when the
 // parse fails -- the first fix here answered "tenants/<t>/vsParams/<id>",
 // omitting that segment, and reproduced this exact crash on real hardware.
-// <target> is the request's own Target field, echoed back rather than
-// invented: the client is the one naming which matchmaking target it wants
-// parameters for, and SwitchNet has no independent source for that id.
+//
+// <target> is the LAST SEGMENT of the request's own Target field, not the
+// field echoed back whole. A VM-side loopback capture on 2026-09-24 caught
+// the real value: "tenants/current/targets/default" -- a full resource path
+// using the same "current" alias convention GameRecord/InitializeAttributes
+// and Friends/ActivateUser already resolve elsewhere in this package, not a
+// bare id. Echoing it whole (this fix's own first attempt) built
+// "tenants/<t>/targets/tenants/current/targets/default/vsParams/<id>" --
+// two nested "targets" segments, which the parser rejects the same as a
+// missing one, and reproduced the identical crash address on real hardware
+// even after this fix first shipped.
 func (sc *scheduleService) SelectVsParams(
 	ctx context.Context, req *toyohrpb.SelectVsParamsRequest,
 ) (*toyohrpb.SelectVsParamsResponse, error) {
@@ -198,7 +206,7 @@ func (sc *scheduleService) SelectVsParams(
 
 	now := sc.s.now()
 	setID := scheduleSetID(AlignToSlot(now))
-	target := req.GetTarget()
+	target := lastSegment(req.GetTarget())
 	if target == "" {
 		// Unexpected: every real request this project has seen names a
 		// target. A stable SwitchNet placeholder rather than an empty path
