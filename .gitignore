@@ -53,6 +53,11 @@ __pycache__/
 # Only the generated Go in proto/ is tracked.
 .proto-upstream/
 
+# Session scratchpad backups (raw packet captures, crash-analysis scratch
+# files). Never repo content -- same "no raw captures in git" rule
+# docs/CAPTURES/raw/ already follows.
+docs/scratchpad backups/
+
 # Service binaries built into the repo root.
 #
 # `go build ./cmd/npln` with no -o writes ./npln, which is easy to do by accident
