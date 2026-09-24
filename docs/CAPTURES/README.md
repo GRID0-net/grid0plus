@@ -1119,6 +1119,34 @@ the real remaining gap:
   which only ever affected `ServiceBlackhole` hosts, was removed rather
   than left silently doing nothing.
 
+Asked directly to check whether SwitchNet's own hosts file is right by
+diffing against Prelude's *entire* current hosts generator, not just the
+sections already touched tonight, rather than trust SwitchNet's own
+internal cross-checks alone. Two more findings, one real bug and one
+scope note:
+
+- **`receive-*.dg/er.srv.nintendo.net` (telemetry) were null-routed on a
+  wrong assumption — settled, and now fixed.** SwitchNet's own comment
+  claimed "null-routing them is what Prelude-Nro does too" -- checked
+  against Prelude's actual current source rather than trusted, and it does
+  not. NextendoNetwork/Prelude's own commit history documents a real
+  hardware measurement: the NSO/friends applet (`0100000000000816`) waits
+  *synchronously* for an HTTP response from these two hosts before loading
+  its own main module (`lp1.nso`) -- null-routed, the connection hangs
+  until timeout and the applet never gets there, no profile icon handling
+  and plausibly more of the applet than that. Fixed with
+  `internal/stubs.telemetrySink`: read the body, discard it, answer `200`
+  immediately. Telemetry still never reaches real Nintendo.
+- **Prelude's `d4c` (system update) hosts are deliberately *not*
+  null-routed, unlike SwitchNet's** -- checked, and this is not a bug to
+  copy: Prelude's own comment says why ("`nim` stocke un flag persistant"),
+  the identical reasoning `internal/nintendo/hosts.go` already gives for
+  the opposite choice on this deployment. Prelude's console moves between
+  Nintendo mode and Nextendo mode; this deployment's emuMMC is permanently
+  and exclusively SwitchNet's (see CLAUDE.md), so the "switch back that
+  will never happen" the persistent flag would otherwise corrupt cannot
+  occur here. Confirmed intentional, not copied.
+
 ---
 
 ## Documenting a capture

@@ -28,11 +28,32 @@ things that are genuinely not part of this stack.
 | `.five.` | `[]` | online play invitations — phase 2 |
 | `.op2.` | `/v1/users/<id>/memberships`: an `items` envelope with a `default` and an `ex` entry (the shape the account sysmodule's parser accepts — see `docs/CAPTURES/README.md` item 7); every other path `{"active": true, …}` | membership verification; every registered user may play |
 | `service-status` | everything up | if it were not, the console learning it here would not help |
+| `receive-*.dg.`, `receive-*.er.` | bare `200`, body read and discarded | telemetry (play/error reports) — read, not null-routed; see below |
 | `.dragons.` | mostly `{}`, one path is not — see below | eLicense; `aauth` accepts the token without looking at it |
 | `god.…penne` | `POST /v1/accounts/<id>/notification_tokens` → `{"notification_token": "<36 hex>"}`, every other path `{}` | npns hands this token to the account sysmodule for `PUT /1.0.0/push_channels`; `{}` left the Nintendo Account link stuck one request short. See `docs/CAPTURES/README.md` item 11 |
 | anything else | `{}` | well-formed JSON beats a 404 for a client whose expectations are unknown |
 
 Empty **lists**, not `null`: a console decoding `null` into a list type fails.
+
+### Telemetry is read and discarded, not null-routed
+
+`receive-*.dg.srv.nintendo.net` (play reports) and `receive-*.er.srv.nintendo.net`
+(error reports) used to be `ServiceBlackhole` in `internal/nintendo/hosts.go`,
+reasoned as "tells Nintendo nothing either way, and this way it does not
+fill our logs" — and reasoned, wrongly, that null-routing them is what
+Prelude-Nro does too. Checked against Prelude's actual current source
+rather than assumed: it does not. NextendoNetwork/Prelude's own commit
+history (facts only, not its code) documents a real hardware measurement:
+the NSO/friends applet (`0100000000000816`) waits **synchronously** for an
+HTTP response from these two hosts before it loads its own main module
+(`lp1.nso`). Null-routed, the connection hangs until timeout and the
+applet gives up without ever reaching `lp1.nso` — no profile icon
+handling, plausibly more of the applet than that, never initialises.
+
+`h.telemetrySink` reads the request body, discards it, and answers `200`
+immediately. Telemetry still never reaches real Nintendo — discarding it
+here, not forwarding it, is the whole point — only the synchronous wait
+the applet blocks on is satisfied.
 
 ### One `dragons` path is not a safe `{}`: `/v2/elicenses/exercise`
 

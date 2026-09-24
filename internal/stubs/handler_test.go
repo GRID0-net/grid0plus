@@ -68,6 +68,31 @@ func TestConnectionTestAnswer(t *testing.T) {
 	}
 }
 
+// TestTelemetrySinkReadsAndAnswers200 is the regression test for a real,
+// hardware-documented hang: NextendoNetwork/Prelude's own commit history
+// (facts only, not its code) measured the NSO/friends applet
+// (0100000000000816) waiting synchronously for an HTTP response from these
+// two hosts before loading its own main module -- null-routed, the applet
+// never gets there at all. The fix reads the body and answers 200; nothing
+// about the content is stored or forwarded to real Nintendo.
+func TestTelemetrySinkReadsAndAnswers200(t *testing.T) {
+	h := newTestHandler(t)
+
+	for _, host := range []string{
+		"receive-lp1.dg.srv.nintendo.net",
+		"receive-lp1.er.srv.nintendo.net",
+	} {
+		req := httptest.NewRequest("POST", "http://"+host+"/report", strings.NewReader(`{"crash":"data"}`))
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200 -- this is what hangs the NSO applet on real hardware", host, rec.Code)
+		}
+	}
+}
+
 func TestFriendRecommendationsAndInvitationsReturnEmptyLists(t *testing.T) {
 	h := newTestHandler(t)
 
@@ -267,11 +292,17 @@ func TestPostBodiesAreAcceptedAndNotRequired(t *testing.T) {
 func TestLogBodiesDoesNotBreakTheResponse(t *testing.T) {
 	// LogBodies consumes the request body. A handler that then tried to read it
 	// would see nothing; the stub handlers do not, but that has to stay true.
+	//
+	// Uses the generic empty-object fallback host, not a telemetry host:
+	// receive-*.dg/er.srv.nintendo.net now goes through h.telemetrySink,
+	// which answers a bare 200 with no body by design (see its own doc
+	// comment) -- a different, still-correct response shape this test is
+	// not about.
 	h := newHandler(t, Config{LogBodies: true})
 
-	req := httptest.NewRequest("POST", "http://receive-lp1.er.srv.nintendo.net/report",
+	req := httptest.NewRequest("POST", "http://unknown-host.nintendo.net/report",
 		strings.NewReader("a crash report"))
-	req.Host = "receive-lp1.er.srv.nintendo.net"
+	req.Host = "unknown-host.nintendo.net"
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

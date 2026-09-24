@@ -121,6 +121,10 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// console finding out from here would not help.
 		h.serviceStatus(w)
 
+	case strings.HasPrefix(host, "receive-"):
+		// Telemetry (play/error reports). See h.telemetrySink.
+		h.telemetrySink(w, r)
+
 	case strings.HasPrefix(host, "bcat-topics"):
 		// The System news feed -- confirmed shape, not the generic BCAT
 		// probe (case below). Checked first: bcat-topics also matches the
@@ -175,6 +179,29 @@ func (h *Handler) connectionTest(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, "ok")
+}
+
+// telemetrySink answers receive-*.dg/er.srv.nintendo.net (play and error
+// reports): read the body, discard it, answer 200 immediately.
+//
+// NextendoNetwork/Prelude's own commit history (facts only, not its code)
+// documents a real hardware measurement: the NSO/friends applet
+// (0100000000000816) waits SYNCHRONOUSLY for an HTTP response from these
+// two hosts before it loads its own main module (lp1.nso). Null-routed,
+// the connection hangs until timeout and the applet gives up without ever
+// reaching lp1.nso -- no profile icon handling, plausibly more of the
+// applet than that, never initialises. This is not the "answer whatever is
+// safe" reasoning most of this file's other stubs use; it is a specific,
+// documented synchronous dependency. Telemetry still never reaches real
+// Nintendo -- discarding it here, not forwarding it, is the whole point --
+// only the wait the applet blocks on is satisfied.
+func (h *Handler) telemetrySink(w http.ResponseWriter, r *http.Request) {
+	// The whole body, not capped: a partially-drained request body can
+	// leave an HTTP/1.1 keep-alive connection in a state the next request
+	// on it cannot recover from. These are trusted consoles on the
+	// operator's own network, not a reason to bound the read.
+	_, _ = io.Copy(io.Discard, r.Body)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) emptyList(w http.ResponseWriter) {

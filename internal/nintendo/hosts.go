@@ -589,19 +589,33 @@ var Hosts = []Host{
 		Comment: "NPLN game session host (Splatoon 3 lobby), on port 7575",
 	},
 
-	// ---- Telemetry: null-route ------------------------------------------
-	// Redirecting these to our own server would still tell Nintendo nothing,
-	// but it would fill our logs with crash and play reports we have no use
-	// for. Null-routing them is what Prelude-Nro does.
+	// ---- Telemetry: redirected to a sink, not null-routed -----------------
+	// Used to be null-routed, reasoned as "tells Nintendo nothing either
+	// way, and this way it does not fill our logs" -- and reasoned, wrongly,
+	// that null-routing them is what Prelude-Nro does too. Checked against
+	// Prelude's actual current source rather than assumed: it does not.
+	// Prelude's own commit history (facts only, not its code) documents a
+	// real hardware measurement: the NSO/friends applet
+	// (0100000000000816) waits SYNCHRONOUSLY for an HTTP response from
+	// these two hosts before it loads its own main module (lp1.nso).
+	// Null-routed, the connection hangs until timeout and the applet gives
+	// up without ever reaching lp1.nso -- no profile icon handling, and
+	// plausibly more of the applet than that, never initialises. Their fix
+	// is a sink: redirect both hosts to a server that reads the body,
+	// discards it, and answers 200 immediately. Telemetry still never
+	// reaches real Nintendo -- only the synchronous wait the applet blocks
+	// on is satisfied. See internal/stubs.telemetrySink.
 	{
 		Pattern: "receive-%.dg.srv.nintendo.net",
-		Service: ServiceBlackhole, Wildcard: true,
-		Comment: "play reports",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		TLSNames: []string{"receive-lp1.dg.srv.nintendo.net"},
+		Comment:  "play reports -- read and discarded, answered 200 so the NSO applet does not hang",
 	},
 	{
 		Pattern: "receive-%.er.srv.nintendo.net",
-		Service: ServiceBlackhole, Wildcard: true,
-		Comment: "error reports",
+		Service: ServiceStubs, Wildcard: true, TLS: true,
+		TLSNames: []string{"receive-lp1.er.srv.nintendo.net"},
+		Comment:  "error reports -- read and discarded, answered 200 so the NSO applet does not hang",
 	},
 
 	// ---- BCAT: answered with 304, never left unreachable -----------------
