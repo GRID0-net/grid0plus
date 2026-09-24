@@ -250,11 +250,56 @@ func (sc *scheduleService) SelectVsParams(
 			Name:        sc.s.tenantPath() + "/targets/" + target + "/vsParams/" + setID,
 			Timestamp1:  timestamppb.New(windowStart),
 			Timestamp2:  timestamppb.New(windowEnd),
-			Attributes:  &common.MapValue{Fields: map[string]*common.Value{}},
+			Attributes:  vsParamsAttributes(),
 			ParamsSetId: setID,
 		},
 		Etag: vsParamsEtag(target, setID),
 	}, nil
+}
+
+// vsParamsAttributes is VsParams.Attributes, populated with the ten
+// non-CoopUsedRewardGears keys both preserved working Nextendo hall
+// captures agree on byte-for-byte
+// (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z and
+// nextendo-second-20260923T210513Z, analysis/decoded-private.json's
+// SelectVsParams responses): fixed server config values, not anything
+// account- or session-specific, so nothing here is guessed. This project
+// previously sent an empty Attributes map; whether the client requires
+// these specific keys to be present (as opposed to merely tolerating their
+// absence) is unconfirmed -- correlated with the persistent hall
+// disconnect, not proven to cause it.
+//
+// CoopUsedRewardGears (both captures also agree on this key, with real gear
+// id/kind pairs) is deliberately left out: it needs a real Splatoon 3 gear
+// id table this project has not built yet (Leanny/splat3's
+// GearInfoHead/Clothes/Shoes.json can source one, the same way
+// vs_ids.go/coop_ids.go's tables were) -- not something to invent here.
+func vsParamsAttributes() *common.MapValue {
+	intVal := func(v int64) *common.Value {
+		return &common.Value{ValueType: &common.Value_IntegerValue{IntegerValue: v}}
+	}
+	boolVal := func(v bool) *common.Value {
+		return &common.Value{ValueType: &common.Value_BooleanValue{BooleanValue: v}}
+	}
+	return &common.MapValue{Fields: map[string]*common.Value{
+		"DivideXRate":                 intVal(2000),
+		"DivideXRateAtlantic":         intVal(500),
+		"DivideXRatePacific":          intVal(2000),
+		"IsAbleToSendImageWithoutSns": boolVal(true),
+		"IsClampDownActive":           boolVal(true),
+		"IsMemHackKickActive":         boolVal(true),
+		"IsOnlinePenaltyActive":       boolVal(true),
+		"P2PKeepAliveSec":             intVal(8),
+		"PlazaFixedTimestamp":         intVal(1726452000),
+		"XRankingRegionRestrict": {
+			ValueType: &common.Value_MapValue{MapValue: &common.MapValue{Fields: map[string]*common.Value{
+				"Atlantic": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
+					Values: []*common.Value{intVal(1)},
+				}}},
+				"Pacific": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{}}},
+			}}},
+		},
+	}}
 }
 
 // The captured server assigns its own quoted 24-character version even when

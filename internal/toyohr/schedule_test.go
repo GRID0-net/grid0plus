@@ -299,6 +299,54 @@ func TestSelectVsParamsNameCarriesTheRequestsOwnTarget(t *testing.T) {
 	}
 }
 
+// TestSelectVsParamsAttributesMatchBothWorkingCaptures is the regression
+// test for the ten VsParams.Attributes keys both preserved working
+// Nextendo hall captures agree on byte-for-byte (see vsParamsAttributes'
+// own doc comment) -- SwitchNet used to send an empty Attributes map.
+func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
+	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{})
+
+	resp, err := sc.SelectVsParams(context.Background(), &toyohrpb.SelectVsParamsRequest{})
+	if err != nil {
+		t.Fatalf("select vs params: %v", err)
+	}
+	fields := resp.GetParams().GetAttributes().GetFields()
+
+	wantInt := map[string]int64{
+		"DivideXRate": 2000, "DivideXRateAtlantic": 500, "DivideXRatePacific": 2000,
+		"P2PKeepAliveSec": 8, "PlazaFixedTimestamp": 1726452000,
+	}
+	for k, want := range wantInt {
+		if got := fields[k].GetIntegerValue(); got != want {
+			t.Errorf("attributes[%q] = %d, want %d", k, got, want)
+		}
+	}
+	wantBool := map[string]bool{
+		"IsAbleToSendImageWithoutSns": true, "IsClampDownActive": true,
+		"IsMemHackKickActive": true, "IsOnlinePenaltyActive": true,
+	}
+	for k, want := range wantBool {
+		if got := fields[k].GetBooleanValue(); got != want {
+			t.Errorf("attributes[%q] = %v, want %v", k, got, want)
+		}
+	}
+
+	xrr := fields["XRankingRegionRestrict"].GetMapValue().GetFields()
+	if atl := xrr["Atlantic"].GetArrayValue().GetValues(); len(atl) != 1 || atl[0].GetIntegerValue() != 1 {
+		t.Errorf("XRankingRegionRestrict.Atlantic = %v, want [1]", atl)
+	}
+	if pac := xrr["Pacific"].GetArrayValue().GetValues(); len(pac) != 0 {
+		t.Errorf("XRankingRegionRestrict.Pacific = %v, want empty", pac)
+	}
+
+	// CoopUsedRewardGears is deliberately absent -- see vsParamsAttributes'
+	// own doc comment for why.
+	if _, ok := fields["CoopUsedRewardGears"]; ok {
+		t.Error("attributes has a CoopUsedRewardGears key, but no real gear id table exists to populate it from")
+	}
+}
+
 func TestTheSeasonIsAQuarterAndIsAligned(t *testing.T) {
 	// Mid-quarter, so the answer cannot come from the clock by accident.
 	at := time.Date(2026, 8, 28, 21, 22, 0, 0, time.UTC)
