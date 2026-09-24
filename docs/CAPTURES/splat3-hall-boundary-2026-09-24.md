@@ -1,0 +1,24 @@
+# Splatoon 3 hall boundary, 2026-09-24
+
+The 14:53 UTC hardware attempt ran SwitchNet commit `7dbace7` and still showed the in-game communication error. VM nginx and npln logs show a successful NPLN login, first schedule reads, Canola, Locker, one empty `Ugcstore/RunQuery`, then a second schedule refresh at 14:53:28. The client cancelled its long-lived streams at 14:53:31. It never called `Ugcstore/GetDocument` or `GameRecord/InitializeAttributes` in this attempt.
+
+Both preserved working Nextendo captures (`raw/nextendo-hall-20260923T205738Z` and `raw/nextendo-second-20260923T210513Z`) follow the same rough sequence through RunQuery, then call GetDocument about 0.2 seconds after the second schedule refresh. That is the first missing call, so an absent-document response cannot explain this attempt: SwitchNet never gets a chance to send one. The first RunQuery asks for the empty `rewards` collection; SwitchNet's single `read_time` response matches the working empty-query shape. Nextendo's `ugcstore.go` and `ugcstore_runquery.go` show a separate, later gap: nonempty queries must enumerate stored, collection-filtered documents, while SwitchNet currently always answers empty.
+
+## Responses before the missing GetDocument
+
+Lengths are gRPC response-body bytes as nginx/Proxide report them. They establish shape differences, not causality. Working captures concern an account with an existing cloud save; SwitchNet's account has no populated cloud save.
+
+| RPC | SwitchNet | Working Nextendo capture | Relevant difference |
+| --- | ---: | ---: | --- |
+| GetSaveRecord | 86 | 16,297 | Empty `save_data` versus 87 top-level keys. Nextendo's source records fresh-account and existing-account paths separately; captured save contents cannot be reused here. |
+| SelectVsSchedules | 1,523 | 2,049 | Both have 12 slots. Capture starts with the previous slot; all 12 share one `schedule_set_id`, use two Bankara modes, and also carry X and League settings. SwitchNet previously started at the current slot, gave each a distinct set id, and put all four configured rules under Bankara. Corrected in the accompanying schedule change using operator-supplied IDs. |
+| SelectLeagueSchedules | 5 | 816 | Empty versus two schedules. No operator-authored League events exist in SwitchNet. |
+| SelectCoopSchedules | ~180 | 6,005 | One stored shift versus five. SwitchNet's normal shift lacks the `CoopUsedRewardGears` attribute and has reward gear id zero. The working response has a 23-entry array of gear-kind/id pairs. Live shift generation is deliberately disabled pending this field. |
+| SelectSeasonSchedules | 120 | 172 | One schedule in each; the working schedule carries extra scalar fields and an attribute named `LastSeasonLeaderboardFixTime`. |
+| SelectVsParams | 115 | 916 | SwitchNet has an empty Attributes map; the capture has 11 tuning fields. Both have a nonempty, time-bounded params resource. |
+| SelectFestSchedule | 328 | 5 | SwitchNet announces its expired synthetic fest sentinel; the working Nextendo path answers an empty message when no fest is enabled. Earlier SwitchNet hardware crashed on an empty answer before other protocol fixes, so changing this needs a controlled check. |
+| Canola/Locker SelectDocuments | 5/5 | 15,609/126,082 | Nextendo serves published artwork/locker documents; SwitchNet has none. Empty collections are plausible for a new private server, so these are lower-priority differences. |
+
+The patcher audit found the active NPLN tenant/frontline hosts and all three BCAT hosts routed to SwitchNet. This attempt's successful gRPC sequence proves its NPLN route and TLS patch were active. No BCAT request appeared in the VM's 14:52:30–14:53:45 nginx window. Prelude's own notes caution that a BCAT `304 Not Modified` supplies no content to an empty cache; that may explain missing news, but this trace does not establish it as the hall-entry failure.
+
+Next check: reconcile the client-owned save creation path and the remaining schedule fields against the working reference without importing Nintendo or Nextendo's captured save data. After those are independently justified, run one hardware attempt and compare the first post-refresh call, not just the visible error.
