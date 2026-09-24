@@ -51,3 +51,33 @@ func TestGetSaveRecordRefusesAnUnauthenticatedCaller(t *testing.T) {
 		t.Fatal("GetSaveRecord succeeded with no authenticated caller")
 	}
 }
+
+// TestWriteSaveRecordAcknowledgesRatherThanUnimplemented is the regression
+// test for a real crash: a VM-side loopback capture on 2026-09-24 showed
+// the console calling WriteSaveRecord twice immediately after receiving
+// GetSaveRecord's blank record, getting Unimplemented both times, and going
+// silent for good shortly after -- see WriteSaveRecord's own doc comment.
+func TestWriteSaveRecordAcknowledgesRatherThanUnimplemented(t *testing.T) {
+	as(t, "aaaaaaaaaaaaaaaa")
+	svc, _ := newService(t, time.Now())
+
+	got, err := svc.WriteSaveRecord(context.Background(), &toyohrpb.WriteSaveRecordRequest{
+		Name: "tenants/" + testTenant + "/saveRecords/aaaaaaaaaaaaaaaa",
+	})
+	if err != nil {
+		t.Fatalf("WriteSaveRecord: %v -- this is what stalls a real console", err)
+	}
+	if got.GetTimestamp() == nil {
+		t.Error("timestamp is unset")
+	}
+}
+
+func TestWriteSaveRecordRefusesAnUnauthenticatedCaller(t *testing.T) {
+	as(t, "")
+	svc, _ := newService(t, time.Now())
+
+	_, err := svc.WriteSaveRecord(context.Background(), &toyohrpb.WriteSaveRecordRequest{})
+	if err == nil {
+		t.Fatal("WriteSaveRecord succeeded with no authenticated caller")
+	}
+}

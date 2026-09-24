@@ -22,7 +22,7 @@ any key that is absent.
 
 | | |
 | --- | --- |
-| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, `CloudSave.GetSaveRecord` |
+| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, `CloudSave.{GetSaveRecord,WriteSaveRecord}` |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
 | Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/{fest,schedule,cloud_save,messaging}.proto` |
 | Needs a database | yes, for fests and coop shifts -- the rest of `Schedule` and `GetSaveRecord` need none |
@@ -420,12 +420,34 @@ no save data" boundary CLAUDE.md draws for phase 3 — so `SaveData` is left
 honestly blank rather than seeded with Nextendo's own captured content,
 which is a stranger's real save progression and out of scope regardless.
 
-The other five `CloudSave` RPCs are left to
-`UnimplementedCloudSaveServer`. Nothing calls them this early, and actually
-implementing `Write`/`Create`/`Delete` convincingly would mean this server
-keeping opaque save blobs it has no way to validate — a materially
-different scope than answering the one boot query that would otherwise
-hang.
+Four of the other five `CloudSave` RPCs (`Create`/`Validate`/`ChangeUserName`/
+`Delete`) are left to `UnimplementedCloudSaveServer`. Nothing calls them this
+early, and actually implementing `Create`/`Delete` convincingly would mean
+this server keeping opaque save blobs it has no way to validate — a
+materially different scope than answering the boot queries that would
+otherwise hang.
+
+## `CloudSave.WriteSaveRecord`: acknowledged, not `Unimplemented`
+
+Unlike the other four, `WriteSaveRecord` is not merely uncalled early — it is
+called as a direct consequence of `GetSaveRecord`'s own honestly-blank
+answer. NextendoNetwork/splatoon-3's own proto comment (facts only, not its
+code) documents the real shape: the client sends an `evt=Validate`-style
+`WriteSaveRecord` naming exactly the keys missing from a blank record
+(`CloudRandomSet`, `HaveGearClothesMap`, `HaveGearHeadMap`,
+`HaveGearShoesMap`) as soon as it sees one. Confirmed on SwitchNet's own
+hardware on 2026-09-24: a VM-side loopback capture showed the console
+calling this RPC twice, immediately after `GetSaveRecord` and
+`Schedule.SelectVsParams` both succeeded, getting `Unimplemented` both
+times, and going silent for good shortly after.
+
+`WriteSaveRecordResponse` carries exactly one field — a timestamp, per both
+this project's own proto and NextendoNetwork/splatoon-3's comment
+(`WriteSaveRecordResponse{timestamp}`) — so acknowledging costs nothing this
+server does not already have, and nothing is stored: the same "no game
+dump, no save data" boundary `GetSaveRecord` draws. This only ever tells the
+client its write was accepted, on a save this server answers blank every
+time regardless.
 
 `GameRecord/InitializeAttributes` accepts `tenants/current/users/current` as
 the already authenticated caller and stores the document under that caller's

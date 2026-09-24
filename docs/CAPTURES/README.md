@@ -964,15 +964,42 @@ the exact same generic abort, at yet another `[28c4287a]` return address:
 - **`VsParams.Name` needed the same `targets/<target>` segment
   `CoopSchedule.Name` did — settled by decompile, and now fixed.** The
   crash's `ReturnAddress[04]` this time was `[28c4287a] + 0x7d2434`, inside
-  a second resource-name parser (`FUN_71007d2034`) in the same source
-  region, checking for the literal segment `"vsParams"` after
-  `targets/<target>/` exactly the way the coop one checks for
-  `"coopSchedules"`. `SelectVsParams`'s own fix earlier in this file
-  answered `tenants/<t>/vsParams/<id>` — missing that segment — and
-  reproduced this crash on real hardware. Unlike `CoopSchedule`, `<target>`
-  here is not invented: `SelectVsParamsRequest` already carries a `Target`
-  field the client itself sends, echoed back into the response's `Name`
-  rather than guessed.
+  a wrapper (`FUN_71007d2034`) around a second resource-name parser
+  (`FUN_71007d1e10`) in the same source region, checking for the literal
+  segment `"vsParams"` after `targets/<target>/` exactly the way the coop
+  one checks for `"coopSchedules"`. `SelectVsParams`'s own fix earlier in
+  this file answered `tenants/<t>/vsParams/<id>` — missing that segment —
+  and reproduced this crash on real hardware. Unlike `CoopSchedule`,
+  `<target>` here is not invented: `SelectVsParamsRequest` already carries a
+  `Target` field the client itself sends, echoed back into the response's
+  `Name` rather than guessed.
+
+A sixth VM-side loopback capture, taken after that fix, confirmed it worked:
+`CloudSave/GetSaveRecord` and `Schedule/SelectVsParams` both answered
+`grpc-status: 0` on the wire, and the console went one step further still,
+reaching `PresenceService/SubscribePresences` for the first time all
+session. It then called `CloudSave/WriteSaveRecord` twice, got
+`grpc-status: 12` (`Unimplemented`) both times, and went silent for good
+shortly after -- and a sixth crash report showed the identical
+`[28c4287a] + 0x7d2434` return address once more, this time with
+`SelectVsParams` itself proven innocent by the capture. The likely
+mechanism, not yet independently confirmed by a further capture: the
+client re-derives the same `targets/<target>/vsParams/...`-shaped name from
+pieces of its own state when it retries after `WriteSaveRecord` fails, so
+the fix is the same shape either way.
+
+- **`CloudSave.WriteSaveRecord` answering `Unimplemented` — settled, and
+  now fixed.** NextendoNetwork/splatoon-3's own proto comment (facts only,
+  not its code) documents the real shape: the client sends an
+  `evt=Validate`-style `WriteSaveRecord` naming exactly the keys missing
+  from a blank record (`CloudRandomSet`, `HaveGearClothesMap`,
+  `HaveGearHeadMap`, `HaveGearShoesMap`) as soon as it sees one, i.e.
+  immediately after `GetSaveRecord`'s honestly-blank answer.
+  `WriteSaveRecordResponse` carries exactly one field, a timestamp, per
+  both this project's own proto and NextendoNetwork/splatoon-3's comment —
+  so acknowledging costs nothing this server does not already have, and
+  nothing is stored, the same "no game dump, no save data" boundary
+  `GetSaveRecord` draws.
 
 ---
 

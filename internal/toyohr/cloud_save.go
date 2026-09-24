@@ -30,11 +30,13 @@ import (
 // record needs, honestly blank -- not reconstructed Nintendo or Nextendo
 // data.
 //
-// Every other CloudSave RPC (Create/Validate/Write/ChangeUserName/Delete) is
-// left to UnimplementedCloudSaveServer: nothing calls them this early, and
-// implementing "write" convincingly would mean this server keeping opaque
-// save blobs it has no way to validate -- a different scope than "answer the
-// boot query that would otherwise hang".
+// Create/Validate/ChangeUserName/Delete are left to
+// UnimplementedCloudSaveServer: nothing calls them this early, and
+// implementing "create" or "delete" convincingly would mean this server
+// keeping opaque save blobs it has no way to validate -- a different scope
+// than "answer the boot queries that would otherwise hang". WriteSaveRecord
+// is answered, not left Unimplemented -- see its own doc comment below for
+// why this one is different.
 func (s *Service) GetSaveRecord(
 	ctx context.Context, _ *toyohrpb.GetSaveRecordRequest,
 ) (*toyohrpb.SaveRecord, error) {
@@ -48,5 +50,39 @@ func (s *Service) GetSaveRecord(
 		SaveData:   &common.MapValue{Fields: map[string]*common.Value{}},
 		CreateTime: now,
 		UpdateTime: now,
+	}, nil
+}
+
+// WriteSaveRecord acknowledges a write without storing it.
+//
+// Answered rather than left Unimplemented, unlike the other four -- because
+// unlike them, this one is not merely uncalled early, it is called
+// immediately as a direct consequence of GetSaveRecord's own honestly-blank
+// answer. NextendoNetwork/splatoon-3's own proto comment (facts only, not
+// its code) documents the real shape: the client sends an
+// evt=Validate-style WriteSaveRecord carrying exactly the keys missing from
+// a blank record (CloudRandomSet, HaveGearClothesMap, HaveGearHeadMap,
+// HaveGearShoesMap) as soon as it sees one. Confirmed on SwitchNet's own
+// hardware on 2026-09-24: a VM-side loopback capture showed the console
+// calling this RPC twice, immediately after GetSaveRecord and
+// SelectVsParams both succeeded, getting Unimplemented both times, and
+// going silent for good shortly after.
+//
+// WriteSaveRecordResponse carries exactly one field -- a timestamp, per
+// both this project's own proto and NextendoNetwork/splatoon-3's comment
+// (`WriteSaveRecordResponse{timestamp}`) -- so acknowledging costs nothing
+// this server does not already have. Nothing is stored: SwitchNet still has
+// no legitimate way to keep real player save content, the same boundary
+// GetSaveRecord's own doc comment draws. This only ever tells the client
+// "your write was accepted," on a save this server already answers blank
+// every time regardless.
+func (s *Service) WriteSaveRecord(
+	ctx context.Context, _ *toyohrpb.WriteSaveRecordRequest,
+) (*toyohrpb.WriteSaveRecordResponse, error) {
+	if _, ok := s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	return &toyohrpb.WriteSaveRecordResponse{
+		Timestamp: timestamppb.New(s.now()),
 	}, nil
 }
