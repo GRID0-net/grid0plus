@@ -68,6 +68,27 @@ func TestConnectionTestAnswer(t *testing.T) {
 	}
 }
 
+// TestApplicationPolicyAnswerMatchesBothWorkingCaptures is the regression
+// test for a real 2026-09-24 finding: this host previously fell through to
+// the catch-all emptyObject ("{}"), while both preserved working Nextendo
+// hall captures answer application_policy with an identical, non-empty body
+// -- decoded directly from their raw flow files, not Nextendo's code.
+func TestApplicationPolicyAnswerMatchesBothWorkingCaptures(t *testing.T) {
+	h := newTestHandler(t)
+
+	rec := get(t, h, "policy.hac.lp1.scsi.srv.nintendo.net",
+		"/api/console/v2/application_policy/0100c2500fc20000/00042")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if want := "{\"policy_type\":\"ALL_OK\"}\n"; rec.Body.String() != want {
+		t.Errorf("body = %q, want %q", rec.Body.String(), want)
+	}
+	if got := rec.Header().Get("Content-Length"); got != "25" {
+		t.Errorf("Content-Length = %q, want \"25\" -- both captures agree on this exact byte count", got)
+	}
+}
+
 // TestTelemetrySinkReadsAndAnswers200 is the regression test for a real,
 // hardware-documented hang: NextendoNetwork/Prelude's own commit history
 // (facts only, not its code) measured the NSO/friends applet

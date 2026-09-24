@@ -146,6 +146,17 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// answer with day to day any more.
 		h.newsTopics(w, r)
 
+	case strings.HasPrefix(host, "policy.") && strings.Contains(host, ".scsi.srv.nintendo.net"):
+		// GET /api/console/v2/application_policy/<title>/<value>, called by
+		// Splatoon 3 right before it would attempt a cloud save upload
+		// (storage.hac.lp1.scsi's own save_data_archives/start_upload).
+		// Both preserved working Nextendo hall captures answer this exact
+		// body, byte for byte, decoded directly from their raw flow files
+		// (facts only, not Nextendo's code): {"policy_type":"ALL_OK"}\n.
+		// This host previously fell through to emptyObject's bare "{}",
+		// which is not the shape either capture ever sends.
+		h.applicationPolicy(w)
+
 	case strings.Contains(host, ".dragons.nintendo.net"):
 		// eLicenses. Most paths here are a fine empty object; one is not.
 		// See h.dragons.
@@ -210,6 +221,21 @@ func (h *Handler) emptyList(w http.ResponseWriter) {
 
 func (h *Handler) emptyObject(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+// applicationPolicyBody is the exact bytes both preserved working Nextendo
+// hall captures answer policy.hac.lp1.scsi.srv.nintendo.net's
+// application_policy request with -- decoded directly from their raw flow
+// files, trailing newline included, not passed through writeJSON's own
+// json.Marshal (which would omit it and produce a 24-byte body a real
+// console has never been observed to receive).
+var applicationPolicyBody = []byte(`{"policy_type":"ALL_OK"}` + "\n")
+
+func (h *Handler) applicationPolicy(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(applicationPolicyBody)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(applicationPolicyBody)
 }
 
 // newsTopics answers every bcat-* host (list, data and topics) with an
