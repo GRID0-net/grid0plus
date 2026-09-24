@@ -132,6 +132,7 @@ func (h *Handler) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", h.handleStatus)
 	mux.HandleFunc("GET /updates/latest", h.handleUpdatesLatest)
+	mux.HandleFunc("GET /updates/latest/download", h.handleUpdatesLatestDownload)
 	mux.HandleFunc("GET /updates/download", h.handleUpdatesDownload)
 	return mux
 }
@@ -332,6 +333,36 @@ func (h *Handler) latestReleaseBody(ctx context.Context) ([]byte, error) {
 	return body, nil
 }
 
+// handleUpdatesLatestDownload proxies the latest .nro asset, without
+// requiring the caller to know the numeric asset id. It reuses the same
+// release-fetch/cache logic as /updates/latest, resolves the single .nro
+// asset with the same validation (zero or multiple -> 502), and then
+// live-proxies that asset from GitHub using the same GitHub client and
+// streaming behaviour as /updates/download — no second local copy/cache of
+// the .nro.
+func (h *Handler) handleUpdatesLatestDownload(w http.ResponseWriter, r *http.Request) {
+	if !h.updatesConfigured() {
+		http.Error(w, "updates not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	rel, err := h.latestRelease(r.Context())
+	if err != nil {
+		h.log.Error("toolbox: fetch latest release", "error", err)
+		http.Error(w, "could not reach the release source", http.StatusBadGateway)
+		return
+	}
+
+	id, _, err := rel.nroAsset()
+	if err != nil {
+		h.log.Error("toolbox: latest release's .nro asset", "tag", rel.TagName, "error", err)
+		http.Error(w, "latest release has no usable .nro asset", http.StatusBadGateway)
+		return
+	}
+
+	h.proxyGitHubAsset(w, r, strconv.FormatInt(id, 10), true)
+}
+
 // handleUpdatesDownload streams one release asset from GitHub, authenticated
 // with the token this package holds. The console's request carries no
 // credential and needs none: the numeric asset id from /updates/latest is
@@ -349,6 +380,16 @@ func (h *Handler) handleUpdatesDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.proxyGitHubAsset(w, r, assetID, false)
+}
+
+// proxyGitHubAsset fetches one GitHub release asset by id and streams it to
+// the caller. The GitHub token is only sent upstream; it is never exposed in
+// the downstream response, and upstream error bodies are logged, not echoed.
+// When withDisposition is true the response includes a Content-Disposition
+// with filename "switchnet.nro" — the stable URL needs it; the legacy
+// /updates/download?asset= path preserves its existing headers unchanged.
+func (h *Handler) proxyGitHubAsset(w http.ResponseWriter, r *http.Request, assetID string, withDisposition bool) {
 	url := fmt.Sprintf("%s/repos/%s/%s/releases/assets/%s",
 		h.githubAPIBase, h.cfg.GitHubOwner, h.cfg.GitHubRepo, assetID)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
@@ -374,6 +415,9 @@ func (h *Handler) handleUpdatesDownload(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
+	if withDisposition {
+		w.Header().Set("Content-Disposition", `attachment; filename="switchnet.nro"`)
+	}
 	if cl := resp.Header.Get("Content-Length"); cl != "" {
 		w.Header().Set("Content-Length", cl)
 	}
