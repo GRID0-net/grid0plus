@@ -124,14 +124,25 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	// parameters). Reusing them is applying already-confirmed-defensible
 	// logic to a newly-confirmed real path, not inventing a new one.
 	//
+	// A 2026-09-24 hardware capture (both preserved working Nextendo hall
+	// captures agree) confirms a third /api/console/v3/ path: start_upload,
+	// same two forms as the v2 route above. Two consecutive SwitchNet
+	// hardware attempts on 2026-09-24 both reached this exact request and
+	// got logUnimplemented's 404 -- the same retry-loop-causing shape this
+	// comment already found once for the two routes above, on the RPC
+	// immediately after the one this project's own hall investigation had
+	// never seen a console reach before today.
+	//
 	// TODO(capture-needed): whether /api/console/v3/ is Splatoon 3's whole
-	// OLSC surface (in which case every /api/nx/v2/ route above may need a
-	// v3 twin too) or just these two, and what "datatype" in
+	// OLSC surface (in which case every remaining /api/nx/v2/ route above
+	// may need a v3 twin too) or just these three, and what "datatype" in
 	// ?datatype=0 on save_data_archives selects -- listArchives does not
-	// look at it today. No other /api/console/v3/ path has been observed
-	// yet; add its route here, to the same handler, the moment one is.
+	// look at it today. Add a v3 route here, to the same handler, the
+	// moment another one is confirmed.
 	mux.HandleFunc("POST /api/console/v3/network_service_accounts/{id}/notification_tokens", s.authenticated(s.registerNotificationToken))
 	mux.HandleFunc("GET /api/console/v3/save_data_archives", s.authenticated(s.listArchives))
+	mux.HandleFunc("POST /api/console/v3/save_data_archives/start_upload", s.authenticated(s.startUpload))
+	mux.HandleFunc("POST /api/console/v3/save_data_archives/{id}/start_upload", s.authenticated(s.startUpload))
 
 	// ---- permission.lp1.sata.srv.nintendo.net ------------------------------
 	mux.HandleFunc("GET /api/nx/v1/save_data_sets", s.authenticated(s.listSaveDataSets))
@@ -229,9 +240,15 @@ func (s *Server) loadOwnedArchive(w http.ResponseWriter, r *http.Request, c Call
 	return a, nil
 }
 
-// startUploadRequest is the documented body of
-// POST /api/nx/v2/save_data_archives/<id>/start_upload.
+// startUploadRequest is the wiki's documented body of
+// POST /api/nx/v2/save_data_archives/<id>/start_upload, plus ApplicationID:
+// both preserved working Nextendo hall captures' real start_upload request
+// bodies (decoded 2026-09-24, facts only, not Nextendo's code) carry
+// "application_id" as a plain JSON field, settling what this project used
+// to read from an invented X-SwitchNet-Application-Id header instead
+// (removed the same day this was found).
 type startUploadRequest struct {
+	ApplicationID         string `json:"application_id"`
 	Datatype              int    `json:"datatype"`
 	DataSize              int64  `json:"data_size"`
 	SavedAtUnixtime       int64  `json:"saved_at_as_unixtime"`
@@ -266,7 +283,7 @@ func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
 		savedAt = time.Now().UTC()
 	}
 	a, err := s.store.CreateSaveDataArchive(r.Context(), db.SaveDataArchive{
-		ID: id, NSAID: c.NSAID, ApplicationID: applicationIDFrom(r), DeviceID: c.DeviceAccountID,
+		ID: id, NSAID: c.NSAID, ApplicationID: req.ApplicationID, DeviceID: c.DeviceAccountID,
 		DataSize: req.DataSize, Description: req.Desc, SeriesID: req.SeriesID, Datatype: req.Datatype,
 		Status: "uploading", AutoBackup: req.AutoBackup, LaunchRequiredVersion: req.LaunchRequiredVersion,
 		EncodedDigest: req.EncodedDigest, SavedAt: savedAt,
@@ -280,24 +297,6 @@ func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"save_data_archive": toArchiveView(a, nil)})
-}
-
-// applicationIDFrom reads the title id the console is backing up for.
-//
-// TODO(capture-needed): the wiki's start_upload request body does not list
-// an application_id field, but the archive object it returns has one, and a
-// per-title backup cannot exist without the server learning the title id
-// from somewhere. The most defensible reading is that it is not a JSON body
-// field at all but comes from the same place SwitchNet's other services
-// already get it — the request's own path/host/aauth-issued context that
-// scoped the token — since OLSC is invoked by the account sysmodule on
-// behalf of a specific running title. Until a capture shows the real
-// mechanism, this reads an explicit header this project's own console-side
-// pieces would need to add, which is visible and fails loudly (empty
-// string) rather than silently accepting a guessed JSON field name that a
-// real console never sends.
-func applicationIDFrom(r *http.Request) string {
-	return r.Header.Get("X-SwitchNet-Application-Id")
 }
 
 func (s *Server) finishUpload(w http.ResponseWriter, r *http.Request) {

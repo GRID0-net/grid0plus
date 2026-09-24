@@ -107,7 +107,6 @@ func (h *harness) do(method, path string, body any) *http.Response {
 		h.t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+h.accessToken())
-	req.Header.Set("X-SwitchNet-Application-Id", testApplicationID)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		h.t.Fatal(err)
@@ -166,12 +165,34 @@ func TestConsoleV3RoutesAnswerTheSameAsTheirV2Counterparts(t *testing.T) {
 	}
 }
 
+// TestStartUploadReachableUnderConsoleV3Path is the regression test for a
+// real 2026-09-24 finding: two consecutive hardware attempts both reached
+// POST /api/console/v3/save_data_archives/start_upload and got a 404 from
+// logUnimplemented, a shape this project already found causes the console
+// to retry continuously rather than move on. Routed to the same handler as
+// its v2 counterpart, the same way the two routes above it already are.
+func TestStartUploadReachableUnderConsoleV3Path(t *testing.T) {
+	h := newHarness(t)
+
+	resp := h.do("POST", "/api/console/v3/save_data_archives/start_upload", startUploadRequest{
+		ApplicationID: testApplicationID, DataSize: 4,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("start_upload under /api/console/v3/ status = %d, want 201", resp.StatusCode)
+	}
+	created := decode[map[string]archiveView](t, resp)["save_data_archive"]
+	if created.ApplicationID != testApplicationID {
+		t.Errorf("ApplicationID = %q, want %q -- from the request body, not a header", created.ApplicationID, testApplicationID)
+	}
+}
+
 func TestFullBackupAndRestoreCycle(t *testing.T) {
 	h := newHarness(t)
 
 	// start_upload creates the archive.
 	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{
-		Datatype: 1, DataSize: 4, SavedAtUnixtime: time.Now().Unix(), Desc: "test save",
+		ApplicationID: testApplicationID,
+		Datatype:      1, DataSize: 4, SavedAtUnixtime: time.Now().Unix(), Desc: "test save",
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("start_upload status = %d", resp.StatusCode)
@@ -273,7 +294,7 @@ func TestFullBackupAndRestoreCycle(t *testing.T) {
 func TestArchiveOwnershipIsEnforced(t *testing.T) {
 	h := newHarness(t)
 
-	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{DataSize: 1})
+	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{ApplicationID: testApplicationID, DataSize: 1})
 	created := decode[map[string]archiveView](t, resp)["save_data_archive"]
 
 	// A second user must not be able to read the first user's archive.
@@ -309,7 +330,7 @@ func TestQuotaExceededRefusesUpload(t *testing.T) {
 	h.server.Close()
 	h.server = httptest.NewServer(mux)
 
-	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{DataSize: 5})
+	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{ApplicationID: testApplicationID, DataSize: 5})
 	archiveID := decode[map[string]archiveView](t, resp)["save_data_archive"].ID
 
 	resp = h.do("POST", "/api/nx/v2/save_data_archives/"+archiveID+"/component_files/create",
@@ -346,7 +367,7 @@ func TestReuploadingAComponentDoesNotDoubleCountItsOwnOldBytesAgainstQuota(t *te
 	h.server.Close()
 	h.server = httptest.NewServer(mux)
 
-	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{DataSize: 5})
+	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{ApplicationID: testApplicationID, DataSize: 5})
 	archiveID := decode[map[string]archiveView](t, resp)["save_data_archive"].ID
 	resp = h.do("POST", "/api/nx/v2/save_data_archives/"+archiveID+"/component_files/create",
 		createComponentFileRequest{Datatype: "save"})
