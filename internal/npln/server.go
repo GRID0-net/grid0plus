@@ -377,8 +377,18 @@ func (s *Server) unaryInterceptor(
 	if err != nil {
 		return nil, err
 	}
-	sendNPLNHeader(ctx, s.log, info.FullMethod)
+	// GetDocument can return either a document or a zero-body NotFound. Wait
+	// for the handler's result before sending its opening headers so only the
+	// absent case declares content-length: 0, but still send them before grpc
+	// writes the status trailers (avoiding Trailers-Only framing).
+	const getDocument = "/nn.npln.ugcstore.v1.Ugcstore/GetDocument"
+	if info.FullMethod != getDocument {
+		sendNPLNHeader(ctx, s.log, info.FullMethod)
+	}
 	resp, err := handler(ctx, req)
+	if info.FullMethod == getDocument {
+		sendNPLNHeader(ctx, s.log, info.FullMethod, status.Code(err) == codes.NotFound)
+	}
 	s.noteUnimplemented(info.FullMethod, err)
 	s.noteFirstSeen(info.FullMethod, err)
 	// Every call, not just the first: while this codebase's own hall-entry
@@ -430,9 +440,9 @@ func (s *Server) noteFirstSeen(method string, err error) {
 // A no-op outside a real call (grpc.SendHeader errors when the context
 // carries no live stream, e.g. a test invoking a handler directly): that
 // failure is expected and not this call's to report.
-func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string) {
+func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string, emptyDocument ...bool) {
 	header := metadata.Pairs("npln-grpc-type", "Unary")
-	if method == "/nn.npln.toyohr.v1.UserScreening/GetViolation" {
+	if method == "/nn.npln.toyohr.v1.UserScreening/GetViolation" || (len(emptyDocument) > 0 && emptyDocument[0]) {
 		// The no-violation answer has no message; the working capture's
 		// opening headers explicitly declare an empty body.
 		header.Set("content-length", "0")

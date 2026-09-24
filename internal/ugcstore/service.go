@@ -99,7 +99,8 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 	d, err := s.store.GetUGCDocument(ctx, key)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
-		return nil, status.Error(codes.NotFound, "document not found")
+		s.log.Info("ugcstore: requested document is absent", "name", key)
+		return nil, missingDocument(req.GetName())
 	case err != nil:
 		s.log.Error("ugcstore: load document", "name", key, "error", err)
 		return nil, status.Error(codes.Internal, "internal error")

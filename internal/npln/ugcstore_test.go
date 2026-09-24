@@ -2,15 +2,18 @@ package npln
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	commonpb "github.com/n-popescu/switchnet/proto/common"
+	"github.com/n-popescu/switchnet/proto/errdetails"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
 )
@@ -41,15 +44,41 @@ func ugcHarness(t *testing.T) (*harness, context.Context, ugcpb.UgcstoreClient) 
 // Trailers-Only frame, or an empty Document, is what crashed Splatoon 3.
 func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 	_, ctx, c := ugcHarness(t)
-	var header metadata.MD
+	var header, trailer metadata.MD
 	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{
 		Name: "tenants/current/documents/services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data",
-	}, grpc.Header(&header))
+	}, grpc.Header(&header), grpc.Trailer(&trailer))
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetDocument = %v, %v; want NotFound", doc, err)
 	}
 	if len(header.Get("npln-grpc-type")) == 0 {
 		t.Error("NotFound arrived as a single Trailers-Only frame")
+	}
+	if got := header.Get("content-length"); len(got) != 1 || got[0] != "0" {
+		t.Errorf("missing document headers = %v, want zero-length body", header)
+	}
+	if len(trailer.Get("grpc-status-details-bin")) == 0 {
+		t.Error("missing captured NError status detail")
+	}
+	st, _ := status.FromError(err)
+	if !strings.Contains(st.Message(), "GameRecord/users/ugc0000000000001/VsUserAttribute/Data") || strings.Contains(st.Message(), "tenants/current") {
+		t.Errorf("NotFound message = %q, want relative document path", st.Message())
+	}
+	if got := st.Details(); len(got) != 1 {
+		t.Errorf("NotFound details count = %d, want one NError", len(got))
+	} else if detail, ok := got[0].(*errdetails.NError); !ok {
+		t.Errorf("NotFound detail = %T, want NError", got[0])
+	} else {
+		if len(detail.GetTraceId()) != 32 {
+			t.Errorf("trace marker length = %d, want 32", len(detail.GetTraceId()))
+		}
+		unknown := detail.ProtoReflect().GetUnknown()
+		n, typ, tagBytes := protowire.ConsumeTag(unknown)
+		if n != 19 || typ != protowire.BytesType {
+			t.Errorf("NError extension tag = %d/%d, want field 19 bytes", n, typ)
+		} else if marker, _ := protowire.ConsumeString(unknown[tagBytes:]); len(marker) != 16 {
+			t.Errorf("request marker length = %d, want 16", len(marker))
+		}
 	}
 }
 
