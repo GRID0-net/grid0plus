@@ -34,34 +34,28 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 // liveCoopFillEnabled gates whether PreviewCoopSchedule fills gaps with
 // liveNormalCoopShifts at all.
 //
-// Disabled (false) as of 2026-09-24: a real hardware test crashed twice in a
-// row right as the hall would render Salmon Run content, and a real,
-// decoded working capture (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z,
-// analysis/decoded-private.json's SelectCoopSchedules response) shows why --
-// a real CoopSchedule_Normal always carries a populated `attributes` MapValue
-// with a "CoopUsedRewardGears" key (an array of real gear id/kind pairs,
-// ~24 entries observed), while coopScheduleProto (coop_schedule.go) has
-// never set Attributes at all -- CoopSchedule_Normal.Attributes is field 7
-// of this project's own compiled proto (proto/toyohr/v1/resources.pb.go),
-// sent nil on every response. This gap predates today: SelectCoopSchedules
-// only ever answered non-empty when an operator had manually stored a
-// shift, so no hardware test before today's live-fill change (coop_live.go)
-// had ever actually exercised a console rendering CoopSchedule content at
-// all. Correlation, not a confirmed root cause -- disabling this stopped
-// short of proving it -- but it is the most structurally sound lead found:
-// a real, populated field the client evidently expects, that this project
-// has always sent empty, now reachable for the first time.
+// Was disabled 2026-09-24 after two hardware crashes right as the hall
+// would render Salmon Run content. The strongest confirmed gap found in
+// that window -- CoopSchedule_Normal/BigRun/TeamContest's kuma_weapon
+// scalar field, which both working captures never populate, versus
+// attributes.KumaWeapons (an array), which both always do -- is now fixed
+// (coopKumaWeaponsAttribute, coop_schedule.go). Real Nintendo servers
+// always answer a Salmon Run schedule alongside Turf War/Anarchy/League --
+// an operator running SwitchNet with none is not the real-server shape
+// this project is reproducing -- so this is back on rather than left off
+// indefinitely.
 //
-// Leanny/splat3's GearInfoHead/Clothes/Shoes.json data dumps give real gear
-// ids the same way vs_ids.go/coop_ids.go's tables were sourced, so building
-// CoopUsedRewardGears correctly (rather than guessing at it) is possible --
-// just not done under time pressure mid hardware-test-session. Re-enable
-// once that exists, or once a capture/hardware test clears this as the
-// cause.
-// A var, not a const, so tests that exist specifically to cover the live-fill
-// behavior (coop_live_test.go, schedule_preview_test.go) can still exercise
-// it without that behavior being reachable from a real request.
-var liveCoopFillEnabled = false
+// CoopUsedRewardGears (also present in both captures' CoopSchedule and
+// VsParams attributes, real gear id/kind pairs) is still not sent: it needs
+// a real gear id table this project has not built (Leanny/splat3's
+// GearInfoHead/Clothes/Shoes.json can source one the same way
+// vs_ids.go/coop_ids.go's tables were). That gap stays open and is worth
+// watching on the next hardware test, but the confirmed, fixed
+// kuma_weapon/attributes mismatch was the stronger, more clear-cut lead.
+//
+// A var, not a const, so a future finding can disable it again the same
+// way without hunting down every call site.
+var liveCoopFillEnabled = true
 
 // PreviewCoopSchedule returns the same merge SelectCoopSchedules serves a
 // console -- every stored shift not yet ended, plus (while

@@ -154,6 +154,36 @@ func TestCoopShiftValidateRejectsAnUnknownBoss(t *testing.T) {
 	}
 }
 
+// TestCoopScheduleKumaWeaponUsesAttributesNotTheScalarField is the
+// regression test for coopKumaWeaponsAttribute: both preserved working
+// Nextendo hall captures carry the Grizzco weapon in
+// attributes.KumaWeapons, never in the kuma_weapon scalar field, on every
+// CoopSchedule_Normal/BigRun/TeamContest observed.
+func TestCoopScheduleKumaWeaponUsesAttributesNotTheScalarField(t *testing.T) {
+	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	svc, _ := newService(t, at)
+	sc := &scheduleService{s: svc}
+
+	shift := validNormalShift()
+	if err := svc.SaveCoopShift(context.Background(), shift); err != nil {
+		t.Fatalf("SaveCoopShift: %v", err)
+	}
+	resp, err := sc.SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{})
+	if err != nil {
+		t.Fatalf("SelectCoopSchedules: %v", err)
+	}
+	got := findCoopScheduleByNameID(t, resp.GetSchedules(), shift.ID())
+
+	if got.GetNormal().GetKumaWeapon() != 0 {
+		t.Errorf("Normal.KumaWeapon (scalar) = %d, want 0 -- both captures leave it absent",
+			got.GetNormal().GetKumaWeapon())
+	}
+	km := got.GetNormal().GetAttributes().GetFields()["KumaWeapons"].GetArrayValue().GetValues()
+	if len(km) != 1 || km[0].GetIntegerValue() != shift.KumaWeaponID {
+		t.Errorf("Normal.Attributes[KumaWeapons] = %v, want [%d]", km, shift.KumaWeaponID)
+	}
+}
+
 func TestCoopShiftValidateAllowsNoBoss(t *testing.T) {
 	s := validNormalShift()
 	s.Boss = ""
@@ -245,8 +275,13 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 	if got, want := len(tc.GetMainWeapons()), 4; got != want {
 		t.Errorf("TeamContest.MainWeapons has %d entries, want %d", got, want)
 	}
-	if int64(tc.GetKumaWeapon()) != shift.KumaWeaponID {
-		t.Errorf("TeamContest.KumaWeapon = %d, want %d", tc.GetKumaWeapon(), shift.KumaWeaponID)
+	// Not tc.GetKumaWeapon() (the scalar field): both working captures this
+	// project has decoded never populate it, carrying the Grizzco weapon in
+	// attributes.KumaWeapons instead -- see coopKumaWeaponsAttribute's own
+	// doc comment.
+	km := tc.GetAttributes().GetFields()["KumaWeapons"].GetArrayValue().GetValues()
+	if len(km) != 1 || km[0].GetIntegerValue() != shift.KumaWeaponID {
+		t.Errorf("TeamContest.Attributes[KumaWeapons] = %v, want [%d]", km, shift.KumaWeaponID)
 	}
 	if got, want := tc.GetRewards(), shift.Rewards; len(got) != len(want) {
 		t.Errorf("TeamContest.Rewards = %v, want %v", got, want)
@@ -343,20 +378,22 @@ func TestCoopSchedulesShareOneSetWithoutShiftIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.GetSchedules()) != 2 {
-		t.Fatalf("got %d shifts, want two", len(resp.GetSchedules()))
-	}
+	// May be more than 2 -- liveNormalCoopShifts fills any Normal slot
+	// nothing was stored for -- this test only cares about the two it
+	// itself stored.
+	firstEntry := findCoopScheduleByNameID(t, resp.GetSchedules(), first.ID())
+	secondEntry := findCoopScheduleByNameID(t, resp.GetSchedules(), second.ID())
 	if got := resp.GetEtag(); len(got) != 24 || !strings.HasPrefix(got, `"`) || !strings.HasSuffix(got, `"`) {
 		t.Errorf("Coop ETag = %q, want the captured quoted 24-character version", got)
 	}
-	setID := resp.GetSchedules()[0].GetScheduleSetId()
+	setID := firstEntry.GetScheduleSetId()
 	if setID == "" {
 		t.Fatal("missing schedule-set id")
 	}
 	if setID == scheduleSetID(AlignToSlot(at)) {
 		t.Error("Coop and Versus share a schedule-set id; the captures keep them separate")
 	}
-	if resp.GetSchedules()[0].GetName() == resp.GetSchedules()[1].GetName() {
+	if firstEntry.GetName() == secondEntry.GetName() {
 		t.Fatal("two distinct shifts have the same resource name")
 	}
 	for _, schedule := range resp.GetSchedules() {

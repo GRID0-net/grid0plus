@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/proto/common"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
@@ -355,15 +356,16 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 		EndTime:       timestamppb.New(r.EndAt),
 		Timestamp:     timestamppb.New(s.now()),
 	}
+	attrs := coopKumaWeaponsAttribute(r.KumaWeaponID)
 	switch r.Kind {
 	case "big_run":
 		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
 			Stage:        r.StageID,
 			Boss:         r.Boss,
 			MainWeapons:  append([]int64(nil), r.Weapons...),
-			KumaWeapon:   int32(r.KumaWeaponID),
 			RewardGearId: r.RewardGearID,
 			Rewards:      append([]int64(nil), r.Rewards...),
+			Attributes:   attrs,
 		}
 	case "team_contest":
 		// No Boss or RewardGearId: CoopSchedule_TeamContest carries neither
@@ -372,19 +374,46 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 		out.TeamContest = &toyohrpb.CoopSchedule_TeamContest{
 			Stage:       r.StageID,
 			MainWeapons: append([]int64(nil), r.Weapons...),
-			KumaWeapon:  int32(r.KumaWeaponID),
 			Rewards:     append([]int64(nil), r.Rewards...),
+			Attributes:  attrs,
 		}
 	default:
 		out.Normal = &toyohrpb.CoopSchedule_Normal{
 			Stage:        r.StageID,
 			Boss:         r.Boss,
 			MainWeapons:  append([]int64(nil), r.Weapons...),
-			KumaWeapon:   int32(r.KumaWeaponID),
 			RewardGearId: r.RewardGearID,
+			Attributes:   attrs,
 		}
 	}
 	return out
+}
+
+// coopKumaWeaponsAttribute carries the shift's Grizzco weapon the way both
+// preserved working Nextendo hall captures actually do: as a "KumaWeapons"
+// array_value inside attributes, not the CoopSchedule_Normal/BigRun/
+// TeamContest.kuma_weapon scalar field this project previously set (see
+// docs/CAPTURES/splat3-coop-attributes-2026-09-24.md). Every observed
+// working capture entry's kuma_weapon field is absent, not merely zero --
+// an id-1 shift the console has never seen the scalar field carry a real
+// value in, which is why it is dropped here entirely rather than sent
+// alongside the attribute.
+//
+// One capture entry carried all eight real CoopKumaWeapons ids at once
+// instead of a single one -- plausibly the real "?" wildcard/all-random
+// weapon mechanic researched earlier this session (Inkipedia's Salmon Run
+// Next Wave page), never confirmed, and not reproduced here: every shift
+// this project generates gets exactly the one Grizzco weapon it already
+// picked (coop_generate.go/coop_live.go), same as the common case in both
+// captures.
+func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
+	return &common.MapValue{Fields: map[string]*common.Value{
+		"KumaWeapons": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
+			Values: []*common.Value{
+				{ValueType: &common.Value_IntegerValue{IntegerValue: kumaWeaponID}},
+			},
+		}}},
+	}}
 }
 
 // The timestamp field reports response time and must not invalidate the
