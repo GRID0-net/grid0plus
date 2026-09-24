@@ -266,7 +266,19 @@ type startUploadRequest struct {
 func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
 	c := callerFrom(r.Context())
 	var req startUploadRequest
-	if err := decodeJSON(r, &req); err != nil {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8192))
+	r.Body.Close()
+	if err != nil {
+		s.log.Error("scsi: start_upload: read request body", "error", err)
+		writeError(w, http.StatusBadRequest, "invalid_params", "Invalid Params")
+		return
+	}
+	// Logged raw on any decode failure -- the exact shape a real console
+	// sends here has already surprised this project once (application_id,
+	// splat3-start-upload-console-v3-2026-09-24.md), so a second mismatch
+	// is worth seeing verbatim rather than guessing at from a bare error.
+	if err := json.Unmarshal(body, &req); err != nil {
+		s.log.Error("scsi: start_upload: decode request body", "error", err, "body", string(body))
 		writeError(w, http.StatusBadRequest, "invalid_params", "Invalid Params")
 		return
 	}
