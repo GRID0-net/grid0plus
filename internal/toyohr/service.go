@@ -71,8 +71,9 @@ type Service struct {
 	rotation Rotation
 
 	// docs is where GameRecord documents are created. See Options.Documents.
-	docs       *ugcstore.Service
-	diagnostic *splatdiag.Bundle
+	docs                    *ugcstore.Service
+	diagnostic              *splatdiag.Bundle
+	diagnosticEmptyFestUser string
 
 	// messages delivers lobby messages between connected players. In memory:
 	// a lobby message is worth nothing to a player who was not connected.
@@ -101,6 +102,9 @@ type Options struct {
 	// that RPC unimplemented.
 	Documents  *ugcstore.Service
 	Diagnostic *splatdiag.Bundle
+	// DiagnosticEmptyFestUser compares the working capture's no-fest answer
+	// for one authenticated account, leaving every other account untouched.
+	DiagnosticEmptyFestUser string
 
 	Now func() time.Time
 }
@@ -111,15 +115,16 @@ func NewService(opts Options) *Service {
 		opts.Now = time.Now
 	}
 	return &Service{
-		store:      opts.Store,
-		log:        opts.Log,
-		tenant:     opts.Tenant,
-		now:        opts.Now,
-		callerID:   opts.CallerID,
-		rotation:   opts.Rotation,
-		docs:       opts.Documents,
-		diagnostic: opts.Diagnostic,
-		messages:   newMessageHub(),
+		store:                   opts.Store,
+		log:                     opts.Log,
+		tenant:                  opts.Tenant,
+		now:                     opts.Now,
+		callerID:                opts.CallerID,
+		rotation:                opts.Rotation,
+		docs:                    opts.Documents,
+		diagnostic:              opts.Diagnostic,
+		diagnosticEmptyFestUser: opts.DiagnosticEmptyFestUser,
+		messages:                newMessageHub(),
 	}
 }
 
@@ -224,6 +229,13 @@ func (s *Service) SelectFestSchedule(
 		return nil, err
 	}
 	if !ok {
+		// The preserved working hall session gets an empty response here,
+		// while an earlier SwitchNet empty response crashed. Keep the
+		// comparison private until hardware separates those client states.
+		if uid, authenticated := s.caller(ctx); authenticated && uid == s.diagnosticEmptyFestUser && uid != "" {
+			s.log.Info("toyohr: private diagnostic empty fest schedule served", "user", uid)
+			return &toyohrpb.SelectFestScheduleResponse{}, nil
+		}
 		fest = noFestSentinel
 	}
 

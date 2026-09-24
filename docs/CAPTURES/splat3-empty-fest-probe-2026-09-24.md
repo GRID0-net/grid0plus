@@ -1,0 +1,7 @@
+# Account-scoped empty FestSchedule probe
+
+Both preserved successful Nextendo hall sessions answer `FestService/SelectFestSchedule` with one **empty protobuf message** when no fest is announced. SwitchNet instead sends its own expired `noFestSentinel`. That difference occurs before the working console's early GameRecord document reads, which the failing SwitchNet console skips. The capture shows correlation, not causation. A prior SwitchNet empty-response experiment crashed the console before later schedule and authentication corrections, so changing every player's response at once would be a poor test.
+
+`SWITCHNET_NPLN_DIAGNOSTIC_EMPTY_FEST_USER` is a temporary, disabled-by-default NPLN service environment variable. When it is set to the authenticated user's ID and there is no current operator fest, only that user's `SelectFestSchedule` response is an empty protobuf message (five bytes after gRPC framing). All other accounts receive the ordinary sentinel. A configured active fest takes precedence. The handler logs when it serves the probe, so VM logs establish whether the selected account actually exercised it. Tests verify the protobuf body, account isolation, unauthenticated behavior, and active-fest precedence.
+
+After one hardware test, remove the VM systemd environment override and restart NPLN. If the hall still fails or crashes, do not retain the probe as a default behavior. No captured protobuf payload, credential or player data is used by this response.
