@@ -61,6 +61,14 @@ var CoopRewardGears = []CoopRewardGear{
 	{ID: 25007, Kind: "Shoes"},
 }
 
+// The two preserved working hall captures carry 23 reward candidates in each
+// CoopSchedule and 11 in VsParams. Which gear IDs Nintendo chooses is its own
+// rotation; SwitchNet selects real IDs from its independent public-data table.
+const (
+	coopScheduleRewardGearCount = 23
+	vsParamsRewardGearCount     = 11
+)
+
 // coopRewardForShift fills a missing reward with a stable, real gear pair.
 // Both working hall captures set reward_type and reward_gear_id on every
 // Normal shift. The public GearInfo tables confirm the three category names

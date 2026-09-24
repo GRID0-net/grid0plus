@@ -344,8 +344,8 @@ func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
 	// its own doc comment (coop_reward_gears.go) for why this is SwitchNet's
 	// own small real-id subset, not Nintendo's actual selection.
 	gears := fields["CoopUsedRewardGears"].GetArrayValue().GetValues()
-	if len(gears) != len(CoopRewardGears) {
-		t.Errorf("CoopUsedRewardGears has %d entries, want %d", len(gears), len(CoopRewardGears))
+	if len(gears) != vsParamsRewardGearCount {
+		t.Errorf("CoopUsedRewardGears has %d entries, want %d", len(gears), vsParamsRewardGearCount)
 	}
 	if len(gears) > 0 {
 		g := gears[0].GetMapValue().GetFields()

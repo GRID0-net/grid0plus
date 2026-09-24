@@ -184,8 +184,8 @@ func TestCoopScheduleKumaWeaponUsesAttributesNotTheScalarField(t *testing.T) {
 	}
 
 	gears := got.GetNormal().GetAttributes().GetFields()["CoopUsedRewardGears"].GetArrayValue().GetValues()
-	if len(gears) != len(CoopRewardGears) {
-		t.Errorf("Normal.Attributes[CoopUsedRewardGears] has %d entries, want %d", len(gears), len(CoopRewardGears))
+	if len(gears) != coopScheduleRewardGearCount {
+		t.Errorf("Normal.Attributes[CoopUsedRewardGears] has %d entries, want %d", len(gears), coopScheduleRewardGearCount)
 	}
 }
 

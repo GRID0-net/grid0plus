@@ -416,8 +416,9 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 //     this is SwitchNet's own small, real-id subset, not a reproduction of
 //     Nintendo's actual per-shift selection.
 func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
-	gearValues := make([]*common.Value, len(CoopRewardGears))
-	for i, g := range CoopRewardGears {
+	gears := CoopRewardGears[:min(coopScheduleRewardGearCount, len(CoopRewardGears))]
+	gearValues := make([]*common.Value, len(gears))
+	for i, g := range gears {
 		gearValues[i] = &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{
 			Fields: map[string]*common.Value{
 				"GearID":   {ValueType: &common.Value_IntegerValue{IntegerValue: int64(g.ID)}},

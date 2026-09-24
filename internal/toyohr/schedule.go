@@ -281,8 +281,9 @@ func vsParamsAttributes() *common.MapValue {
 	boolVal := func(v bool) *common.Value {
 		return &common.Value{ValueType: &common.Value_BooleanValue{BooleanValue: v}}
 	}
-	gearValues := make([]*common.Value, len(CoopRewardGears))
-	for i, g := range CoopRewardGears {
+	gears := CoopRewardGears[:min(vsParamsRewardGearCount, len(CoopRewardGears))]
+	gearValues := make([]*common.Value, len(gears))
+	for i, g := range gears {
 		gearValues[i] = &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{
 			Fields: map[string]*common.Value{
 				"GearID":   intVal(int64(g.ID)),
