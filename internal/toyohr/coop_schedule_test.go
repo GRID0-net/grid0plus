@@ -182,6 +182,11 @@ func TestCoopScheduleKumaWeaponUsesAttributesNotTheScalarField(t *testing.T) {
 	if len(km) != 1 || km[0].GetIntegerValue() != shift.KumaWeaponID {
 		t.Errorf("Normal.Attributes[KumaWeapons] = %v, want [%d]", km, shift.KumaWeaponID)
 	}
+
+	gears := got.GetNormal().GetAttributes().GetFields()["CoopUsedRewardGears"].GetArrayValue().GetValues()
+	if len(gears) != len(CoopRewardGears) {
+		t.Errorf("Normal.Attributes[CoopUsedRewardGears] has %d entries, want %d", len(gears), len(CoopRewardGears))
+	}
 }
 
 func TestCoopShiftValidateAllowsNoBoss(t *testing.T) {

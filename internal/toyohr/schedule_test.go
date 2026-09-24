@@ -340,10 +340,18 @@ func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
 		t.Errorf("XRankingRegionRestrict.Pacific = %v, want empty", pac)
 	}
 
-	// CoopUsedRewardGears is deliberately absent -- see vsParamsAttributes'
-	// own doc comment for why.
-	if _, ok := fields["CoopUsedRewardGears"]; ok {
-		t.Error("attributes has a CoopUsedRewardGears key, but no real gear id table exists to populate it from")
+	// CoopUsedRewardGears: present, real ids, from CoopRewardGears -- see
+	// its own doc comment (coop_reward_gears.go) for why this is SwitchNet's
+	// own small real-id subset, not Nintendo's actual selection.
+	gears := fields["CoopUsedRewardGears"].GetArrayValue().GetValues()
+	if len(gears) != len(CoopRewardGears) {
+		t.Errorf("CoopUsedRewardGears has %d entries, want %d", len(gears), len(CoopRewardGears))
+	}
+	if len(gears) > 0 {
+		g := gears[0].GetMapValue().GetFields()
+		if g["GearID"].GetIntegerValue() != int64(CoopRewardGears[0].ID) || g["GearKind"].GetStringValue() != CoopRewardGears[0].Kind {
+			t.Errorf("CoopUsedRewardGears[0] = %v, want GearID=%d GearKind=%q", g, CoopRewardGears[0].ID, CoopRewardGears[0].Kind)
+		}
 	}
 }
 

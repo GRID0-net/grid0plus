@@ -389,29 +389,49 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	return out
 }
 
-// coopKumaWeaponsAttribute carries the shift's Grizzco weapon the way both
-// preserved working Nextendo hall captures actually do: as a "KumaWeapons"
-// array_value inside attributes, not the CoopSchedule_Normal/BigRun/
-// TeamContest.kuma_weapon scalar field this project previously set (see
-// docs/CAPTURES/splat3-coop-attributes-2026-09-24.md). Every observed
-// working capture entry's kuma_weapon field is absent, not merely zero --
-// an id-1 shift the console has never seen the scalar field carry a real
-// value in, which is why it is dropped here entirely rather than sent
-// alongside the attribute.
+// coopKumaWeaponsAttribute builds a shift's attributes MapValue with the two
+// keys both preserved working Nextendo hall captures always carry:
 //
-// One capture entry carried all eight real CoopKumaWeapons ids at once
-// instead of a single one -- plausibly the real "?" wildcard/all-random
-// weapon mechanic researched earlier this session (Inkipedia's Salmon Run
-// Next Wave page), never confirmed, and not reproduced here: every shift
-// this project generates gets exactly the one Grizzco weapon it already
-// picked (coop_generate.go/coop_live.go), same as the common case in both
-// captures.
+//   - "KumaWeapons": the shift's Grizzco weapon, as an array_value -- not
+//     the CoopSchedule_Normal/BigRun/TeamContest.kuma_weapon scalar field
+//     this project previously set. Every observed working capture entry's
+//     kuma_weapon field is absent, not merely zero, which is why it is
+//     dropped here entirely rather than sent alongside the attribute.
+//     One capture entry carried all eight real CoopKumaWeapons ids at once
+//     instead of a single one -- plausibly the real "?" wildcard/all-random
+//     weapon mechanic researched earlier this session (Inkipedia's Salmon
+//     Run Next Wave page), never confirmed, and not reproduced here: every
+//     shift this project generates gets exactly the one Grizzco weapon it
+//     already picked (coop_generate.go/coop_live.go), same as the common
+//     case in both captures.
+//
+//   - "CoopUsedRewardGears": real gear ids from CoopRewardGears
+//     (coop_reward_gears.go) -- present on every populated CoopSchedule in
+//     both captures, absent from every SwitchNet response until now. The
+//     hall investigation found the console never attempts the
+//     GameRecord-document-read phase that follows a schedule fetch in both
+//     working captures; this field's total absence is the leading
+//     candidate for why. CoopRewardGears' own comment is explicit that
+//     this is SwitchNet's own small, real-id subset, not a reproduction of
+//     Nintendo's actual per-shift selection.
 func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
+	gearValues := make([]*common.Value, len(CoopRewardGears))
+	for i, g := range CoopRewardGears {
+		gearValues[i] = &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{
+			Fields: map[string]*common.Value{
+				"GearID":   {ValueType: &common.Value_IntegerValue{IntegerValue: int64(g.ID)}},
+				"GearKind": {ValueType: &common.Value_StringValue{StringValue: g.Kind}},
+			},
+		}}}
+	}
 	return &common.MapValue{Fields: map[string]*common.Value{
 		"KumaWeapons": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
 			Values: []*common.Value{
 				{ValueType: &common.Value_IntegerValue{IntegerValue: kumaWeaponID}},
 			},
+		}}},
+		"CoopUsedRewardGears": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
+			Values: gearValues,
 		}}},
 	}}
 }

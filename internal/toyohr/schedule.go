@@ -281,6 +281,15 @@ func vsParamsAttributes() *common.MapValue {
 	boolVal := func(v bool) *common.Value {
 		return &common.Value{ValueType: &common.Value_BooleanValue{BooleanValue: v}}
 	}
+	gearValues := make([]*common.Value, len(CoopRewardGears))
+	for i, g := range CoopRewardGears {
+		gearValues[i] = &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{
+			Fields: map[string]*common.Value{
+				"GearID":   intVal(int64(g.ID)),
+				"GearKind": {ValueType: &common.Value_StringValue{StringValue: g.Kind}},
+			},
+		}}}
+	}
 	return &common.MapValue{Fields: map[string]*common.Value{
 		"DivideXRate":                 intVal(2000),
 		"DivideXRateAtlantic":         intVal(500),
@@ -291,6 +300,12 @@ func vsParamsAttributes() *common.MapValue {
 		"IsOnlinePenaltyActive":       boolVal(true),
 		"P2PKeepAliveSec":             intVal(8),
 		"PlazaFixedTimestamp":         intVal(1726452000),
+		// Same real-id subset as coopKumaWeaponsAttribute (coop_schedule.go)
+		// -- both captures carry this key here too, on every SelectVsParams
+		// response, not just CoopSchedule's own attributes.
+		"CoopUsedRewardGears": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
+			Values: gearValues,
+		}}},
 		"XRankingRegionRestrict": {
 			ValueType: &common.Value_MapValue{MapValue: &common.MapValue{Fields: map[string]*common.Value{
 				"Atlantic": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
