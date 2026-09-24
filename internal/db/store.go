@@ -481,8 +481,12 @@ type SaveDataArchive struct {
 
 	DataSize    int64
 	Description string
-	SeriesID    int
-	Datatype    int
+	// SeriesID is a real 64-bit value on real hardware (observed
+	// 2026-09-24, e.g. 4502276665849307917) -- the underlying column was
+	// INTEGER until migration 0019 found every start_upload from a real
+	// console failing to encode it.
+	SeriesID int64
+	Datatype int
 
 	// Status is "uploading" or "fixed" — see internal/scsi/models.go.
 	Status                    string

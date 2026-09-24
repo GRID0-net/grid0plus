@@ -1170,7 +1170,13 @@ func testSaveDataArchives(t *testing.T, s Store) {
 	a := SaveDataArchive{
 		ID: "aa00000000000001", NSAID: u.ID, ApplicationID: "0100abcd00010000",
 		DeviceID: "dev0000000000001", DataSize: 0, Status: "uploading",
-		SavedAt: now,
+		// A real value observed on real hardware 2026-09-24
+		// (4502276665849307917 in a preserved working Nextendo capture) --
+		// SeriesID's own column was INTEGER until migration 0019 found
+		// every start_upload from a real console failing to encode a value
+		// this size.
+		SeriesID: 4502276665849307917,
+		SavedAt:  now,
 	}
 	created, err := s.CreateSaveDataArchive(ctx, a)
 	if err != nil {
@@ -1178,6 +1184,9 @@ func testSaveDataArchives(t *testing.T, s Store) {
 	}
 	if created.Status != "uploading" {
 		t.Errorf("status = %q, want uploading (default)", created.Status)
+	}
+	if created.SeriesID != a.SeriesID {
+		t.Errorf("SeriesID = %d, want %d", created.SeriesID, a.SeriesID)
 	}
 
 	if _, err := s.CreateSaveDataArchive(ctx, a); !errors.Is(err, ErrConflict) {

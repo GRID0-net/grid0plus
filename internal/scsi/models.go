@@ -15,7 +15,7 @@ type archiveView struct {
 	DeviceSerial              string          `json:"device_serial"`
 	DataSize                  int64           `json:"data_size"`
 	Desc                      string          `json:"desc"`
-	SeriesID                  int             `json:"series_id"`
+	SeriesID                  int64           `json:"series_id"`
 	Datatype                  int             `json:"datatype"`
 	Status                    string          `json:"status"`
 	AutoBackup                bool            `json:"auto_backup"`

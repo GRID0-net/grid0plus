@@ -253,11 +253,14 @@ type startUploadRequest struct {
 	DataSize              int64  `json:"data_size"`
 	SavedAtUnixtime       int64  `json:"saved_at_as_unixtime"`
 	LaunchRequiredVersion int    `json:"launch_required_version"`
-	SeriesID              int    `json:"series_id"`
-	EncodedDigest         string `json:"encoded_digest"`
-	HasThumbnail          bool   `json:"has_thumbnail"`
-	Desc                  string `json:"desc"`
-	AutoBackup            bool   `json:"auto_backup"`
+	// A real 64-bit value on real hardware (observed 2026-09-24,
+	// e.g. 4502276665849307917) -- see db.SaveDataArchive.SeriesID's own
+	// comment.
+	SeriesID      int64  `json:"series_id"`
+	EncodedDigest string `json:"encoded_digest"`
+	HasThumbnail  bool   `json:"has_thumbnail"`
+	Desc          string `json:"desc"`
+	AutoBackup    bool   `json:"auto_backup"`
 }
 
 func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
