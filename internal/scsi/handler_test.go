@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -183,6 +184,40 @@ func TestStartUploadReachableUnderConsoleV3Path(t *testing.T) {
 	created := decode[map[string]archiveView](t, resp)["save_data_archive"]
 	if created.ApplicationID != testApplicationID {
 		t.Errorf("ApplicationID = %q, want %q -- from the request body, not a header", created.ApplicationID, testApplicationID)
+	}
+}
+
+// TestStartUploadSeriesIDSurvivesBeyondInt64Range is the regression test
+// for a real 2026-09-24 finding: a real console's series_id
+// (12237957226414712540) exceeds int64's own maximum
+// (9223372036854775807), so it must round-trip as an exact digit string,
+// never any fixed-width integer type.
+func TestStartUploadSeriesIDSurvivesBeyondInt64Range(t *testing.T) {
+	h := newHarness(t)
+	const wantSeriesID = "12237957226414712540"
+
+	resp := h.do("POST", "/api/console/v3/save_data_archives/start_upload", startUploadRequest{
+		ApplicationID: testApplicationID, DataSize: 4, SeriesID: json.Number(wantSeriesID),
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("start_upload status = %d, want 201", resp.StatusCode)
+	}
+	created := decode[map[string]archiveView](t, resp)["save_data_archive"]
+	if created.SeriesID.String() != wantSeriesID {
+		t.Errorf("SeriesID = %q, want %q", created.SeriesID.String(), wantSeriesID)
+	}
+
+	// And a real read-back (GetSaveDataArchive) must marshal it as a bare
+	// JSON number, matching a real console's own response shape -- not a
+	// quoted string, which archiveView.SeriesID being anything other than
+	// json.Number would produce.
+	get := h.do("GET", "/api/nx/v2/save_data_archives/"+created.ID, nil)
+	body, err := io.ReadAll(get.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"series_id":`+wantSeriesID)) {
+		t.Errorf("GetSaveDataArchive body does not contain an unquoted series_id:%s -- got %s", wantSeriesID, body)
 	}
 }
 

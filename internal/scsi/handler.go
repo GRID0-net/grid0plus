@@ -253,14 +253,14 @@ type startUploadRequest struct {
 	DataSize              int64  `json:"data_size"`
 	SavedAtUnixtime       int64  `json:"saved_at_as_unixtime"`
 	LaunchRequiredVersion int    `json:"launch_required_version"`
-	// A real 64-bit value on real hardware (observed 2026-09-24,
-	// e.g. 4502276665849307917) -- see db.SaveDataArchive.SeriesID's own
-	// comment.
-	SeriesID      int64  `json:"series_id"`
-	EncodedDigest string `json:"encoded_digest"`
-	HasThumbnail  bool   `json:"has_thumbnail"`
-	Desc          string `json:"desc"`
-	AutoBackup    bool   `json:"auto_backup"`
+	// json.Number, not int64: a second real value observed on real
+	// hardware 2026-09-24 (12237957226414712540) exceeds int64's own
+	// maximum -- see db.SaveDataArchive.SeriesID's own comment.
+	SeriesID      json.Number `json:"series_id"`
+	EncodedDigest string      `json:"encoded_digest"`
+	HasThumbnail  bool        `json:"has_thumbnail"`
+	Desc          string      `json:"desc"`
+	AutoBackup    bool        `json:"auto_backup"`
 }
 
 func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
@@ -297,9 +297,16 @@ func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
 	if req.SavedAtUnixtime == 0 {
 		savedAt = time.Now().UTC()
 	}
+	// "0", not "" -- an empty string is not a valid JSON number literal, and
+	// archiveView.SeriesID (json.Number) would marshal it as bare, invalid
+	// JSON the next time this archive is read back.
+	seriesID := req.SeriesID.String()
+	if seriesID == "" {
+		seriesID = "0"
+	}
 	a, err := s.store.CreateSaveDataArchive(r.Context(), db.SaveDataArchive{
 		ID: id, NSAID: c.NSAID, ApplicationID: req.ApplicationID, DeviceID: c.DeviceAccountID,
-		DataSize: req.DataSize, Description: req.Desc, SeriesID: req.SeriesID, Datatype: req.Datatype,
+		DataSize: req.DataSize, Description: req.Desc, SeriesID: seriesID, Datatype: req.Datatype,
 		Status: "uploading", AutoBackup: req.AutoBackup, LaunchRequiredVersion: req.LaunchRequiredVersion,
 		EncodedDigest: req.EncodedDigest, SavedAt: savedAt,
 	})

@@ -1171,11 +1171,12 @@ func testSaveDataArchives(t *testing.T, s Store) {
 		ID: "aa00000000000001", NSAID: u.ID, ApplicationID: "0100abcd00010000",
 		DeviceID: "dev0000000000001", DataSize: 0, Status: "uploading",
 		// A real value observed on real hardware 2026-09-24
-		// (4502276665849307917 in a preserved working Nextendo capture) --
-		// SeriesID's own column was INTEGER until migration 0019 found
-		// every start_upload from a real console failing to encode a value
-		// this size.
-		SeriesID: 4502276665849307917,
+		// (12237957226414712540, which by itself exceeds int64's own
+		// maximum -- SeriesID is stored as its exact decimal digit string
+		// for exactly this reason, not any fixed-width integer type;
+		// migrations 0019/0020 record the two overflows found on the way
+		// to that).
+		SeriesID: "12237957226414712540",
 		SavedAt:  now,
 	}
 	created, err := s.CreateSaveDataArchive(ctx, a)
@@ -1186,7 +1187,7 @@ func testSaveDataArchives(t *testing.T, s Store) {
 		t.Errorf("status = %q, want uploading (default)", created.Status)
 	}
 	if created.SeriesID != a.SeriesID {
-		t.Errorf("SeriesID = %d, want %d", created.SeriesID, a.SeriesID)
+		t.Errorf("SeriesID = %q, want %q", created.SeriesID, a.SeriesID)
 	}
 
 	if _, err := s.CreateSaveDataArchive(ctx, a); !errors.Is(err, ErrConflict) {

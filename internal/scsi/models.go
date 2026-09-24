@@ -1,6 +1,10 @@
 package scsi
 
-import "github.com/n-popescu/switchnet/internal/db"
+import (
+	"encoding/json"
+
+	"github.com/n-popescu/switchnet/internal/db"
+)
 
 // archiveView is the JSON shape of a save data archive.
 //
@@ -8,14 +12,20 @@ import "github.com/n-popescu/switchnet/internal/db"
 // (component_files only appears on the latter) are confirmed from
 // https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers#save-data-archive.
 type archiveView struct {
-	ID                        string          `json:"id"`
-	NSAID                     string          `json:"nsa_id"`
-	ApplicationID             string          `json:"application_id"`
-	DeviceID                  string          `json:"device_id"`
-	DeviceSerial              string          `json:"device_serial"`
-	DataSize                  int64           `json:"data_size"`
-	Desc                      string          `json:"desc"`
-	SeriesID                  int64           `json:"series_id"`
+	ID            string `json:"id"`
+	NSAID         string `json:"nsa_id"`
+	ApplicationID string `json:"application_id"`
+	DeviceID      string `json:"device_id"`
+	DeviceSerial  string `json:"device_serial"`
+	DataSize      int64  `json:"data_size"`
+	Desc          string `json:"desc"`
+	// json.Number, not int64: a real value observed on real hardware
+	// 2026-09-24 (12237957226414712540) exceeds int64's own maximum. See
+	// db.SaveDataArchive.SeriesID's own comment. json.Number marshals as a
+	// bare JSON number, matching a real console's own response shape,
+	// while holding the exact digit string internally rather than losing
+	// precision to float64 or overflowing a fixed-width integer.
+	SeriesID                  json.Number     `json:"series_id"`
 	Datatype                  int             `json:"datatype"`
 	Status                    string          `json:"status"`
 	AutoBackup                bool            `json:"auto_backup"`
@@ -45,7 +55,7 @@ func toArchiveView(a db.SaveDataArchive, components []db.ComponentFile) archiveV
 	v := archiveView{
 		ID: a.ID, NSAID: a.NSAID, ApplicationID: a.ApplicationID,
 		DeviceID: a.DeviceID, DeviceSerial: a.DeviceSerial,
-		DataSize: a.DataSize, Desc: a.Description, SeriesID: a.SeriesID,
+		DataSize: a.DataSize, Desc: a.Description, SeriesID: json.Number(a.SeriesID),
 		Datatype: a.Datatype, Status: a.Status, AutoBackup: a.AutoBackup,
 		NumOfPartitions: a.NumOfPartitions, LaunchRequiredVersion: a.LaunchRequiredVersion,
 		PreviousSaveDataArchiveID: a.PreviousSaveDataArchiveID,

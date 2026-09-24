@@ -481,11 +481,15 @@ type SaveDataArchive struct {
 
 	DataSize    int64
 	Description string
-	// SeriesID is a real 64-bit value on real hardware (observed
-	// 2026-09-24, e.g. 4502276665849307917) -- the underlying column was
-	// INTEGER until migration 0019 found every start_upload from a real
-	// console failing to encode it.
-	SeriesID int64
+	// SeriesID is stored as its exact decimal digit string, not a fixed-
+	// width integer: a real value observed on real hardware 2026-09-24
+	// (12237957226414712540) exceeds int64's own maximum
+	// (9223372036854775807), so it is not signed 64-bit either -- BIGINT
+	// (migration 0019, which fixed a smaller INTEGER overflow first) still
+	// cannot hold it. Nothing here does arithmetic on it; it is an opaque
+	// identifier the console sends and reads back, the same treatment
+	// EncodedDigest already gets.
+	SeriesID string
 	Datatype int
 
 	// Status is "uploading" or "fixed" — see internal/scsi/models.go.
