@@ -290,14 +290,15 @@ func TestCoopShiftStatusReflectsWhereItIsInTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("coopShiftRows: %v", err)
 	}
-	got := map[int32]string{}
-	for _, r := range rows {
-		got[r.StageID] = r.Status
-	}
-	want := map[int32]string{1: "upcoming", 2: "live", 4: "ended"}
-	for stage, status := range want {
-		if got[stage] != status {
-			t.Errorf("stage %d status = %q, want %q", stage, got[stage], status)
+	// Live-generated slots can reuse a stage id, so identify the three
+	// stored shifts by their resource IDs rather than by stage number.
+	want := map[string]string{upcoming.ID(): "upcoming", live.ID(): "live", ended.ID(): "ended"}
+	for id, status := range want {
+		row, ok := findCoopShiftRow(rows, id)
+		if !ok {
+			t.Errorf("shift %s is missing", id)
+		} else if row.Status != status {
+			t.Errorf("shift %s status = %q, want %q", id, row.Status, status)
 		}
 	}
 }

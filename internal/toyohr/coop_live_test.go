@@ -15,10 +15,10 @@ import (
 // maps", the property this was built to give Coop that Vs already has.
 func TestLiveNormalCoopShiftsIsDeterministic(t *testing.T) {
 	now := time.Date(2026, 11, 3, 17, 0, 0, 0, time.UTC)
-	a := liveNormalCoopShifts(now, 3)
-	b := liveNormalCoopShifts(now, 3)
-	if len(a) != 3 || len(b) != 3 {
-		t.Fatalf("got %d/%d shifts, want 3/3", len(a), len(b))
+	a := liveNormalCoopShifts(now, coopLiveHorizonShifts)
+	b := liveNormalCoopShifts(now, coopLiveHorizonShifts)
+	if len(a) != coopLiveHorizonShifts || len(b) != coopLiveHorizonShifts {
+		t.Fatalf("got %d/%d shifts, want %d/%d", len(a), len(b), coopLiveHorizonShifts, coopLiveHorizonShifts)
 	}
 	for i := range a {
 		if !reflect.DeepEqual(a[i], b[i]) {

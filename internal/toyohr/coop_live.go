@@ -6,12 +6,11 @@ import (
 )
 
 // coopLiveHorizonShifts is how many live-generated Normal shifts
-// liveNormalCoopShifts returns: the one covering now, plus the next two --
-// enough for a console to show "now" and "coming up" the way Splatoon 3's
-// own Salmon Run menu does, the same reasoning scheduleHorizon's own comment
-// gives for Vs, scaled down because a Coop shift is 40 hours long rather
-// than 2.
-const coopLiveHorizonShifts = 3
+// liveNormalCoopShifts returns: the one covering now, plus the next four.
+// Both preserved successful hall captures answer the same count-free
+// SelectCoopSchedules request with five Normal shifts; three was an
+// unmeasured inference from the menu's "now" and "coming up" labels.
+const coopLiveHorizonShifts = 5
 
 // liveNormalCoopShifts computes the Normal rotation live, the same kind of
 // pure function of the clock SelectVsSchedules/vsSchedule already is for
