@@ -152,6 +152,28 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 			if err := stream.Send(proto); err != nil {
 				return err
 			}
+			if t.State == matchmaking.StateSucceeded {
+				// Do NOT return here. A real-hardware finding (Nextendo,
+				// 2026-08-13, cited in this project's own Nextendo-vs-
+				// SwitchNet comparison pass) found that closing this stream
+				// server-side the instant SUCCEEDED is sent races the
+				// console's own gRPC transport: its poll loop had nothing
+				// queued to send yet (still read-only) when the server hung
+				// up, so IssueToken/KeepUserSession -- whatever the console
+				// was about to send on this same session -- never left the
+				// transport before the socket was torn down roughly 1.2s
+				// later. Same symptom class as matchedUserSessions' own
+				// empty-MatchmakingIdToken bug this project already fixed
+				// (2321-4992): the console's session-channel request dies
+				// before it is ever sent. Blocking here until the CONSOLE
+				// closes its end, instead of the server closing it first,
+				// is what Nextendo's fix does. TIMED_OUT and CANCELLED keep
+				// the old eager-close behaviour below -- Nextendo's finding
+				// was specific to SUCCEEDED, and nothing confirms the same
+				// race applies to a ticket that never matched.
+				<-ctx.Done()
+				return ctx.Err()
+			}
 			if terminal(t.State) {
 				return nil
 			}
@@ -470,6 +492,16 @@ func (g *gameSessionService) AllocateIceServerSet(
 // ping to at least one server, rather than merely a non-empty list. If it
 // does, an operator with no ice_servers configured (the LAN-only default)
 // would need a real answer here too -- change this function.
+//
+// Corroborating (not resolving) evidence: this project's own Nextendo-vs-
+// SwitchNet comparison pass found Nextendo's own handler comment states a
+// non-empty list is what lets the console proceed, and that the pings
+// themselves timing out does not stop it -- only an empty list aborts
+// early. That is Nextendo's own testing note, not a decoded wire capture of
+// Nintendo's real server, so it does not on its own meet this project's own
+// bar for removing this TODO (see CLAUDE.md rule 6) -- but it is a second,
+// independent signal the current non-empty-list answer is already correct
+// and this function likely needs no change.
 func (g *gameSessionService) ListLatencyMeasurementServers(
 	ctx context.Context, _ *mmpb.ListLatencyMeasurementServersRequest,
 ) (*mmpb.ListLatencyMeasurementServersResponse, error) {
@@ -725,9 +757,16 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		// Everyone matched is a participant. There is no lobby to fill here:
 		// the session is created at the moment it is already full.
 		CurrentParticipantCount: int32(len(sess.Players)),
-		CanParticipate:          false,
-		IsPublic:                false,
-		State:                   mmpb.GameSession_ACTIVE,
+		// This project's own Nextendo-vs-SwitchNet comparison pass found
+		// Nextendo sets CanParticipate true on every GameSession it builds,
+		// with no exception for an already-full ticket match -- this used to
+		// be false here with no capture or comment backing that choice, an
+		// unexamined default rather than a considered one. Matching
+		// Nextendo's real-hardware-tested behaviour until a capture says
+		// otherwise.
+		CanParticipate: true,
+		IsPublic:       false,
+		State:          mmpb.GameSession_ACTIVE,
 		// Host and Port are the address each console opens its gamesync
 		// session to for this match -- a server, not a player. This used to
 		// name the host player ("users/<id>") with the port it published via
