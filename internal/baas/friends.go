@@ -1,8 +1,10 @@
 package baas
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -368,7 +370,17 @@ type createFriendRequestBody struct {
 
 // createFriendRequest sends a friend request.
 func (s *Server) createFriendRequest(w http.ResponseWriter, r *http.Request, c *caller) {
+	// DEBUG(2026-09-24): diagnosing 2121-2001 on a real send-by-friend-code
+	// attempt -- remove once the real body shape is known.
+	rawBody, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(rawBody))
+	s.log.Info("baas: DEBUG createFriendRequest raw", "content_type", r.Header.Get("Content-Type"),
+		"body", string(rawBody), "url_raw_query", r.URL.RawQuery)
+
 	body, err := s.parseFriendRequestBody(r)
+	s.log.Info("baas: DEBUG createFriendRequest parsed", "parsed_friendCode", body.FriendCode,
+		"parsed_userId", body.UserID, "parsed_nsaId", body.NSAID, "parse_err", err)
 	if err != nil {
 		writeError(w, r, errInvalidParams)
 		return
