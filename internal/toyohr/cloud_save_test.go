@@ -8,13 +8,14 @@ import (
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
 
-// TestGetSaveRecordNeverAnswersNotFoundOrEmpty is the regression test for a
-// real crash: NextendoNetwork/splatoon-3 measured (facts only, not its code)
-// that NotFound makes the game loop on a communication error, and a
-// genuinely empty success makes it stop dead -- no CreateSaveRecord, no
-// FestSchedule, no documents. Reproduced on SwitchNet's own hardware on
-// 2026-09-24: the console went silent immediately after this RPC. A real,
-// resolved SaveRecord with an honestly-empty SaveData is answered instead.
+// TestGetSaveRecordNeverAnswersNotFoundOrEmpty exercises the direct Go
+// entry point Service.GetSaveRecord, not the wire: a real console never
+// reaches this method (registerCloudSave's stream handler intercepts
+// GetSaveRecord before Go-level dispatch and answers with no message at
+// all -- see getSaveRecordStreamHandler's own doc comment for why that
+// differs from this and is the behaviour actually measured against real
+// Nintendo servers). This direct path stays exercised because tests and
+// internal/npln's diagnostic probe still call it directly.
 func TestGetSaveRecordNeverAnswersNotFoundOrEmpty(t *testing.T) {
 	as(t, "aaaaaaaaaaaaaaaa")
 	svc, _ := newService(t, time.Now())

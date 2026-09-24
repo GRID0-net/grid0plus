@@ -1,6 +1,7 @@
 package npln
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,12 +60,21 @@ func TestPrivateSaveComparisonDoesNotReachAnotherAccount(t *testing.T) {
 	} {
 		ctx := h.ctx(h.sessionFor(t, tc.uid, tc.device), "")
 		save, err := saves.GetSaveRecord(ctx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, hasRank := save.GetSaveData().GetFields()["PlayerRank"]
-		if hasRank != tc.diagnostic {
-			t.Errorf("%s inherited diagnostic save=%v, want %v", tc.uid, hasRank, tc.diagnostic)
+		if tc.diagnostic {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, hasRank := save.GetSaveData().GetFields()["PlayerRank"]; !hasRank {
+				t.Errorf("%s: diagnostic save missing PlayerRank", tc.uid)
+			}
+		} else if err != io.EOF {
+			// A non-diagnostic account gets no message at all -- see
+			// getSaveRecordStreamHandler's own doc comment in
+			// internal/toyohr/cloud_save.go. grpc-go's unary client surfaces
+			// that as io.EOF (a real Nintendo/Switch client reads the same
+			// zero-byte wire shape differently, and is not what this test
+			// exercises).
+			t.Errorf("%s: GetSaveRecord = %v, want io.EOF (no cloud save)", tc.uid, err)
 		}
 		name := "tenants/current/documents/services/GameRecord/users/" + tc.uid + "/VsUserAttribute/Data"
 		doc, err := docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: name})

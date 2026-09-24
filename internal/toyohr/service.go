@@ -136,7 +136,7 @@ func NewService(opts Options) *Service {
 // directly.
 func (s *Service) Register(srv *grpc.Server) {
 	toyohrpb.RegisterFestServiceServer(srv, s)
-	toyohrpb.RegisterCloudSaveServer(srv, s)
+	registerCloudSave(srv, s)
 	toyohrpb.RegisterScheduleServer(srv, &scheduleService{s: s})
 	toyohrpb.RegisterLobbyMessagingServer(srv, &lobbyMessagingService{s: s})
 	toyohrpb.RegisterUserScreeningServer(srv, &userScreeningService{s: s})
