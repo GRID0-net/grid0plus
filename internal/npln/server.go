@@ -442,6 +442,15 @@ func (s *Server) noteFirstSeen(method string, err error) {
 // failure is expected and not this call's to report.
 func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string, emptyDocument ...bool) {
 	header := metadata.Pairs("npln-grpc-type", "Unary")
+	if method == "/nn.npln.ugcstore.v1.Ugcstore/GetDocument" {
+		// Both preserved working captures mark a populated GetDocument as
+		// ServerStreaming. A missing document has that value followed by
+		// Unary, even though the generated RPC is unary.
+		header = metadata.Pairs("npln-grpc-type", "ServerStreaming")
+		if len(emptyDocument) > 0 && emptyDocument[0] {
+			header.Append("npln-grpc-type", "Unary")
+		}
+	}
 	if method == "/nn.npln.toyohr.v1.UserScreening/GetViolation" || (len(emptyDocument) > 0 && emptyDocument[0]) {
 		// The no-violation answer has no message; the working capture's
 		// opening headers explicitly declare an empty body.

@@ -51,8 +51,8 @@ func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetDocument = %v, %v; want NotFound", doc, err)
 	}
-	if len(header.Get("npln-grpc-type")) == 0 {
-		t.Error("NotFound arrived as a single Trailers-Only frame")
+	if got := header.Get("npln-grpc-type"); len(got) != 2 || got[0] != "ServerStreaming" || got[1] != "Unary" {
+		t.Errorf("missing document grpc type = %v, want captured ServerStreaming, Unary", got)
 	}
 	if got := header.Get("content-length"); len(got) != 1 || got[0] != "0" {
 		t.Errorf("missing document headers = %v, want zero-length body", header)
@@ -94,9 +94,13 @@ func TestAWrittenDocumentReadsBackUnderEitherTenantForm(t *testing.T) {
 		t.Fatalf("CommitDocuments: %v", err)
 	}
 	for _, name := range []string{"tenants/current" + path, "tenants/" + testTenant + path} {
-		doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: name})
+		var header metadata.MD
+		doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: name}, grpc.Header(&header))
 		if err != nil {
 			t.Fatalf("GetDocument(%s): %v", name, err)
+		}
+		if got := header.Get("npln-grpc-type"); len(got) != 1 || got[0] != "ServerStreaming" {
+			t.Errorf("populated document grpc type = %v, want captured ServerStreaming", got)
 		}
 		if doc.GetName() != name {
 			t.Errorf("name = %q, want the name asked for, %q", doc.GetName(), name)
