@@ -27,9 +27,7 @@ const DefaultCoopShiftDuration = 40 * time.Hour
 // (nintendoapis/splatnet3-types' types.ts, Leanny/splat3's WeaponInfoMain.json)
 // turned up no documented mechanism, sentinel id, or frequency for Nintendo
 // mixing a Grizzco weapon into the normal four-slot rotation -- what a real
-// server does here, if anything, is not public. This 15% figure is
-// SwitchNet's own generation policy, chosen because the operator asked for
-// one, not a reproduction of anything confirmed.
+// server does here, if anything, is not public.
 //
 // A real, separate mechanic does exist for one weapon slot: Nintendo's own
 // schedule sometimes marks a slot "?" (a wildcard, revealed only when the
@@ -41,9 +39,19 @@ const DefaultCoopShiftDuration = 40 * time.Hour
 // rare-weapon field exists in this project's own decompiled CoopSchedule_Normal
 // (Stage/Boss/MainWeapons/KumaWeapon/RewardGearId only), so implementing the
 // real mechanic would mean inventing a shape CLAUDE.md rule 6 forbids.
-// grizzcoWeaponChance stays as SwitchNet's own stated substitute, kept on
-// the operator's own call even after this was found.
-const grizzcoWeaponChance = 0.15
+//
+// Disabled (0.0), left in code rather than deleted: a 2026-09-24 hardware
+// test went silent -- no console request after the schedule RPCs answered,
+// no server-side error either -- while the live-generated shift active at
+// that exact moment (liveNormalCoopShifts, 2026-09-24T12:58:05Z) carried TWO
+// Grizzco weapons in the four main slots at once (Grizzco Brella and Grizzco
+// Splatana). Correlation, not a confirmed root cause -- no capture exists of
+// what actually crashed -- but it is the newest, most speculative piece of
+// content in that response, and the operator's own standing instruction was
+// to remove this the moment it caused a problem. Re-enable only after a
+// capture or another hardware test clears it, or replaces it with a
+// confirmed shape.
+const grizzcoWeaponChance = 0.0
 
 // normalCoopStages is CoopStages with BigRun entries excluded -- the pool
 // every Normal-shift generator (batch and live) draws its stage from.
