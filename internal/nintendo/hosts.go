@@ -769,6 +769,22 @@ var Hosts = []Host{
 		Service: ServiceBlackhole,
 		Comment: "system update requirements. Null-routed: this emuMMC never talks to real Nintendo",
 	},
+
+	// ---- Not previously listed at all -----------------------------------
+	{
+		Pattern: "fw-api.lp1.nso.nintendo.net",
+		Service: ServiceBlackhole,
+		Comment: "the Nintendo Switch Online app's own backend (a friend/parental-control " +
+			"whitelist-style API, by name). Found missing entirely -- not passthrough, " +
+			"not blackholed, just absent -- in a 2026-09-24 Ethernet capture: the console " +
+			"resolved it via real DNS and completed a full real TLS handshake with real " +
+			"Nintendo's own infrastructure, exchanging application data, then closing " +
+			"cleanly. That closes cleanly and is unrelated to any other issue investigated " +
+			"that day (it completes well before the point where a separate, still-open " +
+			"Splatoon 3 hall issue stalls) -- but it is still a real breach of this " +
+			"deployment's own isolation rule: this emuMMC never talks to real Nintendo, " +
+			"for anything, ever. Null-routed like every other host nothing is built for.",
+	},
 }
 
 // ServiceHosts returns the hosts served by one service, in declaration order.

@@ -115,6 +115,26 @@ func TestSystemUpdateHostsAreNullRouted(t *testing.T) {
 	}
 }
 
+// TestNSOAppBackendIsNullRouted is the regression test for a real isolation
+// gap: a 2026-09-24 Ethernet capture showed the console completing a full
+// real TLS handshake with real Nintendo's own infrastructure for this host,
+// because it was not listed here at all -- not passthrough, not blackholed,
+// simply absent, so real DNS answered it. This deployment's emuMMC must
+// never talk to real Nintendo, for anything, so an unlisted host is as much
+// a bug as a wrongly-passthrough one.
+func TestNSOAppBackendIsNullRouted(t *testing.T) {
+	const host = "fw-api.lp1.nso.nintendo.net"
+	for _, h := range Hosts {
+		if h.Pattern == host {
+			if h.Service != ServiceBlackhole {
+				t.Errorf("%s is %s, want ServiceBlackhole", host, h.Service)
+			}
+			return
+		}
+	}
+	t.Errorf("%s is not listed at all, so real DNS can still answer it", host)
+}
+
 // TestPhase3HostsAreNotYetRedirected keeps a console pointed at SwitchNet from
 // ever reaching real Nintendo through a host nothing is built for yet.
 //
@@ -190,6 +210,7 @@ func TestBlackholedHostsAreAccountedFor(t *testing.T) {
 		// All three bcat-* hosts moved out of this map 2026-09-24: none are
 		// null-routed any more. See internal/stubs.newsTopics and
 		// hosts.go's own "BCAT: answered with 304" section for why.
+		"fw-api.lp1.nso.nintendo.net": true, // covered by TestNSOAppBackendIsNullRouted
 	}
 
 	hosts := ServiceHosts(ServiceBlackhole)
