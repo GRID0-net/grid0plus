@@ -110,13 +110,28 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	if inbox.Items[0].Sender == nil || inbox.Items[0].Sender.ID != alice.UserID {
 		t.Errorf("B's inbox entry does not name Alice: %+v", inbox.Items[0].Sender)
 	}
-	// The recipient's own side is not echoed back, but the ids always are.
+	// The ids always identify both sides.
 	if inbox.Items[0].SenderID != alice.UserID || inbox.Items[0].ReceiverID != bob.UserID {
 		t.Errorf("B's inbox entry ids = %q/%q, want Alice/Bob",
 			inbox.Items[0].SenderID, inbox.Items[0].ReceiverID)
 	}
-	if inbox.Items[0].Receiver != nil {
-		t.Errorf("B's inbox entry echoed B's own profile back: %+v", inbox.Items[0].Receiver)
+	// The recipient's own side is filled too, not omitted: the decompiled
+	// parser reads receiver.nickname unconditionally (see
+	// FriendRequestResponse's own doc comment), so leaving it out was the
+	// leading suspect for 2121-0104/2124-0104 on the friend-requests screen.
+	if inbox.Items[0].Receiver == nil || inbox.Items[0].Receiver.ID != bob.UserID {
+		t.Errorf("B's inbox entry does not carry B's own receiver profile: %+v", inbox.Items[0].Receiver)
+	}
+	// channels/extras must be present, not omitted -- both are read
+	// unconditionally by the same decompiled parser, and an entirely
+	// missing key (as opposed to an empty array/object) is what a JSON
+	// consumer that skips a length check before indexing channels[0] would
+	// crash on.
+	if inbox.Items[0].Channels == nil {
+		t.Errorf("B's inbox entry has no channels array at all, want an empty one")
+	}
+	if inbox.Items[0].Extras == nil || inbox.Items[0].Extras["receiver"] == nil {
+		t.Errorf("B's inbox entry has no extras.receiver, want a present (even if empty) one: %+v", inbox.Items[0].Extras)
 	}
 
 	// The relationship reads correctly from both sides while pending.

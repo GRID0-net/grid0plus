@@ -760,8 +760,20 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request, c *caller,
 	writeJSON(w, http.StatusOK, newCollection(defaultFriendRequestCount, out))
 }
 
-// friendRequestResponse builds the wire object for a request, populating
-// whichever party is not the caller.
+// friendRequestResponse builds the wire object for a request.
+//
+// Sender and Receiver are filled for BOTH parties, including the caller's own
+// side -- this used to omit whichever side was the caller ("a pending request
+// is not yet a friendship, and the caller does not need their own profile
+// read back to them"), on the reasoning that the client would not need it.
+// That reasoning was never confirmed: the decompiled parser field list this
+// type's own doc comment carries (`$.items[*].receiver.nickname`,
+// `$.items[*].sender.nickname`, ...) reads both sides unconditionally, with
+// nothing in it suggesting either is ever skipped. Real 2124-0104 and
+// 2121-0104 (switchbrew: ResultUserUnqualified, the client's own generic
+// "response didn't have what I needed" code, raised inside the applet, not
+// from a bad HTTP status) on the friend-requests screen are consistent with
+// exactly this: a parser reading a field this server was leaving unset.
 func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest, callerID string) FriendRequestResponse {
 	out := FriendRequestResponse{
 		ID:         req.ID,
@@ -769,7 +781,34 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 		ReceiverID: req.ToUserID,
 		State:      requestStateToWire(req.State),
 		CreatedAt:  req.CreatedAt.Unix(),
-		UpdatedAt:  req.UpdatedAt.Unix(),
+		// Channels is read as channels[0] by the decompiled parser (this
+		// type's own doc comment) but no capture has ever shown a
+		// non-empty one, and SwitchNet tracks no per-request channel
+		// provenance to report -- so this is a real, present, empty array,
+		// not an invented entry. The field being entirely ABSENT (its
+		// state before this fix) is the more likely crash: many JSON
+		// consumers guard `len(channels) > 0` before indexing, but nothing
+		// guards a missing key the same way an empty array does.
+		Channels: []any{},
+		// Extras' three scopes (receiver/sender/senderAndReceiver) are the
+		// ones the decompiled parser reads
+		// (extras.receiver.read, extras.sender.route:*,
+		// extras.senderAndReceiver.route:*) -- this server keeps no read
+		// state for a request and no route:* content for either scope, so
+		// sender and senderAndReceiver stay real, present, empty maps.
+		// receiver.read is set false (unread) as the more useful default
+		// for a pending request the receiver has not acted on yet --
+		// TODO(capture-needed): whether the client treats an absent key
+		// as unread or read was never actually settled, so this specific
+		// value is this server's own defensible choice, not a confirmed
+		// one. Change here once a capture shows a real client marking a
+		// request read.
+		Extras: map[string]map[string]any{
+			"receiver":          {"read": false},
+			"sender":            {},
+			"senderAndReceiver": {},
+		},
+		UpdatedAt: req.UpdatedAt.Unix(),
 	}
 
 	fill := func(id string) *UserResponse {
@@ -784,18 +823,16 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 			s.log.Warn("baas: load presence for friend request", "user", id, "error", err)
 			pres = db.Presence{UserID: id, State: db.StateOffline, Extras: db.EmptyExtras()}
 		}
-		// A pending request is not a friendship, so the sender only sees
-		// stranger-visible fields — enough to decide whether to accept.
+		// A pending request is not a friendship, so each side only sees
+		// stranger-visible fields of the other -- enough to decide whether
+		// to accept. The caller's own side is filled the same way: see
+		// this function's own doc comment for why that changed.
 		thumb1, thumb2 := s.defaultAvatarURLOrEmpty()
 		u := userResponse(s.now(), user, s.friendCodeOrNil(ctx, id), pres, nil, visStranger, thumb1, thumb2)
 		return &u
 	}
 
-	if req.FromUserID != callerID {
-		out.Sender = fill(req.FromUserID)
-	}
-	if req.ToUserID != callerID {
-		out.Receiver = fill(req.ToUserID)
-	}
+	out.Sender = fill(req.FromUserID)
+	out.Receiver = fill(req.ToUserID)
 	return out
 }

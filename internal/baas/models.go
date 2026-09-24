@@ -251,11 +251,18 @@ type FriendRequestResponse struct {
 	// profiles, and the client uses them to know which side is which.
 	SenderID   string `json:"senderId"`
 	ReceiverID string `json:"receiverId"`
-	// Sender and Receiver hold the two profiles. Whichever side is the caller is
-	// left out — a pending request is not yet a friendship, and the caller does
-	// not need their own profile read back to them.
+	// Sender and Receiver hold the two profiles, for both parties -- including
+	// the caller's own side. See friendRequestResponse's own doc comment in
+	// friends.go for why this is unconditional now, not omitted for whichever
+	// side is the caller as it used to be.
 	Sender   *UserResponse `json:"sender,omitempty"`
 	Receiver *UserResponse `json:"receiver,omitempty"`
+	// Channels and Extras are read by the decompiled inbox/outbox parsers
+	// (see this type's own field-list comment below) but were previously
+	// absent from this server's response entirely. See friendRequestResponse
+	// for what each is populated with and why.
+	Channels []any                     `json:"channels"`
+	Extras   map[string]map[string]any `json:"extras"`
 	// State's real values are confirmed: a
 	// 2026-09-20 decompile of the operator's own console's friends sysmodule
 	// found the actual enum -- PENDING, AUTHORIZED, REJECTED, CANCELED,
