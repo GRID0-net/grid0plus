@@ -41,22 +41,19 @@ Priority labels are about *unblocking other work*, not importance:
 
 ## What is left, and why
 
-Every item below is blocked on something an agent does not have. That is not a
-coincidence and it is worth reading before starting anything:
+What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
-| §1.1 | **a console**, by design. The remaining services are a backlog the console's own requests are meant to order, and the log line that records them now exists |
+| §4.2 | **a console.** Splatoon 3 reaches the hall and stops; the next step is a live GDB boot |
+| §1.6 | nothing — ready to build |
+| §1.7 | nothing — small |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §2.4 | **a console.** The server for the experiment is written, tested and waiting |
 | §3.2 | **§2.1** |
 
-So the highest-value next action is not in this file. It is
-[`switch/README.md`'s Splatoon 3 checklist](switch/README.md#verify-splatoon-3-in-order),
-because **nothing in phase 2 has touched hardware** — every test runs against a
-Go client. Set `npln.rest_record_dir` before that first attempt: it costs one
-config line and produces the transcript that settles three capture-gated shapes
-at once.
+The highest-value next action is §4.2: Splatoon 3's hall is the current
+hardware blocker, and everything else in phase 2 is behind it.
 
 ---
 
@@ -105,76 +102,77 @@ unanswered (404) rather than guessed at.
   `dragons.hac.lp1.dragons.nintendo.net`'s `POST /v2/penne_id` instead,
   which would mean the host and path guessed at are wrong, not just the
   shape — see `docs/CAPTURES/README.md`'s item 10.
-- What a frontline connection actually carries once open. `frontline`
-  accepts it and holds it open — confirmed safe from a real error-code
-  capture — but sends nothing further, because no source found this pass
-  documents the wire framing.
+- What a frontline connection carries after its opening frame.
+  `internal/nplnrest/frontline_frame.go` sends the size-prefixed FlatBuffer
+  observed in the working Nextendo captures, then holds the connection open;
+  nothing documents what, if anything, follows.
 
-Do **not** invent a plausible Nintendo internal for any of the three
+Do **not** invent a plausible Nintendo internal for any of these
 without a capture to check it against.
 
 ### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2, mostly done**
 
-`Schedule` is built (`internal/toyohr/schedule.go`). Four of its five RPCs
-(`SelectVsParams`, `SelectVsSchedules`, `SelectSeasonSchedules`,
-`SelectLeagueSchedules`) answer "nothing scheduled" rather than
-`Unimplemented`, since the map/mode rotation content itself is Nintendo's own
-game design data with no dump or capture to draw from — see
-`docs/CAPTURES/README.md`. `SelectCoopSchedules`, the fifth, is a real,
-operator-schedulable Salmon Run/Big Run rotation now: `coop_ids.go` carries
-real stage/weapon/boss ids (read from the game's own shipped parameter
-tables, cross-checked two ways — see that file's comment), `coop_schedule.go`
-is the `Fest`/`SaveFest`-equivalent authoring/validation path, and
-`switchnetctl coop schedule` (plus `list`/`delete`/`stages`/`weapons`/
-`bosses`) is the CLI surface, and `internal/dashboard`'s "Salmon Run" tab is
-the operator-facing one — see `internal/toyohr/README.md`'s "honest emptiness
-for Vs, a real rotation for Coop" section for why Coop's wire shape was
-never actually the blocker Vs's still is. On top of hand-scheduling,
-`coop_generate.go`'s `GenerateCoopShifts` auto-fills a stretch of the normal
-rotation with real, randomly-picked ids (`switchnetctl coop generate`, or
-the dashboard's "Auto-fill" panel) — SwitchNet's own generator, not a
-recovered Nintendo algorithm, and additive: it never overwrites a slot a
-hand-scheduled shift or an earlier generate call already filled, so manual
-correction of any one slot always sticks. TeamContest (Eggstra Work) has an
-authoring path too, `CoopShiftTeamContest`, the same as Big Run's; no
-generation path, deliberately, the same reason Big Run has none — a
-calendar event with a real history to hand-schedule from, not a rotation to
-synthesize. `CloudSave` is built
-only as far as `GetSaveRecord` (answers `NotFound`, the correct answer for
-an account with no cloud save, not a stub); its other five RPCs
-(`Create`/`Validate`/`Write`SaveRecord, `ChangeUserName`, `DeleteSaveRecord`)
-are not attempted — nothing calls them this early, and actually writing save
-state is real player data this server has no legitimate way to have.
+Every toyohr service Splatoon 3 calls is registered (`internal/toyohr/service.go`).
+Where each stands:
 
-The rest is `internal/toyohr/backlog.go` and `messaging.go` now:
-
-- **`LobbyMessaging`**: `RecvMessage`/`SendMessage`/`SendLobbyMessage` are all
-  real, backed by `internal/toyohr/messaging.go`'s per-lobby `messageHub`
-  (membership = "currently subscribed", the same shape `internal/presencebus`
-  and `internal/matchmaking`'s ticket `Watch` already use, so nothing invents
-  a roster this codebase has no other record of).
+- **`Schedule`**: all five RPCs serve real rotations. Versus, Season and
+  VsParams follow the working Nextendo captures' shape (previous slot first,
+  one shared `schedule_set_id`, quoted 24-character ETags, VsParams tuning
+  attributes). Salmon Run is operator-scheduled or auto-filled by
+  `coop_generate.go`. League answers empty unless the disposable
+  `league_diagnostic.go` blob is enabled — SwitchNet has no authored League
+  events.
+- **`FestService`**: schedule, keys and results are real. An empty message is
+  the answer when no fest is running, as in both working captures. See §1.7
+  for the one method still missing.
+- **`CloudSave`**: persists each player's save record (`save_store.go`).
+  `WriteSaveRecord` deltas are merged the way Nintendo's server merges them;
+  `CreateSaveRecord` stores a new console's record.
+- **`GameRecord`**: `InitializeAttributes` creates the Vs/Coop attribute
+  document with only the fields the request carries;
+  `InitializeTag`/`GetTag`/`SelectTags` acknowledge without storing.
+- **`LobbyMessaging`**: real, backed by `messaging.go`'s per-lobby hub. The
+  self-addressed `NplnLogin` echo the hall waits for is covered by
+  `TestSelfAddressedNplnLoginIsEchoedBack`.
 - **`Canola`/`Locker`**: `SelectDocuments` answers empty and `IkasuDocument`
-  answers `NotFound` — SwitchNet has no `internal/ugcstore`, so both are
-  honest rather than guessed. `RegisterDocument` (the write) stays
-  `Unimplemented` on both.
-- **`CoopScenario`/`Replay`**: `Resolve*Code` answers `NotFound` (nothing
-  was ever registered, since `RegisterDocument` is unimplemented on both).
-  `Replay.FulfillReservations` answers an empty, valid list rather than an
-  error — the `ListDeviceAccounts`-vs-`GetDeviceAccount` distinction.
-- **`UserScreening`**: `GetViolation`/`SelectSnapshot` answer `NotFound` --
-  no screening exists. `CreateReport` is the one write implemented for
-  real: it is data the caller hands over, not data this server needs to
-  have already had, so there is no undocumented shape to get wrong. It is
-  logged for the operator, not acted on -- SwitchNet has no moderation
-  system to act with.
-- **`GameRecord`**: left entirely `Unimplemented`. `InitializeAttributes`
-  alone carries per-mode X Power seed values -- deeply Nintendo-internal
-  rating data with no defensible default, exactly what CLAUDE.md's first
-  ground rule forbids inventing.
+  answers `NotFound`; `RegisterDocument` stays `Unimplemented`.
+- **`CoopScenario`/`Replay`**: `Resolve*Code` answers `NotFound`;
+  `Replay.FulfillReservations` answers an empty list.
+- **`UserScreening`**: `GetViolation`/`SelectSnapshot` answer `NotFound`;
+  `CreateReport` is accepted and logged.
 
-Treat what remains as a backlog and let the console drive the order: an
-unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
-the to-do list**.
+An unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
+the to-do list** for whatever remains.
+
+### 1.6 The full Salmon Run reward-gear catalog — **P2**
+
+`internal/toyohr/coop_reward_gears.go` holds only 24 real gear ids (eight
+per Head/Clothes/Shoes), a deliberately small placeholder from 2026-09-24
+to test whether the `CoopUsedRewardGears` attribute's presence mattered at
+all. Shift rewards are picked from it by slot, deterministically.
+
+**Start at** Leanny/splat3's public `GearInfoHead/Clothes/Shoes.json` for
+v11.3.0 (~940 pieces, the same source `vs_ids.go`/`coop_ids.go` use):
+generate the full table, exclude pieces that cannot be Salmon Run rewards
+(amiibo, Splatfest, default gear — pick the rule from the JSON's own
+fields and write it down), then pick each shift's reward at random with the
+`rand.Rand` `GenerateCoopShifts` already threads through, so a stored shift
+keeps its reward.
+
+**Done when** generated shifts carry varied real rewards and a console shows
+the reward gear on the Grizzco board.
+
+### 1.7 `FestService/SelectFestBreakingNews` — **P2, small**
+
+The game calls it while a fest is open. SwitchNet does not register it, so
+it answers `Unimplemented`, a hard error. Nintendo answers an empty message
+(five bytes of DATA) in a 2026-08-22 capture during a real Splatfest, as
+recorded by NextendoNetwork/splatoon-3 (design fact only, not its code). The
+method is not in this project's proto, so it needs its own stream entry on
+the service descriptor.
+
+**Done when** a console gets through an open fest without a communication
+error on this call.
 
 ### 1.5 `gamesync` — **P2, built**
 
@@ -334,8 +332,8 @@ Then open Splatoon 3 and watch the stubs log (or the transcript directory).
 If requests arrive, the paths are right and DNS and TLS work — and the log is
 the first record anyone has of what the console actually asks for. **Turn it
 back off afterwards**: answering a console that expected content turns an
-immediate failure into a hang, which is why those hosts are null-routed the rest
-of the time.
+immediate failure into a hang. Day to day those hosts answer `304 Not
+Modified` from `internal/stubs` (see `hosts.go`'s comment on them).
 
 #### Stage 2 — does it care about the signature? **Not built.**
 
@@ -438,39 +436,22 @@ user system for the dashboard alone.
 
 ## 4. Verification and hardware
 
-### 4.1 Certificate pinning — **P1, operator decision recorded**
+### 4.2 Splatoon 3 stops at the hall — **P1**
 
-Splatoon 3 carries its own TLS stack and pins its own certificates,
-independently of the console's CA store — so phase 1's LayeredFS work does not
-cover it.
+The console now gets through login, schedules and the first document reads
+on SwitchNet, then shows a communication error in the hall (see
+[`docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md`](docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md)).
+Live GDB showed the game's GameRecord manager sitting idle, never started,
+where the working Nextendo boot reads Vs/Coop attribute documents.
 
-`kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch
-disabling verification in the game's NSO. **The operator has accepted a
-system-wide patch**, so this is a decision already made, not an open question.
+Cloud-save persistence was deployed 2026-09-25 so the second boot receives
+a populated save record, the state the working captures come from.
 
-**Done:** `make patch-splatoon3 NSO=<main>` builds the patch from the operator's
-own dump and installs it for Ryujinx or an Atmosphère SD card. Nothing is
-checked in and nothing can be: the address the patch writes to is found by
-searching the dump, and the file has to be named for that build's module id, so
-a prebuilt patch would be a patch for somebody else's copy. Both properties are
-written down in the script's header and in `README.md` — it *disables*
-verification rather than *adding* trust, and it is gated on the game version, so
-a title update silently stops it applying.
+**Next:** run `~/switchnet-re/gdb/grstart.py` before launching the game and
+boot twice. The log shows whether the manager's Initialize is reached with a
+live client, whether any start is called, and which guard stops it.
 
-Still unverified against a real dump: no Splatoon 3 NSO has been near this. The
-script is exercised end to end against a synthetic NSO carrying the signature
-upstream looks for, which proves the plumbing and the emitted IPS bytes but not
-that the signature is present in the operator's build.
-
-### 4.2 Nothing here has touched a console — **P1**
-
-Every test in phase 2 runs against a Go client. That was deliberate, so the
-work could proceed while §4.1 was open, but it means **no shape in this phase
-is confirmed against hardware.**
-
-The first console test is worth more than any amount of further server work.
-Expect the JSON front end (§1.3) to be wrong first, because it is the least
-documented and the earliest in the sequence.
+**Done when** a console enters the hall on SwitchNet.
 
 ### 4.3 Captures still wanted — **P2**
 
@@ -516,24 +497,6 @@ commit** so the source and the notes cannot disagree.
 ---
 
 ## 5. Housekeeping
-
-### 5.2 The `bcat-*` hosts are null-routed — **contingent, not settled**
-
-`hosts.go` null-routes `bcat-list`, `bcat-data` and `bcat-topics`, and
-`TestBlackholedHostsAreAccountedFor` pins that.
-
-That is correct **while SwitchNet cannot answer them** — redirecting to a
-server that fails to respond usefully turns an immediate failure into a hang.
-
-It is not a permanent decision, and §2.4's experiment no longer requires
-changing it: `switchnetctl hosts -bcat-probe` overrides the address at
-*generation* time, leaving the classification in `hosts.go` — and the test that
-pins it — untouched. That was deliberate. The flag is opt-in and temporary; the
-classification is what the default deployment does.
-
-A positive result from §2.4 would be the reason to change the classification
-itself. Amend the test then, in a commit that says why, rather than treating
-this entry as a rule.
 
 ### 5.3 A mode table for matchmaking — **P3**
 
