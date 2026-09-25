@@ -19,10 +19,10 @@ import (
 //
 // The rule applied throughout: a lookup or a query answers honestly with
 // what SwitchNet actually has, which for every one of these is nothing --
-// there is no internal/ugcstore, no CoopScenario/Replay code was ever
-// registered, and no violation or screening snapshot was ever produced. A
-// write with an unknown validation or storage contract (RegisterDocument on
-// four different services, GameRecord's three RPCs) is left to the embedded
+// no CoopScenario/Replay code was ever registered, and no violation or
+// screening snapshot was ever produced. A write with an unknown validation or
+// storage contract (RegisterDocument on CoopScenario and Replay,
+// CreateBankaraChallenge) is left to the embedded
 // Unimplemented default instead of guessed at -- the same boundary
 // CloudSave's own five unimplemented RPCs already draw, for the same
 // reason: implementing "write" convincingly would mean inventing a shape
@@ -71,6 +71,41 @@ func (lockerService) IkasuDocument(
 	context.Context, *toyohrpb.IkasuDocumentRequest,
 ) (*toyohrpb.IkasuDocumentResponse, error) {
 	return nil, status.Error(codes.NotFound, "no such document")
+}
+
+// RegisterDocument on Canola (a drawing) and Locker (a locker) is the last
+// step of publishing one: the console uploads the document to Ugcstore, then
+// registers it. Both answers are empty messages, and NextendoNetwork records
+// Nintendo's own answer to Canola's as exactly that, an empty payload (facts
+// only, none of their code used) -- so acknowledging invents nothing. Left
+// Unimplemented, the game reports a communication error at the end of
+// posting.
+//
+// This only acknowledges. The document itself is already stored by
+// Ugcstore/CommitDocuments; what is not built is showing it to other
+// players, which is SelectDocuments' job and still answers nothing.
+// TODO(capture-needed): the shape a real SelectDocuments answer lists
+// registered documents in. Change: both SelectDocuments above.
+func (s canolaService) RegisterDocument(
+	ctx context.Context, req *toyohrpb.CanolaRegisterDocumentRequest,
+) (*toyohrpb.CanolaRegisterDocumentResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	s.log.Info("toyohr: drawing registered", "user", uid, "document", req.GetName())
+	return &toyohrpb.CanolaRegisterDocumentResponse{}, nil
+}
+
+func (s lockerService) RegisterDocument(
+	ctx context.Context, req *toyohrpb.LockerRegisterDocumentRequest,
+) (*toyohrpb.LockerRegisterDocumentResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	s.log.Info("toyohr: locker registered", "user", uid, "document", req.GetName())
+	return &toyohrpb.LockerRegisterDocumentResponse{}, nil
 }
 
 // ---- nn.npln.toyohr.v1.CoopScenario -----------------------------------------
