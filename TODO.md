@@ -46,10 +46,8 @@ What each open item is waiting on:
 | Item | Blocked on |
 | --- | --- |
 | §4.2 | **a console.** Splatoon 3 reaches the hall and stops; the next step is a live GDB boot |
-| §1.6 | nothing — ready to build |
-| §1.7 | nothing — small |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
-| §2.4 | **a console.** The server for the experiment is written, tested and waiting |
+| §2.4 | **reverse engineering** of the module that verifies BCAT content, then a console test |
 | §3.2 | **§2.1** |
 
 The highest-value next action is §4.2: Splatoon 3's hall is the current
@@ -59,56 +57,27 @@ hardware blocker, and everything else in phase 2 is behind it.
 
 ## 1. NPLN protocol
 
-### 1.3 The JSON front end: vermillion, penne, frontline — **P1 for hardware, built**
+### 1.3 The JSON front end: vermillion, penne, frontline — **P3, built and working on hardware**
 
-`internal/nplnrest` now serves this, on `npln.rest_listen` (`cmd/npln`, a
-second listener alongside the gRPC gateway). The hosts were already
-classified (`ServiceNPLNRest`) and the nginx generator already emitted
-their block; both now point at a real backend instead of a comment.
+`internal/nplnrest` serves vermillion, penne and the frontline connection on
+`npln.rest_listen`; the dragons host's `PUT /v2/penne_id` is answered by
+`internal/stubs`. Every endpoint NextendoNetwork/splatoon-3's REST gateway
+serves is served here with the same shape, and a real console gets past
+this stage to the tenant gRPC calls.
 
-Penne's two endpoints (`GET /v1/frontlines`, `POST /v1/login_tickets`) are
-implemented against a real field-level spec
-([kinnay's wiki](https://github.com/kinnay/NintendoClients/wiki/Penne-Servers)),
-including the literal `persistent_connection_params_simple` constants.
-Vermillion's two (`GET /v1/accounts/config`, `GET /v1/accounts/devices`)
-answer honestly-empty JSON — the wiki names the endpoints but gives no
-response field table for either, unlike Penne's. Every other Vermillion
-endpoint (device replace, family, notify, nearness-checks) is left
-unanswered (404) rather than guessed at.
+**Still open, none blocking:**
 
-**Still open, each recorded in `docs/QUESTIONS.md`:**
-
-- Whether Splatoon 3's boot actually needs anything from vermillion at
-  all — the wiki describes that host as the *virtual game card* system, a
-  general Switch feature, not anything Splatoon-specific, which sits
-  uneasily with `hosts.go`'s existing "NPLN device initialisation"
-  classification. **Update, 2026-09-20:** a decompile of Splatoon 3 v11.3.0's
-  own `main` found no literal "vermillion", "penne" or "frontline" string
-  anywhere in the binary, despite the same decompile finding every gRPC
-  service the game genuinely does call (see `internal/nplnrest/nplnrest.go`'s
-  package comment). That rules out Splatoon 3's own code making these
-  requests directly — a shared system client (`npns` is the leading
-  candidate) is doing it on the console's behalf during boot/account setup,
-  before the game itself is even running. Evidence the traffic exists
-  (the 2026-08-27 tcpdump) is unaffected; this only narrows which process
-  originates it, and answers "not the game itself" without yet answering
-  "does anything actually depend on the response."
-- How a console obtains a Penne id/password in the first place —
-  `god.hac.lp1.penne.srv.nintendo.net`'s provisioning endpoints
-  (`/v1/immigrate`, `/v1/penne_ids`) are undocumented past their path, and
-  `god` itself is not served by `internal/nplnrest` (still `ServiceStubs`).
-  A weaker, unconfirmed lead worth checking before spending a capture here:
-  `NextendoNetwork/nx-dauth` serves this from
-  `dragons.hac.lp1.dragons.nintendo.net`'s `POST /v2/penne_id` instead,
-  which would mean the host and path guessed at are wrong, not just the
-  shape — see `docs/CAPTURES/README.md`'s item 10.
 - What a frontline connection carries after its opening frame.
   `internal/nplnrest/frontline_frame.go` sends the size-prefixed FlatBuffer
-  observed in the working Nextendo captures, then holds the connection open;
+  seen in the working Nextendo captures, then holds the connection open;
   nothing documents what, if anything, follows.
+- Vermillion's `accounts/*`, `acds/search` and `nearness-checks` answer an
+  empty `{"payload": ...}` envelope. No capture shows their real contents;
+  Nextendo answers the same, because a 404 there makes the console restart
+  its device bootstrap in a loop.
 
-Do **not** invent a plausible Nintendo internal for any of these
-without a capture to check it against.
+Do **not** invent a plausible Nintendo internal for either without a
+capture to check it against.
 
 ### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2, mostly done**
 
@@ -123,8 +92,9 @@ Where each stands:
   `league_diagnostic.go` blob is enabled — SwitchNet has no authored League
   events.
 - **`FestService`**: schedule, keys and results are real. An empty message is
-  the answer when no fest is running, as in both working captures. See §1.7
-  for the one method still missing.
+  the answer when no fest is running, as in both working captures.
+  `SelectFestBreakingNews`, missing from the proto, answers the empty
+  message Nintendo sent during a real Splatfest.
 - **`CloudSave`**: persists each player's save record (`save_store.go`).
   `WriteSaveRecord` deltas are merged the way Nintendo's server merges them;
   `CreateSaveRecord` stores a new console's record.
@@ -143,36 +113,6 @@ Where each stands:
 
 An unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
 the to-do list** for whatever remains.
-
-### 1.6 The full Salmon Run reward-gear catalog — **P2**
-
-`internal/toyohr/coop_reward_gears.go` holds only 24 real gear ids (eight
-per Head/Clothes/Shoes), a deliberately small placeholder from 2026-09-24
-to test whether the `CoopUsedRewardGears` attribute's presence mattered at
-all. Shift rewards are picked from it by slot, deterministically.
-
-**Start at** Leanny/splat3's public `GearInfoHead/Clothes/Shoes.json` for
-v11.3.0 (~940 pieces, the same source `vs_ids.go`/`coop_ids.go` use):
-generate the full table, exclude pieces that cannot be Salmon Run rewards
-(amiibo, Splatfest, default gear — pick the rule from the JSON's own
-fields and write it down), then pick each shift's reward at random with the
-`rand.Rand` `GenerateCoopShifts` already threads through, so a stored shift
-keeps its reward.
-
-**Done when** generated shifts carry varied real rewards and a console shows
-the reward gear on the Grizzco board.
-
-### 1.7 `FestService/SelectFestBreakingNews` — **P2, small**
-
-The game calls it while a fest is open. SwitchNet does not register it, so
-it answers `Unimplemented`, a hard error. Nintendo answers an empty message
-(five bytes of DATA) in a 2026-08-22 capture during a real Splatfest, as
-recorded by NextendoNetwork/splatoon-3 (design fact only, not its code). The
-method is not in this project's proto, so it needs its own stream entry on
-the service descriptor.
-
-**Done when** a console gets through an open fest without a communication
-error on this call.
 
 ### 1.5 `gamesync` — **P2, built**
 
@@ -298,21 +238,61 @@ so that changing the assumption later, if SwitchNet's own hardware disagrees,
 is a contained change rather than a rewrite — keep the naming decision in one
 place.
 
-### 2.4 Serving BCAT natively — **P1 to TEST, and the tooling is now built**
+### 2.4 Serving BCAT natively — **P1, needs reverse engineering first**
 
-**The blocker here is smaller than earlier notes in this repository claimed.**
+**The goal is a vanilla path:** the console downloads fest packs and other
+delivery-cache content from SwitchNet's own `bcat-list`/`bcat-data` hosts,
+the same way it downloads them from Nintendo, with no files handed to the
+player and no homebrew installer. §2.4a is the fallback, not the plan.
 
-What was previously written down: Nintendo's delivery container carries an
-RSA-2048 signature, therefore the console verifies it, therefore serving BCAT
-means forging a Nintendo signature. **The middle step was never established.**
-switchbrew documents the signature *field*; it says nothing about a verification
-step or what happens on failure.
+Nobody is known to do this. NextendoNetwork (checked 2026-09-25 across
+splatoon-3, nextendo-account and Prelude-Nro) does not serve the live BCAT
+protocol either: its account server hands its homebrew a zip
+(`/api/bcat/<titleId>`), and Prelude only redirects the three BCAT hosts so
+consoles stop presenting a Nextendo-minted token to Nintendo. Public tools
+(ACNH event packs, Switch Gift Data Manager) forge packages into the
+delivery-cache save through JKSV, never over the network.
 
-And a console running SwitchNet already has **sigpatches** — bypassing Nintendo
-signature checks is the normal state of a CFW console, and `ROADMAP.md` §3.3
-already depends on that for phase 3. Whether they reach the `bcat` sysmodule is
-unknown: `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and `bcat` is not
-listed. Unknown is not impossible.
+**What blocks it is one question: does the console verify the container's
+RSA-2048 signature, and where?** switchbrew's BCAT Content Container page
+documents the 0x120-byte header (magic `bcat`, crypto type, RSA/hash type,
+secret-data index, IV, 0x100-byte signature) and the key derivation
+(PBKDF2-HMAC-SHA256 over the title's `control.nacp` passphrase, salt
+`%016llx%s` of title id and a secret string, 4096 rounds). It does not say
+what the signature covers, which key checks it, or what happens when it
+fails. The key derivation is enough to build a correctly *encrypted*
+container; only the signature stands in the way.
+
+**RE target — not yet pinned down, so check each:**
+
+1. **The `bcat` sysmodule** (title `010000000000000C`, `bcat.nso`, already
+   extracted from the operator's SYSTEM partition for the 2026-09-20 list
+   parser work). The most likely place: switchbrew says files are decrypted
+   before the sysmodule hands them over, so whatever checks the signature
+   plausibly runs there, before or beside the decrypt. Look for the RSA
+   verify around the container-header parse, the public key(s) it uses, and
+   the branch taken on failure.
+2. **A crypto helper the sysmodule calls into** — `spl`/`es`-side RSA
+   services, if the check is delegated rather than done in-process. If so,
+   the sigpatches question (`sys-patch` covers `fs`, `es`, `ldr`, `nifm`, not
+   `bcat`) changes shape.
+3. **The game itself** (Splatoon 3 `main`) is the least likely: it reads the
+   delivery cache through `nn::bcat` IPC and gets plaintext. It is still
+   where the fest pack's *own* encryption (nisasyst, key from
+   `GetFestDecryptionKey`) is handled, which SwitchNet already controls.
+
+**What the answer decides:**
+
+- *No verification, or verification a patch can skip:* build the list and
+  data responses (the list JSON field names are already known, see below)
+  and serve SwitchNet's own containers. A one-instruction IPS patch against
+  `bcat.nso`, shipped the same way as the Splatoon 3 TLS patch, is
+  acceptable; forging Nintendo's signature is not (CLAUDE.md, rule 2).
+- *Verification that cannot be skipped:* §2.4a.
+
+Stages 1 and 2 below are the console-side checks. Stage 1 still costs an
+operator five minutes and gives the first transcript of what the console
+asks for; run it alongside the RE, not after it.
 
 #### Stage 1 — does the console reach us at all? **Built. Needs an operator.**
 
