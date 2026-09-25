@@ -3,6 +3,7 @@ package toyohr
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -291,4 +292,69 @@ func (s *Service) ValidateSaveRecord(
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
 	return &toyohrpb.ValidateSaveRecordResponse{}, nil
+}
+
+// maxUserNameRunes bounds a name the save stores and every friend's game
+// then shows. The game's own limit is far lower; this only stops a client
+// that ignores it from storing something unbounded.
+const maxUserNameRunes = 32
+
+// ChangeUserName renames the player in their cloud save.
+//
+// save_data["UserName"] is the one name the game reads the player's pseudo
+// from: presence's PlayerName, the locker's Player.UserName and the
+// matchmaking attributes are all copies the client derives from it. So a
+// rename is a write to that one key -- the same finding NextendoNetwork's
+// server rests on (facts only, none of its code used). Answered
+// Unimplemented, the rename fails in the game.
+//
+// The answer's two timestamps are the record's new version, the token the
+// console presents with its next write, as WriteSaveRecord's is.
+//
+// TODO(capture-needed): what a real server puts in the answer's identifier
+// and whether its two timestamps ever differ. Change: this function.
+func (s *Service) ChangeUserName(
+	ctx context.Context, req *toyohrpb.ChangeUserNameRequest,
+) (*toyohrpb.ChangeUserNameResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	name := strings.TrimSpace(req.GetUserName())
+	if name == "" || utf8.RuneCountInString(name) > maxUserNameRunes || !utf8.ValidString(name) {
+		return nil, status.Error(codes.InvalidArgument, "invalid user name")
+	}
+	if s.diagnostic != nil && s.diagnostic.UserID == uid {
+		now := timestamppb.New(s.now())
+		return &toyohrpb.ChangeUserNameResponse{Timestamp1: now, Timestamp2: now}, nil
+	}
+
+	unlock := lockSave(uid)
+	defer unlock()
+	rec, err := s.loadSave(ctx, uid)
+	if err != nil {
+		s.log.Error("toyohr: load cloud save", "user", uid, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	if rec == nil {
+		rec = &toyohrpb.SaveRecord{
+			Name:       s.saveRecordName(uid),
+			SaveData:   &common.MapValue{Fields: map[string]*common.Value{}},
+			CreateTime: timestamppb.New(s.now()),
+		}
+	}
+	if rec.SaveData == nil {
+		rec.SaveData = &common.MapValue{Fields: map[string]*common.Value{}}
+	}
+	if rec.SaveData.Fields == nil {
+		rec.SaveData.Fields = map[string]*common.Value{}
+	}
+	rec.SaveData.Fields["UserName"] = &common.Value{ValueType: &common.Value_StringValue{StringValue: name}}
+	rec.UpdateTime = nextSaveVersion(s.now(), rec.GetUpdateTime())
+	if err := s.putSave(ctx, uid, rec); err != nil {
+		s.log.Error("toyohr: store cloud save", "user", uid, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	s.log.Info("toyohr: renamed", "user", uid)
+	return &toyohrpb.ChangeUserNameResponse{Timestamp1: rec.UpdateTime, Timestamp2: rec.UpdateTime}, nil
 }

@@ -3,6 +3,9 @@ package npln
 import (
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	commonpb "github.com/n-popescu/switchnet/proto/common"
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
@@ -129,5 +132,46 @@ func TestCreateSaveRecordStoresTheConsolesOwnRecord(t *testing.T) {
 	got, err := saves.GetSaveRecord(ctx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"})
 	if err != nil || got.GetSaveData().GetFields()["UserName"].GetStringValue() != "fresh" {
 		t.Errorf("GetSaveRecord after create = %v, %v", got, err)
+	}
+}
+
+// TestARenameIsWhatTheNextBootReads: the save's UserName is the one name the
+// game reads the player's pseudo from, so a rename must land there and the
+// rest of the save must survive it.
+func TestARenameIsWhatTheNextBootReads(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("rename0000000001", "device-rename-1")
+	ctx := h.ctx(h.sessionFor(t, "rename0000000001", "device-rename-1"), "")
+	saves := toyohrpb.NewCloudSaveClient(h.conn)
+
+	if _, err := saves.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{
+		SaveRecord: &toyohrpb.SaveRecord{SaveData: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"UserName": strV("before"), "Money": intV(100),
+		}}},
+	}); err != nil {
+		t.Fatalf("WriteSaveRecord: %v", err)
+	}
+	resp, err := saves.ChangeUserName(ctx, &toyohrpb.ChangeUserNameRequest{UserName: "after"})
+	if err != nil {
+		t.Fatalf("ChangeUserName: %v", err)
+	}
+	if resp.GetTimestamp1() == nil {
+		t.Error("the answer carries no version timestamp")
+	}
+
+	got, err := saves.GetSaveRecord(ctx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"})
+	if err != nil {
+		t.Fatalf("GetSaveRecord: %v", err)
+	}
+	f := got.GetSaveData().GetFields()
+	if f["UserName"].GetStringValue() != "after" {
+		t.Errorf("UserName = %v, want the new name", f["UserName"])
+	}
+	if f["Money"].GetIntegerValue() != 100 {
+		t.Errorf("the rename lost the rest of the save: %v", f)
+	}
+
+	if _, err := saves.ChangeUserName(ctx, &toyohrpb.ChangeUserNameRequest{UserName: "  "}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("an empty name: %v, want InvalidArgument", err)
 	}
 }
