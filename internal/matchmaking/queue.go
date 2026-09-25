@@ -109,7 +109,19 @@ type Session struct {
 	// know to wait rather than dial nothing.
 	HostPort int32
 
+	// Room is true for a private room a host opened directly
+	// (GameSessionService.CreateGameSessionCreationTicket) rather than a match
+	// formed from tickets. A room starts with only its host and fills as
+	// friends join by name or code; a match is full the moment it exists.
+	Room bool
+
 	CreatedAt time.Time
+	// ActiveAt is when a room was last opened, joined or read. Rooms expire
+	// from this rather than CreatedAt: a host can sit in a room waiting for
+	// friends well past SessionTTL, and pruning it mid-use would strand
+	// everyone in it. Matches ignore it -- gameplay is peer-to-peer once one
+	// starts, so nothing here would ever refresh it.
+	ActiveAt time.Time
 }
 
 // Config tunes the queue.
@@ -375,6 +387,7 @@ func (q *Queue) Join(sessionID, userID string) (Session, error) {
 	if !ok {
 		return Session{}, ErrNoSession
 	}
+	s.ActiveAt = q.now()
 	for _, p := range s.Players {
 		if p == userID {
 			return s.clone(), nil
@@ -385,6 +398,48 @@ func (q *Queue) Join(sessionID, userID string) (Session, error) {
 	}
 	s.Players = append(s.Players, userID)
 	return s.clone(), nil
+}
+
+// OpenRoom creates a private room with its host as the only player.
+//
+// Built by the same newSessionLocked as a matched session, so a room is a
+// session in every respect GetGameSession, JoinGameSession and gamesync see:
+// a second construction path is how the two would drift until one produced
+// a session the game will not join.
+func (q *Queue) OpenRoom(hostID, mode string, maxPlayers int) (Session, error) {
+	if hostID == "" {
+		return Session{}, errors.New("matchmaking: room with no host")
+	}
+	if maxPlayers < 1 {
+		return Session{}, errors.New("matchmaking: room with no capacity")
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s := q.newSessionLocked(mode, maxPlayers, []string{hostID}, true)
+	return s.clone(), nil
+}
+
+// TouchRoom keeps a room alive: see Session.ActiveAt.
+func (q *Queue) TouchRoom(sessionID string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if s, ok := q.sessions[sessionID]; ok && s.Room {
+		s.ActiveAt = q.now()
+	}
+}
+
+// CloseRoom removes a room, reporting whether there was one. Only rooms:
+// a matched session is never closed from outside, since its players are
+// already in a game this server has no part in.
+func (q *Queue) CloseRoom(sessionID string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s, ok := q.sessions[sessionID]
+	if !ok || !s.Room {
+		return false
+	}
+	delete(q.sessions, sessionID)
+	return true
 }
 
 // SessionsFor returns the sessions a player is in. For GameSessionService's
@@ -743,7 +798,11 @@ func (q *Queue) pruneLocked() {
 	deadline := q.now().Add(-q.cfg.SessionTTL)
 
 	for id, s := range q.sessions {
-		if s.CreatedAt.Before(deadline) {
+		since := s.CreatedAt
+		if s.Room {
+			since = s.ActiveAt
+		}
+		if since.Before(deadline) {
 			delete(q.sessions, id)
 		}
 	}
@@ -884,22 +943,11 @@ func (q *Queue) setModeStateLocked(mode string, state State) {
 // the console can see -- the alternative, a second construction path, is how
 // the two drift until one of them produces a session the game will not join.
 func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
-	s := Session{
-		ID:         uuid.NewString(),
-		Mode:       mode,
-		MaxPlayers: q.playersForLocked(mode),
-		CreatedAt:  q.now(),
-	}
+	players := make([]string, 0, len(chosen))
 	for _, id := range chosen {
-		s.Players = append(s.Players, q.tickets[id].UserID)
+		players = append(players, q.tickets[id].UserID)
 	}
-	// The longest-waiting player hosts. Arbitrary but not random: it is
-	// stable, it is explainable to somebody reading a match log, and it
-	// spreads hosting over time rather than always picking whoever
-	// happens to be first in a map.
-	s.Host = s.Players[0]
-
-	q.sessions[s.ID] = &s
+	s := q.newSessionLocked(mode, q.playersForLocked(mode), players, false)
 
 	for _, id := range chosen {
 		t := q.tickets[id]
@@ -907,6 +955,29 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 		q.setStateLocked(t, StateSucceeded)
 		q.removeFromWaitingLocked(t)
 	}
+	return s
+}
+
+// newSessionLocked builds and records a session. The one construction path
+// for both a matched session and a room.
+func (q *Queue) newSessionLocked(mode string, maxPlayers int, players []string, room bool) Session {
+	now := q.now()
+	s := Session{
+		ID:         uuid.NewString(),
+		Mode:       mode,
+		MaxPlayers: maxPlayers,
+		Players:    players,
+		Room:       room,
+		CreatedAt:  now,
+		ActiveAt:   now,
+	}
+	// The first player hosts: for a match the longest-waiting one, for a room
+	// the one who opened it. Arbitrary for a match but not random: it is
+	// stable, it is explainable to somebody reading a match log, and it
+	// spreads hosting over time rather than always picking whoever happens to
+	// be first in a map.
+	s.Host = s.Players[0]
+	q.sessions[s.ID] = &s
 	return s
 }
 

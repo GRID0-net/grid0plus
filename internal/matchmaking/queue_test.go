@@ -616,3 +616,60 @@ func mustGet(t *testing.T, q *Queue, userID string) string {
 	t.Fatalf("no ticket for %s", userID)
 	return ""
 }
+
+// TestARoomInUseOutlivesTheSessionTTL: a room expires from its last activity,
+// not its creation, because a host can wait in one for friends well past the
+// TTL. A matched session still expires from creation.
+func TestARoomInUseOutlivesTheSessionTTL(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	cfg := DefaultConfig
+	cfg.SessionTTL = 30 * time.Minute
+	q := New(cfg, func() time.Time { return now })
+
+	room, err := q.OpenRoom("host", "private_match_config", 10)
+	if err != nil {
+		t.Fatalf("OpenRoom: %v", err)
+	}
+	if !room.Room || len(room.Players) != 1 || room.MaxPlayers != 10 {
+		t.Fatalf("room = %+v, want a room of one out of ten", room)
+	}
+
+	now = now.Add(25 * time.Minute)
+	if _, err := q.Join(room.ID, "friend"); err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	now = now.Add(20 * time.Minute) // 45 minutes after opening, 20 after the join
+	q.Sweep()
+	if _, ok := q.Session(room.ID); !ok {
+		t.Fatal("a room joined 20 minutes ago was pruned on its creation time")
+	}
+
+	now = now.Add(31 * time.Minute)
+	q.Sweep()
+	if _, ok := q.Session(room.ID); ok {
+		t.Error("a room idle past the TTL was kept")
+	}
+}
+
+// TestOnlyARoomCanBeClosed: closing is the host abandoning a room; a matched
+// session's players are already playing and are never pulled out of it.
+func TestOnlyARoomCanBeClosed(t *testing.T) {
+	q := New(Config{PlayersPerMatch: 2}, nil)
+	if _, _, err := q.Enqueue("a", "turf"); err != nil {
+		t.Fatal(err)
+	}
+	_, sessions, err := q.Enqueue("b", "turf")
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("no match formed: %v %v", sessions, err)
+	}
+	if q.CloseRoom(sessions[0].ID) {
+		t.Error("a matched session was closed as if it were a room")
+	}
+	room, _ := q.OpenRoom("host", "coop_private_config", 4)
+	if !q.CloseRoom(room.ID) {
+		t.Error("CloseRoom did not close a room")
+	}
+	if _, ok := q.Session(room.ID); ok {
+		t.Error("a closed room is still there")
+	}
+}
