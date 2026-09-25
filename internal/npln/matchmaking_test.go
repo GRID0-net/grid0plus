@@ -13,7 +13,7 @@ import (
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 )
 
-// TestTwoPlayersQueueAndBothReceiveTheSameSession is TODO.md §1.1's own
+// TestTwoPlayersQueueAndBothReceiveTheSameSession is the matchmaking item's own
 // acceptance criterion: two clients queue, both receive a session on their
 // streams naming the same session id and the same host.
 //
@@ -441,7 +441,7 @@ func TestAFormedMatchIsRecordedToHistory(t *testing.T) {
 	}
 }
 
-// TestAllocateIceServerSetReturnsWhatWasConfigured covers TODO.md §1.2's
+// TestAllocateIceServerSetReturnsWhatWasConfigured covers the ICE-server item's
 // config-only path, including the empty default.
 //
 // An empty set is a valid answer, not a failure: consoles on one LAN connect

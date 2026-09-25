@@ -155,7 +155,7 @@ func presenceView(p db.Presence) debugPresence {
 // ---- account controls ---------------------------------------------------------
 
 // handleDebugSetAccountDeleted toggles db.User.Deleted -- the same fail-closed
-// flag internal/baas's login path already checks (TODO.md §6.1), not a
+// flag internal/baas's login path already checks (completed TODO item, see git log), not a
 // separate ban list. Reversible: setting it back to false is enough to let
 // the account log in again, nothing else to undo.
 func (s *Server) handleDebugSetAccountDeleted(w http.ResponseWriter, r *http.Request) {
