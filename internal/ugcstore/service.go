@@ -120,7 +120,7 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 		if emptyWhenAbsent(key, uid) {
 			now := timestamppb.New(s.now())
 			s.log.Info("ugcstore: absent GameRecord document answered named and empty", "name", key)
-			return &ugcpb.Document{Name: key,
+			return &ugcpb.Document{Name: req.GetName(),
 				Fields:     &commonpb.MapValue{Fields: map[string]*commonpb.Value{}},
 				CreateTime: now, UpdateTime: now}, nil
 		}
@@ -357,18 +357,13 @@ func applyUpdate(p *pending, u *ugcpb.UpdateDocumentRequest) error {
 	return nil
 }
 
-// toProto renders a stored document. Its name is always the stored,
-// canonical one -- the configured tenant, never the "current" alias the
-// request may have used: every document in both working hall captures names
-// the real tenant (tenants/t-dce9377b-lp1/...), and the console may key what
-// it has read by that name.
-func toProto(d db.UGCDocument, _ string) (*ugcpb.Document, error) {
+func toProto(d db.UGCDocument, name string) (*ugcpb.Document, error) {
 	fields, err := decodeFields(d.Fields)
 	if err != nil {
 		return nil, err
 	}
 	return &ugcpb.Document{
-		Name:       d.Name,
+		Name:       name,
 		Fields:     fields,
 		CreateTime: timestamppb.New(d.CreateTime),
 		UpdateTime: timestamppb.New(d.UpdateTime),

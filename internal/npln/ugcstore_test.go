@@ -102,9 +102,8 @@ func TestAWrittenDocumentReadsBackUnderEitherTenantForm(t *testing.T) {
 		if got := header.Get("npln-grpc-type"); len(got) != 1 || got[0] != "ServerStreaming" {
 			t.Errorf("populated document grpc type = %v, want captured ServerStreaming", got)
 		}
-		// Nintendo names the real tenant whatever alias was asked for.
-		if want := "tenants/" + testTenant + path; doc.GetName() != want {
-			t.Errorf("name = %q, want the canonical %q", doc.GetName(), want)
+		if doc.GetName() != name {
+			t.Errorf("name = %q, want the name asked for, %q", doc.GetName(), name)
 		}
 		if doc.GetFields().GetFields()["level"].GetIntegerValue() != 3 {
 			t.Errorf("fields = %v, want level=3", doc.GetFields())
@@ -205,7 +204,7 @@ func TestInitializeAttributesCreatesTheDocumentTheConsoleReadsNext(t *testing.T)
 	if err != nil {
 		t.Fatalf("InitializeAttributes (vs): %v", err)
 	}
-	if want := "tenants/" + testTenant + "/documents/services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data"; vs.GetDocument() != want {
+	if want := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data"; vs.GetDocument() != want {
 		t.Errorf("document = %q, want %q", vs.GetDocument(), want)
 	}
 	// Only what the request carries: the season. Nothing invented.
@@ -224,7 +223,7 @@ func TestInitializeAttributesCreatesTheDocumentTheConsoleReadsNext(t *testing.T)
 	if err != nil {
 		t.Fatalf("InitializeAttributes (coop): %v", err)
 	}
-	if want := "tenants/" + testTenant + "/documents/services/GameRecord/users/ugc0000000000001/CoopUserAttribute/Data"; coop.GetDocument() != want {
+	if want := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/CoopUserAttribute/Data"; coop.GetDocument() != want {
 		t.Errorf("coop document = %q, want %q", coop.GetDocument(), want)
 	}
 
@@ -251,7 +250,7 @@ func TestInitializeCurrentUserKeepsEachPlayersDocumentsSeparate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("initialise current user %s: %v", uid, err)
 		}
-		want := "tenants/" + testTenant + "/documents/services/GameRecord/users/" + uid + "/CoopUserAttribute/Data"
+		want := "tenants/current/documents/services/GameRecord/users/" + uid + "/CoopUserAttribute/Data"
 		if resp.GetDocument() != want {
 			t.Fatalf("document = %q, want %q", resp.GetDocument(), want)
 		}
@@ -309,8 +308,7 @@ func TestAnAbsentGameRecordDocumentIsNamedAndEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDocument = %v; want a named, empty document", err)
 	}
-	want := "tenants/" + testTenant + "/documents/services/GameRecord/users/ugc0000000000001/WeaponPowerMeasurement/16"
-	if doc.GetName() != want || len(doc.GetFields().GetFields()) != 0 {
-		t.Errorf("got %v; want name %q and no fields", doc, want)
+	if doc.GetName() != name || len(doc.GetFields().GetFields()) != 0 {
+		t.Errorf("got %v; want name %q and no fields", doc, name)
 	}
 }
