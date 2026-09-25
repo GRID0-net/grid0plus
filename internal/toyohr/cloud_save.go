@@ -1,7 +1,10 @@
 package toyohr
 
 import (
+	"os"
+
 	"context"
+	"google.golang.org/grpc/metadata"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -117,6 +120,16 @@ func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 		s.log.Info("toyohr: GetSaveRecord answered with the stored record",
 			"user", uid, "keys", len(rec.GetSaveData().GetFields()))
 		return stream.SendMsg(rec)
+	}
+
+	// Temporary (2026-09-25 fresh-account experiment): answer zero messages,
+	// Nintendo's measured answer for a never-played account.
+	if os.Getenv("SWITCHNET_CLOUDSAVE_ZERO_WHEN_EMPTY") == "1" {
+		if err := stream.SendHeader(metadata.Pairs("npln-grpc-type", "Unary", "content-length", "0")); err != nil {
+			return err
+		}
+		s.log.Info("toyohr: GetSaveRecord answered with no message (experiment)", "user", uid)
+		return nil
 	}
 
 	// Nothing stored: answer an empty but existing record, not zero messages.
