@@ -68,6 +68,20 @@ func (s gameRecordService) InitializeAttributes(
 		if season != 0 {
 			attrs.Fields["season_id"] = intValue(int64(season))
 		}
+		// initial_vs carries the starting matchmaking rating the console
+		// chose. The working capture's VsUserAttribute keeps one rating per
+		// mode (tw, ar, lf, gl, cl) as mmr_rate_<mode>, flagged by
+		// mmr_initialized_<mode>. Without the flags the console treats the
+		// rating as uninitialised and sends initial_vs again: on hardware on
+		// 2026-09-25 it did so ~10 times a second, forever, from the hall.
+		// Only the rate the console sent is stored; rd/vol keep the game's
+		// own defaults.
+		if iv := req.GetInitialVs(); iv != nil && iv.GetInitialRate() != 0 {
+			for _, mode := range []string{"tw", "ar", "lf", "gl", "cl"} {
+				attrs.Fields["mmr_rate_"+mode] = &commonpb.Value{ValueType: &commonpb.Value_DoubleValue{DoubleValue: iv.GetInitialRate()}}
+				attrs.Fields["mmr_initialized_"+mode] = &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: true}}
+			}
+		}
 	}
 
 	name := "tenants/current/documents/services/GameRecord/users/" + uid + "/" + record + "/Data"
