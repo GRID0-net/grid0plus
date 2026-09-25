@@ -297,3 +297,18 @@ func TestAPlayersAttributeDocumentsExistOnFirstRead(t *testing.T) {
 		t.Errorf("another player's attribute document = %v, want NotFound", err)
 	}
 }
+
+// TestAnAbsentGameRecordDocumentIsNamedAndEmpty: WeaponPowerMeasurement/16
+// answered NotFound was followed by 2000-0000 on hardware; Nextendo's working
+// boot answers these with a named, empty document.
+func TestAnAbsentGameRecordDocumentIsNamedAndEmpty(t *testing.T) {
+	_, ctx, c := ugcHarness(t)
+	name := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/WeaponPowerMeasurement/16"
+	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: name})
+	if err != nil {
+		t.Fatalf("GetDocument = %v; want a named, empty document", err)
+	}
+	if doc.GetName() != name || len(doc.GetFields().GetFields()) != 0 {
+		t.Errorf("got %v; want name %q and no fields", doc, name)
+	}
+}
