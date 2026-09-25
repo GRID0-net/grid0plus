@@ -320,7 +320,7 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 // coopScheduleProto renders a stored shift as the wire message.
 //
 // A shift with no operator-selected reward uses one real gear pair from
-// CoopRewardGears, selected deterministically by slot. Every Normal entry
+// CoopRewardGears, picked at random but stable per slot. Every Normal entry
 // in both working captures includes reward_type (Head, Clothes, or Shoes)
 // and a nonzero reward_gear_id. This is SwitchNet's own reward rotation,
 // not a reconstruction of Nintendo's selection policy.

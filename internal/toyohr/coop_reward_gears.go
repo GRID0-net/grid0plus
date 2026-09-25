@@ -1,6 +1,9 @@
 package toyohr
 
-import "time"
+import (
+	"math/rand/v2"
+	"time"
+)
 
 // CoopRewardGear is one real gear piece Salmon Run can hand out as a shift
 // reward.
@@ -9,56 +12,44 @@ type CoopRewardGear struct {
 	Kind string // "Head", "Clothes" or "Shoes" -- CoopUsedRewardGears' own GearKind values, confirmed from a real capture.
 }
 
-// CoopRewardGears are real gear ids, read directly from Leanny/splat3's own
-// GearInfoHead/Clothes/Shoes.json (the same public data-dump method
-// vs_ids.go/coop_ids.go's tables already use), the same way every other
-// real-id table in this package is sourced -- not invented.
+// CoopRewardGears is every piece Salmon Run hands out as a monthly reward,
+// read from Leanny/splat3's data/mush/1100/GearInfo{Head,Clothes,Shoes}.json
+// (v11.0.0 tables, the dump vs_ids.go/coop_ids.go also use).
 //
-// This is NOT a claim to know Nintendo's real per-shift reward-pool
-// selection: a real capture's own CoopSchedule.attributes.CoopUsedRewardGears
-// carries roughly two dozen entries per shift, drawn from Nintendo's own
-// unknown selection logic, not the whole ~940-piece gear catalog. This
-// table is a small, honestly-real subset (eight ids per Head/Clothes/Shoes,
-// the first each JSON file lists) SwitchNet picks from with its own
-// deterministic policy -- coopRewardGearsAttribute below -- to test whether
-// this field's mere presence (found missing from every SwitchNet
-// CoopSchedule response to date) is what a real console needs to proceed
-// past it, not to reproduce which specific pieces a real server would
-// offer.
+// The rule: a row whose __RowId is Grizzco's own "COP" brand and whose
+// HowToGet is "Other". The other COP rows are "Uroko" -- bought with scales
+// in the Grizzco shop, never a shift reward. Every id in the working
+// captures' CoopUsedRewardGears (coopUsedRewardGears below) is in this
+// table, which is the check that the rule is right. The whole catalog is 24
+// pieces; ordinary gear is never a Salmon Run reward.
 //
-// TODO: build the real full-catalog table (Leanny/splat3's
-// GearInfoHead/Clothes/Shoes.json have ~940 real pieces total) and a
-// defensible SwitchNet-own selection policy for which subset a given shift
-// offers, the same rigor CoopStages/CoopWeapons already get. This eight-
-// per-category placeholder is deliberately kept small for now -- the
-// operator's own call, 2026-09-24 -- to test whether this field's mere
-// presence unblocks the hall's GameRecord-document-read phase before
-// investing in the full table.
+// Ids repeat across kinds (21011 is both a hat and a shirt), so a gear is
+// the (ID, Kind) pair, never the ID alone.
 var CoopRewardGears = []CoopRewardGear{
-	{ID: 10003, Kind: "Head"},
-	{ID: 25000, Kind: "Head"},
-	{ID: 25001, Kind: "Head"},
-	{ID: 25002, Kind: "Head"},
-	{ID: 25003, Kind: "Head"},
-	{ID: 25004, Kind: "Head"},
-	{ID: 25005, Kind: "Head"},
-	{ID: 25006, Kind: "Head"},
-	{ID: 25000, Kind: "Clothes"},
-	{ID: 25001, Kind: "Clothes"},
-	{ID: 25002, Kind: "Clothes"},
-	{ID: 25003, Kind: "Clothes"},
-	{ID: 25004, Kind: "Clothes"},
-	{ID: 25005, Kind: "Clothes"},
-	{ID: 25006, Kind: "Clothes"},
-	{ID: 25007, Kind: "Clothes"},
-	{ID: 25000, Kind: "Shoes"},
-	{ID: 25001, Kind: "Shoes"},
-	{ID: 25002, Kind: "Shoes"},
-	{ID: 25003, Kind: "Shoes"},
-	{ID: 25004, Kind: "Shoes"},
-	{ID: 25005, Kind: "Shoes"},
-	{ID: 25006, Kind: "Shoes"},
-	{ID: 25007, Kind: "Shoes"},
+	{ID: 21010, Kind: "Head"},    // Hed_COP110
+	{ID: 21011, Kind: "Head"},    // Hed_COP111
+	{ID: 21012, Kind: "Head"},    // Hed_COP112
+	{ID: 21013, Kind: "Head"},    // Hed_COP113
+	{ID: 21014, Kind: "Head"},    // Hed_COP114
+	{ID: 21015, Kind: "Head"},    // Hed_COP115
+	{ID: 21016, Kind: "Head"},    // Hed_COP116
+	{ID: 21017, Kind: "Head"},    // Hed_COP117
+	{ID: 21018, Kind: "Head"},    // Hed_COP118
+	{ID: 21019, Kind: "Head"},    // Hed_COP119
+	{ID: 21020, Kind: "Head"},    // Hed_COP120
+	{ID: 21021, Kind: "Head"},    // Hed_COP121
+	{ID: 21022, Kind: "Head"},    // Hed_COP122
+	{ID: 21023, Kind: "Head"},    // Hed_COP123
+	{ID: 21011, Kind: "Clothes"}, // Clt_COP111
+	{ID: 21012, Kind: "Clothes"}, // Clt_COP112
+	{ID: 21013, Kind: "Clothes"}, // Clt_COP113
+	{ID: 21014, Kind: "Clothes"}, // Clt_COP114
+	{ID: 21015, Kind: "Clothes"}, // Clt_COP115
+	{ID: 21016, Kind: "Clothes"}, // Clt_COP116
+	{ID: 21017, Kind: "Clothes"}, // Clt_COP117
+	{ID: 21007, Kind: "Shoes"},   // Shs_COP107
+	{ID: 21008, Kind: "Shoes"},   // Shs_COP108
+	{ID: 21009, Kind: "Shoes"},   // Shs_COP109
 }
 
 // coopUsedRewardGears is the capture-derived advertised catalog used in
@@ -100,12 +91,14 @@ const (
 	vsParamsRewardGearCount     = 11
 )
 
-// coopRewardForShift fills a missing reward with a stable, real gear pair.
+// coopRewardForShift fills a missing reward with one piece from
+// CoopRewardGears, picked at random but seeded by the shift's slot, so every
+// read of the same shift -- and every restart -- names the same reward.
 // Both working hall captures set reward_type and reward_gear_id on every
-// Normal shift. The public GearInfo tables confirm the three category names
-// and the ids in CoopRewardGears; the slot-to-reward policy is SwitchNet's.
+// Normal shift; which piece Nintendo picks is its own policy, this is ours.
 // A nonzero operator-selected id is preserved. If its category is ambiguous
-// or absent from our small catalog, leave its type unset rather than invent it.
+// (the id exists under two kinds) or unknown, leave its type unset rather
+// than invent it.
 func coopRewardForShift(selected int32, start time.Time) CoopRewardGear {
 	if selected != 0 {
 		var kind string
@@ -120,13 +113,7 @@ func coopRewardForShift(selected int32, start time.Time) CoopRewardGear {
 		}
 		return CoopRewardGear{ID: selected, Kind: kind}
 	}
-	kinds := [...]string{"Head", "Clothes", "Shoes"}
 	slot := start.UTC().Unix() / int64(DefaultCoopShiftDuration/time.Second)
-	kind := kinds[((slot%int64(len(kinds)))+int64(len(kinds)))%int64(len(kinds))]
-	for _, gear := range CoopRewardGears {
-		if gear.Kind == kind {
-			return gear
-		}
-	}
-	return CoopRewardGear{}
+	rng := rand.New(rand.NewPCG(uint64(slot), 0x636f6f70726577)) // "cooprew"
+	return CoopRewardGears[rng.IntN(len(CoopRewardGears))]
 }

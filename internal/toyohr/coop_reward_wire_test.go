@@ -96,3 +96,18 @@ func TestNormalCoopShiftIncludesARealGearRewardOnWire(t *testing.T) {
 		t.Fatal("reward changed for the same shift")
 	}
 }
+
+// TestEveryCapturedUsedRewardIsInTheRewardCatalog checks the catalog's rule
+// against the only real data there is: every piece Nintendo listed as an
+// already-used reward must be one the catalog can pick.
+func TestEveryCapturedUsedRewardIsInTheRewardCatalog(t *testing.T) {
+	catalog := map[CoopRewardGear]bool{}
+	for _, g := range CoopRewardGears {
+		catalog[g] = true
+	}
+	for _, g := range coopUsedRewardGears {
+		if !catalog[g] {
+			t.Errorf("captured used reward %+v is not in CoopRewardGears", g)
+		}
+	}
+}
