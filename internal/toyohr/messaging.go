@@ -2,12 +2,15 @@ package toyohr
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -168,7 +171,7 @@ func (l *lobbyMessagingService) RecvMessage(
 
 	// One keep-alive immediately, so the client holds a stream that has spoken
 	// rather than one that has only been opened.
-	if err := stream.Send(messageKeepAliveResponse()); err != nil {
+	if err := stream.Send(messageKeepAliveResponse(l.s.now())); err != nil {
 		return err
 	}
 
@@ -181,7 +184,7 @@ func (l *lobbyMessagingService) RecvMessage(
 			// The player left the lobby. Not an error.
 			return nil
 		case <-ticker.C:
-			if err := stream.Send(messageKeepAliveResponse()); err != nil {
+			if err := stream.Send(messageKeepAliveResponse(l.s.now())); err != nil {
 				return err
 			}
 		case msg := <-sub.ch:
@@ -218,8 +221,16 @@ func (l *lobbyMessagingService) SendMessage(
 		return nil, status.Error(codes.InvalidArgument, "no receivers")
 	}
 
+	receivers := make([]string, 0, len(req.GetReceiverUsers()))
+	for _, name := range req.GetReceiverUsers() {
+		id, ok := l.s.messageReceiverID(name)
+		if !ok {
+			return nil, status.Error(codes.InvalidArgument, "invalid receiver user")
+		}
+		receivers = append(receivers, id)
+	}
 	msg := l.s.receivedMessage(userID, req.GetMessageBody())
-	delivered := l.s.messages.sendTo(req.GetReceiverUsers(), msg)
+	delivered := l.s.messages.sendTo(receivers, msg)
 
 	// Not an error when nobody was listening. A message to a player who just
 	// closed the game is a message nobody receives, and reporting that as a
@@ -252,21 +263,52 @@ func (l *lobbyMessagingService) SendLobbyMessage(
 
 func (s *Service) receivedMessage(sender string, body *toyohrpb.MessageBody) *toyohrpb.ReceivedMessage {
 	return &toyohrpb.ReceivedMessage{
-		MessageBody: body,
-		SenderUser:  sender,
-		SendTime:    timestamppb.New(s.now()),
-		// No resume token. It is what a client would present to pick up where
-		// it left off, and there is nothing to resume from: messages are not
-		// stored, so a token would name a position in a log that does not
-		// exist. TODO(capture-needed): whether Splatoon 3 requires one to be
-		// present. Change: this function, and it would mean storing messages.
+		MessageBody:        body,
+		SenderUser:         s.tenantPath() + "/users/" + sender,
+		SendTime:           timestamppb.New(s.now()),
+		MessageResumeToken: lobbyResumeToken(s.now()),
 	}
 }
 
-func messageKeepAliveResponse() *toyohrpb.RecvMessageResponse {
+// The console names recipients as NPLN resources, while the message hub is
+// keyed by authenticated bare user IDs. Preserve that boundary so a real
+// self-addressed NplnLogin reaches the caller's RecvMessage subscription.
+func (s *Service) messageReceiverID(name string) (string, bool) {
+	for _, prefix := range []string{"tenants/current/users/", s.tenantPath() + "/users/", "users/"} {
+		if strings.HasPrefix(name, prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+	return name, name != "" && !strings.Contains(name, "/")
+}
+
+// lobbyResumeToken renders the cursor shape both preserved working Nextendo
+// hall captures use verbatim on every KeepAlive and ReceivedMessage on this
+// stream (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z,
+// nextendo-second-20260923T210513Z): {"v":1,"t":"<unix ms>-0"}. Settles the
+// TODO(capture-needed) this function used to carry -- whether Splatoon 3
+// requires a resume token to be present at all -- with a real answer: yes,
+// non-empty, in both captures, on every frame. The trailing "-0" is a
+// sequence position within that millisecond; this stream never buffers more
+// than one frame per millisecond, so 0 is always correct, not a guess about
+// an unobserved case.
+//
+// It is still opaque and unresumable, same as before this fix: RecvMessage
+// does not accept a resume token on this stream (there is nothing stored to
+// resume from -- see lobbyMessagingService.RecvMessage), so this only
+// answers the shape the client is reading, not a real position in a log.
+func lobbyResumeToken(now time.Time) string {
+	return fmt.Sprintf(`{"v":1,"t":"%d-0"}`, now.UnixMilli())
+}
+
+func messageKeepAliveResponse(now time.Time) *toyohrpb.RecvMessageResponse {
 	return &toyohrpb.RecvMessageResponse{
 		Payload: &toyohrpb.RecvMessageResponse_KeepAlive{
-			KeepAlive: &toyohrpb.KeepAlive{},
+			KeepAlive: &toyohrpb.KeepAlive{
+				IdleTimeout:        durationpb.New(messageKeepAlive),
+				MessageResumeToken: lobbyResumeToken(now),
+			},
 		},
 	}
 }

@@ -98,8 +98,8 @@ func TestTheSenderIsTakenFromTheTokenNotFromTheRequest(t *testing.T) {
 	}
 
 	msg := waitForMessage(t, bob)
-	if msg.GetSenderUser() != "alice" {
-		t.Errorf("sender = %q, want alice — the authenticated caller, not the named one",
+	if msg.GetSenderUser() != l.s.tenantPath()+"/users/alice" {
+		t.Errorf("sender = %q, want the authenticated caller's resource, not the named one",
 			msg.GetSenderUser())
 	}
 	if msg.GetMessageBody().GetMessageType() != "chat" {
@@ -107,6 +107,43 @@ func TestTheSenderIsTakenFromTheTokenNotFromTheRequest(t *testing.T) {
 	}
 	if msg.GetSendTime() == nil {
 		t.Error("no send time")
+	}
+}
+
+// TestSelfAddressedNplnLoginIsEchoedBack reproduces the exact wire shape
+// both preserved working Nextendo hall captures show
+// (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z and
+// nextendo-second-20260923T210513Z): the console addresses its own
+// LobbyMessaging/SendMessage "NplnLogin" message straight back to itself
+// (receiver_users names its own user id), and reads it back on its own
+// RecvMessage stream. NextendoNetwork/splatoon-3's own source names this a
+// hard client-side gate found by decompiling the client: "S3's ink loading
+// screen only advances when a 'type':'NplnLogin' message comes BACK on
+// RecvMessage" (replay.go). sendTo (unlike sendToLobby) never excludes the
+// sender, so this is SwitchNet's ordinary delivery path, not a special case
+// -- this test exists to prove that stays true, not to add behavior.
+func TestSelfAddressedNplnLoginIsEchoedBack(t *testing.T) {
+	l := messagingFor(t)
+	self, cancel := receive(t, l, "player1", "")
+	defer cancel()
+
+	as(t, "player1")
+	if _, err := l.SendMessage(context.Background(), &toyohrpb.SendMessageRequest{
+		ReceiverUsers: []string{"tenants/current/users/player1"},
+		MessageBody:   &toyohrpb.MessageBody{MessageType: "NplnLogin"},
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	msg := waitForMessage(t, self)
+	if msg.GetSenderUser() != l.s.tenantPath()+"/users/player1" {
+		t.Errorf("sender = %q, want player1's resource (self)", msg.GetSenderUser())
+	}
+	if msg.GetMessageBody().GetMessageType() != "NplnLogin" {
+		t.Errorf("message_type = %q, want NplnLogin", msg.GetMessageBody().GetMessageType())
+	}
+	if msg.GetMessageResumeToken() == "" {
+		t.Error("message_resume_token is empty; both captures carry one on every frame")
 	}
 }
 
@@ -127,8 +164,8 @@ func TestALobbyMessageReachesTheLobbyButNotTheSender(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 
-	if got := waitForMessage(t, bob).GetSenderUser(); got != "alice" {
-		t.Errorf("bob got a message from %q, want alice", got)
+	if got := waitForMessage(t, bob).GetSenderUser(); got != l.s.tenantPath()+"/users/alice" {
+		t.Errorf("bob got a message from %q, want alice's resource", got)
 	}
 	// The sender's own console already knows what it sent; echoing shows the
 	// player their own message twice.
