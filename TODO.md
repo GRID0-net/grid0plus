@@ -55,14 +55,14 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
-| §4.2 | **a console.** Splatoon 3 reaches the hall and stops; the next step is a live GDB boot |
 | §4.3 | **RE, GDB on the emuMMC, or tests against SwitchNet** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §2.4 | **reverse engineering** of the module that verifies BCAT content, then a console test |
 | §3.2 | **§2.1** |
 
-The highest-value next action is §4.2: Splatoon 3's hall is the current
-hardware blocker, and everything else in phase 2 is behind it.
+Splatoon 3 reached the hall on SwitchNet on 2026-09-25 (see
+`docs/CAPTURES/splat3-hall-reached-2026-09-25.md`); what is left is behind
+it — matches, Splatfests, BCAT.
 
 ---
 
@@ -416,23 +416,6 @@ user system for the dashboard alone.
 ---
 
 ## 4. Verification and hardware
-
-### 4.2 Splatoon 3 stops at the hall — **P1**
-
-The console now gets through login, schedules and the first document reads
-on SwitchNet, then shows a communication error in the hall (see
-[`docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md`](docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md)).
-Live GDB showed the game's GameRecord manager sitting idle, never started,
-where the working Nextendo boot reads Vs/Coop attribute documents.
-
-Cloud-save persistence was deployed 2026-09-25 so the second boot receives
-a populated save record, the state the working captures come from.
-
-**Next:** run `~/switchnet-re/gdb/grstart.py` before launching the game and
-boot twice. The log shows whether the manager's Initialize is reached with a
-live client, whether any start is called, and which guard stops it.
-
-**Done when** a console enters the hall on SwitchNet.
 
 ### 4.3 Undocumented shapes — **P2**
 
