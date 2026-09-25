@@ -18,10 +18,10 @@ Four phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| 1 | accounts + the stock friends list | code complete, **not yet verified on hardware** |
-| 2 | NPLN game server for Splatoon 3, and a dashboard | code complete, **not yet verified on hardware** — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
+| 1 | accounts + the stock friends list | **running on a real console**: sign-in, Nintendo Account linking and the friend list work; the received-requests view still shows 2124-0104 (client-side, parked) |
+| 2 | NPLN game server for Splatoon 3, and a dashboard | **running on a real console up to the hall**, which fails with a communication error (`TODO.md` §4.2) — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
 | 3 | eShop, served from local NSP dumps | **out of this repository** — planned as a separate, optional module. Not started. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-3--the-eshop-a-separate-module) |
-| 4 | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet verified on hardware, storage backend now local disk**. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) and `internal/scsi/README.md` |
+| 4 | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet tried on a console, storage backend local disk**. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) and `internal/scsi/README.md` |
 
 **Phase 3 does not belong in this codebase.** If you're asked to start eShop
 work, the first question is where that code should live — not `internal/`
@@ -38,10 +38,11 @@ Most of `internal/scsi`'s request/response shapes are confirmed against
 Kinnay's public wiki page for OLSC; the two `generate_key_*package`
 endpoints are this project's own defensible placeholder, not a confirmed
 shape, and are the most likely reason a real console would still refuse a
-restore. No capture exists yet — see `internal/scsi/README.md`.
+restore. Nothing has settled them yet — see `internal/scsi/README.md`.
 
-**Phase 1 has not been confirmed working on a real console.** Until it has, treat
-anything under `internal/baas/friends.go` as provisional — see
+**Phase 1 works on a real console, but not every friends shape is settled.**
+The friend list renders, which confirms that response; the rest of
+`internal/baas/friends.go` is still provisional — see
 [the guesses](#the-guesses-and-how-to-treat-them) below.
 
 ## Ground rules
@@ -100,7 +101,7 @@ Read in this order: `docs/ARCHITECTURE.md`, then `internal/baas/README.md`, then
 
 Iterating on one service: `bin/switchnetctl run baas` (or `dauth`, `npln`, ...)
 builds and runs just that one natively against the still-Dockerized Postgres/
-Redis — a `go build`, not a full rebuild — instead of running all eight. Every
+Redis — a `go build`, not a full rebuild — instead of running all nine. Every
 service reads the same `certs/keys` directory `config.yaml` already points at;
 there is no separate dev-only key directory to keep in sync with it.
 
@@ -230,20 +231,22 @@ the running process is actually using — see
 ## The guesses, and how to treat them
 
 The BAAS `2.0.0` friends endpoints are **not documented anywhere** and no public
-implementation exists to compare against. Nine shapes are reasoned rather than
-known, two of them (items 1 and 8) now partly settled by a real capture but
-with a residual open sub-question each:
+implementation exists to compare against. Several shapes are reasoned rather
+than known; the friend list itself is now confirmed by the applet rendering it
+on hardware. The live list:
 
 ```sh
 grep -rn 'TODO(capture-needed)' internal/
 ```
 
-Priority order, what each would settle, and how to capture it are in
-[`docs/CAPTURES/README.md`](docs/CAPTURES/README.md). The friend list response
-shape is first, because getting it wrong leaves the applet empty with nothing in
-the log.
+Priority order and what each would settle are in
+[`docs/CAPTURES/README.md`](docs/CAPTURES/README.md). "Capture" there never
+means decrypting Nintendo's traffic from the console (see
+[where to ask the operator](#where-to-ask-the-operator-rather-than-guess));
+a shape is settled by RE of the module that reads it, GDB on the emuMMC, or a
+capture of the console talking to SwitchNet.
 
-When a capture arrives:
+When one is settled:
 
 1. write it up under `docs/CAPTURES/` using the template, redacted;
 2. reconcile the implementation;
