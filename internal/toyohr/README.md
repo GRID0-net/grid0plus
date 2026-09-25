@@ -209,7 +209,7 @@ server actually has.
 
 **The Honsai midterm and final ratios are not.** A real fest result carries
 per-category ratios derived from battles played, and nothing in SwitchNet
-records a battle yet — `GameRecord` is unimplemented. Those are returned with
+records a battle's result yet. Those are returned with
 `is_valid` false, which is the protocol's own way of saying a section is
 unavailable.
 
@@ -259,29 +259,18 @@ Two fests live at once is a state the game has no reading for. The operator can
 create it by mistake, so `currentFest` picks the most recently started and logs
 a warning rather than picking arbitrarily.
 
-## `Schedule`: honest emptiness for Vs, a real rotation for Coop
+## `Schedule`: generated rotations, shaped like the working captures
 
-`schedule.go` answers `SelectVsSchedules`, `SelectSeasonSchedules` and
-`SelectLeagueSchedules` with an empty schedule list rather than
-`Unimplemented`, because the console calls these early in boot and the
-alternative is a to-do-list log line where a working boot query should be.
-
-The content those RPCs would normally carry — which stages, which mode — is
-Nintendo's own game design data, and unlike a fest (which the operator
-authors and `SaveFest` validates) there is no equivalent authoring path for
-a normal Vs rotation. **Which stages** is not actually undocumented, though
-— `vs_ids.go`'s `VsStages` has all 24 real stage ids and names, sourced the
-same way `coop_ids.go` is (see its own doc comment), and
-`config.example.yaml`'s `rotation.regular_stages`/`bankara_stages` can be
-filled in with real ids today. **Which mode** (the `BankaraSettings.Rule`
-wire value for Splat Zones/Tower Control/Rainmaker/Clam Blitz) is the part
-still genuinely undocumented: neither that data dump nor
-kinnay/NPLN-Protocols' own `schedule.proto` (`int32 rule = 1`, no enum)
-gives real numbers for it. An empty `Rotation` still answers honestly
-empty (`TODO(capture-needed)`, in `schedule.go`) rather than a fabricated
-one nothing here would catch as wrong — but an operator who fills in real
-stage ids and is willing to guess at rule numbers is no longer guessing at
-the stages too.
+`SelectVsSchedules` and `SelectSeasonSchedules` are generated live from the
+clock and the operator's stage/rule lists (`rotation.*` in `config.yaml`,
+real ids in `vs_ids.go`): twelve two-hour slots starting with the previous
+one, one `schedule_set_id` shared by the window, Bankara/X/League settings on
+each slot, and quoted 24-character ETags — all as in both working Nextendo
+hall captures. `SelectSeasonSchedules` carries season id 16 and the
+`LastSeasonLeaderboardFixTime` attribute those captures show.
+`SelectLeagueSchedules` answers empty: League events are authored content
+and SwitchNet has none (`league_diagnostic.go` can serve a disposable real
+one for testing).
 
 **`SelectVsParams` used to be the fourth empty one, and that was wrong.**
 Unlike an empty schedule list, `params` left unset is not what a real server
@@ -296,9 +285,8 @@ the confirmed reference sequence — the same crash family as
 `GetSaveRecord`'s real `SaveRecord`.
 
 `SelectVsParams` now answers a real, non-nil `VsParams`, timestamped off the
-current clock so it is never stale. `Attributes` — the one field whose real
-content is genuinely undocumented — stays an honestly empty `MapValue`
-rather than a guess (`TODO(capture-needed)`, in `schedule.go`). Both working
+current clock so it is never stale, with the eleven tuning attributes the
+working captures carry (`vsParamsAttributes` in `schedule.go`). Both working
 captures return a nonempty, quoted ETag even when the request has none;
 SwitchNet derives one from its own target and parameter-set id instead of
 echoing the request. The captured timestamps also enclose the client's
@@ -434,55 +422,31 @@ now sets it from the request's own `Target` field via the same
 `scheduleTarget` helper `SelectVsSchedules`/`SelectCoopSchedules` already
 use, rather than a bare hardcoded `"default"`.
 
-## `CloudSave.GetSaveRecord`: a real, empty record, never `NotFound`
+## `CloudSave`: each player's save record, stored
 
-This used to answer `NotFound` for every account, reasoned as the correct
-answer rather than a stub — a fresh account has no cloud save on a real
-server either. That reasoning turned out to be wrong, and reproduced as a
-real crash: NextendoNetwork/splatoon-3 measured (facts only, not its code)
-three behaviours on real hardware for a player with no save record —
-`NotFound` makes the game create nothing and loop on a communication error;
-a genuinely empty success makes it stop dead, with no `CreateSaveRecord`, no
-`FestSchedule`, no documents; only a real, structurally-complete record made
-everything resume. This reproduced on SwitchNet's own hardware on
-2026-09-24: the console went silent immediately after this RPC, the same
-crash family as `SelectFestSchedule`'s earlier empty-response experiment.
+The console keeps part of its progression in a server-side save record, and
+the hall depends on it. NextendoNetwork/splatoon-3 measured (facts only, not
+its code) three answers for a player with no record: `NotFound` loops on a
+communication error; a zero-message success makes a fresh console upload its
+own save (`CreateSaveRecord`) and an established one send `evt=Validate`
+writes; only a populated record gets the game on to `FestSchedule` and its
+GameRecord document reads.
 
-`GetSaveRecord` now answers a real `SaveRecord` for the caller, with an
-empty-but-present `SaveData` `MapValue`. A cloud save is still real player
-save state SwitchNet has no legitimate way to have — the same "no game dump,
-no save data" boundary CLAUDE.md draws for phase 3 — so `SaveData` is left
-honestly blank rather than seeded with Nextendo's own captured content,
-which is a stranger's real save progression and out of scope regardless.
+So `save_store.go` persists it, per player, in the Ugcstore document table
+under `tenants/<t>/saveRecords/<uid>` (outside the `documents/` prefix, so
+Ugcstore never serves it):
 
-Four of the other five `CloudSave` RPCs (`Create`/`Validate`/`ChangeUserName`/
-`Delete`) are left to `UnimplementedCloudSaveServer`. Nothing calls them this
-early, and actually implementing `Create`/`Delete` convincingly would mean
-this server keeping opaque save blobs it has no way to validate — a
-materially different scope than answering the boot queries that would
-otherwise hang.
+- `GetSaveRecord` returns the stored record, or zero messages when there is
+  none (a hand-rolled stream, since a unary handler cannot send nothing);
+- `WriteSaveRecord` merges the delta the way Nintendo's server does — maps
+  merge recursively, null deletes, an empty array is stored as null,
+  anything else replaces — and returns a strictly increasing `update_time`,
+  which the console presents as the next write's version token;
+- `CreateSaveRecord` stores a new console's full record;
+- `ValidateSaveRecord` acknowledges.
 
-## `CloudSave.WriteSaveRecord`: acknowledged, not `Unimplemented`
-
-Unlike the other four, `WriteSaveRecord` is not merely uncalled early — it is
-called as a direct consequence of `GetSaveRecord`'s own honestly-blank
-answer. NextendoNetwork/splatoon-3's own proto comment (facts only, not its
-code) documents the real shape: the client sends an `evt=Validate`-style
-`WriteSaveRecord` naming exactly the keys missing from a blank record
-(`CloudRandomSet`, `HaveGearClothesMap`, `HaveGearHeadMap`,
-`HaveGearShoesMap`) as soon as it sees one. Confirmed on SwitchNet's own
-hardware on 2026-09-24: a VM-side loopback capture showed the console
-calling this RPC twice, immediately after `GetSaveRecord` and
-`Schedule.SelectVsParams` both succeeded, getting `Unimplemented` both
-times, and going silent for good shortly after.
-
-`WriteSaveRecordResponse` carries exactly one field — a timestamp, per both
-this project's own proto and NextendoNetwork/splatoon-3's comment
-(`WriteSaveRecordResponse{timestamp}`) — so acknowledging costs nothing this
-server does not already have, and nothing is stored: the same "no game
-dump, no save data" boundary `GetSaveRecord` draws. This only ever tells the
-client its write was accepted, on a save this server answers blank every
-time regardless.
+Every value comes from the player's own console; SwitchNet never seeds one.
+`ChangeUserName` and `DeleteSaveRecord` stay `Unimplemented`.
 
 `GameRecord/InitializeAttributes` accepts `tenants/current/users/current` as
 the already authenticated caller and stores the document under that caller's
