@@ -81,6 +81,60 @@ func (s gameRecordService) InitializeAttributes(
 	}, nil
 }
 
+// InitializeTag, GetTag and SelectTags answer instead of the embedded
+// Unimplemented default, for the same reason WriteSaveRecord does
+// (internal/toyohr/cloud_save.go): all three response messages are marked
+// "[UNKNOWN]" in kinnay/NPLN-Protocols' own reconstruction
+// (.proto-upstream/latest/proto/toyohr/v1/game_record.proto) and generate
+// with zero fields, so acknowledging them invents nothing -- there is
+// nothing to invent. Unimplemented is a harsher gRPC error than a
+// structurally valid empty response; a caller that reaches these RPCs at
+// all (which requires seeing real League schedule data first -- see
+// docs/CAPTURES/splat3-hall-boundary-2026-09-24.md) has already been told
+// League exists, so refusing outright here is the more likely crash, not
+// the safer default.
+//
+// No Tag is actually stored: there is nowhere honest to keep one yet
+// (SelectTags' own response has no field to list one in either), so
+// InitializeTag's acknowledgement does not persist anything -- unlike
+// InitializeAttributes, which does. If a capture ever settles these
+// messages' real fields, that is the point to add storage.
+//
+// TODO(capture-needed): the real Tag/InitializeTagResponse/
+// GetTagResponse/SelectTagsResponse shapes -- neither preserved working
+// capture ever entered League Battle, so these RPCs were never observed on
+// the wire.
+func (s gameRecordService) InitializeTag(
+	ctx context.Context, req *toyohrpb.InitializeTagRequest,
+) (*toyohrpb.InitializeTagResponse, error) {
+	if _, ok := s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	s.log.Info("toyohr: InitializeTag acknowledged",
+		"users", len(req.GetUsers()), "league_schedule", req.GetLeagueSchedule(), "game_rule", req.GetGameRule())
+	return &toyohrpb.InitializeTagResponse{}, nil
+}
+
+func (s gameRecordService) GetTag(
+	ctx context.Context, req *toyohrpb.GetTagRequest,
+) (*toyohrpb.GetTagResponse, error) {
+	if _, ok := s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	s.log.Info("toyohr: GetTag acknowledged", "name", req.GetName())
+	return &toyohrpb.GetTagResponse{}, nil
+}
+
+func (s gameRecordService) SelectTags(
+	ctx context.Context, req *toyohrpb.SelectTagsRequest,
+) (*toyohrpb.SelectTagsResponse, error) {
+	if _, ok := s.caller(ctx); !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	s.log.Info("toyohr: SelectTags acknowledged", "user", req.GetUser())
+	return &toyohrpb.SelectTagsResponse{}, nil
+}
+
 func stringValue(v string) *commonpb.Value {
 	return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
 }

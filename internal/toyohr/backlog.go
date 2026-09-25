@@ -127,6 +127,10 @@ func (s replayService) FulfillReservations(
 // Unimplemented default. InitializeAttributes is implemented (game_record.go):
 // the game's own parser keeps its defaults for any absent key, so that answer
 // needs no invented value, only what the request itself carries.
+// InitializeTag, GetTag and SelectTags are also implemented (game_record.go):
+// unlike CreateBankaraChallenge/CreateFestPowerMeasurement, their response
+// messages are all "[UNKNOWN]" upstream and generate with zero fields, so
+// answering them invents nothing either.
 //
 // The real GameRecord service has more RPCs than this file, this package's
 // proto, and kinnay's public NPLN-Protocols repo all know about. A
