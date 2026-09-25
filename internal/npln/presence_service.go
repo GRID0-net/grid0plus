@@ -88,16 +88,14 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 // client falls silent, so the stream does not go quiet if the client's own
 // pings ever stop.
 //
-// TODO(capture-needed): whether Splatoon 3 ever sends UpdatePresence over
-// this RPC to report richer, game-specific state (KeepAliveRequest carries a
-// Presence + FieldMask for exactly that). SwitchNet does not persist it: the
-// single presence store BAAS's PATCH device_accounts endpoint already owns is
-// deliberately not given a second writer here, for the same reason
-// docs/ROADMAP.md#2.5 insists on one friend graph rather than two -- a second
-// presence writer that disagrees with the first is a worse bug than an
-// unread field.
-// Change: this function, if a capture shows attributes the client actually
-// depends on.
+// Splatoon 3 does send UpdatePresence here: its game-specific attributes
+// (GameStatus, SessionId, participant counts, ...) arrive on this stream and
+// are what its in-game friend list shows. They are kept in presenceAttributes
+// for SubscribePresences to hand out, not written to db.Presence: that row
+// stays BAAS's alone, for the same reason docs/ROADMAP.md#2.5 insists on one
+// friend graph rather than two. See presenceAttributes for the capture this
+// rests on.
+
 // presenceKeepAliveAckMinInterval paces replies without dropping any ping.
 // A 2026-09-24 SwitchNet capture saw 101 ping/ack round trips in two seconds
 // (~50Hz), followed by a hall communication error. Dropping pings during a
@@ -143,13 +141,26 @@ func (p *presenceService) KeepAlive(
 		return stream.Send(&friendspb.KeepAliveResponse{Heartbeat: presenceHeartbeat()})
 	}
 
+	p.s.attrs.open(caller.UserID)
+	defer p.s.attrs.close(caller.UserID)
+
 	sendErr := make(chan error, 1)
 	recvErr := make(chan error, 1)
 	go func() {
 		for {
-			if _, err := stream.Recv(); err != nil {
+			req, err := stream.Recv()
+			if err != nil {
 				recvErr <- err
 				return
+			}
+			if up := req.GetUpdatePresence(); up != nil {
+				attrs := up.GetPresence().GetAttributes()
+				if p.s.attrs.merge(caller.UserID, attrs, up.GetUpdateMask().GetPaths()) {
+					p.s.log.Info("npln: presence attributes updated",
+						"user", caller.UserID, "keys", len(attrs),
+						"game_status", attrs["GameStatus"].GetIntegerValue(),
+						"session_id", attrs["SessionId"].GetStringValue())
+				}
 			}
 			if err := p.s.store.TouchPresence(ctx, caller.UserID, p.s.now()); err != nil {
 				// Liveness is a nicety, same as internal/baas's own
@@ -271,6 +282,27 @@ func (p *presenceService) SubscribePresences(
 		watchedSet[id] = true
 	}
 
+	// A friend who is already online and opens a room changes no presence
+	// state, only attributes -- so the bus above never fires for it, and
+	// without this the switch to "Join" would never reach an open stream.
+	attrChanges, stopAttrs := p.s.attrs.watch()
+	defer stopAttrs()
+
+	sendOne := func(userID string) error {
+		presences, err := p.s.presence.EffectiveMany(ctx, []string{userID}, p.s.now())
+		if err != nil {
+			p.s.log.Error("npln: load presence", "user", userID, "error", err)
+			return errInternal()
+		}
+		return stream.Send(&friendspb.SubscribePresencesResponse{
+			Response: &friendspb.SubscribePresencesResponse_Presences_{
+				Presences: &friendspb.SubscribePresencesResponse_Presences{
+					Presences: []*friendspb.Presence{p.s.presenceProto(userID, presences[userID])},
+				},
+			},
+		})
+	}
+
 	ticker := time.NewTicker(presenceStreamTick)
 	defer ticker.Stop()
 
@@ -278,6 +310,13 @@ func (p *presenceService) SubscribePresences(
 		select {
 		case <-ctx.Done():
 			return nil
+		case id := <-attrChanges:
+			if !watchedSet[id] {
+				continue
+			}
+			if err := sendOne(id); err != nil {
+				return err
+			}
 		case <-ticker.C:
 			if err := stream.Send(&friendspb.SubscribePresencesResponse{
 				Response: &friendspb.SubscribePresencesResponse_Heartbeat{
@@ -294,18 +333,7 @@ func (p *presenceService) SubscribePresences(
 			if !watchedSet[e.UserID] {
 				continue
 			}
-			presences, err := p.s.presence.EffectiveMany(ctx, []string{e.UserID}, p.s.now())
-			if err != nil {
-				p.s.log.Error("npln: load presence", "user", e.UserID, "error", err)
-				return errInternal()
-			}
-			if err := stream.Send(&friendspb.SubscribePresencesResponse{
-				Response: &friendspb.SubscribePresencesResponse_Presences_{
-					Presences: &friendspb.SubscribePresencesResponse_Presences{
-						Presences: []*friendspb.Presence{p.s.presenceProto(e.UserID, presences[e.UserID])},
-					},
-				},
-			}); err != nil {
+			if err := sendOne(e.UserID); err != nil {
 				return err
 			}
 		}
@@ -378,17 +406,15 @@ func presenceUserID(name string) string {
 
 // presenceProto renders one user's resolved presence as the wire message.
 //
-// TODO(capture-needed): Attributes is left empty. resources.proto carries a
-// map<string, nn.npln.common.Value> here, presumably where a title's
-// in-game detail (SwitchNet's own AppField, in BAAS terms) would go, but
-// nothing confirms the keys Splatoon 3 reads. Inventing one is exactly what
-// CLAUDE.md warns against for an undocumented shape: an empty map is
-// wrong only in the sense of "incomplete", where a guessed key risks being
-// wrong in the sense of "silently never matches". Change: this function.
+// Attributes are exactly what the user's own game last published over
+// KeepAlive, passed through without interpretation: the keys are the game's
+// (see presenceAttributes for the ones a capture has named), and this server
+// invents none of its own.
 func (s *Server) presenceProto(userID string, p db.Presence) *friendspb.Presence {
 	return &friendspb.Presence{
-		Name:  s.tenantPath() + "/users/" + userID + "/presence",
-		State: presenceState(p.State),
+		Name:       s.tenantPath() + "/users/" + userID + "/presence",
+		State:      presenceState(p.State),
+		Attributes: s.attrs.get(userID),
 		LastOnlineTime: func() *timestamppb.Timestamp {
 			if p.LastSeenAt.IsZero() {
 				return nil

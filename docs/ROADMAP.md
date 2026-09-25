@@ -273,8 +273,9 @@ would settle it, and the probe for stage 1 is built.
 **Built** (`internal/npln/friends.go`, `presence_service.go`, backed by
 `internal/presence` — the TTL and visibility rules `internal/baas`'s own HTTP
 presence endpoints were refactored onto, for exactly this section's reason).
-Not built: `Presence.Attributes` (undocumented keys) and richer
-game-reported presence over `KeepAlive`'s `UpdatePresence` field — see
+Game-reported presence over `KeepAlive`'s `UpdatePresence` is carried
+through to friends as `Presence.Attributes` (`presence_attributes.go`), which
+is what shows a friend as in a room in Splatoon 3's own list — see
 `docs/CAPTURES/README.md`.
 
 **One friend graph, not two.** NPLN has its own friends layer, but it must read

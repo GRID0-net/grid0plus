@@ -310,12 +310,13 @@ same as `internal/baas/router.go`'s `authenticated` middleware does for
 HTTP. Without it, a console that only ever touches BAAS at login would never
 look alive to `PresenceService`'s own TTL rules.
 
-`Presence.Attributes` (a `map<string, nn.npln.common.Value>` in
-`resources.proto`) is left empty: nothing confirms the keys a real client
-reads, and `resources.proto`'s own `State` enum has no `PLAYING` — `PLAYING`
-is read down to `ONLINE` here, on the theory that BAAS's richer detail (title
-id, app field) is what the friends applet reads separately rather than
-through this service. Both are `TODO(capture-needed)`.
+`Presence.Attributes` is what each player's own game publishes over
+`KeepAlive` (`GameStatus`, `SessionId`, participant counts, ...), merged per
+player and handed to their friends untouched — see
+`presence_attributes.go` and `docs/CAPTURES/README.md` for the capture it
+rests on. It is the only channel for in-game detail here:
+`resources.proto`'s `State` enum has no `PLAYING`, so `PLAYING` is read down
+to `ONLINE`.
 
 ### `KeepAlive` acks the client's pings, but throttled
 

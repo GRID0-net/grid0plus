@@ -518,26 +518,11 @@ this version deliberately names no number to keep stale).
   matchmaking's resource names, and the same caveat -- `lastSegment` parses
   leniently, so a wrong prefix costs a cosmetic mismatch rather than breaking
   a call.
-- **`PresenceService.KeepAlive`'s `UpdatePresence` field**
-  (`internal/npln/presence_service.go:43`): whether Splatoon 3 ever reports
-  richer, game-specific presence over this RPC rather than only through
-  BAAS's `PATCH .../device_accounts/<id>`. SwitchNet does not persist it --
-  giving the one presence store a second writer is the same class of bug as
-  the second friend graph ROADMAP §2.5 warns against -- but every message on
-  the stream still counts as liveness.
 - **Presence resource-name shape**
   (`internal/npln/presence_service.go:231`, `presenceUserID`): follows the
   same `.../users/<u>/presence` singleton convention `resources.proto`'s
   `Presence.name` field implies, parsed leniently for the same reason as the
   matchmaking and friends names above.
-- **`Presence.Attributes`' keys**
-  (`internal/npln/presence_service.go:245`, `presenceProto`): left empty.
-  `resources.proto` carries a `map<string, nn.npln.common.Value>` here, and
-  its own `State` enum has no `PLAYING`, which suggests title-specific detail
-  (SwitchNet's BAAS-side `AppField`, in spirit) belongs here instead --
-  but no capture shows what keys a real client reads, and a guessed key that
-  silently never matches is worse than an empty map that visibly does
-  nothing.
 - **`Schedule`'s Vs map/mode rotation content**
   (`internal/toyohr/schedule.go`, `SelectVsParams`/`SelectVsSchedules`/
   `SelectSeasonSchedules`/`SelectLeagueSchedules`): answered as "nothing
@@ -762,6 +747,34 @@ above):
   here because the empirical failure mode is worth knowing, not because it
   changed anything: SwitchNet's design choice already avoids it by a
   different route.
+
+### Presence attributes, settled from NextendoNetwork's capture notes
+
+Two entries used to sit on the open list above -- whether Splatoon 3 reports
+game-specific presence over `PresenceService.KeepAlive`'s `UpdatePresence`,
+and which `Presence.Attributes` keys a real client reads. Both are answered by
+a real Nintendo capture that `NextendoNetwork/splatoon-3` records in its own
+comments (2026-08-15; facts only, PolyForm Shield, none of its code used):
+
+- The game does publish over `KeepAlive`: a friend's presence carries
+  thirteen attributes. `GameStatus=1` with an empty `SessionId` is "just
+  online"; `GameStatus=2` with a non-empty `SessionId` is "in a room", which
+  is what makes "Join" appear, and that `SessionId` is the game session the
+  joiner then passes to `JoinGameSession`. `CurrentParticipants` and
+  `MaxParticipants` follow the room; `PlayerName`, `GameMode`, `Udemae`,
+  `UsePassword` and `FestTeam` are among the rest.
+- Updates are partial: a player opening a room sent thirteen keys, then four
+  (the room opening), then one (the participant count). Replacing rather than
+  merging erased `GameStatus`/`SessionId` two seconds after the room opened.
+- An already-online friend opening a room changes attributes, not state, so a
+  stream that only pushes on state changes never shows the room.
+
+Implemented in `internal/npln/presence_attributes.go`: attributes are merged
+per player, passed through untouched in `presenceProto`, pushed to open
+`SubscribePresences` streams on change, and cleared when the player's last
+`KeepAlive` stream closes. They are kept out of `db.Presence`, which stays
+BAAS's alone. Second-hand -- their capture, not ours -- so a SwitchNet capture
+of a friend opening a room is still worth taking to confirm.
 
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not

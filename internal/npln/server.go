@@ -109,6 +109,9 @@ type Server struct {
 	// reason: this process is not the one BAAS's HTTP handlers run in, so the
 	// in-process bus variant delivers nothing across the boundary).
 	bus presencebus.Bus
+	// attrs is what each player's game publishes over PresenceService.KeepAlive
+	// -- see presenceAttributes.
+	attrs *presenceAttributes
 
 	// rotation is the stage and mode rotation internal/toyohr's Schedule
 	// service serves. Parsed in New, so a typo in config fails at startup
@@ -226,6 +229,7 @@ func New(opts Options) (*Server, error) {
 			ConsoleTTL: opts.ConsolePresenceTTL,
 		},
 		bus:        opts.Bus,
+		attrs:      newPresenceAttributes(),
 		rotation:   rotation,
 		diagnostic: diagnostic,
 		now:        opts.Now,
