@@ -9,7 +9,8 @@ hardware in turn; each moved the failure one step later.
 | 1 | `GetSaveRecord` answers zero messages | no save writes, no `SelectFestSchedule`, GameRecord manager initialised but never started; communication error |
 | 2 | `895d697`: empty but existing save record | `SelectFestSchedule`, `WriteSaveRecord evt=InitLeagueSchedule` (stored), Coop attribute read → `NotFound`; **2321-0384** |
 | 3 | `5afc318`: Vs/Coop attribute documents created on first read (season 16 / empty) | stored record served back; Vs and Coop fetches run; `WeaponPowerMeasurement/16` → `NotFound`; **2000-0000**, no crash under GDB |
-| 4 | `e8b781b`: absent GameRecord documents answered named and empty | **hall reached** |
+| 4 | `e8b781b`: absent GameRecord documents answered named and empty | **hall reached**, then `InitializeAttributes initial_vs {season 16, rate 1700}` ~10×/s forever; 2321-4992 after ~120 s |
+| 5 | `d6de9ae`: `initial_vs` stores the rate as `mmr_rate_<mode>` and sets `mmr_initialized_<mode>` for tw/ar/lf/gl/cl | one `InitializeAttributes`, then **matchmaking**: Create → Track (SEARCHING) → Cancel, as in the working capture |
 
 What each settles:
 
@@ -23,6 +24,9 @@ What each settles:
   enough to get in; the game fills its own defaults.
 - **Absent GameRecord documents must be named and empty, not NotFound.**
   Hammer documents stay NotFound and are fine.
+- **`initial_vs` must leave every mode's rating initialised.** The console
+  checks `mmr_initialized_<mode>`; the rate it sends goes in
+  `mmr_rate_<mode>`.
 
 GDB detail: the GameRecord manager's Initialize (`0x328b7c8`) ran with a live
 client on every boot; the Vs/Coop fetch entries (`0x3283740`, `0x3283d20`)
