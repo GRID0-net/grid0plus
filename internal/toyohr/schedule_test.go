@@ -375,6 +375,30 @@ func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 	}
 }
 
+func TestVsParamsRevisionIsIndependentOfTheRotation(t *testing.T) {
+	rotation := Rotation{RegularStages: []int32{1, 2}}
+	first := scheduleServiceFor(t, time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC), rotation)
+	second := scheduleServiceFor(t, time.Date(2026, 9, 5, 15, 37, 0, 0, time.UTC), rotation)
+	request := &toyohrpb.SelectVsParamsRequest{Target: "tenants/current/targets/default"}
+	a, err := first.SelectVsParams(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := second.SelectVsParams(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.GetParams().GetParamsSetId() == scheduleSetID(AlignToSlot(first.s.now())) {
+		t.Fatal("params revision unexpectedly equals the first rotation id")
+	}
+	if a.GetParams().GetParamsSetId() != b.GetParams().GetParamsSetId() || a.GetEtag() != b.GetEtag() {
+		t.Fatal("unchanged tuning data acquired a new revision at the rotation boundary")
+	}
+	if !a.GetParams().GetTimestamp1().AsTime().Before(b.GetParams().GetTimestamp1().AsTime()) {
+		t.Fatal("params validity window did not advance with the rotation")
+	}
+}
+
 // TestSelectVsParamsNameCarriesTheRequestsOwnTarget is the regression test
 // for a second and third real crash on the same RPC: a 2026-09-24 decompile
 // of Splatoon 3 v11.3.0's own main.nso found the client's resource-name

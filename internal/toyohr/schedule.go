@@ -302,11 +302,13 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // GetSaveRecord's real SaveRecord.
 //
 // A real VsParams is answered instead, timestamped off the current clock so
-// it is never stale, and ParamsSetId ties to the same slot-derived id
-// vsSchedule already uses. Attributes is populated by vsParamsAttributes
+// it is never stale. ParamsSetId is a separate tuning revision, as it is
+// in both working captures. Attributes is populated by vsParamsAttributes
 // below with the fixed platform tuning values both preserved working
 // captures agree on byte-for-byte -- not invented, not session- or
-// account-specific.
+// account-specific. The captured params-set id is independent of the
+// rotation's schedule-set id; changing the latter every slot should not
+// announce a new revision of otherwise unchanged tuning data.
 //
 // Name carries a "targets/<target>" segment -- settled by decompile, not a
 // guess. A 2026-09-24 decompile of Splatoon 3 v11.3.0's own main.nso (this
@@ -339,7 +341,9 @@ func (sc *scheduleService) SelectVsParams(
 	// empty. Our window spans the same rotation horizon we already return.
 	windowStart := AlignToSlot(now)
 	windowEnd := windowStart.Add(scheduleHorizon * scheduleSlot)
-	setID := scheduleSetID(windowStart)
+	// The two working captures use a params revision distinct from the
+	// schedule-set id. Keep our own tuning revision stable across rotations.
+	const paramsRevision = "1"
 	target := lastSegment(req.GetTarget())
 	if target == "" {
 		// Unexpected: every real request this project has seen names a
@@ -351,13 +355,13 @@ func (sc *scheduleService) SelectVsParams(
 	return &toyohrpb.SelectVsParamsResponse{
 		Unk: true,
 		Params: &toyohrpb.VsParams{
-			Name:        sc.s.tenantPath() + "/targets/" + target + "/vsParams/" + setID,
+			Name:        sc.s.tenantPath() + "/targets/" + target + "/vsParams/" + paramsRevision,
 			Timestamp1:  timestamppb.New(windowStart),
 			Timestamp2:  timestamppb.New(windowEnd),
 			Attributes:  vsParamsAttributes(),
-			ParamsSetId: setID,
+			ParamsSetId: paramsRevision,
 		},
-		Etag: vsParamsEtag(target, setID),
+		Etag: vsParamsEtag(target, paramsRevision),
 	}, nil
 }
 
