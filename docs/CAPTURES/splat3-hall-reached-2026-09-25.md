@@ -31,3 +31,29 @@ What each settles:
 GDB detail: the GameRecord manager's Initialize (`0x328b7c8`) ran with a live
 client on every boot; the Vs/Coop fetch entries (`0x3283740`, `0x3283d20`)
 only ran once the save record existed.
+
+## Root cause, found later the same day: `content-length: 0` behind nginx
+
+At the next Salmon Run shift change (16:00 UTC) both accounts started failing
+again. Live GDB on the game's GameRecord step machine (`0x32bd1e4`) and its
+point-card job (completion check at `0x32802bc`) showed why: the job sets its
+status (`+280`) to 8 only if each sub-request (Regular, Limited, Total) ends
+with gRPC status 0 or 5, and our point-card `NotFound`s arrived as **status 2
+(UNKNOWN)**.
+
+The reply on the npln → nginx leg was correct (two HEADERS frames,
+`grpc-status: 5`, NError detail matching Nintendo's). But its opening headers
+carried `content-length: 0`, copied from Nintendo's capture, and nginx's
+`grpc_pass` treats that as a finished response and never forwards the
+trailers. Nextendo sat behind Traefik, which forwards them. Removing the
+header (`a158dd3`) turned the statuses into 5 and the hall worked again on
+both accounts.
+
+This likely also explains earlier observations: the zero-message
+`GetSaveRecord` (sent with the same header) producing no save writes, and
+`WeaponPowerMeasurement` needing a named-empty document instead of
+`NotFound`. Both workarounds are worth re-testing against the captured
+Nintendo shapes now that `NotFound` reaches the console intact.
+
+Server-side rule: **never send `content-length` on a gRPC reply that goes
+through nginx.** `internal/npln` tests assert its absence.
