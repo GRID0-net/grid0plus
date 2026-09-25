@@ -459,11 +459,12 @@ func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string, emptyD
 			header.Append("npln-grpc-type", "Unary")
 		}
 	}
-	if method == "/nn.npln.toyohr.v1.UserScreening/GetViolation" || (len(emptyDocument) > 0 && emptyDocument[0]) {
-		// The no-violation answer has no message; the working capture's
-		// opening headers explicitly declare an empty body.
-		header.Set("content-length", "0")
-	}
+	// No content-length: 0, although Nintendo's opening headers carry one.
+	// Behind nginx's grpc_pass it ends the response after these headers and
+	// the trailers never reach the console: on hardware (2026-09-25) the
+	// game read these NotFounds as status 2 (UNKNOWN), not 5, and failed its
+	// point-card job at the hall. Nextendo sat behind Traefik, which passes
+	// the trailers through.
 	if err := grpc.SendHeader(ctx, header); err != nil {
 		log.Debug("npln: send header", "method", method, "error", err)
 	}

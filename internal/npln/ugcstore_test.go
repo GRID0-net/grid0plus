@@ -53,8 +53,10 @@ func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 	if got := header.Get("npln-grpc-type"); len(got) != 2 || got[0] != "ServerStreaming" || got[1] != "Unary" {
 		t.Errorf("missing document grpc type = %v, want captured ServerStreaming, Unary", got)
 	}
-	if got := header.Get("content-length"); len(got) != 1 || got[0] != "0" {
-		t.Errorf("missing document headers = %v, want zero-length body", header)
+	// Never content-length: 0 -- behind nginx's grpc_pass it drops the
+	// trailers, and the console reads the call as UNKNOWN (2026-09-25 hardware).
+	if got := header.Get("content-length"); len(got) != 0 {
+		t.Errorf("response headers = %v; content-length must be absent", header)
 	}
 	if len(trailer.Get("grpc-status-details-bin")) == 0 {
 		t.Error("missing captured NError status detail")

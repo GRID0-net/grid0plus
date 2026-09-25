@@ -125,7 +125,7 @@ func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 	// Temporary (2026-09-25 fresh-account experiment): answer zero messages,
 	// Nintendo's measured answer for a never-played account.
 	if os.Getenv("SWITCHNET_CLOUDSAVE_ZERO_WHEN_EMPTY") == "1" {
-		if err := stream.SendHeader(metadata.Pairs("npln-grpc-type", "Unary", "content-length", "0")); err != nil {
+		if err := stream.SendHeader(metadata.Pairs("npln-grpc-type", "Unary")); err != nil {
 			return err
 		}
 		s.log.Info("toyohr: GetSaveRecord answered with no message (experiment)", "user", uid)
