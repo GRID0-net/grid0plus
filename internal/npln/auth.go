@@ -188,13 +188,22 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 		return Caller{}, ErrPermissionDenied
 	}
 
-	if _, err := s.store.GetUser(ctx, claims.Subject); err != nil {
+	user, err := s.store.GetUser(ctx, claims.Subject)
+	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			// The user was deleted after the token was signed. The token is
 			// still valid; the user is not.
 			return Caller{}, ErrUnauthenticated
 		}
 		s.log.Error("npln: load user", "user", claims.Subject, "error", err)
+		return Caller{}, ErrUnauthenticated
+	}
+	if user.Deleted {
+		// switchnetctl account delete-user soft-deletes: the row stays, and
+		// only this flag says the person was removed. BAAS's authenticate
+		// already refuses it on every request; without the same check here a
+		// removed player's game session kept working until its token expired.
+		s.log.Warn("npln: refused a call from a deleted user", "user", claims.Subject)
 		return Caller{}, ErrUnauthenticated
 	}
 
@@ -272,11 +281,15 @@ func (s *Server) exchangeIDToken(ctx context.Context, idToken string) (Caller, e
 // and exchangeRefreshToken both reduce to this once they've verified their
 // own token's signature and picked a subject out of it.
 func (s *Server) resolveCaller(ctx context.Context, userID, deviceAccountID string, issuedAt int64) (Caller, error) {
-	if _, err := s.store.GetUser(ctx, userID); err != nil {
+	user, err := s.store.GetUser(ctx, userID)
+	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return Caller{}, ErrUnauthenticated
 		}
 		s.log.Error("npln: load user", "user", userID, "error", err)
+		return Caller{}, ErrUnauthenticated
+	}
+	if user.Deleted {
 		return Caller{}, ErrUnauthenticated
 	}
 

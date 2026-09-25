@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/n-popescu/switchnet/internal/db"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
 	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
@@ -493,4 +494,26 @@ func decodeJWTHeader(t *testing.T, token string) map[string]any {
 		t.Fatalf("expected three token parts, got %d", len(parts))
 	}
 	return decodeJWTSegment(t, parts[0])
+}
+
+// TestADeletedUsersGameSessionStopsAtOnce: switchnetctl account delete-user
+// only sets User.Deleted. BAAS refused such a user on every request; NPLN
+// only checked that the row existed, so a removed player kept playing until
+// their token expired.
+func TestADeletedUsersGameSessionStopsAtOnce(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("deleted000000001", "device-deleted-1")
+	access := h.sessionFor(t, "deleted000000001", "device-deleted-1")
+	client := authpb.NewAuthClient(h.conn)
+	if _, err := client.ValidateToken(h.ctx(access, ""), &emptypb.Empty{}); err != nil {
+		t.Fatalf("ValidateToken before deletion: %v", err)
+	}
+
+	deleted := true
+	if _, err := h.store.UpdateUser(context.Background(), "deleted000000001", db.UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatalf("mark deleted: %v", err)
+	}
+	if _, err := client.ValidateToken(h.ctx(access, ""), &emptypb.Empty{}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("ValidateToken after deletion: %v, want Unauthenticated", err)
+	}
 }
