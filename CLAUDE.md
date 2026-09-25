@@ -330,7 +330,11 @@ git ls-files | grep -E '\.(pem|key|crt)$|^certs/|config/config\.yaml'   # must b
 
 ## Where to ask the operator rather than guess
 
-- anything needing a packet capture (they have a console that can reach Nintendo);
+- anything needing a packet capture. Against Nintendo's real servers that can
+  only be a tcpdump (hosts, timing, sizes): the operator does not run
+  Atmosphère there, so nothing is decrypted. For a request/response shape,
+  prefer static RE of the game or sysmodule, live GDB on SwitchNet's own
+  emuMMC, or a decrypted capture against SwitchNet itself;
 - whether the CertStore LayeredFS override actually reaches the `ssl` sysmodule —
   there is a five-minute test in `switch/README.md` and only the operator can run
   it. `fs.mitm` does not MITM arbitrary system modules, so this is genuinely
