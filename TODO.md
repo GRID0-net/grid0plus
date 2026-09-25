@@ -55,6 +55,8 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
+| §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
+| §4.5 | **the friend's console** — it stalls before any game call |
 | §4.3 | **RE, GDB on the emuMMC, or tests against SwitchNet** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §2.4 | **reverse engineering** of the module that verifies BCAT content, then a console test |
@@ -416,6 +418,53 @@ user system for the dashboard alone.
 ---
 
 ## 4. Verification and hardware
+
+### 4.4 Re-test the 2026-09-25 workarounds — **P2, one boot each**
+
+The hall failures of 2026-09-25 turned out to be one bug: `content-length: 0`
+on gRPC replies, which nginx's `grpc_pass` turns into a reply without its
+status, read by the console as UNKNOWN (see
+[`docs/CAPTURES/splat3-hall-reached-2026-09-25.md`](docs/CAPTURES/splat3-hall-reached-2026-09-25.md)).
+Several changes made while chasing it may have been workarounds for that bug
+rather than real requirements. Now that `NotFound` reaches the console, each
+is worth one boot, one at a time, moving back toward Nintendo's captured
+shape:
+
+1. **`WeaponPowerMeasurement/<season>` absent → `NotFound`** (the captures'
+   answer) instead of a named, empty document (`emptyWhenAbsent` in
+   `internal/ugcstore/service.go`).
+2. **`GetSaveRecord` with nothing stored → zero messages** (Nextendo's
+   measured Nintendo answer) instead of an empty record
+   (`internal/toyohr/cloud_save.go`). Watch that an established console still
+   writes its save afterwards.
+3. **Schedule ETags in the captured `"<V|C|S|P><16 hex>-<4 hex>"` format.**
+   Committed as `f6c495f` and reverted (`8a790ed`) only while bisecting; it was
+   not the cause. Re-apply with `git revert 8a790ed`.
+4. **Documents named with the real tenant** (`tenants/t-dce9377b-lp1/...`)
+   rather than the request's `current` alias, as in both captures. Committed as
+   `ca55503`, reverted (`9dbcb49`) only while bisecting. Re-apply with
+   `git revert 9dbcb49`.
+
+Also noted, not urgent: SwitchNet's Salmon Run shifts are 40-hour slots from
+the Unix epoch (boundaries 00:00/16:00/08:00 UTC); Nintendo's in the captures
+fall 14 hours later (10:00/02:00/18:00 UTC). Only the timing differs.
+
+**Done when** each shape either matches the capture on hardware or has a
+written reason it cannot.
+
+### 4.5 A friend's console stalls before the hall — **P1**
+
+A second console (account Musi, `7b8cd8861212a1b8`) signs in, gets a game
+session (`IssuePrearrangedUserToken`) and `ListLatencyMeasurementServers`,
+then sends only `Auth/ValidateToken` every ~10 s and shows 2123-8028. It never
+opens `RecvMessage` or asks for schedules, unlike a working console. The next
+step for a working console is measuring latency over UDP to the addresses
+`ListLatencyMeasurementServers` returned (STUN, `internal/stunresponder`).
+The `content-length` fix does not reach this point, since none of those calls
+is made yet.
+
+**Next:** a VM-side packet capture while that console boots (any host, UDP
+included) to see whether its STUN packets arrive and are answered.
 
 ### 4.3 Undocumented shapes — **P2**
 
