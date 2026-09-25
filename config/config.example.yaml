@@ -484,17 +484,15 @@ npln:
   # The stage and mode rotation the lobby shows.
   #
   # THE NUMBERS ARE SPLATOON 3'S OWN. Stage ids ARE public and documented --
-  # internal/toyohr.VsStages (all 24, real ids 1-24, sourced from
+  # internal/toyohr.VsStages (all 25 listed stages, sourced from
   # github.com/Leanny/splat3's own VersusSceneInfo.json, the same public data
   # dump this project's Salmon Run stage table already uses) -- see that
   # file's own doc comment for the sourcing. The commented-out example below
   # uses eight of those real ids as a starting point, not a guess. Rule ids
-  # (Splat Zones/Tower Control/Rainmaker/Clam Blitz as the wire's own int32)
-  # are a different question and remain genuinely undocumented -- neither
-  # that data dump nor kinnay/NPLN-Protocols' own schedule.proto gives real
-  # numbers for bankara_rules, so those stay yours to supply, not
-  # SwitchNet's to guess; an invalid rule id's behaviour on the console is
-  # itself unknown. What SwitchNet supplies either way is everything around
+  # are 1-4 on the wire (both working hall captures use exactly that range
+  # for Bankara, X and League); which number is which mode is not yet pinned
+  # down, so check the in-game schedule screen after setting bankara_rules.
+  # What SwitchNet supplies either way is everything around
   # the numbers: two-hour slot alignment, the rotation order, the window a
   # client asked for, and the etag its conditional request compares.
   #
@@ -516,8 +514,7 @@ npln:
     # Um'ami Ruins, Mincemeat Metalworks, Brinewater Springs, Barnacle & Dime:
     # regular_stages: ["1", "2", "3", "4", "5", "6", "7", "8"]
     # bankara_stages: ["9", "10", "11", "12", "13", "14", "15", "16"]
-    # bankara_rules is NOT a real value -- see the comment above, still
-    # genuinely undocumented:
+    # bankara_rules: 1-4, mapping to modes unconfirmed -- see above:
     # bankara_rules: ["1", "2"]
 
   # The matchmaking controls the dashboard drives: the live queue, force-start,

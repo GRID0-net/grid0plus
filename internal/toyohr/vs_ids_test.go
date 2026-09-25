@@ -9,8 +9,8 @@ import (
 // duplicate ids or names would mean two rows describe the same real stage
 // under different data, or the source was transcribed wrong.
 func TestVsStagesAreAllRealAndUnique(t *testing.T) {
-	if len(VsStages) != 24 {
-		t.Fatalf("got %d stages, want 24", len(VsStages))
+	if len(VsStages) != 25 {
+		t.Fatalf("got %d stages, want 25", len(VsStages))
 	}
 	seenID := map[int32]bool{}
 	seenName := map[string]bool{}

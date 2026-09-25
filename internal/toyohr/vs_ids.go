@@ -18,28 +18,28 @@ import "fmt"
 // Splatoon 3's own data files, not a packet capture) and cross-referenced
 // two of its tables against each other, the same method CoopStages uses --
 //
-//	data/mush/930/VersusSceneInfo.json   Id, __RowId, IsDisplayInStageList
+//	data/mush/1100/VersusSceneInfo.json  Id, __RowId, IsDisplayInStageList
 //	data/language/USen.json              CommonMsg/VS/VSStageName, keyed by
 //	                                      __RowId with "Vss_" stripped and
 //	                                      trailing digits removed
 //
-// All 24 stages IsDisplayInStageList marks true are listed, Turf War and
+// All 25 stages IsDisplayInStageList marks true are listed, Turf War and
 // Anarchy alike -- nothing here distinguishes which stages a given mode
 // rotates through on a real server, only that each id and name is real.
 // Two entries are worth naming explicitly because their codename reads
 // nothing like the stage: "AutoWalk" is Lemuria Hub (the newest stage at
-// the time this table was built, Season 8), and "Manbou" -- present in the
+// Season 8), "Crank" is Urchin Underpass (id 26, added in v11 and used by
+// the 2026-09-23 working capture's X Battle slot), and "Manbou" -- present in the
 // language file but IsDisplayInStageList false in this data pull, so not
 // listed below -- is Grand Splatlands Bowl, already known from CoopStages
 // as a Big Run stage; Versus and Big Run share that one map.
 //
 // What this table is NOT: a claim that every one of these ids is
 // *currently* live in Nintendo's own rotation, or a source for BankaraRule
-// wire values (Splat Zones/Tower Control/Rainmaker/Clam Blitz as the int32
-// Schedule.proto's own `rule` field carries) -- that remains genuinely
-// undocumented. Neither this data dump (game *content*, not NPLN wire
-// protocol) nor kinnay/NPLN-Protocols' own schedule.proto (`int32 rule = 1`,
-// no enum) gives real numbers for it. TODO(capture-needed).
+// wire values. The working Nextendo hall captures show Bankara, X and League
+// settings using rule values 1 through 4, which settles the range; which
+// number is which mode is read from the game's own rule table or the
+// schedule screen, not from this file. TODO(capture-needed): the mapping.
 type VsStage struct {
 	// ID is VersusSceneInfo's own Id -- what VsSchedule's Stages field
 	// carries.
@@ -76,6 +76,7 @@ var VsStages = []VsStage{
 	{ID: 22, Name: "Bluefin Depot"},
 	{ID: 23, Name: "Marlin Airport"},
 	{ID: 24, Name: "Lemuria Hub"},
+	{ID: 26, Name: "Urchin Underpass"},
 }
 
 // VsStageByID looks up a real stage, or reports ok=false for anything not
