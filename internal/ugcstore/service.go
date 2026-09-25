@@ -24,6 +24,7 @@ package ugcstore
 import (
 	"context"
 	"errors"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log/slog"
 	"strings"
 	"time"
@@ -32,7 +33,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/splatdiag"
@@ -115,6 +115,13 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 			}
 			s.log.Info("ugcstore: created a starting attribute document", "name", key)
 			return doc, nil
+		}
+		if emptyWhenAbsent(key, uid) {
+			now := timestamppb.New(s.now())
+			s.log.Info("ugcstore: absent GameRecord document answered named and empty", "name", key)
+			return &ugcpb.Document{Name: req.GetName(),
+				Fields:     &commonpb.MapValue{Fields: map[string]*commonpb.Value{}},
+				CreateTime: now, UpdateTime: now}, nil
 		}
 		s.log.Info("ugcstore: requested document is absent", "name", key)
 		return nil, missingDocument(req.GetName())
@@ -435,4 +442,20 @@ func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 		return &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}, true
 	}
 	return nil, false
+}
+
+// emptyWhenAbsent reports whether an absent document is answered as a named,
+// empty document instead of NotFound: the caller's own GameRecord documents
+// (WeaponPowerMeasurement/<season>, PointCard*, BankaraChallenges/<id>).
+//
+// NextendoNetwork/splatoon-3's notes (facts only, not its code) record that
+// its working boot answers these families this way, and that NotFound on
+// WeaponPowerMeasurement/16 made the game loop re-reading it. On hardware on
+// 2026-09-25 the game read WeaponPowerMeasurement/16 twice, got NotFound,
+// and stopped with 2000-0000. Hammer documents keep NotFound, which the same
+// console already gets past. Nothing is stored: the document is not created,
+// only reported empty.
+func emptyWhenAbsent(key, uid string) bool {
+	_, docPath, _ := strings.Cut(key, documentsSegment)
+	return strings.HasPrefix(docPath, "services/GameRecord/users/"+uid+"/")
 }
