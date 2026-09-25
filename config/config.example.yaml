@@ -246,23 +246,12 @@ stubs:
   # unimplemented endpoint is being asked for. Far too chatty to leave on.
   log_bodies: false
 
-  # Answer the bcat-* hosts, logging every request in full.
+  # Record every request to the bcat-* hosts, hexdumped, into this directory.
   #
-  # An EXPERIMENT, not a service, and it must stay off outside one. SwitchNet
-  # cannot serve BCAT: the `list` response body is undocumented, and whether the
-  # console verifies the delivery container's RSA signature has never been
-  # established. This settles only the first half -- does the console reach us,
-  # and what does it ask for -- and the log is the first record anyone would
-  # have of either.
-  #
-  # The probe itself is always registered; what gates it is a hosts file
-  # generated with 'switchnetctl hosts -bcat-probe', which points the three
-  # bcat-* hosts here instead of null-routing them. Regenerate without that
-  # flag afterwards: answering 200-with-no-body to a console that expected
-  # content turns an immediate, legible failure into a hang. See TODO.md 2.4.
-  #
-  # Where the BCAT probe writes a transcript of what the console asked BCAT for.
-  # Empty means it only logs, and writes no transcript to disk.
+  # The hosts are answered 304 ("your cache is current") either way; this only
+  # adds a transcript of what the console asked for -- the list and data paths
+  # native BCAT serving would have to answer (TODO.md 2.4, stage 1). Safe to
+  # leave on; empty records nothing.
   bcat_record_dir: ""
 
 # ---------------------------------------------------------------------------

@@ -43,23 +43,15 @@ what this package does today.
 
 ## The probe, and why it exists before the experiment does
 
-`Probe` is the server for TODO.md §2.4 stage 1: *does the console reach us at
-all?* It logs every request the three `bcat-*` hosts receive, writes a hexdumped
-transcript when `stubs.bcat_record_dir` is set, and answers 200 with an empty
-body.
+`Probe` is the server for TODO.md §2.4 stage 1: *what does the console ask
+BCAT for?* The three `bcat-*` hosts reach `internal/stubs`, which answers 304
+("your cache is current"; anything else risked Splatoon 3's 2122-2403). With
+`stubs.bcat_record_dir` set, stubs also hands each request to
+`Probe.Observe`, which logs and records it, hexdumped, without changing the
+answer. One boot gives the list/data paths native serving must answer.
 
-It is wired into `internal/stubs` and **unreachable in a normal deployment**,
-because those three hosts are null-routed. Running the experiment is:
-
-1. change the three `bcat-*` entries in `internal/nintendo/hosts.go` from
-   `ServiceBlackhole` to `ServiceStubs`;
-2. move them in `TestBlackholedHostsAreAccountedFor`'s map, in a commit that
-   says why;
-3. regenerate the DNS and nginx configuration, set `stubs.bcat_record_dir`, and
-   open Splatoon 3.
-
-That is deliberately a five-minute job. The scarce resource in this experiment is
-console time, not server code, so the server exists first.
+`Probe.ServeHTTP` — answering the request itself — is kept for a later stage,
+when there is a real container to serve.
 
 **An empty 200 is a decision, not a placeholder.** An error tells the console the
 server is broken and it may stop asking, which loses the only thing the probe

@@ -308,26 +308,14 @@ Stages 1 and 2 below are the console-side checks. Stage 1 still costs an
 operator five minutes and gives the first transcript of what the console
 asks for; run it alongside the RE, not after it.
 
-#### Stage 1 — does the console reach us at all? **Built. Needs an operator.**
+#### Stage 1 — what does the console ask for? **Built. Set one config line.**
 
-`internal/bcat.Probe` (`internal/stubs/handler.go` wires it in) logs every
-BCAT request in full — method, path, headers, a hexdump of the body — and
-answers 200 with an empty body, writing a transcript to `stubs.bcat_record_dir`
-when set. It is off by default and needs only the hosts flip, since the probe
-itself is always registered:
-
-```sh
-switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
-# stubs.bcat_record_dir: /some/path   (optional -- logs either way, writes a transcript with this set)
-```
-
-Then open Splatoon 3 and watch the stubs log (or the transcript directory).
-
-If requests arrive, the paths are right and DNS and TLS work — and the log is
-the first record anyone has of what the console actually asks for. **Turn it
-back off afterwards**: answering a console that expected content turns an
-immediate failure into a hang. Day to day those hosts answer `304 Not
-Modified` from `internal/stubs` (see `hosts.go`'s comment on them).
+The three `bcat-*` hosts already reach `internal/stubs`, which answers 304
+(anything else risked the 2122-2403 hard error). Set
+`stubs.bcat_record_dir` and every one of those requests is also recorded by
+`internal/bcat.Probe` — method, path, query, headers, hexdumped body —
+without changing the answer. One boot of Splatoon 3 then gives the list and
+data paths and names the console requests.
 
 #### Stage 2 — does it care about the signature? **Not built.**
 
@@ -336,9 +324,8 @@ shape and a deliberately garbage signature. If the console proceeds, sigpatches
 cover `bcat` and the signature is a non-issue. If it refuses, that is the first
 real evidence either way.
 
-Stage 1 has to run first, because its hexdumps are what say which path to answer
-and what the console sent. Do not build stage 2 against a guess when stage 1
-costs an operator five minutes.
+Stage 1 has to run first, because its transcript is what says which path to
+answer and what the console sent.
 
 **Update, 2026-09-20: the `list` response body's field names are no longer
 undocumented.** A decompile of `bcat.nso` itself (extracted from the

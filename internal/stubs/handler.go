@@ -32,13 +32,9 @@ type Config struct {
 	// an unimplemented endpoint is being asked for; far too chatty to leave on.
 	LogBodies bool
 
-	// BCATRecordDir is where the BCAT probe writes its transcript.
-	//
-	// The three bcat-* hosts are null-routed by default, so nothing reaches the
-	// probe until an operator flips them in internal/nintendo/hosts.go -- see
-	// internal/bcat.Probe and TODO.md §2.4. Setting this without flipping them
-	// does nothing; flipping them without setting this still logs every request,
-	// which is enough to answer "did the console reach us at all".
+	// BCATRecordDir is where every bcat-* request is recorded, hexdumped,
+	// while still being answered 304 -- TODO.md §2.4 stage 1. Empty records
+	// nothing.
 	BCATRecordDir string
 }
 
@@ -46,7 +42,7 @@ type Config struct {
 type Handler struct {
 	cfg  Config
 	log  *slog.Logger
-	bcat http.Handler
+	bcat *bcat.Probe
 }
 
 // New returns a stub handler.
@@ -139,11 +135,8 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// 2122-2403 (module 122 = bcat) -- and their fix is the same
 		// unconditional 304 as newsTopics: "your cache is current," no
 		// data sent. See h.newsTopics's own doc comment and hosts.go's
-		// "BCAT: answered with 304" section. internal/bcat.Probe still
-		// exists for an operator to swap in deliberately, when actually
-		// answering real delivery-cache content becomes the question --
-		// see its own doc comment -- but it is not what these hosts
-		// answer with day to day any more.
+		// "BCAT: answered with 304" section. With stubs.bcat_record_dir
+		// set, internal/bcat.Probe records each request as well.
 		h.newsTopics(w, r)
 
 	case strings.HasPrefix(host, "policy.") && strings.Contains(host, ".scsi.srv.nintendo.net"):
@@ -273,7 +266,11 @@ func (h *Handler) applicationPolicy(w http.ResponseWriter) {
 // right: there is no body to invent, and SwitchNet has no real BCAT or news
 // content of its own to serve regardless.
 func (h *Handler) newsTopics(w http.ResponseWriter, r *http.Request) {
-	h.log.Info("stubs: bcat host answered 304", "host", hostOnly(r.Host), "path", r.URL.Path)
+	if h.cfg.BCATRecordDir != "" {
+		h.bcat.Observe(r, http.StatusNotModified, "bcat: answered 304; see internal/stubs newsTopics")
+	} else {
+		h.log.Info("stubs: bcat host answered 304", "host", hostOnly(r.Host), "path", r.URL.Path)
+	}
 	w.WriteHeader(http.StatusNotModified)
 }
 

@@ -544,3 +544,19 @@ func TestOp2MembershipsIsTheItemsEnvelopeTheAccountParserReads(t *testing.T) {
 		t.Errorf("malformed id got an items envelope: %s", rec.Body.String())
 	}
 }
+
+// TestBCATRequestsAreRecordedWhileStillAnswered304: stage 1 of TODO.md §2.4
+// runs on every boot when bcat_record_dir is set, and recording must not
+// change the answer -- anything but 304 risks the 2122-2403 hard error.
+func TestBCATRequestsAreRecordedWhileStillAnswered304(t *testing.T) {
+	dir := t.TempDir()
+	h := newHandler(t, Config{BCATRecordDir: dir})
+	rec := get(t, h, "bcat-list-lp1.cdn.nintendo.net", "/api/nx/v1/list/splatoon3")
+	if rec.Code != http.StatusNotModified {
+		t.Errorf("code = %d, want 304 even while recording", rec.Code)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no transcript written (%v)", err)
+	}
+}

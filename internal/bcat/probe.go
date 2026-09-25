@@ -19,12 +19,11 @@ import (
 // TODO.md §2.4 and docs/QUESTIONS.md, and this handler is that experiment's
 // server.
 //
-// Stage 1 of the experiment: **does the console reach us at all?** Flip the
-// three `bcat-*` hosts in internal/nintendo/hosts.go from ServiceBlackhole to
-// ServiceStubs, regenerate the DNS and nginx configuration, and open Splatoon 3.
-// If requests arrive here, the paths are right and DNS and TLS work — and the
-// resulting log, with `stubs.bcat_record_dir` set, is the first record anyone has
-// of what the console actually asks for.
+// Stage 1 of the experiment: **what does the console ask for?** The three
+// `bcat-*` hosts already reach the stubs service, which answers 304. With
+// `stubs.bcat_record_dir` set, every one of those requests is also recorded
+// here (Observe), hexdumped, without changing the answer. That transcript is
+// the first record anyone has of the list/data paths the console requests.
 //
 // Stage 2 — answering with a container that has a deliberately invalid signature,
 // to find out whether the console verifies one — is **not** built, and cannot
@@ -117,6 +116,18 @@ func NewProbe(log *slog.Logger, recordDir string, now func() time.Time) (*Probe,
 	return &Probe{log: log, rec: rec}, nil
 }
 
+// Observe logs and records a request that something else is answering, with
+// the status it was given. This is how stage 1 runs day to day: the stubs
+// service keeps answering 304 (anything else risks the 2122-2403 hard error)
+// and the probe only watches.
+func (p *Probe) Observe(r *http.Request, status int, note string) {
+	p.log.Info("bcat: the console asked BCAT for something",
+		"host", wirelog.HostOnly(r.Host), "method", r.Method,
+		"path", r.URL.Path, "query", r.URL.RawQuery, "answered", status,
+		"recording", p.rec.Recording())
+	p.rec.Record(r, nil, status, note)
+}
+
 // ServeHTTP logs the request and answers 200 with an empty body.
 //
 // An empty 200 rather than an error, and rather than a fabricated container.
@@ -129,9 +140,8 @@ func NewProbe(log *slog.Logger, recordDir string, now func() time.Time) (*Probe,
 // completing the request.
 //
 // **Not a substitute for serving BCAT.** A console pointed at this gets no
-// content. That is why the hosts stay null-routed by default: null-routing fails
-// immediately, and a server that answers without delivering anything risks
-// turning that into a wait.
+// content, and an empty 200 where it expected a list risks a hang; day to day
+// the hosts answer 304 instead and the probe only Observes.
 func (p *Probe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Warn, not info: every line here is a request nobody has documented, and
 	// the operator running this experiment is watching for exactly them.
