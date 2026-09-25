@@ -517,3 +517,35 @@ func TestADeletedUsersGameSessionStopsAtOnce(t *testing.T) {
 		t.Errorf("ValidateToken after deletion: %v, want Unauthenticated", err)
 	}
 }
+
+// TestOnlyAnAccessTokenIsAcceptedAsABearer: every NPLN token shares one key,
+// so the signature alone does not say what kind a token is. A refresh token
+// used as a bearer would skip the refresh exchange for 30 days; a session
+// token carries no device account and would skip revocation.
+func TestOnlyAnAccessTokenIsAcceptedAsABearer(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("bearer0000000001", "device-bearer-1")
+	resp, err := authpb.NewAuthClient(h.conn).IssueToken(h.ctx("", ""), &authpb.IssueTokenRequest{
+		ExternalIdToken: &authpb.ExternalIdToken{
+			Token: &authpb.ExternalIdToken_NsaIdToken{NsaIdToken: h.baasIDToken("bearer0000000001", "device-bearer-1")},
+		},
+	})
+	if err != nil {
+		t.Fatalf("IssueToken: %v", err)
+	}
+	client := authpb.NewAuthClient(h.conn)
+	if _, err := client.ValidateToken(h.ctx(resp.GetToken().GetAccessToken(), ""), &emptypb.Empty{}); err != nil {
+		t.Fatalf("the access token itself was refused: %v", err)
+	}
+	if _, err := client.ValidateToken(h.ctx(resp.GetToken().GetRefreshToken(), ""), &emptypb.Empty{}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("a refresh token as a bearer: %v, want Unauthenticated", err)
+	}
+
+	session, err := h.srv.issueSessionToken("bearer0000000001", "some-session")
+	if err != nil {
+		t.Fatalf("issueSessionToken: %v", err)
+	}
+	if _, err := client.ValidateToken(h.ctx(session, ""), &emptypb.Empty{}); status.Code(err) != codes.Unauthenticated {
+		t.Errorf("a session token as a bearer: %v, want Unauthenticated", err)
+	}
+}

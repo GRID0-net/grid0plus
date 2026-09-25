@@ -177,6 +177,20 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 	if claims.Subject == "" {
 		return Caller{}, ErrUnauthenticated
 	}
+	// One key signs every token this server issues, so a valid signature
+	// says nothing about what KIND of token this is. Only an access token may
+	// act as a bearer. A refresh token would turn a 30-day credential into
+	// one that skips the refresh exchange entirely; a session token carries
+	// no device account, so it would skip the revocation check below. Both
+	// name only their own holder, but a token whose holder is not its subject
+	// -- one player handing another something signed with this key -- would
+	// let the holder act as somebody else, which is the bug this function
+	// exists to prevent.
+	if claims.Refresh || claims.Gamesync != nil || claims.Issuer != s.issuerName {
+		s.log.Warn("npln: refused a non-access token presented as a bearer",
+			"issuer", claims.Issuer, "refresh", claims.Refresh, "session", claims.Gamesync != nil)
+		return Caller{}, ErrUnauthenticated
+	}
 
 	// The 'uid' metadata is the client telling us who it thinks it is. It is
 	// checked against the token and otherwise ignored. A mismatch is refused
