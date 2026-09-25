@@ -7,8 +7,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0">
   <img src="https://img.shields.io/badge/go-1.24%2B-00ADD8" alt="Go 1.24+">
-  <img src="https://img.shields.io/badge/phase%201-code%20complete-brightgreen" alt="Phase 1 code complete">
-  <img src="https://img.shields.io/badge/phase%202-code%20complete-brightgreen" alt="Phase 2 code complete">
+  <img src="https://img.shields.io/badge/phase%201-on%20hardware-brightgreen" alt="Phase 1 running on hardware">
+  <img src="https://img.shields.io/badge/phase%202-on%20hardware%2C%20hall%20blocked-yellow" alt="Phase 2 on hardware, hall blocked">
   <img src="https://img.shields.io/badge/phase%203-separate%20module%2C%20not%20started-lightgrey" alt="Phase 3">
   <img src="https://img.shields.io/badge/phase%204-code%20complete-brightgreen" alt="Phase 4 code complete">
 </p>
@@ -60,13 +60,13 @@ Four phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| **1** | accounts, friend codes, friends, presence | code complete, awaiting hardware verification |
-| **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | code complete, awaiting hardware verification |
+| **1** | accounts, friend codes, friends, presence | **running on a real console**: sign-in, Nintendo Account linking and the friend list work; the received-requests view still shows 2124-0104 |
+| **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | **running on a real console** up to the hall, where it stops with a communication error — see [`TODO.md`](TODO.md) §4.2 |
 | **3** | eShop, served from local `.NSP` dumps of games you own | planned as a **separate, optional module**, not started |
-| **4** | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, awaiting hardware verification and a capture |
+| **4** | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, not yet tried on a console |
 
-Phases 1, 2 and 4 are what this repository contains today. All three are
-waiting on the same thing: a console. Phase 4 stays in this repository too,
+Phases 1, 2 and 4 are what this repository contains today. Phase 4 has not
+been tried on a console yet. It stays in this repository too,
 unlike phase 3 — see
 [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) and
 [`internal/scsi/README.md`](internal/scsi/README.md).
@@ -80,32 +80,27 @@ planned as a separate module a deployment can add later, not core scope. See
 what that boundary means in practice.
 
 ```
-┌──────────────┐   HTTPS, Nintendo hostnames    ┌─────────────────────────────┐
-│  Switch      │ ─────────────────────────────► │  nginx, TLS + SNI routing   │
-│  Home Menu   │   redirected by a resolver you  └────────────┬────────────────┘
-│  friends     │   already run -- nothing on SD               │
-└──────────────┘                          ┌───────────────────┼─────────────────┐
-                                          ▼                   ▼                 ▼
-                                  ┌───────────────┐   ┌───────────────┐  ┌──────────────┐
-                                  │ dauth         │   │ baas          │  │ stubs        │
-                                  │ device tokens │   │ accounts      │  │ ctest, frs,  │
-                                  ├───────────────┤   │ friends       │  │ op2, penne…  │
-                                  │ aauth         │   │ presence      │  └──────────────┘
-                                  │ app tokens    │   └───────┬───────┘
-                                  └───────────────┘           │
-                                                    ┌─────────┴─────────┐
-                                                    ▼                   ▼
-                                             ┌────────────┐      ┌────────────┐
-                                             │ PostgreSQL │      │ Redis      │
-                                             │ accounts,  │      │ presence   │
-                                             │ friends    │      │ events     │
-                                             └────────────┘      └────────────┘
-
-                                  ┌──────────────────────────────────────────┐
-                                  │ natcheck (UDP)                           │
-                                  │ so the consoles can find each other for  │
-                                  │ peer-to-peer play                        │
-                                  └──────────────────────────────────────────┘
+┌──────────────┐  HTTPS, Nintendo hostnames   ┌──────────────────────────────┐
+│  Switch      │ ───────────────────────────► │  nginx, TLS + SNI routing    │
+│  system,     │  redirected by Atmosphère's  └──────────────┬───────────────┘
+│  Splatoon 3  │  hosts file or your resolver                │
+└──────┬───────┘        ┌─────────────┬──────────────┬───────┴──────┬──────────────┐
+       │                ▼             ▼              ▼              ▼              ▼
+       │         ┌────────────┐ ┌───────────┐ ┌─────────────┐ ┌──────────┐ ┌────────────┐
+       │         │ dauth      │ │ baas      │ │ npln        │ │ scsi     │ │ stubs      │
+       │         │ aauth      │ │ accounts  │ │ NPLN gRPC,  │ │ OLSC     │ │ everything │
+       │         │ device/app │ │ friends   │ │ toyohr,     │ │ save     │ │ else, incl.│
+       │         │ tokens     │ │ presence  │ │ ugcstore,   │ │ backup   │ │ BCAT 304s  │
+       │         └────────────┘ └─────┬─────┘ │ nplnrest,   │ └──────────┘ └────────────┘
+       │                              │       │ gamesync    │
+       │                              │       └──────┬──────┘
+       │                        ┌─────┴──────────────┴─┐        ┌───────────────────────┐
+       │                        ▼                      ▼        │ dashboard  (operator) │
+       │                 ┌────────────┐         ┌────────────┐  │ toolbox    (the .nro) │
+       │                 │ PostgreSQL │         │ Redis      │  └───────────────────────┘
+       │                 └────────────┘         └────────────┘
+       │  UDP
+       └───────────────► natcheck (NAT type), STUN (latency) — for peer-to-peer play
 ```
 
 ## Scope, and what this is not
@@ -225,42 +220,43 @@ the guesses are. Read it before changing anything under `internal/baas`.
 
 ## How a console is pointed at it
 
-Two separate problems, with very different answers — and most guides conflate them:
+Three separate problems, and most guides conflate them. Full detail, and the
+alternatives, in [`switch/README.md`](switch/README.md).
 
-**Redirection happens off the console.** A Switch resolves hostnames through
-whatever DNS its network gives it, in stock firmware. So there is no hosts file,
-no `enable_dns_mitm`, and nothing on the SD card for this half. SwitchNet does
-not run its own DNS server: add the generated `dnsmasq`/`unbound` configuration
-to a resolver you already run (a router, Pi-hole, Unbound). Either that resolver
-is handed out over DHCP — in which case the console needs *no configuration at
-all* — or set DNS manually in the console's own network settings.
+**What this deployment actually runs:** the SwitchNet Toolbox homebrew
+([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro),
+private), on an emuMMC that only ever talks to SwitchNet. One menu entry
+writes Atmosphère's `hosts/{sysmmc,emummc}.txt` (generated from
+`internal/nintendo/hosts.go`), installs the certificate-verification IPS
+patches and Splatoon 3's own patches, and reboots. "Default" mode restores
+the previous hosts folder.
 
-**Certificate trust does need the console**, and there is no way around it: the
-console asks for `dauth-lp1.ndas.srv.nintendo.net`, whose certificate is signed by
-a private Nintendo CA. The usual answer is an Atmosphère `disable_ca_verification`
-exefs patch, which is gated on the firmware build id, fails *silently* when it
-does not match, and turns off certificate validation system-wide. SwitchNet
-documents a better route — extending the console's own CA store, which is a
-LayeredFS data file rather than a code patch — with an honest note about the part
-of it that is not yet confirmed. See
-[`switch/README.md`](switch/README.md#part-2-certificate-trust).
+**Redirection.** Either Atmosphère's DNS-MITM hosts file, as above, or no SD
+card change at all: add the generated `dnsmasq`/`unbound` configuration
+(`make gen-dns`) to a resolver you already run and hand it out over DHCP.
 
-**Splatoon 3 is a third problem**, and neither of the above touches it. It carries
-its own TLS stack and talks over a raw socket, never calling the console's `ssl`
-service — so it does not consult the CA store, and it is unaffected by anything
-you install for the two problems above. It needs a patch to its own executable,
-which has to be built against your own dump because the address it patches is
-found by searching that dump:
+**Certificate trust** has to happen on the console: it asks for
+`dauth-lp1.ndas.srv.nintendo.net`, whose certificate is signed by a private
+Nintendo CA. The Toolbox uses the public `disable_ca_verification` and
+`disable_browser_ca_verification` patches, which are matched on the firmware
+build id and fail silently when it does not match. `switch/README.md`
+documents a narrower route — extending the console's own CA store as a
+LayeredFS data file — whose one unconfirmed step is written down there.
+
+**Splatoon 3 is a third problem.** It links its own TLS stack and pins its
+own certificates, so neither of the above touches it. The Toolbox ships
+patches for v11.3.0 (certificate pin, gRPC peer and verify options); how they
+were found is in switchnet-nro's `docs/game-specific-tls-pinning.md`. For a
+different build, `make patch-splatoon3` builds the upstream patch from your
+own dump:
 
 ```sh
 make patch-splatoon3 NSO=/path/to/main            # into Ryujinx's mods directory
 make patch-splatoon3 NSO=/path/to/main SD=/mnt/sd # onto an Atmosphère SD card
 ```
 
-Ryujinx will dump the NSO for you: right-click the title, Extract Data, ExeFS.
-The patch *disables* verification rather than adding trust, so it applies to every
-server the game talks to; and it is matched on the build id, so a title update
-silently stops it applying and the fix is to re-run the above.
+Every one of these patches is matched on a build id, so a firmware or title
+update silently stops it applying.
 
 ## The one setting people get wrong
 
@@ -293,7 +289,7 @@ Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
 
 ## What phase 2 implements
 
-Not code complete, and not yet touched by a real console — see
+Running on a real console up to Splatoon 3's hall — see
 [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) and
 [`TODO.md`](TODO.md) for exactly what within each row below is real versus
 honestly-empty.
@@ -305,20 +301,22 @@ honestly-empty.
 | Matchmaking, sessions, ICE server allocation | `internal/matchmaking`, `internal/npln/matchmaking.go` |
 | Match history | `npln_matches`, read by the dashboard |
 | `gamesync` (Firestore-shaped document/watch service, on its own port) | `internal/gamesync` |
-| Splatfests, map/mode + Salmon Run schedules, cloud save lookups, the rest of `toyohr` | `internal/toyohr` |
-| BCAT pack building (not yet serving to a console) | `internal/bcat` |
+| Splatfests, map/mode + Salmon Run schedules, per-player cloud save, the rest of `toyohr` | `internal/toyohr` |
+| Splatoon 3's per-player document store (GameRecord and friends) | `internal/ugcstore` |
+| Latency measurement (STUN), before matchmaking | `internal/stunresponder` |
+| BCAT pack building (serving it natively is [`TODO.md`](TODO.md) §2.4) | `internal/bcat` |
 | Dashboard: players, matchmaking, Splatfests, match history, Debug tab | `internal/dashboard`, `cmd/dashboard` |
 
 ## What phase 4 implements
 
 OLSC (Online Save Cloud) — the OS-level per-game save-data backup tied to a
 Nintendo Switch Online subscription, **not** the same thing as Splatoon 3's
-own `CloudSave.GetSaveRecord` above. Not yet touched by a real console, and
+own `CloudSave` save record above. Not yet touched by a real console, and
 built against public documentation rather than a capture — see
 [`internal/scsi/README.md`](internal/scsi/README.md) for exactly which
 endpoints are confirmed versus this project's own defensible reading of an
-undocumented one, and `docs/CAPTURES/README.md`'s Phase 4 section for what a
-real capture would settle.
+undocumented one, and `docs/CAPTURES/README.md`'s Phase 4 section for what is
+still open.
 
 | Feature | Endpoint |
 | --- | --- |
@@ -361,10 +359,17 @@ internal/
                  watch service -- its own port, its own listener
   toyohr/        Splatoon 3's own services: Splatfests, Schedule (incl. a
                  real Salmon Run rotation), CloudSave, and the rest
+  ugcstore/      Splatoon 3's per-player document store (GameRecord etc.)
+  stunresponder/ STUN Binding answers for the game's latency measurement
+  splatdiag/     opt-in one-account comparison against private records
+                 (the records themselves are never in the repository)
   messaging/     per-user mailbox, behind npln's Messaging
   bcat/          builds and encrypts the BCAT packs custom Splatfest content
                  ships in
   wirelog/       request transcripts, for the protocols nobody has documented
+  health/        /healthz for every service, read by the dashboard
+  toolbox/       the public API the SwitchNet Toolbox .nro asks for updates
+                 and server status
   dashboard/     the operator's web UI: players, matchmaking, Splatfests,
                  match history, a Debug tab
 switch/          console-side setup and the generated hosts file
@@ -387,7 +392,7 @@ make up                     # Postgres, Redis and nginx, if not already up
 bin/switchnetctl run baas   # or: dauth, aauth, npln, dashboard, ...
 ```
 
-`make run` (no args) does the same for all eight at once, in the foreground,
+`make run` (no args) does the same for all nine at once, in the foreground,
 with each service's output prefixed by name; Ctrl-C stops all of them. Unlike
 the systemd units used in production, this never restarts a crashed child —
 you want to see a crash immediately while coding, not have it silently come
@@ -470,7 +475,13 @@ grep -rn 'TODO(capture-needed)' internal/
 
 ### Settling them
 
-`scripts/capture-baas.py` answers most of them in one command. It talks to
+Nothing here is captured from Nintendo *through the console*: this
+deployment's console never runs Atmosphère against Nintendo's servers, so a
+capture of Nintendo from it is a tcpdump at most. Shapes are settled by
+reverse engineering, live GDB on the emuMMC, captures of the console talking
+to SwitchNet, and facts other projects have published.
+
+For BAAS specifically, `scripts/capture-baas.py` answers most of them in one command. It talks to
 Nintendo's real BAAS from a PC using your console's credentials, so **the console
 is never involved** — and in particular never runs with certificate verification
 disabled while talking to Nintendo, which is the main risk in the usual
@@ -492,6 +503,11 @@ Protocol knowledge comes almost entirely from
 and the `NintendoClients` library itself, which is where the real presence request
 shape came from. The Atmosphère host list and the certificate-trust approach come
 from [Nextendo's Prelude-Nro](https://github.com/NextendoNetwork/Prelude-Nro).
+Much of phase 2's Splatoon 3 behaviour is checked against facts recorded by
+[NextendoNetwork/splatoon-3](https://github.com/NextendoNetwork/splatoon-3) —
+facts only, never its PolyForm Shield-licensed code. Gear, stage and weapon
+ids come from [Leanny/splat3](https://github.com/Leanny/splat3)'s public data
+dump.
 
 Both the identity design and the presence design in this repository are shaped by
 a write-up of two real failures on real hardware — every console acting as one
