@@ -45,7 +45,7 @@ func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 	_, ctx, c := ugcHarness(t)
 	var header, trailer metadata.MD
 	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{
-		Name: "tenants/current/documents/services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data",
+		Name: "tenants/current/documents/services/Hammer/users/ugc0000000000001/UserAttribute/Data",
 	}, grpc.Header(&header), grpc.Trailer(&trailer))
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetDocument = %v, %v; want NotFound", doc, err)
@@ -60,7 +60,7 @@ func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 		t.Error("missing captured NError status detail")
 	}
 	st, _ := status.FromError(err)
-	wantMessage := `NotFound. reason: "Document:"services/GameRecord/users/ugc0000000000001/VsUserAttribute/Data" Not Found"`
+	wantMessage := `NotFound. reason: "Document:"services/Hammer/users/ugc0000000000001/UserAttribute/Data" Not Found"`
 	if st.Message() != wantMessage {
 		t.Errorf("NotFound message = %q, want captured grammar %q", st.Message(), wantMessage)
 	}
@@ -268,5 +268,32 @@ func TestInitializeCurrentUserKeepsEachPlayersDocumentsSeparate(t *testing.T) {
 	_, err := gr.InitializeAttributes(h.ctx("", ""), &toyohrpb.InitializeAttributesRequest{User: "tenants/current/users/current"})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("anonymous initialise: %v, want Unauthenticated", err)
+	}
+}
+
+// TestAPlayersAttributeDocumentsExistOnFirstRead: a console told it has a
+// cloud save reads CoopUserAttribute/Data and VsUserAttribute/Data and never
+// calls InitializeAttributes (Nextendo's measurement of real Nintendo);
+// NotFound there was followed by 2321-0384 on hardware on 2026-09-25.
+func TestAPlayersAttributeDocumentsExistOnFirstRead(t *testing.T) {
+	_, ctx, c := ugcHarness(t)
+	base := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/"
+	vs, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: base + "VsUserAttribute/Data"})
+	if err != nil {
+		t.Fatalf("VsUserAttribute: %v", err)
+	}
+	if got := vs.GetFields().GetFields()["season_id"].GetIntegerValue(); got != 16 {
+		t.Errorf("season_id = %d, want 16", got)
+	}
+	if vs.GetName() == "" {
+		t.Error("document has no name; an unnamed document aborts the client")
+	}
+	if _, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: base + "CoopUserAttribute/Data"}); err != nil {
+		t.Fatalf("CoopUserAttribute: %v", err)
+	}
+	// Someone else's attribute document is never created on their behalf.
+	other := "tenants/current/documents/services/GameRecord/users/ugc0000000000002/VsUserAttribute/Data"
+	if _, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: other}); status.Code(err) != codes.NotFound {
+		t.Errorf("another player's attribute document = %v, want NotFound", err)
 	}
 }

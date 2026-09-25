@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -105,6 +106,14 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 	case errors.Is(err, db.ErrNotFound):
 		if doc, enabled := s.diagnostic.AttributeFor(uid, key, s.now()); enabled {
 			s.log.Info("ugcstore: private diagnostic attribute served", "name", key)
+			return doc, nil
+		}
+		if attrs, ok := startingAttributes(key, uid); ok {
+			doc, err := s.Put(ctx, uid, req.GetName(), attrs)
+			if err != nil {
+				return nil, err
+			}
+			s.log.Info("ugcstore: created a starting attribute document", "name", key)
 			return doc, nil
 		}
 		s.log.Info("ugcstore: requested document is absent", "name", key)
@@ -391,4 +400,39 @@ func (s *Service) Put(ctx context.Context, uid, name string, attrs *commonpb.Map
 		return nil, status.Error(codes.Internal, "internal error")
 	}
 	return toProto(p.row, name)
+}
+
+// attributeSeason is the season GameRecord's Vs attributes start in: the
+// SeasonSchedule id both working hall captures carry (unk2/unk3 = 16), and
+// the season_id of the working capture's VsUserAttribute.
+const attributeSeason = 16
+
+// startingAttributes answers whether key is one of the caller's own two
+// GameRecord attribute documents, and if so what it starts with.
+//
+// NextendoNetwork/splatoon-3 measured (facts only, not its code) two real
+// Nintendo sessions: a console whose GetSaveRecord returned a record reads
+// CoopUserAttribute/Data then VsUserAttribute/Data first and gets both --
+// it never calls InitializeAttributes; a console with no record gets both
+// empty and calls InitializeAttributes. SwitchNet always answers a record
+// (see internal/toyohr/cloud_save.go), so the console takes the first path,
+// and on 2026-09-25 a NotFound there was followed by 2321-0384. So the
+// documents are created on first read, with exactly what
+// GameRecord/InitializeAttributes would have stored: the season for Vs,
+// nothing for Coop. The game keeps its own default for every absent key.
+func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
+	owner, ok := pathOwner(key)
+	if !ok || owner != uid {
+		return nil, false
+	}
+	_, docPath, _ := strings.Cut(key, documentsSegment)
+	switch docPath {
+	case "services/GameRecord/users/" + uid + "/VsUserAttribute/Data":
+		return &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"season_id": intValue(attributeSeason),
+		}}, true
+	case "services/GameRecord/users/" + uid + "/CoopUserAttribute/Data":
+		return &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}, true
+	}
+	return nil, false
 }

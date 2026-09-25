@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	commonpb "github.com/n-popescu/switchnet/proto/common"
@@ -77,8 +75,8 @@ func TestPrivateSaveComparisonDoesNotReachAnotherAccount(t *testing.T) {
 			if err != nil || doc.GetFields().GetFields()["owner"].GetStringValue() != "users/"+target {
 				t.Errorf("target attribute mismatch: %v", err)
 			}
-		} else if status.Code(err) != codes.NotFound {
-			t.Errorf("other account GetDocument=%v, want NotFound", err)
+		} else if err != nil || doc.GetFields().GetFields()["owner"] != nil {
+			t.Errorf("other account GetDocument = %v, %v; want its own starting document, not the diagnostic's", doc, err)
 		}
 	}
 }
