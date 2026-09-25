@@ -6,7 +6,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -120,11 +119,21 @@ func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 		return stream.SendMsg(rec)
 	}
 
-	if err := stream.SendHeader(metadata.Pairs("npln-grpc-type", "Unary", "content-length", "0")); err != nil {
-		return err
-	}
-	s.log.Info("toyohr: GetSaveRecord answered with no cloud save", "user", uid)
-	return nil
+	// Nothing stored: answer an empty but existing record, not zero messages.
+	// This console already has a local save. On 2026-09-24, given an empty
+	// record, it sent evt=Validate WriteSaveRecords with the keys it was
+	// missing; on 2026-09-25, given zero messages (the shape Nextendo measured
+	// for a fresh Nintendo account), it wrote nothing at all, so nothing could
+	// ever be stored. The empty record is what starts the writes that
+	// WriteSaveRecord now keeps.
+	now := timestamppb.New(s.now())
+	s.log.Info("toyohr: GetSaveRecord answered with an empty record", "user", uid)
+	return stream.SendMsg(&toyohrpb.SaveRecord{
+		Name:       s.saveRecordName(uid),
+		SaveData:   &common.MapValue{Fields: map[string]*common.Value{}},
+		CreateTime: now,
+		UpdateTime: now,
+	})
 }
 
 // diagnosticSaveRecord builds the private diagnostic probe's own resolved

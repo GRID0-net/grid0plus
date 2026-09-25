@@ -1,7 +1,6 @@
 package npln
 
 import (
-	"io"
 	"testing"
 
 	commonpb "github.com/n-popescu/switchnet/proto/common"
@@ -25,8 +24,10 @@ func TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot(t *testing.T) {
 	ctx := h.ctx(h.sessionFor(t, uid, "device-save-1"), "")
 	get := &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"}
 
-	if _, err := saves.GetSaveRecord(ctx, get); err != io.EOF {
-		t.Fatalf("first boot GetSaveRecord = %v, want io.EOF (no cloud save yet)", err)
+	// An established console only writes after seeing an existing, empty
+	// record (2026-09-24 hardware); zero messages made it write nothing.
+	if empty, err := saves.GetSaveRecord(ctx, get); err != nil || len(empty.GetSaveData().GetFields()) != 0 || empty.GetName() == "" {
+		t.Fatalf("first boot GetSaveRecord = %v, %v; want a named, empty record", empty, err)
 	}
 
 	first, err := saves.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{
@@ -93,8 +94,8 @@ func TestOneConsoleCannotReadOrOverwriteAnothersCloudSave(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := saves.GetSaveRecord(bobCtx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/" + alice}); err != io.EOF {
-		t.Errorf("bob GetSaveRecord = %v, want io.EOF: alice's write must not land on, or be readable by, bob", err)
+	if got, err := saves.GetSaveRecord(bobCtx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/" + alice}); err != nil || len(got.GetSaveData().GetFields()) != 0 {
+		t.Errorf("bob GetSaveRecord = %v, %v; want bob's own empty record: alice's write must not land on, or be readable by, bob", got, err)
 	}
 	got, err := saves.GetSaveRecord(aliceCtx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"})
 	if err != nil || got.GetSaveData().GetFields()["UserName"].GetStringValue() != "alice" {
