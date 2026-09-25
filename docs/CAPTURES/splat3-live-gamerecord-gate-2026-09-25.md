@@ -125,3 +125,55 @@ Keep all pre-existing uncommitted files (`internal/toyohr/backlog.go`,
 `internal/toyohr/game_record.go`, `AGENTS.md`, `dev/`) untouched. SwitchNet
 `main`, origin, and the VM were at `b590e65` during this test. The VM was left
 running. Do not commit any decoded private capture material.
+
+## Static follow-up: what state 4 actually means (later on 2026-09-25)
+
+Disassembly of the same build (ELF regenerated with `nx2elf`, based at 0, so
+addresses below are RVAs) refines the reading above. The manager's vtable at
+`0x5d91bf0` is a component interface: `+0x20` Initialize (`0x328b7c8`),
+`+0x28` Reset (`0x328b8b0`), `+0x30` Update (`0x328bcc0`), `+0x38`
+IsInitialized (`+8 != 0`), `+0x40` IsBusy (`+0x70 == 1`), `+0x50` GetState
+(`+0x70`). Slots `+0x60..+0xd0` are plain field getters, not fetch entries.
+
+- **Constructor** (`0x328b2a0`) stores the vtable at `+0`, **null at `+8`**,
+  and `state = 0`.
+- **Reset** writes `state = 4, kind = 0` and clears the work items. That is
+  exactly the observed `+0x70 == 4, +0x74 == 0`, null items: the manager was
+  reset and **never started**, not "started and failed". (Update also writes
+  4 when a job finishes with a status other than OK or NOT_FOUND, so GetState
+  alone cannot tell the two apart, and a hall that asks for it would plausibly
+  show a communication error either way.)
+- **Initialize** is the only writer of `+8`: it wraps `*x1` in the manager's
+  own `ServiceClient` and does nothing if `*x1` is null.
+- **Update's first guard is IsBusy**, not a readiness check: while `state == 1`
+  it dispatches on `kind` (1..8) and folds the four job results at
+  `+0x60..+0x6c` into state 3 or 4. The per-job handler `0x328c020` treats
+  status 0 as success, status 5 (NOT_FOUND) as a normal absent document, and
+  any other status as failure.
+- **Starts** are virtual methods that write `state = 1` with a kind:
+  `+0xd8` → kind 1 (`0x328cb10`, store at `0x328cd50`), `+0xe0` → kind 2
+  (`0x328ce50`), `+0x128` → kind 7 (`0x328df90`). No direct `BL` reaches them.
+  The kind-1 start returns without doing anything when `+8 == 0`
+  (not initialized), when already busy, when its 32-bit id argument is 0, when
+  its count is < 1, or when its record type is outside 1..4.
+- Document-name formatters live beside these: `VsUserAttribute/Data`
+  (`0x3283834`), `CoopUserAttribute/Data` (`0x3283e04`),
+  `WeaponPowerMeasurement/%d`, `PointCardRegular/%s`, `PointCardTotal/Data`,
+  `BankaraChallenges/%s`, matching the working capture's boot reads.
+
+Ruled out on the server side while checking this: the working VsUserAttribute
+carries `season_id = 16`, which is `SeasonSchedule.unk2/unk3` (SwitchNet
+already sends 16), not `schedule_set_id` ("10" in the capture). The working
+`InitializeAttributes` carries `coop_shift.shift_id = "20260923100000"`, a
+`%d%02d%02d%02d0000` stamp of the current Coop shift start.
+
+### Live check prepared
+
+`~/switchnet-re/gdb/grstart.py` attaches at launch (`monitor wait`), resolves
+the main base from `monitor get info`, and arms non-stopping breakpoints that
+log `x0..x4`, the caller (`lr` as an RVA), `[x0+8]`, `[x0+0x70]` and `[x1]` to
+`~/switchnet-re/gdb/grstart.log`, at: Initialize and its `+8` store, all three
+starts, the kind-1 "passed all guards" point (`0x328cd48`), Reset, and the VS
+and Coop fetch entries. Run it with `gdb -q -x ~/switchnet-re/gdb/grstart.py`
+**before** launching the game. One boot answers: is Initialize reached with a
+live client, is any start ever called and by whom, and which guard stops it.
