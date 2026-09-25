@@ -134,6 +134,12 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 		s.log.Error("ugcstore: decode document", "name", key, "error", err)
 		return nil, status.Error(codes.Internal, "internal error")
 	}
+	if missing := missingStartingFields(key, uid, doc.GetFields()); missing != nil {
+		if doc, err = s.Put(ctx, uid, req.GetName(), missing); err != nil {
+			return nil, err
+		}
+		s.log.Info("ugcstore: completed a sparse attribute document", "name", key, "added", len(missing.GetFields()))
+	}
 	return doc, nil
 }
 
@@ -424,24 +430,71 @@ const attributeSeason = 16
 // empty and calls InitializeAttributes. SwitchNet always answers a record
 // (see internal/toyohr/cloud_save.go), so the console takes the first path,
 // and on 2026-09-25 a NotFound there was followed by 2321-0384. So the
-// documents are created on first read, with exactly what
-// GameRecord/InitializeAttributes would have stored: the season for Vs,
-// nothing for Coop. The game keeps its own default for every absent key.
+// documents are created on first read with the field set both working
+// captures carry, at a never-played player's values: Nextendo records
+// Nintendo's answer for a never-played account as the same Coop fields, all
+// zero. Rating fields stay absent: the console initialises them itself with
+// InitializeAttributes initial_vs.
 func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 	owner, ok := pathOwner(key)
 	if !ok || owner != uid {
 		return nil, false
 	}
+	str := func(v string) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
+	}
 	_, docPath, _ := strings.Cut(key, documentsSegment)
 	switch docPath {
 	case "services/GameRecord/users/" + uid + "/VsUserAttribute/Data":
 		return &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-			"season_id": intValue(attributeSeason),
+			"season_id":    intValue(attributeSeason),
+			"npln_user_id": str(uid),
+			"version":      intValue(vsAttributeVersion),
 		}}, true
 	case "services/GameRecord/users/" + uid + "/CoopUserAttribute/Data":
-		return &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}, true
+		return &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"grade":                   intValue(0),
+			"limited_shift_id":        str(""),
+			"mm_disable_limit":        intValue(0),
+			"npln_user_id":            str(uid),
+			"on_going_job_id":         str(""),
+			"shift_id":                str(""),
+			"smell":                   intValue(0),
+			"team_contest_high_score": intValue(0),
+			"team_contest_point":      intValue(0),
+			"total_clear_wave":        intValue(0),
+			"total_grade_point":       intValue(0),
+			"version":                 intValue(coopAttributeVersion),
+		}}, true
 	}
 	return nil, false
+}
+
+// The attribute documents' schema versions, as both working hall captures
+// carry them. They are the record format, not player progress.
+const (
+	vsAttributeVersion   = 589824
+	coopAttributeVersion = 131072
+)
+
+// missingStartingFields returns the starting fields a stored attribute
+// document lacks, so documents created before the full field set existed
+// are completed on their next read rather than kept sparse forever.
+func missingStartingFields(key, uid string, have *commonpb.MapValue) *commonpb.MapValue {
+	start, ok := startingAttributes(key, uid)
+	if !ok {
+		return nil
+	}
+	missing := &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
+	for k, v := range start.GetFields() {
+		if _, present := have.GetFields()[k]; !present {
+			missing.Fields[k] = v
+		}
+	}
+	if len(missing.Fields) == 0 {
+		return nil
+	}
+	return missing
 }
 
 // emptyWhenAbsent reports whether an absent document is answered as a named,

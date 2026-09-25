@@ -288,8 +288,15 @@ func TestAPlayersAttributeDocumentsExistOnFirstRead(t *testing.T) {
 	if vs.GetName() == "" {
 		t.Error("document has no name; an unnamed document aborts the client")
 	}
-	if _, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: base + "CoopUserAttribute/Data"}); err != nil {
+	coop, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: base + "CoopUserAttribute/Data"})
+	if err != nil {
 		t.Fatalf("CoopUserAttribute: %v", err)
+	}
+	// The working captures' Coop field set, at a never-played player's values.
+	for _, k := range []string{"grade", "shift_id", "total_grade_point", "version", "npln_user_id"} {
+		if _, ok := coop.GetFields().GetFields()[k]; !ok {
+			t.Errorf("Coop attributes lack %q", k)
+		}
 	}
 	// Someone else's attribute document is never created on their behalf.
 	other := "tenants/current/documents/services/GameRecord/users/ugc0000000000002/VsUserAttribute/Data"
