@@ -6,8 +6,37 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
 )
+
+func TestCoopScheduleDoesNotChangeOnEveryPoll(t *testing.T) {
+	now := time.Date(2026, 9, 25, 9, 46, 22, 0, time.UTC)
+	svc, _ := newService(t, now)
+	svc.now = func() time.Time { return now }
+	sc := &scheduleService{s: svc}
+	read := func() *toyohrpb.SelectCoopSchedulesResponse {
+		t.Helper()
+		resp, err := sc.SelectCoopSchedules(context.Background(), &toyohrpb.SelectCoopSchedulesRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	first := read()
+	now = now.Add(20 * time.Second)
+	second := read()
+	if !proto.Equal(first, second) {
+		t.Fatal("unchanged Coop rotation changed between polls")
+	}
+	for _, schedule := range first.GetSchedules() {
+		want := schedule.GetStartTime().AsTime().Add(-7 * 24 * time.Hour)
+		if got := schedule.GetTimestamp().AsTime(); !got.Equal(want) {
+			t.Errorf("schedule timestamp = %s, want captured publication offset %s", got, want)
+		}
+	}
+}
 
 // TestLiveNormalCoopShiftsIsDeterministic is the whole point of
 // liveNormalCoopShifts: the same real moment must produce the same

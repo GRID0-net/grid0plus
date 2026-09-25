@@ -353,7 +353,11 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 		ScheduleSetId: "coop-" + scheduleSetID(AlignToSlot(s.now())),
 		StartTime:     timestamppb.New(r.StartAt),
 		EndTime:       timestamppb.New(r.EndAt),
-		Timestamp:     timestamppb.New(s.now()),
+		// Both working hall captures keep this field fixed at exactly seven
+		// days before the shift's start, across repeated schedule reads. Using
+		// the current request time made an otherwise unchanged rotation look
+		// different on every poll while its ETag stayed the same.
+		Timestamp: timestamppb.New(r.StartAt.Add(-7 * 24 * time.Hour)),
 	}
 	attrs := coopKumaWeaponsAttribute(r.KumaWeaponID)
 	reward := coopRewardForShift(r.RewardGearID, r.StartAt)
@@ -433,9 +437,8 @@ func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
 	}}
 }
 
-// The timestamp field reports response time and must not invalidate the
-// window's version on every poll. Hash the actual stable schedule messages,
-// including their content and order, with that field removed.
+// Keep Timestamp out of the ETag as an independent publication-time field.
+// It is stable for each shift, but the ETag identifies the rotation content.
 func coopScheduleEtag(schedules []*toyohrpb.CoopSchedule) (string, error) {
 	h := sha1.New()
 	for _, schedule := range schedules {
