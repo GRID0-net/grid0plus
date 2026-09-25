@@ -231,7 +231,7 @@ the ones it happened to call during whatever flow got captured.
 | `CancelMatchmakingTicket` | yes |
 | `CreateAcceptance` | **no** -- answers `Unimplemented` |
 
-`GameSessionService` (15 real RPCs, 12 implemented):
+`GameSessionService` (15 real RPCs, 13 implemented):
 
 | RPC | Implemented |
 | --- | --- |
@@ -248,7 +248,7 @@ the ones it happened to call during whatever flow got captured.
 | `CreateGameSessionShortAlias` | yes -- private rooms, `rooms.go` |
 | `GetGameSessionShortAlias` | yes -- private rooms, `rooms.go` |
 | `IssueMatchmakingIdToken` | **no** |
-| `IssueUserDelegationToken` | **no** |
+| `IssueUserDelegationToken` | yes -- `delegation.go`; not yet read by matchmaking |
 | `ListLatencyMeasurementServers` | **no** |
 | `TrackGameSessionCreationTicket` | yes -- private rooms, `rooms.go` |
 

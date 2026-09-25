@@ -36,9 +36,11 @@ type matchmakerService struct {
 // TODO(capture-needed): whether Splatoon 3 ever sends more than one
 // UserDefinition here. NPLN supports delegation -- one console queuing on
 // behalf of a party, carrying UserDelegationTokens -- and if the game uses it
-// for a squad, everyone but the leader is currently dropped. SwitchNet issues
-// no delegation tokens, so it cannot honour the field without inventing one.
-// A capture of a squad entering matchmaking would settle it.
+// for a squad, everyone but the leader is currently dropped. SwitchNet now
+// issues delegation tokens (delegation.go) but does not yet read them here:
+// nothing shows how a squad's ticket carries its members, and placing players
+// on one team from a guess is how a squad ends up split or stuck. A capture
+// of a squad entering matchmaking would settle it.
 //
 // A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main confirms
 // GameSessionService.IssueUserDelegationToken is a real, compiled-in RPC the
