@@ -277,6 +277,9 @@ func (sc *scheduleService) SelectLeagueSchedules(
 	if _, ok := sc.s.caller(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
+	if resp, ok := leagueDiagnosticResponse(sc.s.now()); ok {
+		return resp, nil
+	}
 	return &toyohrpb.SelectLeagueSchedulesResponse{}, nil
 }
 
@@ -299,12 +302,11 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // GetSaveRecord's real SaveRecord.
 //
 // A real VsParams is answered instead, timestamped off the current clock so
-// it is never stale, but Attributes is left an honestly empty MapValue and
-// ParamsSetId ties to the same slot-derived id vsSchedule already uses:
-// SwitchNet has no legitimate way to know what real tuning values belong
-// inside, and does not invent them. TODO(capture-needed): a capture of a
-// real VsParams payload's Attributes content -- see
-// docs/CAPTURES/README.md.
+// it is never stale, and ParamsSetId ties to the same slot-derived id
+// vsSchedule already uses. Attributes is populated by vsParamsAttributes
+// below with the fixed platform tuning values both preserved working
+// captures agree on byte-for-byte -- not invented, not session- or
+// account-specific.
 //
 // Name carries a "targets/<target>" segment -- settled by decompile, not a
 // guess. A 2026-09-24 decompile of Splatoon 3 v11.3.0's own main.nso (this
