@@ -109,7 +109,7 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 			s.log.Info("ugcstore: private diagnostic attribute served", "name", key)
 			return doc, nil
 		}
-		if attrs, ok := startingAttributes(key, uid, s.now()); ok && os.Getenv("SWITCHNET_UGCSTORE_NO_START_ATTRIBUTES") != "1" {
+		if attrs, ok := startingAttributes(key, uid); ok && os.Getenv("SWITCHNET_UGCSTORE_NO_START_ATTRIBUTES") != "1" {
 			doc, err := s.Put(ctx, uid, req.GetName(), attrs)
 			if err != nil {
 				return nil, err
@@ -135,7 +135,7 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 		s.log.Error("ugcstore: decode document", "name", key, "error", err)
 		return nil, status.Error(codes.Internal, "internal error")
 	}
-	if missing := missingStartingFields(key, uid, doc.GetFields(), s.now()); missing != nil {
+	if missing := missingStartingFields(key, uid, doc.GetFields()); missing != nil {
 		if doc, err = s.Put(ctx, uid, req.GetName(), missing); err != nil {
 			return nil, err
 		}
@@ -446,7 +446,7 @@ const attributeSeason = 16
 // Nintendo's answer for a never-played account as the same Coop fields, all
 // zero. Rating fields stay absent: the console initialises them itself with
 // InitializeAttributes initial_vs.
-func startingAttributes(key, uid string, now time.Time) (*commonpb.MapValue, bool) {
+func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 	owner, ok := pathOwner(key)
 	if !ok || owner != uid {
 		return nil, false
@@ -469,7 +469,7 @@ func startingAttributes(key, uid string, now time.Time) (*commonpb.MapValue, boo
 			"mm_disable_limit":        intValue(0),
 			"npln_user_id":            str(uid),
 			"on_going_job_id":         str(""),
-			"shift_id":                str(previousCoopShiftID(now)),
+			"shift_id":                str(""),
 			"smell":                   intValue(0),
 			"team_contest_high_score": intValue(0),
 			"team_contest_point":      intValue(0),
@@ -491,8 +491,8 @@ const (
 // missingStartingFields returns the starting fields a stored attribute
 // document lacks, so documents created before the full field set existed
 // are completed on their next read rather than kept sparse forever.
-func missingStartingFields(key, uid string, have *commonpb.MapValue, now time.Time) *commonpb.MapValue {
-	start, ok := startingAttributes(key, uid, now)
+func missingStartingFields(key, uid string, have *commonpb.MapValue) *commonpb.MapValue {
+	start, ok := startingAttributes(key, uid)
 	if !ok {
 		return nil
 	}
@@ -525,25 +525,4 @@ func missingStartingFields(key, uid string, have *commonpb.MapValue, now time.Ti
 func emptyWhenAbsent(key, uid string) bool {
 	_, docPath, _ := strings.Cut(key, documentsSegment)
 	return strings.HasPrefix(docPath, "services/GameRecord/users/"+uid+"/WeaponPowerMeasurement/")
-}
-
-// coopShiftLength is the Salmon Run slot: 40 hours, counted from the Unix
-// epoch (internal/toyohr.DefaultCoopShiftDuration and liveNormalCoopShifts).
-const coopShiftLength = 40 * time.Hour
-
-// previousCoopShiftID names the shift before the current one, in the
-// YYYYMMDDHHMMSS form the console uses (PointCardRegular/20260925160000).
-//
-// The working capture's CoopUserAttribute carries an earlier shift's id, and
-// after reading its point cards the console calls InitializeAttributes
-// coop_shift with the current one. A fresh account given an empty shift_id
-// read its point cards and stopped with a communication error instead
-// (2026-09-25). Naming the previous shift reproduces the captured state; it
-// carries no progress, only which shift the record was last set up for.
-func previousCoopShiftID(now time.Time) string {
-	// Truncate on time.Time counts from year 1, not the Unix epoch, so the
-	// slot is computed on Unix seconds.
-	secs := int64(coopShiftLength / time.Second)
-	current := now.Unix() / secs * secs
-	return time.Unix(current-secs, 0).UTC().Format("20060102150405")
 }
