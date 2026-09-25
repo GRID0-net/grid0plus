@@ -3,6 +3,8 @@ package toyohr
 import (
 	"context"
 
+	"google.golang.org/protobuf/encoding/prototext"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -74,7 +76,8 @@ func (s gameRecordService) InitializeAttributes(
 		return nil, err
 	}
 	s.log.Info("toyohr: initialised GameRecord attributes",
-		"user", uid, "record", record, "type", req.GetInitializeType(), "keys", len(doc.GetFields().GetFields()))
+		"user", uid, "record", record, "type", req.GetInitializeType(), "keys", len(doc.GetFields().GetFields()),
+		"request", prototext.MarshalOptions{}.Format(req))
 	return &toyohrpb.InitializeAttributesResponse{
 		Attributes: doc.GetFields(),
 		Document:   doc.GetName(),
