@@ -121,14 +121,15 @@ func (s replayService) FulfillReservations(
 
 // ---- nn.npln.toyohr.v1.GameRecord --------------------------------------------
 //
-// CreateBankaraChallenge and CreateFestPowerMeasurement are writes that report
-// real battle outcomes and rank/power state -- deeply Nintendo-internal rating
-// data with no defensible default -- so both are left to the embedded
-// Unimplemented default. InitializeAttributes is implemented (game_record.go):
+// CreateBankaraChallenge is a write that reports real battle outcomes and
+// rank state -- deeply Nintendo-internal rating data with no defensible
+// default -- so it is left to the embedded Unimplemented default.
+// CreateFestPowerMeasurement is implemented (game_record.go) now that a
+// capture settles its shape. InitializeAttributes is implemented (game_record.go):
 // the game's own parser keeps its defaults for any absent key, so that answer
 // needs no invented value, only what the request itself carries.
 // InitializeTag, GetTag and SelectTags are also implemented (game_record.go):
-// unlike CreateBankaraChallenge/CreateFestPowerMeasurement, their response
+// unlike CreateBankaraChallenge, their response
 // messages are all "[UNKNOWN]" upstream and generate with zero fields, so
 // answering them invents nothing either.
 //

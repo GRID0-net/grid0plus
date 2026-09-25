@@ -314,3 +314,53 @@ func TestAnAbsentGameRecordDocumentIsNamedAndEmpty(t *testing.T) {
 		t.Errorf("got %v; want name %q and no fields", doc, name)
 	}
 }
+
+// TestAFestPowerMeasurementIsReadableRightAfterItIsCreated is the Splatfest
+// loop NextendoNetwork measured: answered with nothing, the game re-read an
+// absent measurement and created it again, over a thousand times in two
+// minutes. The document it names has to be readable at once.
+func TestAFestPowerMeasurementIsReadableRightAfterItIsCreated(t *testing.T) {
+	h, ctx, c := ugcHarness(t)
+	gr := toyohrpb.NewGameRecordClient(h.conn)
+
+	m, err := gr.CreateFestPowerMeasurement(ctx, &toyohrpb.CreateFestPowerMeasurementRequest{
+		Parent: "tenants/current/users/current",
+		FestPowerMeasurement: &toyohrpb.FestPowerMeasurement{Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"fest_id": strV("JUEA-00201"),
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFestPowerMeasurement: %v", err)
+	}
+	if want := "tenants/" + testTenant + "/users/ugc0000000000001/festPowerMeasurements/JUEA-00201"; m.GetName() != want {
+		t.Errorf("name = %q, want %q", m.GetName(), want)
+	}
+	wantDoc := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/FestPowerMeasurement/JUEA-00201"
+	if m.GetDocument() != wantDoc {
+		t.Errorf("document = %q, want %q", m.GetDocument(), wantDoc)
+	}
+	f := m.GetFields().GetFields()
+	if f["fest_id"].GetStringValue() != "JUEA-00201" || f["npln_user_id"].GetStringValue() != "ugc0000000000001" ||
+		!f["is_initial"].GetBooleanValue() || f["battle_num"] == nil {
+		t.Errorf("fields = %v, want fest_id, npln_user_id, is_initial=true, battle_num=0", f)
+	}
+	if _, invented := f["fest_power_challenge"]; invented {
+		t.Error("fest_power_challenge was invented; the request did not send one")
+	}
+
+	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: wantDoc})
+	if err != nil || doc.GetFields().GetFields()["fest_id"].GetStringValue() != "JUEA-00201" {
+		t.Fatalf("reading the measurement back: %v, %v", doc, err)
+	}
+
+	// The id becomes part of a document name; a malformed one is refused
+	// rather than turned into a name the game crashes on.
+	_, err = gr.CreateFestPowerMeasurement(ctx, &toyohrpb.CreateFestPowerMeasurementRequest{
+		FestPowerMeasurement: &toyohrpb.FestPowerMeasurement{Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"fest_id": strV("../../x"),
+		}}},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("malformed fest id: %v, want InvalidArgument", err)
+	}
+}

@@ -159,3 +159,76 @@ func stringValue(v string) *commonpb.Value {
 func intValue(v int64) *commonpb.Value {
 	return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}}
 }
+
+// CreateFestPowerMeasurement records a player's first Splatfest power
+// measurement, and stores the document the game reads it back from.
+//
+// Its shape is a real Nintendo capture that NextendoNetwork/splatoon-3
+// records (a new account's exchange; facts only, none of its code used):
+// named tenants/<t>/users/<uid>/festPowerMeasurements/<festId>, fields
+// fest_id, npln_user_id, fest_power_challenge, is_initial=true, created_at,
+// battle_num=0, and the document the game then reads,
+// .../documents/services/GameRecord/users/<uid>/FestPowerMeasurement/<festId>.
+//
+// Both failure modes are measured there. Answered with nothing, the game
+// never learns which document holds its measurement, re-reads it, finds
+// nothing and creates it again: 1,058 creations in two minutes, the player
+// stuck at "Connecting to the Internet". Answered with a document name it
+// cannot parse, the game crashes.
+//
+// Like InitializeAttributes, the fields carry only what is known: the
+// request's own, the fest id and user, and the two constants the capture
+// shows. fest_power_challenge is kept only if the request sent one, and
+// created_at is left out -- its value type is not recorded -- so the game
+// keeps its own default for both.
+//
+// The document keeps this package's tenants/current naming (see
+// InitializeAttributes): a switch to the concrete tenant was tried on
+// hardware and reverted.
+//
+// TODO(capture-needed): whether a real server fills fest_power_challenge
+// and created_at when the request leaves them out. Change: this function.
+func (s gameRecordService) CreateFestPowerMeasurement(
+	ctx context.Context, req *toyohrpb.CreateFestPowerMeasurementRequest,
+) (*toyohrpb.FestPowerMeasurement, error) {
+	if s.docs == nil {
+		return nil, status.Error(codes.Unimplemented, "not implemented")
+	}
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	sent := req.GetFestPowerMeasurement().GetFields().GetFields()
+	festID := sent["fest_id"].GetStringValue()
+	// The id goes straight into a document name, and a name the game cannot
+	// parse crashes it (2162-0001), so anything not shaped like a fest id is
+	// refused.
+	if !festIDPattern.MatchString(festID) {
+		s.log.Warn("toyohr: fest power measurement with a malformed fest id",
+			"user", uid, "fest_id", festID)
+		return nil, status.Error(codes.InvalidArgument, "malformed fest id")
+	}
+
+	fields := &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
+	for k, v := range sent {
+		fields.Fields[k] = v
+	}
+	fields.Fields["fest_id"] = stringValue(festID)
+	fields.Fields["npln_user_id"] = stringValue(uid)
+	fields.Fields["is_initial"] = &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: true}}
+	fields.Fields["battle_num"] = intValue(0)
+
+	name := "tenants/current/documents/services/GameRecord/users/" + uid + "/FestPowerMeasurement/" + festID
+	doc, err := s.docs.Put(ctx, uid, name, fields)
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("toyohr: recorded a fest power measurement", "user", uid, "fest", festID)
+	return &toyohrpb.FestPowerMeasurement{
+		Name:       "tenants/" + s.tenant + "/users/" + uid + "/festPowerMeasurements/" + festID,
+		Fields:     doc.GetFields(),
+		CreateTime: doc.GetCreateTime(),
+		UpdateTime: doc.GetUpdateTime(),
+		Document:   doc.GetName(),
+	}, nil
+}
