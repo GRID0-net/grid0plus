@@ -450,5 +450,5 @@ func coopScheduleEtag(schedules []*toyohrpb.CoopSchedule) (string, error) {
 		}
 		h.Write(encoded)
 	}
-	return quotedScheduleEtag('C', h.Sum(nil)), nil
+	return quotedScheduleEtag(h.Sum(nil)), nil
 }

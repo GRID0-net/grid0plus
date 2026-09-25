@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -431,7 +432,7 @@ func vsParamsAttributes() *common.MapValue {
 // hashing it with the target keeps that version stable across repeat reads.
 func vsParamsEtag(target, setID string) string {
 	h := sha256.Sum256([]byte("vsParams:" + target + ":" + setID))
-	return quotedScheduleEtag('P', h[:])
+	return `"` + base64.RawURLEncoding.EncodeToString(h[:16]) + `"`
 }
 
 // SelectCoopSchedules answers the Salmon Run rotation -- every operator-
@@ -617,32 +618,22 @@ func etagOf(schedules []*toyohrpb.VsSchedule) string {
 			writeStages(h, league.GetStages())
 		}
 	}
-	return quotedScheduleEtag('V', h.Sum(nil))
+	return quotedScheduleEtag(h.Sum(nil))
 }
 
-// The working responses' ETags are `"<kind><16 hex>-<4 hex>"`, 24 characters
-// with the quotes: kind V for Vs schedules, C Coop, S Season, P VsParams
-// (e.g. "Vbf0000f7b70c460f-036b"). SwitchNet used a quoted base64 digest of
-// the same length, which a client that splits or parses the version would
-// not read. The hex comes from a stable digest, so an unchanged window keeps
-// its ETag and the client can skip reloading it.
-func quotedScheduleEtag(kind byte, sum []byte) string {
-	return fmt.Sprintf(`"%c%x-%x"`, kind, sum[:8], sum[8:10])
+// The working responses use a quoted 24-character version, including the
+// quotes. A stable digest lets the client avoid reloading an unchanged window.
+func quotedScheduleEtag(sum []byte) string {
+	return `"` + base64.RawURLEncoding.EncodeToString(sum[:16]) + `"`
 }
-
-// seasonEtagSuffix: the working Season ETag's suffix is 0010, the season id
-// (16) the same response carries.
 
 func seasonEtag(schedules []*toyohrpb.SeasonSchedule) string {
 	h := sha1.New()
-	season := int32(0)
 	for _, s := range schedules {
 		fmt.Fprintf(h, "%s|%d|%d|", s.ScheduleSetId,
 			s.StartTime.GetSeconds(), s.EndTime.GetSeconds())
-		season = s.GetUnk2()
 	}
-	sum := h.Sum(nil)
-	return fmt.Sprintf(`"S%x-%04x"`, sum[:8], uint16(season))
+	return quotedScheduleEtag(h.Sum(nil))
 }
 
 func writeStages(h interface{ Write([]byte) (int, error) }, stages []int32) {

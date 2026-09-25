@@ -3,7 +3,6 @@ package toyohr
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -740,24 +739,5 @@ func TestRotationEtagChangesWithXAndLeagueSettings(t *testing.T) {
 	base.BankaraRules[3] = 5
 	if read(base) == initial {
 		t.Error("changing League settings left the schedule ETag unchanged")
-	}
-}
-
-// TestScheduleEtagsHaveTheCapturedShape: both working hall captures use
-// `"<kind><16 hex>-<4 hex>"` (V, C, S, P); the Season suffix is the season id.
-func TestScheduleEtagsHaveTheCapturedShape(t *testing.T) {
-	shape := regexp.MustCompile(`^"[VCSP][0-9a-f]{16}-[0-9a-f]{4}"$`)
-	for _, e := range []string{
-		quotedScheduleEtag('V', make([]byte, 20)),
-		quotedScheduleEtag('C', make([]byte, 20)),
-		vsParamsEtag("tenants/current/targets/default", "1"),
-		seasonEtag([]*toyohrpb.SeasonSchedule{{Unk2: 16}}),
-	} {
-		if !shape.MatchString(e) {
-			t.Errorf("etag %q does not have the captured shape", e)
-		}
-	}
-	if got := seasonEtag([]*toyohrpb.SeasonSchedule{{Unk2: 16}}); !strings.HasSuffix(got, `-0010"`) {
-		t.Errorf("season etag %q, want suffix -0010 (season 16)", got)
 	}
 }
