@@ -26,6 +26,7 @@ import (
 	"errors"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -108,7 +109,7 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 			s.log.Info("ugcstore: private diagnostic attribute served", "name", key)
 			return doc, nil
 		}
-		if attrs, ok := startingAttributes(key, uid); ok {
+		if attrs, ok := startingAttributes(key, uid); ok && os.Getenv("SWITCHNET_UGCSTORE_NO_START_ATTRIBUTES") != "1" {
 			doc, err := s.Put(ctx, uid, req.GetName(), attrs)
 			if err != nil {
 				return nil, err
@@ -414,6 +415,11 @@ func (s *Service) Put(ctx context.Context, uid, name string, attrs *commonpb.Map
 	}
 	return toProto(p.row, name)
 }
+
+// SWITCHNET_UGCSTORE_NO_START_ATTRIBUTES=1 turns off creating the attribute
+// documents on first read, so a missing one answers NotFound as Nintendo does
+// for a never-played account. Temporary, for the 2026-09-25 fresh-account
+// experiment; remove once the fresh/established rule is settled.
 
 // attributeSeason is the season GameRecord's Vs attributes start in: the
 // SeasonSchedule id both working hall captures carry (unk2/unk3 = 16), and
