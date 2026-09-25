@@ -137,7 +137,6 @@ console holds it — the same rule `SubscribeMaintenanceSchedules` and
 
 | RPC | Why |
 | --- | --- |
-| `CreateRound` | Echoes the client's own `Round` back: four of its five fields are `Unk1`..`Unk4`, so nothing is invented. Whether a real server fills any field in is `TODO(capture-needed)`. |
 | deferment operations | a batch of writes to apply later, on a trigger nothing here models. Refused rather than dropped: a client told "done" would wait for an effect that never arrives |
 | global-value transforms | they read and write a namespace shared across documents. A no-op would have the client store a value it later reads back as absent |
 | paging on `ListDocuments` | the whole store is one lobby's live state — tens of documents. A page token would name the only page. The absence is visible here rather than hidden behind an empty `next_page_token` |
