@@ -11,6 +11,14 @@ There are two separate problems here, and they have very different answers:
 Most guides conflate the two and solve both with Atmosphère — a hosts file plus a
 firmware-gated exefs patch. Only the second half actually needs the console.
 
+> **What this deployment actually runs.** The SwitchNet Toolbox homebrew
+> ([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro),
+> private) on an emuMMC that only ever talks to SwitchNet: Atmosphère's hosts
+> file for redirection, the public `disable_ca_verification` /
+> `disable_browser_ca_verification` patches for trust, and its own Splatoon 3
+> patches for part 3. The DNS and CA-store routes below are the alternatives,
+> and the reasoning for preferring them where you can.
+
 > Use this on hardware you own, with games you own. SwitchNet ships none of
 > Nintendo's code, keys or data, and produces nothing Nintendo's own servers would
 > accept.
@@ -263,6 +271,15 @@ connection, and no request.
 
 ### The route, and what it costs
 
+**Four checks, not one.** On hardware (2026-09-23, v11.3.0) kinnay's patch
+alone was not enough: the game also pins the server's public key, sets its
+own `VerifyOption` with its own CA set, and installs a separate TLS verify
+callback on the NPLN gRPC channel. The Toolbox ships one IPS patch for each
+(`s3certpin_bypass`, `s3verifyoption_bypass`, `s3grpcverify_bypass`,
+`s3grpcpeer_bypass`); switchnet-nro's `docs/game-specific-tls-pinning.md` has
+the addresses and how each was found. `make patch-splatoon3` below builds only
+kinnay's patch, for other builds.
+
 `kinnay/NPLN-Protocols` ships `generate_patch.py`, which builds an IPS patch that
 disables TLS certificate verification in the game's main NSO. It was written for
 exactly this purpose: "if you want to capture traffic or write your own NPLN
@@ -286,12 +303,12 @@ them, because both differ from the position this project took in part 2:
 The patch goes in `/atmosphere/exefs_patches/`. Regenerate it after every title
 update.
 
-### And it is the last thing to change
+### When the game will not connect
 
-Everything in phase 2 that can be verified without the console has been. If the
-game will not connect, the order to suspect things in is: this patch, then the
-JSON front end (`internal/nplnrest`, whose request shapes are the least
-documented part of the stack), then the gRPC gateway.
+Suspect, in order: these patches (a title update silently stops them
+applying), then the JSON front end (`internal/nplnrest`), then the gRPC
+gateway. As of 2026-09-25 all three work on hardware and the game stops later,
+in the hall — see `TODO.md` §4.2.
 
 ---
 
@@ -373,19 +390,16 @@ console is registered.
 
 ## Verify Splatoon 3, in order
 
-**Nothing in phase 2 has run against a console.** Every test is against a Go
-client, which was deliberate — it let the work proceed while part 3's decision
-was open — but it means no shape in phase 2 is confirmed against hardware. This
-checklist is what turns that from a worry into a list.
+A real console has been through S1–S3 and reaches the hall, where it
+currently stops (`TODO.md` §4.2). The checklist is still the order to debug a
+new console or a new game version in.
 
 Do part 1 and part 2 first, all the way to step 5 above. Then:
 
 **S1. Set `npln.rest_record_dir` before the first attempt.** The game's first
-contact is JSON over HTTPS to `vermillion` and `penne`, and **their request and
-response bodies are undocumented** — implemented as the most defensible reading
-and marked `TODO(capture-needed)`. With this set, one boot writes every request
-and response to disk, hexdumped, in order, credentials redacted. That transcript
-is worth more than any amount of guessing, and it costs one config line.
+contact is JSON over HTTPS to `vermillion` and `penne`. With this set, one boot
+writes every request and response to disk, hexdumped, in order, credentials
+redacted — the fastest way to see where a new console stops.
 
 **S2. Install part 3's patch**, and check `nncs1`/`nncs2` still resolve to two
 different addresses.
@@ -471,6 +485,10 @@ the seed on the console came from somewhere else.
 ---
 
 ## Going back to Nintendo
+
+**This deployment never does.** Its emuMMC is SwitchNet's permanently; nothing
+on it talks to Nintendo, which is also why `hosts.go` null-routes the system
+update hosts. The steps below are for a console that moves between the two.
 
 **Redirection**: undo whichever option you used — remove the generated
 configuration from your resolver and the DHCP DNS override, or set the console's
