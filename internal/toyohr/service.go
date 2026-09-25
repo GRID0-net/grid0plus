@@ -40,11 +40,6 @@ import (
 // interfaces on one *Server. See backlog.go's package comment for what is
 // and is not implemented there.
 type Service struct {
-	// UnimplementedFestServiceServer covers SelectFestBreakingNews too: a real
-	// RPC (confirmed in Splatoon 3 v11.3.0's own binary, see README.md's
-	// "confirmed RPC surface" section), reads as lower-stakes mid-fest
-	// announcement content, and its request/response shape is undocumented --
-	// left here rather than guessed at, same reasoning as backlog.go's writes.
 	toyohrpb.UnimplementedFestServiceServer
 	toyohrpb.UnimplementedCloudSaveServer
 
@@ -135,7 +130,7 @@ func NewService(opts Options) *Service {
 // several of these get their own adapter type instead of being embedded here
 // directly.
 func (s *Service) Register(srv *grpc.Server) {
-	toyohrpb.RegisterFestServiceServer(srv, s)
+	registerFestService(srv, s)
 	registerCloudSave(srv, s)
 	toyohrpb.RegisterScheduleServer(srv, &scheduleService{s: s})
 	toyohrpb.RegisterLobbyMessagingServer(srv, &lobbyMessagingService{s: s})
@@ -165,16 +160,6 @@ func (s *Service) caller(ctx context.Context) (string, bool) {
 
 // tenantPath is the resource-name prefix every fest resource hangs off.
 func (s *Service) tenantPath() string { return "tenants/" + s.tenant }
-
-// FestService has one more real RPC than this file or its proto know about:
-// a 2026-09-21 decompile of Splatoon 3 v11.3.0 found
-// "/nn.npln.toyohr.v1.FestService/SelectFestBreakingNews" as a live,
-// called method (not just a compiled-in-but-unused stub -- see
-// internal/toyohr/backlog.go's GameRecord note for that distinction and why
-// it matters) in the same client-construction function as the five methods
-// already implemented here. Plausibly a Splatfest news/announcement feed,
-// by name, but nothing here confirms the request/response shape --
-// left unregistered rather than guessed at, same as GameRecord's five.
 
 // SelectFestSchedule announces the fest a region should be showing.
 //

@@ -48,13 +48,11 @@ against (6 real RPCs, 5 implemented):
 | `GetFestResult` | yes |
 | `SelectFestSchedule` | yes |
 | `GetFestDecryptionKey` | yes |
-| `SelectFestBreakingNews` | **no** -- not registered as a handler; falls through the same `Unimplemented` path as the backlog in `backlog.go` |
+| `SelectFestBreakingNews` | yes -- always an empty message, see `fest_breaking_news.go` |
 
-`SelectFestBreakingNews` reads, from the name alone, like mid-fest
-announcement content -- lower stakes than any of the six already implemented,
-and its request/response shape is undocumented, so it stays unimplemented
-rather than guessed at. Add it to `backlog.go` alongside `GameRecord` if the
-console is ever seen calling it.
+`SelectFestBreakingNews` is not in the proto; `fest_breaking_news.go` adds
+it to the service descriptor and answers the empty message Nintendo answered
+during a real Splatfest. An `Unimplemented` there is a hard error in-game.
 
 ## A Splatfest lives in two places, and they must agree
 
