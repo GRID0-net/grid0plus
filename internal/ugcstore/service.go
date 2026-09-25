@@ -445,8 +445,11 @@ func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 }
 
 // emptyWhenAbsent reports whether an absent document is answered as a named,
-// empty document instead of NotFound: the caller's own GameRecord documents
-// (WeaponPowerMeasurement/<season>, PointCard*, BankaraChallenges/<id>).
+// empty document instead of NotFound: only the caller's own
+// WeaponPowerMeasurement/<season>. A fresh account on 2026-09-25 re-read
+// every GameRecord document every five seconds while PointCard* were also
+// answered this way; Nextendo's notes have PointCardRegular absent until the
+// period is played. Everything else absent stays NotFound.
 //
 // NextendoNetwork/splatoon-3's notes (facts only, not its code) record that
 // its working boot answers these families this way, and that NotFound on
@@ -457,5 +460,5 @@ func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 // only reported empty.
 func emptyWhenAbsent(key, uid string) bool {
 	_, docPath, _ := strings.Cut(key, documentsSegment)
-	return strings.HasPrefix(docPath, "services/GameRecord/users/"+uid+"/")
+	return strings.HasPrefix(docPath, "services/GameRecord/users/"+uid+"/WeaponPowerMeasurement/")
 }
