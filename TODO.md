@@ -26,6 +26,16 @@ from source comments, config and `docs/`, so a finished item is deleted and the
 gap it leaves is kept rather than closed. §2.4 is §2.4 for as long as
 `internal/bcat` and `hosts.go` point at it.
 
+**What "capture" means here.** The operator does not run Atmosphère against
+Nintendo's real servers, so a capture of Nintendo is a tcpdump at most:
+hosts, timing, sizes, never decrypted content. A `TODO(capture-needed)`
+shape is settled some other way — static RE of the game or sysmodule that
+reads it, live GDB on SwitchNet's emuMMC (see
+[`docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md`](docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md)),
+a decrypted capture of the console talking to SwitchNet, or a fact
+NextendoNetwork has recorded from its own captures. Do not write "needs a
+capture from Nintendo" as a plan; it will not happen.
+
 **If you are working autonomously, you cannot ask anything.** Several items
 below would benefit from an operator's answer. Do not stop for one: write the
 question into [`docs/QUESTIONS.md`](docs/QUESTIONS.md) with the assumption you
@@ -46,6 +56,7 @@ What each open item is waiting on:
 | Item | Blocked on |
 | --- | --- |
 | §4.2 | **a console.** Splatoon 3 reaches the hall and stops; the next step is a live GDB boot |
+| §4.3 | **RE, GDB on the emuMMC, or tests against SwitchNet** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §2.4 | **reverse engineering** of the module that verifies BCAT content, then a console test |
 | §3.2 | **§2.1** |
@@ -76,8 +87,11 @@ this stage to the tenant gRPC calls.
   Nextendo answers the same, because a 404 there makes the console restart
   its device bootstrap in a loop.
 
-Do **not** invent a plausible Nintendo internal for either without a
-capture to check it against.
+Both are readers-side questions: the frontline is parsed by a system
+client (`npns` is the leading candidate, not the game — see the 2026-09-20
+decompile note in `internal/nplnrest/nplnrest.go`), and the vermillion
+payloads by whichever module issues them. RE of that module settles each.
+Do **not** invent a plausible Nintendo internal before then.
 
 ### 1.4 The rest of `nn.npln.toyohr.v1.*` — **P2, mostly done**
 
@@ -433,44 +447,39 @@ live client, whether any start is called, and which guard stops it.
 
 **Done when** a console enters the hall on SwitchNet.
 
-### 4.3 Captures still wanted — **P2**
+### 4.3 Undocumented shapes — **P2**
 
-`grep -rn 'TODO(capture-needed)' internal/` for the live list —
-`docs/CAPTURES/README.md` keeps the same list with what each would settle,
-and is the one to trust when this paragraph and the grep disagree, since it
-grows every time a new phase-2 service gets registered against an
-undocumented shape rather than a real capture (fourteen when this paragraph
-was first written; fifty-two as of the gamesync/nplnrest work). This
-paragraph deliberately names no number of its own from here on, to stop
-repeating the same drift.
+`grep -rn 'TODO(capture-needed)' internal/` for the live list;
+`docs/CAPTURES/README.md` keeps the same list with what each would settle
+and is the one to trust when they disagree. The tag name is historical: see
+"What capture means here" at the top — each one is settled by RE, GDB on
+the emuMMC, or a decrypted capture against SwitchNet, not a Nintendo
+capture.
 
-One of the original five is still the one that changes behaviour rather
-than cosmetics, not just naming: whether the game sends more than one
-`UserDefinition` when a squad queues together (a squad currently has
-everyone but the leader dropped). Another was answered on 2026-09-23 and is
-no longer a question: the game does refuse to start a match handed an empty
-`MatchmakingIdToken`, because the console — not the server — is its reader,
-and without it the session channel opens and never sends a request
-(`2321-4992` on `KeepUserSession`). SwitchNet mints it now; see
-[npln-session-token-2026-09-23.md](docs/CAPTURES/npln-session-token-2026-09-23.md). Newer arrivals worth the same
-weight: `Messaging.RecvMessage`'s empty-resume-token behaviour (get it
-backwards and an invite mailbox either loses invites silently or replays
-stale ones on every reconnect), and whether a real client dials
-`GameSession.Port` at all now that `SyncGameSession` exists to publish it.
+The ones that change behaviour rather than cosmetics:
 
-One more arrived 2026-09-22 from static analysis rather than a capture (see
-[account-sysmodule-decompile.md](docs/CAPTURES/account-sysmodule-decompile.md)):
-the `account` sysmodule can construct eight `accounts.nintendo.com` paths that
-SwitchNet does not serve — `/profile`,
-`connect/1.0.0/api/term_agreement_token`, `connect/1.0.0/term_confirm`, the
-three `connect/1.0.0/api/transfer_na_tokens*` variants, and both
-`analytics/device/opt_in` forms. All are first-link surface, the terms pair
-matching the licence scene in the add-user wizard. **Blocked on a console**:
-whether the console calls any of them is decided by the nginx access log during
-one link attempt, and that decides whether they need implementing at all — a
-URL being constructible in the binary never proves it is requested.
+- **Squads.** Whether the game sends more than one `UserDefinition` when a
+  squad queues together (a squad currently has everyone but the leader
+  dropped). Settle it from the game: the matchmaking request builder in
+  Splatoon 3 `main`, or a squad queue against SwitchNet with the request
+  logged.
+- **`Messaging.RecvMessage` with an empty resume token.** Get it backwards
+  and an invite mailbox either loses invites silently or replays stale ones
+  on every reconnect. A console reconnecting to SwitchNet shows which it
+  expects.
+- **`GameSession.Port`.** Whether a real client dials it at all now that
+  `SyncGameSession` publishes it: a match on SwitchNet with tcpdump on the
+  VM answers it.
+- **Eight `accounts.nintendo.com` paths** the `account` sysmodule can build
+  and SwitchNet does not serve (`/profile`,
+  `connect/1.0.0/api/term_agreement_token`, `connect/1.0.0/term_confirm`,
+  three `connect/1.0.0/api/transfer_na_tokens*`, both
+  `analytics/device/opt_in` forms; see
+  [account-sysmodule-decompile.md](docs/CAPTURES/account-sysmodule-decompile.md)).
+  The nginx access log during one link attempt against SwitchNet says
+  whether any is requested.
 
-Write captures up under `docs/CAPTURES/` using the template, redacted,
+Write findings up under `docs/CAPTURES/` using the template, redacted,
 reconcile the implementation, and **delete the `TODO` comment in the same
 commit** so the source and the notes cannot disagree.
 
@@ -486,8 +495,9 @@ are now settable at runtime from the dashboard and seeded from
 size without a code change.
 
 What is still missing is knowing what the **faithful** sizes are. They belong in
-the config's `ModeSizes`, driven by what a capture shows the game expects. Until
-there is one, a number that lets two friends start a match beats one that is
+the config's `ModeSizes`, read from the game's own match/lobby parameter tables
+(the same Leanny/splat3 dump `vs_ids.go` uses, or the game's romfs). Until
+then, a number that lets two friends start a match beats one that is
 correct and idle.
 
 ---
