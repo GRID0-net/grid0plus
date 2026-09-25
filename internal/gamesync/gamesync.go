@@ -724,25 +724,31 @@ func send(out chan<- *syncpb.KeepUserSessionResponse, msg *syncpb.KeepUserSessio
 	}
 }
 
-// CreateRound is deliberately left to the embedded Unimplemented.
+// CreateRound echoes back the round the client sent.
 //
-// Round has five fields and four of them are called Unk1..Unk4 in the
-// decompiled definitions — nobody knows what they mean. Answering would mean
-// inventing values for fields whose purpose is unknown, which is worse than
-// answering Unimplemented and having the console's request logged.
+// Round has five fields and four are Unk1..Unk4 in the decompiled
+// definitions: nobody knows what they mean, so this server sets none of them.
+// Echoing sets nothing either -- every value in the answer is the client's
+// own. It used to answer Unimplemented, which Splatoon 3 treats as a hard
+// failure of whatever called it (2321-4224 is the same thing for another
+// RPC). The game does call it: a 2026-09-20 decompile of v11.3.0 finds its
+// path referenced from real call sites. NextendoNetwork/splatoon-3 answers
+// the same echo (facts only, none of its code used), and its server plays
+// matches through to their results with it.
 //
-// TODO(capture-needed): what a Round is and what those four fields carry.
-// Change: this method.
-//
-// A 2026-09-20 decompile of Splatoon 3 v11.3.0 confirms the game does link
-// against and call CreateRound (its gRPC path appears as a literal string,
-// referenced from real call sites), but settles nothing about Unk1..Unk4:
-// protobuf field names are reflection metadata the compiler strips under
-// optimize_for = LITE_RUNTIME, unlike the gRPC method path strings (a
-// separate mechanism, embedded unconditionally by the gRPC codegen for
-// routing) that confirmed the RPC lists elsewhere in this decompile. Static
-// analysis of this binary cannot recover field names that were never
-// compiled in. Only a capture settles this one.
+// TODO(capture-needed): whether a real server fills in any field the
+// request left empty (a round id, most likely). Change: this method.
+func (s *Server) CreateRound(
+	ctx context.Context, req *syncpb.CreateRoundRequest,
+) (*syncpb.Round, error) {
+	if _, ok := callerFrom(ctx); !ok {
+		return nil, errUnauthenticated
+	}
+	if r := req.GetRound(); r != nil {
+		return r, nil
+	}
+	return &syncpb.Round{}, nil
+}
 
 // ---- helpers -------------------------------------------------------------
 

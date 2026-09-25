@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	commonpb "github.com/n-popescu/switchnet/proto/common"
@@ -968,16 +969,24 @@ func TestDeletingADocumentIsAChangeAndAbsenceAfterwards(t *testing.T) {
 	}
 }
 
-func TestCreateRoundIsUnimplementedRatherThanInvented(t *testing.T) {
+func TestCreateRoundEchoesTheClientsRoundWithoutInventingFields(t *testing.T) {
 	h := newHarness(t)
 	alice := h.session("token-alice")
 
 	// Round has five fields and four of them are Unk1..Unk4 in the decompiled
-	// definitions. Answering would mean inventing values for fields whose
-	// purpose nobody knows.
-	_, err := h.client.CreateRound(alice, &syncpb.CreateRoundRequest{})
-	if status.Code(err) != codes.Unimplemented {
-		t.Errorf("CreateRound gave %v, want Unimplemented", err)
+	// definitions. The answer may carry only what the client sent.
+	sent := &syncpb.Round{Unk1: "a", Unk4: []string{"x", "y"}}
+	got, err := h.client.CreateRound(alice, &syncpb.CreateRoundRequest{Round: sent})
+	if err != nil {
+		t.Fatalf("CreateRound: %v", err)
+	}
+	if !proto.Equal(got, sent) {
+		t.Errorf("CreateRound answered %v, want exactly the round sent %v", got, sent)
+	}
+
+	empty, err := h.client.CreateRound(alice, &syncpb.CreateRoundRequest{})
+	if err != nil || !proto.Equal(empty, &syncpb.Round{}) {
+		t.Errorf("CreateRound with no round: %v, %v; want an empty round", empty, err)
 	}
 }
 
