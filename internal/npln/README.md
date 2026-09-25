@@ -231,7 +231,7 @@ the ones it happened to call during whatever flow got captured.
 | `CancelMatchmakingTicket` | yes |
 | `CreateAcceptance` | **no** -- answers `Unimplemented` |
 
-`GameSessionService` (15 real RPCs, 7 implemented):
+`GameSessionService` (15 real RPCs, 12 implemented):
 
 | RPC | Implemented |
 | --- | --- |
@@ -243,14 +243,14 @@ the ones it happened to call during whatever flow got captured.
 | `ListUserSessions` | yes |
 | `GetUserSession` | yes |
 | `SyncGameSession` (this server's) | see below -- not one of the 15 |
-| `CancelGameSessionCreationTicket` | **no** |
-| `CreateGameSessionCreationTicket` | **no** |
-| `CreateGameSessionShortAlias` | **no** |
-| `GetGameSessionShortAlias` | **no** |
+| `CancelGameSessionCreationTicket` | yes -- private rooms, `rooms.go` |
+| `CreateGameSessionCreationTicket` | yes -- private rooms, `rooms.go` |
+| `CreateGameSessionShortAlias` | yes -- private rooms, `rooms.go` |
+| `GetGameSessionShortAlias` | yes -- private rooms, `rooms.go` |
 | `IssueMatchmakingIdToken` | **no** |
 | `IssueUserDelegationToken` | **no** |
 | `ListLatencyMeasurementServers` | **no** |
-| `TrackGameSessionCreationTicket` | **no** |
+| `TrackGameSessionCreationTicket` | yes -- private rooms, `rooms.go` |
 
 `BatchGetGameSessions`, `ListUserSessions` and `GetUserSession` needed no new
 server-side concept to answer: each is exactly `GetGameSession`'s own
@@ -262,11 +262,18 @@ see "Not yet implemented, and how you find out" above. What the decompile
 adds is knowing *in advance* which eight method names to expect in that log
 on a real console, instead of being surprised by them one at a time.
 `CreateGameSessionCreationTicket` / `TrackGameSessionCreationTicket` /
-`GetGameSessionShortAlias` / `CreateGameSessionShortAlias` read as a
-private-room-by-code flow parallel to ticket-based matchmaking -- the same
-feature `QueryGameSessions`'s doc comment already guesses at -- but that is a
-reading of the names, not a confirmed shape, and implementing any of them
-from a guess would be the mistake CLAUDE.md warns against.
+`CancelGameSessionCreationTicket` / `CreateGameSessionShortAlias` /
+`GetGameSessionShortAlias` are the private-room flow: a private battle, a
+Salmon Run room, or a squad opened for friends. Left `Unimplemented`, the
+first of them made the game report `2321-4224` the moment a player pressed
+"create room". They are now implemented in `rooms.go`, on the shapes a real
+Nintendo capture shows as recorded in `NextendoNetwork/splatoon-3`'s notes --
+second-hand, see `docs/CAPTURES/README.md` for what is confirmed and what is
+still open. A room is a `matchmaking.Session` with its host as the only
+player, so `GetGameSession`, `JoinGameSession` and gamesync treat it exactly
+like a matched session once it exists; the differences (anyone holding its
+name may read and join it, capacity is the mode's rather than the player
+count, it expires from its last activity) are documented where they apply.
 
 `SyncGameSession` is a real RPC -- it is defined in the same upstream proto
 set as the rest of `GameSessionService` -- but its path string does not

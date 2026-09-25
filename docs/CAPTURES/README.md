@@ -776,6 +776,49 @@ per player, passed through untouched in `presenceProto`, pushed to open
 BAAS's alone. Second-hand -- their capture, not ours -- so a SwitchNet capture
 of a friend opening a room is still worth taking to confirm.
 
+### Private rooms (`2321-4224`), from NextendoNetwork's capture notes
+
+Opening a private battle or Salmon Run room answered `Unimplemented` on
+`CreateGameSessionCreationTicket`, which Splatoon 3 shows as `2321-4224`. The
+flow is now implemented in `internal/npln/rooms.go`, on what
+`NextendoNetwork/splatoon-3` records from a real Nintendo capture of it
+(facts only, PolyForm Shield, none of its code used). Settled there:
+
+- `CreateGameSessionCreationTicket` answers PENDING, with the concrete
+  tenant in `matchmaking_config` and a `GameSession` holding only the
+  request's properties.
+- `TrackGameSessionCreationTicket` sends one message, already SUCCEEDED, and
+  then ends the stream. Measured: held open, the game waited about twenty
+  seconds and cancelled; closed, it dialled its session server within a
+  second. The opposite of `TrackMatchmakingTicket`, deliberately.
+- The SUCCEEDED `GameSession` is marked `is_public` even for a private room,
+  carries no `user_sessions` (`GetGameSession` is where a real server lists
+  them), and keeps the client's own properties with `_BaseConfigName` and
+  `_AliasSuffix` added. Replacing the client's properties made the game
+  abandon the room with `CreateSessionFailed`.
+- The host's `MatchedUserSession` needs the same `gss` session token as a
+  matched player, and the concrete user name rather than `current`.
+- Salmon Run's room size, 4, is in the capture.
+
+Still open, each a `TODO(capture-needed)` in `rooms.go`:
+
+- The size of every other room mode. Private battle's 10 is NextendoNetwork's
+  reading; the squad a player opens to bring friends into Turf War is set to
+  4 from its description alone. The config name of each room mode is logged
+  the first time it is seen.
+- The room code's format. Their short-alias capture is a different title's
+  (Mario Party Jamboree), and on Splatoon 3 their displayed code relies on a
+  console-side patch SwitchNet does not ship. Friends joining from the friend
+  list use the room's session id, not a code, so this is not on that path.
+- The status a real server answers when a room is full.
+- The room's password lock indicator: NextendoNetwork injects an undocumented
+  `GameSession` field for it, number unconfirmed. Not ported. The password
+  itself is checked on join.
+
+A SwitchNet capture of a friend opening a room and another joining it from
+the friend list would confirm all of it, and settle the presence attributes
+above at the same time.
+
 When it is further along, these are the captures that will unblock the rest.
 NPLN is gRPC over HTTP/2, so this needs `grpc-dump` or `proxide`, not
 mitmproxy, and it does need the console.

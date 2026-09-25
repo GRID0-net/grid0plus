@@ -217,11 +217,16 @@ type gameSessionService struct {
 	s *Server
 }
 
-// GetGameSession returns a match the caller was placed into.
+// GetGameSession returns a match the caller was placed into, or a room.
 //
-// Only a match they are actually in. A session id is not a secret worth much,
+// A match only to its own players. A session id is not a secret worth much,
 // but the players list inside one names other people, and handing that to any
 // authenticated caller who guesses an id is a leak for no gain.
+//
+// A room to anybody who names it, because a joiner reads it before entering:
+// the join screen shows the host and "1/10" from this answer. The room's
+// random id is the capability here, the same one JoinGameSession accepts;
+// anyone who has it was given it by the room's code or a friend's presence.
 func (g *gameSessionService) GetGameSession(
 	ctx context.Context, req *mmpb.GetGameSessionRequest,
 ) (*mmpb.GameSession, error) {
@@ -231,12 +236,15 @@ func (g *gameSessionService) GetGameSession(
 	}
 
 	id := lastSegment(req.GetName())
-	if !g.s.queue.IsPlayer(id, caller.UserID) {
-		return nil, ErrNotFound
-	}
 	sess, found := g.s.queue.Session(id)
 	if !found {
 		return nil, ErrNotFound
+	}
+	if !sess.Room && !g.s.queue.IsPlayer(id, caller.UserID) {
+		return nil, ErrNotFound
+	}
+	if sess.Room {
+		g.s.queue.TouchRoom(id)
 	}
 	return g.s.sessionProto(sess), nil
 }
@@ -280,10 +288,10 @@ func (g *gameSessionService) BatchGetGameSessions(
 
 // QueryGameSessions answers a browse-style search for public sessions.
 //
-// Always empty. SwitchNet forms every session through matchmaking tickets and
-// sessionProto always sets IsPublic false, so there is nothing a browse query
-// could ever turn up that GetGameSession/JoinGameSession's ticket-driven path
-// does not already cover. An empty page rather than leaving this Unimplemented
+// Always empty. Matches are never public, and a room -- though marked
+// public, as a real server marks even a private one -- is reached by its code
+// or through a friend's presence, never by browsing, as far as anything shows
+// Splatoon 3 doing. An empty page rather than leaving this Unimplemented
 // still matters: a real NPLN client that calls it at all reads Unimplemented as
 // a hard failure of whatever screen triggered the call, where an empty result
 // set reads as "nothing to show" -- which is always true here.
@@ -302,13 +310,14 @@ func (g *gameSessionService) QueryGameSessions(
 	return &mmpb.QueryGameSessionsResponse{}, nil
 }
 
-// JoinGameSession confirms the caller into a session they were matched into.
+// JoinGameSession confirms the caller into a match they were matched into, or
+// puts them into a room.
 //
-// Only that. SwitchNet forms every session through matchmaking, so the players
-// are already known by the time this is called and joining is an
-// acknowledgement rather than a mutation. Joining a session you were NOT
-// matched into is backfill or a short alias -- neither is implemented, and
-// neither shape is documented, so this refuses rather than inventing one.
+// For a match it is an acknowledgement rather than a mutation: the players are
+// known from the moment it formed. For a room it adds the caller -- see
+// joinRoom for who may. Joining a match you were NOT matched into is backfill,
+// which is not implemented and not documented, so it is refused rather than
+// invented.
 func (g *gameSessionService) JoinGameSession(
 	ctx context.Context, req *mmpb.JoinGameSessionRequest,
 ) (*mmpb.JoinGameSessionResponse, error) {
@@ -318,13 +327,16 @@ func (g *gameSessionService) JoinGameSession(
 	}
 
 	id := lastSegment(req.GetName())
+	sess, found := g.s.queue.Session(id)
+	if !found {
+		return nil, ErrNotFound
+	}
+	if sess.Room {
+		return g.s.joinRoom(ctx, sess, req, caller.UserID)
+	}
 	if !g.s.queue.IsPlayer(id, caller.UserID) {
 		g.s.log.Warn("npln: join by a user who was not matched into the session",
 			"session", id, "caller", caller.UserID)
-		return nil, ErrNotFound
-	}
-	sess, found := g.s.queue.Session(id)
-	if !found {
 		return nil, ErrNotFound
 	}
 
@@ -749,8 +761,11 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 	return out, nil
 }
 
-// sessionProto renders a formed match as the wire message.
+// sessionProto renders a formed match or a room as the wire message.
 func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
+	if sess.Room {
+		return s.roomProto(sess)
+	}
 	return &mmpb.GameSession{
 		Name:                s.tenantPath() + "/gameSessions/" + sess.ID,
 		MaxParticipantCount: int32(len(sess.Players)),
@@ -779,6 +794,28 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		Port:         s.sessionPort,
 		CreateTime:   timestamppb.New(sess.CreatedAt),
 		UserSessions: s.userSessions(sess),
+	}
+}
+
+// roomProto renders a room. Unlike a match, a room is not full when it
+// exists: capacity is the mode's size and the count is whoever is in it now,
+// derived from the player list rather than counted up, so a player retrying a
+// join never inflates it. is_public is true even for a private room, as in
+// the capture of one.
+func (s *Server) roomProto(sess matchmaking.Session) *mmpb.GameSession {
+	meta, _ := s.roomMetaFor(sess.ID)
+	return &mmpb.GameSession{
+		Name:                    s.tenantPath() + "/gameSessions/" + sess.ID,
+		MaxParticipantCount:     int32(sess.MaxPlayers),
+		CurrentParticipantCount: int32(len(sess.Players)),
+		CanParticipate:          len(sess.Players) < sess.MaxPlayers,
+		IsPublic:                true,
+		State:                   mmpb.GameSession_ACTIVE,
+		Host:                    s.sessionHost,
+		Port:                    s.sessionPort,
+		CreateTime:              timestamppb.New(sess.CreatedAt),
+		Properties:              meta.properties,
+		UserSessions:            s.userSessions(sess),
 	}
 }
 

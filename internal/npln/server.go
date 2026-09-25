@@ -112,6 +112,11 @@ type Server struct {
 	// attrs is what each player's game publishes over PresenceService.KeepAlive
 	// -- see presenceAttributes.
 	attrs *presenceAttributes
+	// rooms holds private rooms' creation tickets, properties, passwords and
+	// codes -- see rooms.go. The rooms themselves are sessions in queue.
+	rooms *rooms
+	// roomModesSeen remembers which room configs have been logged once.
+	roomModesSeen sync.Map
 
 	// rotation is the stage and mode rotation internal/toyohr's Schedule
 	// service serves. Parsed in New, so a typo in config fails at startup
@@ -230,6 +235,7 @@ func New(opts Options) (*Server, error) {
 		},
 		bus:        opts.Bus,
 		attrs:      newPresenceAttributes(),
+		rooms:      newRooms(),
 		rotation:   rotation,
 		diagnostic: diagnostic,
 		now:        opts.Now,
