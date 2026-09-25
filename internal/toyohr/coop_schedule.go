@@ -350,7 +350,7 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	out := &toyohrpb.CoopSchedule{
 		Name:          name,
 		Unk:           1,
-		ScheduleSetId: "coop-" + scheduleSetID(AlignToSlot(s.now())),
+		ScheduleSetId: rotationSetID("coop", AlignToSlot(s.now())),
 		StartTime:     timestamppb.New(r.StartAt),
 		EndTime:       timestamppb.New(r.EndAt),
 		// Both working hall captures keep this field fixed at exactly seven

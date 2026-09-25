@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -89,7 +91,7 @@ func (sc *scheduleService) SelectVsSchedules(
 
 	current := AlignToSlot(sc.s.now())
 	from := current.Add(-scheduleSlot)
-	setID := scheduleSetID(current)
+	setID := rotationSetID("vs", current)
 	slots := scheduleHorizon
 	if d := req.GetSelectDuration().AsDuration(); d > 0 {
 		// The client says how much it wants. Honoured up to the horizon: a
@@ -579,6 +581,13 @@ func (r Rotation) stagesPerSlot() int {
 // is described — which is what lets a client cache one and compare.
 func scheduleSetID(start time.Time) string {
 	return fmt.Sprintf("%d", start.UTC().Unix()/slotSeconds)
+}
+
+// The captured Versus and Coop schedule-set ids are distinct UUIDs. Derive
+// ours from the mode and absolute slot so two reads of the same rotation agree.
+// Individual schedule resource names still use scheduleSetID above.
+func rotationSetID(mode string, start time.Time) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("switchnet/"+mode+"/"+scheduleSetID(start))).String()
 }
 
 // etagOf digests a generated schedule list.

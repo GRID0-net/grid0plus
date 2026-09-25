@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -677,6 +679,9 @@ func TestVersusWindowUsesOneSetAndFourDistinctRankedModes(t *testing.T) {
 		t.Errorf("first slot starts %s; want the slot before the current one", got)
 	}
 	setID := resp.GetSchedules()[0].GetScheduleSetId()
+	if _, err := uuid.Parse(setID); err != nil {
+		t.Errorf("Versus schedule-set id %q is not a UUID like both working captures: %v", setID, err)
+	}
 	names := map[string]bool{}
 	for i, slot := range resp.GetSchedules() {
 		if slot.GetScheduleSetId() != setID || setID == "" {

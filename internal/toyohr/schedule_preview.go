@@ -22,7 +22,7 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 	}
 	current := AlignToSlot(now)
 	from := current.Add(-scheduleSlot)
-	setID := scheduleSetID(current)
+	setID := rotationSetID("vs", current)
 	out := make([]*toyohrpb.VsSchedule, 0, slots)
 	for i := 0; i < slots; i++ {
 		start := from.Add(time.Duration(i) * scheduleSlot)

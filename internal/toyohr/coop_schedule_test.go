@@ -395,7 +395,7 @@ func TestCoopSchedulesShareOneSetWithoutShiftIDs(t *testing.T) {
 	if setID == "" {
 		t.Fatal("missing schedule-set id")
 	}
-	if setID == scheduleSetID(AlignToSlot(at)) {
+	if setID == rotationSetID("vs", AlignToSlot(at)) {
 		t.Error("Coop and Versus share a schedule-set id; the captures keep them separate")
 	}
 	if firstEntry.GetName() == secondEntry.GetName() {
