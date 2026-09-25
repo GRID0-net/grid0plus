@@ -401,6 +401,27 @@ func TestVsParamsRevisionIsIndependentOfTheRotation(t *testing.T) {
 	}
 }
 
+func TestVsParamsWindowCoversEveryReturnedVsSchedule(t *testing.T) {
+	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
+	sc := scheduleServiceFor(t, at, Rotation{RegularStages: []int32{1, 2}})
+	params, err := sc.SelectVsParams(context.Background(), &toyohrpb.SelectVsParamsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedules, err := sc.SelectVsSchedules(context.Background(), &toyohrpb.SelectVsSchedulesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := params.GetParams().GetTimestamp1().AsTime()
+	end := params.GetParams().GetTimestamp2().AsTime()
+	for i, slot := range schedules.GetSchedules() {
+		if slot.GetStartTime().AsTime().Before(start) || slot.GetEndTime().AsTime().After(end) {
+			t.Errorf("schedule %d [%v, %v] falls outside params window [%v, %v]", i,
+				slot.GetStartTime().AsTime(), slot.GetEndTime().AsTime(), start, end)
+		}
+	}
+}
+
 // TestSelectVsParamsNameCarriesTheRequestsOwnTarget is the regression test
 // for a second and third real crash on the same RPC: a 2026-09-24 decompile
 // of Splatoon 3 v11.3.0's own main.nso found the client's resource-name

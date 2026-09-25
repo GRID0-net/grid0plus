@@ -341,8 +341,11 @@ func (sc *scheduleService) SelectVsParams(
 	// In both working captures, timestamp1 < the client's current_time <
 	// timestamp2. Equal endpoints made this server's params validity window
 	// empty. Our window spans the same rotation horizon we already return.
-	windowStart := AlignToSlot(now)
-	windowEnd := windowStart.Add(scheduleHorizon * scheduleSlot)
+	currentSlot := AlignToSlot(now)
+	// SelectVsSchedules includes the previous slot. Its first schedule must
+	// still fall within the parameters' validity window, as in both captures.
+	windowStart := currentSlot.Add(-scheduleSlot)
+	windowEnd := currentSlot.Add(scheduleHorizon * scheduleSlot)
 	// The two working captures use a params revision distinct from the
 	// schedule-set id. Keep our own tuning revision stable across rotations.
 	const paramsRevision = "1"
