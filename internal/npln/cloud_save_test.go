@@ -1,0 +1,132 @@
+package npln
+
+import (
+	"io"
+	"testing"
+
+	commonpb "github.com/n-popescu/switchnet/proto/common"
+	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+)
+
+func strV(s string) *commonpb.Value {
+	return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: s}}
+}
+
+// TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot is the round trip a
+// console needs to ever hold a resolved cloud save: an established console
+// told "nothing in the cloud" sends evt=Validate with the keys it is missing
+// (captured 2026-09-24), and the next boot's GetSaveRecord must return them
+// instead of the zero-message answer again.
+func TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot(t *testing.T) {
+	const uid = "save000000000001"
+	h := newHarness(t)
+	h.createUser(uid, "device-save-1")
+	saves := toyohrpb.NewCloudSaveClient(h.conn)
+	ctx := h.ctx(h.sessionFor(t, uid, "device-save-1"), "")
+	get := &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"}
+
+	if _, err := saves.GetSaveRecord(ctx, get); err != io.EOF {
+		t.Fatalf("first boot GetSaveRecord = %v, want io.EOF (no cloud save yet)", err)
+	}
+
+	first, err := saves.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{
+		Name:          "tenants/current/saveRecords/current",
+		SaveEventType: "tenants/current/saveEventTypes/Validate",
+		SaveRecord: &toyohrpb.SaveRecord{SaveData: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"HaveGearHeadMap": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{
+				Fields: map[string]*commonpb.Value{"1000": intV(1)}}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("WriteSaveRecord: %v", err)
+	}
+	second, err := saves.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{
+		Name:          "tenants/current/saveRecords/current",
+		UpdateTime:    first.GetTimestamp(),
+		SaveEventType: "tenants/current/saveEventTypes/NewSeason",
+		SaveRecord: &toyohrpb.SaveRecord{SaveData: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"Season": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{
+				Fields: map[string]*commonpb.Value{"CurrentSeasonId": intV(16)}}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("second WriteSaveRecord: %v", err)
+	}
+	if !second.GetTimestamp().AsTime().After(first.GetTimestamp().AsTime()) {
+		t.Errorf("version token did not advance: %v then %v", first.GetTimestamp().AsTime(), second.GetTimestamp().AsTime())
+	}
+
+	got, err := saves.GetSaveRecord(ctx, get)
+	if err != nil {
+		t.Fatalf("next boot GetSaveRecord: %v, want the stored record", err)
+	}
+	f := got.GetSaveData().GetFields()
+	if f["HaveGearHeadMap"].GetMapValue().GetFields()["1000"].GetIntegerValue() != 1 {
+		t.Errorf("Validate delta missing from the stored record: %v", f)
+	}
+	if f["Season"].GetMapValue().GetFields()["CurrentSeasonId"].GetIntegerValue() != 16 {
+		t.Errorf("NewSeason delta missing from the stored record: %v", f)
+	}
+	if want := "tenants/" + h.srv.tenant + "/saveRecords/" + uid; got.GetName() != want {
+		t.Errorf("name = %q, want %q", got.GetName(), want)
+	}
+	if !got.GetUpdateTime().AsTime().Equal(second.GetTimestamp().AsTime()) {
+		t.Errorf("update_time = %v, want the last write's token %v", got.GetUpdateTime().AsTime(), second.GetTimestamp().AsTime())
+	}
+}
+
+// TestOneConsoleCannotReadOrOverwriteAnothersCloudSave holds CloudSave to the
+// fail-closed identity rule: the record is always the authenticated
+// caller's, whatever name the request carries.
+func TestOneConsoleCannotReadOrOverwriteAnothersCloudSave(t *testing.T) {
+	const alice, bob = "save00000000000a", "save00000000000b"
+	h := newHarness(t)
+	h.createUser(alice, "device-alice")
+	h.createUser(bob, "device-bob")
+	saves := toyohrpb.NewCloudSaveClient(h.conn)
+	aliceCtx := h.ctx(h.sessionFor(t, alice, "device-alice"), "")
+	bobCtx := h.ctx(h.sessionFor(t, bob, "device-bob"), "")
+
+	if _, err := saves.WriteSaveRecord(aliceCtx, &toyohrpb.WriteSaveRecordRequest{
+		Name:       "tenants/current/saveRecords/" + bob,
+		SaveRecord: &toyohrpb.SaveRecord{SaveData: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"UserName": strV("alice")}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := saves.GetSaveRecord(bobCtx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/" + alice}); err != io.EOF {
+		t.Errorf("bob GetSaveRecord = %v, want io.EOF: alice's write must not land on, or be readable by, bob", err)
+	}
+	got, err := saves.GetSaveRecord(aliceCtx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"})
+	if err != nil || got.GetSaveData().GetFields()["UserName"].GetStringValue() != "alice" {
+		t.Errorf("alice GetSaveRecord = %v, %v; want her own record", got, err)
+	}
+}
+
+// TestCreateSaveRecordStoresTheConsolesOwnRecord covers the fresh-account
+// path measured against real Nintendo: nothing in the cloud, then the
+// console uploads its local save through CreateSaveRecord.
+func TestCreateSaveRecordStoresTheConsolesOwnRecord(t *testing.T) {
+	const uid = "save000000000003"
+	h := newHarness(t)
+	h.createUser(uid, "device-save-3")
+	saves := toyohrpb.NewCloudSaveClient(h.conn)
+	ctx := h.ctx(h.sessionFor(t, uid, "device-save-3"), "")
+
+	created, err := saves.CreateSaveRecord(ctx, &toyohrpb.CreateSaveRecordRequest{
+		Parent: "tenants/current",
+		SaveRecord: &toyohrpb.SaveRecord{
+			Name:     "tenants/current/saveRecords/current",
+			SaveData: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"UserName": strV("fresh"), "PlayerRank": intV(1)}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateSaveRecord: %v", err)
+	}
+	if created.GetUpdateTime() == nil || created.GetCreateTime() == nil {
+		t.Error("created record has no timestamps")
+	}
+	got, err := saves.GetSaveRecord(ctx, &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"})
+	if err != nil || got.GetSaveData().GetFields()["UserName"].GetStringValue() != "fresh" {
+		t.Errorf("GetSaveRecord after create = %v, %v", got, err)
+	}
+}

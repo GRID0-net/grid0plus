@@ -2,6 +2,7 @@ package toyohr
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -76,12 +77,13 @@ func registerCloudSave(srv *grpc.Server, impl *Service) {
 //     The console's own SDK reads "a record that exists and is empty"
 //     differently from "nothing in the cloud".
 //
-// SwitchNet never actually holds a player's cloud save (CreateSaveRecord is
-// intentionally left Unimplemented -- see its own comment), so every caller
-// but the private diagnostic probe gets the true zero-message answer, not a
-// constructed one: this is not a placeholder standing in for real save
-// content, it is what "this server has nothing for you" honestly looks
-// like on the wire.
+// Once the console has uploaded anything -- CreateSaveRecord's full record or
+// a WriteSaveRecord delta -- that stored record is what it gets back here:
+// NextendoNetwork/splatoon-3 measured that a resolved record is what lets
+// the game go on to SelectFestSchedule, the early GameRecord document reads
+// and further WriteSaveRecord calls, where "nothing in the cloud" leaves an
+// established console stopped. Only a player with nothing stored still gets
+// the zero-message answer.
 func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 	s, ok := srv.(*Service)
 	if !ok {
@@ -104,6 +106,17 @@ func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 		if err != nil {
 			return err
 		}
+		return stream.SendMsg(rec)
+	}
+
+	rec, err := s.loadSave(ctx, uid)
+	if err != nil {
+		s.log.Error("toyohr: load cloud save", "user", uid, "error", err)
+		return status.Error(codes.Internal, "internal error")
+	}
+	if rec != nil {
+		s.log.Info("toyohr: GetSaveRecord answered with the stored record",
+			"user", uid, "keys", len(rec.GetSaveData().GetFields()))
 		return stream.SendMsg(rec)
 	}
 
@@ -146,45 +159,127 @@ func (s *Service) GetSaveRecord(
 	if s.diagnostic != nil && s.diagnostic.UserID == uid {
 		return s.diagnosticSaveRecord(ctx, uid)
 	}
+	if rec, err := s.loadSave(ctx, uid); err != nil {
+		return nil, status.Error(codes.Internal, "internal error")
+	} else if rec != nil {
+		return rec, nil
+	}
 	now := timestamppb.New(s.now())
 	return &toyohrpb.SaveRecord{
-		Name:       s.tenantPath() + "/saveRecords/" + uid,
+		Name:       s.saveRecordName(uid),
 		SaveData:   &common.MapValue{Fields: map[string]*common.Value{}},
 		CreateTime: now,
 		UpdateTime: now,
 	}, nil
 }
 
-// WriteSaveRecord acknowledges a write without storing it.
+// WriteSaveRecord merges a delta into the player's stored record, creating
+// the record if this is the first thing the console has sent.
 //
-// Answered rather than left Unimplemented, unlike the other four -- because
-// unlike them, this one is not merely uncalled early, it is called
-// immediately as a direct consequence of GetSaveRecord's own honestly-blank
-// answer. NextendoNetwork/splatoon-3's own proto comment (facts only, not
-// its code) documents the real shape: the client sends an
-// evt=Validate-style WriteSaveRecord carrying exactly the keys missing from
-// a blank record (CloudRandomSet, HaveGearClothesMap, HaveGearHeadMap,
-// HaveGearShoesMap) as soon as it sees one. Confirmed on SwitchNet's own
-// hardware on 2026-09-24: a VM-side loopback capture showed the console
-// calling this RPC twice, immediately after GetSaveRecord and
-// SelectVsParams both succeeded, getting Unimplemented both times, and
-// going silent for good shortly after.
+// The console writes right after GetSaveRecord: an established console that
+// is told "nothing in the cloud" sends evt=Validate carrying the keys a blank
+// record lacks (the 2026-09-24 loopback capture shows HaveGearClothesMap,
+// HaveGearHeadMap and HaveGearShoesMap, 34 KB, twice), and
+// NextendoNetwork/splatoon-3 documents the events that follow once those are
+// accepted (InitFest, InitCoopTeamContest, NewSeason, SeqFlagVsLobbyMulti).
+// Discarding them, as this used to, handed the same empty save back on
+// every boot, so the console never had a resolved record.
 //
-// WriteSaveRecordResponse carries exactly one field -- a timestamp, per
-// both this project's own proto and NextendoNetwork/splatoon-3's comment
-// (`WriteSaveRecordResponse{timestamp}`) -- so acknowledging costs nothing
-// this server does not already have. Nothing is stored: SwitchNet still has
-// no legitimate way to keep real player save content, the same boundary
-// GetSaveRecord's own doc comment draws. This only ever tells the client
-// "your write was accepted," on a save this server already answers blank
-// every time regardless.
+// The response's timestamp is the record's new update_time, which the
+// console presents as the next write's version token.
+//
+// While the private diagnostic serves this player a captured record, writes
+// are acknowledged and not stored: they are deltas against someone else's
+// progression.
 func (s *Service) WriteSaveRecord(
-	ctx context.Context, _ *toyohrpb.WriteSaveRecordRequest,
+	ctx context.Context, req *toyohrpb.WriteSaveRecordRequest,
 ) (*toyohrpb.WriteSaveRecordResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	event := strings.TrimPrefix(req.GetSaveEventType(), "tenants/current/saveEventTypes/")
+	if s.diagnostic != nil && s.diagnostic.UserID == uid {
+		return &toyohrpb.WriteSaveRecordResponse{Timestamp: timestamppb.New(s.now())}, nil
+	}
+
+	unlock := lockSave(uid)
+	defer unlock()
+	rec, err := s.loadSave(ctx, uid)
+	if err != nil {
+		s.log.Error("toyohr: load cloud save", "user", uid, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	created := rec == nil
+	if created {
+		now := timestamppb.New(s.now())
+		rec = &toyohrpb.SaveRecord{
+			Name:       s.saveRecordName(uid),
+			SaveData:   &common.MapValue{Fields: map[string]*common.Value{}},
+			CreateTime: now,
+		}
+	}
+	mergeSaveDelta(rec.SaveData, req.GetSaveRecord().GetSaveData())
+	rec.UpdateTime = nextSaveVersion(s.now(), rec.GetUpdateTime())
+	if err := s.putSave(ctx, uid, rec); err != nil {
+		s.log.Error("toyohr: store cloud save", "user", uid, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	s.log.Info("toyohr: WriteSaveRecord stored", "user", uid, "event", event,
+		"delta_keys", len(req.GetSaveRecord().GetSaveData().GetFields()),
+		"record_keys", len(rec.SaveData.Fields), "created", created)
+	return &toyohrpb.WriteSaveRecordResponse{Timestamp: rec.UpdateTime}, nil
+}
+
+// CreateSaveRecord stores the record a console builds from its own local
+// save and answers with it. NextendoNetwork/splatoon-3 measured this
+// against real Nintendo for a fresh account: GetSaveRecord with nothing in
+// the cloud, then CreateSaveRecord uploading ~15 KB six seconds later, then
+// WriteSaveRecord. The record is filed under the caller's own name whatever
+// name the request carries.
+func (s *Service) CreateSaveRecord(
+	ctx context.Context, req *toyohrpb.CreateSaveRecordRequest,
+) (*toyohrpb.SaveRecord, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "")
+	}
+	unlock := lockSave(uid)
+	defer unlock()
+
+	rec := &toyohrpb.SaveRecord{
+		Name:     s.saveRecordName(uid),
+		SaveData: &common.MapValue{Fields: map[string]*common.Value{}},
+	}
+	mergeSaveDelta(rec.SaveData, req.GetSaveRecord().GetSaveData())
+	prev, err := s.loadSave(ctx, uid)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	now := timestamppb.New(s.now())
+	rec.CreateTime = now
+	var prevVersion *timestamppb.Timestamp
+	if prev != nil {
+		prevVersion = prev.GetUpdateTime()
+	}
+	rec.UpdateTime = nextSaveVersion(s.now(), prevVersion)
+	if err := s.putSave(ctx, uid, rec); err != nil {
+		s.log.Error("toyohr: store cloud save", "user", uid, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	s.log.Info("toyohr: CreateSaveRecord stored", "user", uid,
+		"record_keys", len(rec.SaveData.Fields), "replaced", prev != nil)
+	return rec, nil
+}
+
+// ValidateSaveRecord is acknowledged. It has not appeared in any capture;
+// its response has no fields, so there is nothing to invent, and refusing it
+// would block a boot on a check this server cannot perform.
+func (s *Service) ValidateSaveRecord(
+	ctx context.Context, _ *toyohrpb.ValidateSaveRecordRequest,
+) (*toyohrpb.ValidateSaveRecordResponse, error) {
 	if _, ok := s.caller(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
-	return &toyohrpb.WriteSaveRecordResponse{
-		Timestamp: timestamppb.New(s.now()),
-	}, nil
+	return &toyohrpb.ValidateSaveRecordResponse{}, nil
 }
