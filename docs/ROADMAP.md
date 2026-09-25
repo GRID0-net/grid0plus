@@ -6,16 +6,15 @@ causes and no way to tell them apart.
 
 Phase 2 was built against that rule rather than in obedience to it: the
 certificate-trust question that gates hardware testing was open, so every step
-was chosen to be verifiable without a console. That kept the work moving and it
-does mean **two phases are now waiting on the same hardware test**, which is the
-cost of the decision and is worth stating plainly.
+was chosen to be verifiable without a console. Both have since reached
+hardware: phase 1 works, and phase 2 gets as far as Splatoon 3's hall.
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | code complete, **awaiting hardware verification** |
-| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | code complete, **awaiting hardware verification** |
+| [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | **running on a real console**; received-requests view still shows 2124-0104 |
+| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | **running on a real console up to the hall**, which fails ([`TODO.md`](../TODO.md) §4.2) |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
-| [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **awaiting hardware verification and a capture** |
+| [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet tried on a console** |
 | [5](#phase-5--account-system-refactor--a-discord-bot) | account creation/linking refactor, a Discord bot as the primary registration and per-user control surface | **planned, not started** |
 
 Phase 3 is scoped differently from 1 and 2: it is not going into `internal/`
@@ -37,20 +36,25 @@ support servers, the Switch-side config generation and the deployment docs are
 all implemented and tested: 166 tests, and the whole chain verified running
 against a live PostgreSQL and Redis over real HTTP.
 
-**The remaining gate is hardware.** The exit criterion is an operator creating an
-account on a real modded Switch, generating a friend code, adding a second Switch,
-and seeing accurate online / offline / "Playing X" status in the **stock**
-Nintendo friends applet. That cannot be verified without two consoles.
+**On hardware (2026-09-20 to 09-23):** sign-in, Nintendo Account linking and the
+friend list work in the stock applet. Fixed on the way: the NA-link blob header
+(2124-0292), penne notification tokens, and nginx asking the friends host for a
+client certificate (2121-1058). Still open: the received-requests view shows
+2124-0104, traced to the client side and parked. The exit criterion — two
+consoles seeing each other's online / "Playing X" status — still needs the
+second console.
 
-**What is most likely to be wrong when it is tried:** the BAAS `2.0.0` friends
-endpoint shapes, which are undocumented and reasoned rather than known. The friend
-list response is the one to watch — if it is an envelope rather than a bare array,
-the applet comes up empty with nothing in the log.
-[`CAPTURES/README.md`](CAPTURES/README.md) lists all nine guesses in priority
-order — two (items 1 and 8) now partly settled by a real capture, each with a
-residual open sub-question.
+The remaining BAAS `2.0.0` guesses are listed in
+[`CAPTURES/README.md`](CAPTURES/README.md); the friend list shape is now
+confirmed by the applet rendering it.
 
-**Console-side work still open.** Redirection is solved off the console with DNS
+**Console-side setup.** What this deployment actually runs is the SwitchNet
+Toolbox homebrew: Atmosphère's hosts file plus the public
+`disable_ca_verification` patches, on an emuMMC that never talks to Nintendo
+(see [`../switch/README.md`](../switch/README.md)). The routes below are the
+narrower alternatives, still worth having for a console that does go back.
+
+Redirection can be solved off the console with DNS
 (the generated dnsmasq/unbound configuration, added to a resolver the operator
 already runs), so nothing goes on the SD card for that half. Certificate trust does need the console, and the
 preferred route — extending the console's own CA store via a LayeredFS override of
@@ -69,17 +73,18 @@ being code rather than a data file. Prelude shipped something similar
 (`network_mitm`) and removed it after it stopped loading on current firmware,
 which is a reason to write it carefully rather than a reason the approach is wrong.
 
-**Explicitly not wanted:** a Prelude-style homebrew that rewrites the hosts file
-and installs firmware-gated exefs patches. It is fragile in a specific way — the
-patch silently does nothing when the build id does not match, and it turns off
-certificate verification system-wide — and the DNS route makes most of it
-unnecessary.
+**The cost of the Toolbox route**, which this section originally ruled out:
+the patch silently does nothing when the firmware build id does not match, and
+it turns off certificate verification system-wide. On an emuMMC that only ever
+talks to SwitchNet the second cost does not reach Nintendo traffic; the first
+means a firmware update needs a new patch before anything works.
 
 ---
 
 ## Phase 2 — Splatoon 3 (NPLN) + dashboard
 
-**Implemented. Nothing in it has touched a console.**
+**Implemented, and running on a real console up to Splatoon 3's hall**, where
+it stops with a communication error ([`../TODO.md`](../TODO.md) §4.2).
 
 Splatoon 3 does not use NEX/PRUDP. It uses **NPLN**: gRPC over HTTP/2 with
 protobuf payloads, one tenant per title. The Splatoon 3 tenant is `dce9377b`, at
@@ -90,12 +95,6 @@ transport with mature tooling, and **Kinnay has published the decompiled protobu
 definitions** at [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols)
 — covering more than expected, including Splatoon 3's own `toyohr/v1` with
 `fest.proto`.
-
-> **This section was written before the phase was built and got four things
-> wrong.** They are corrected in place below, each marked **Correction**.
-> [`PHASE2_PLAN.md`](PHASE2_PLAN.md) is the record of how they were found, and
-> §2.7 and §2.8 are work this section did not know about at all. The subsection
-> numbers are kept because source comments cite them.
 
 > **This section was written before any of it was built, and four things in it
 > turned out to be wrong.** They are corrected in place below, and
@@ -228,20 +227,13 @@ mechanism this section's advice depends on: an RPC on a registered service answe
 `Unimplemented` and the gateway logs it once by name, whereas an RPC on an
 unregistered service fails identically with nothing in the log.
 
-**Built: `FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, and
-`CloudSave.GetSaveRecord`** (`internal/toyohr`, package doc: "starting with
-Splatfests").
-
-| Service | State |
-| --- | --- |
-| `FestService` | done, end to end: schedule, decryption keys, team choice, results — except `SelectFestBreakingNews`, a sixth real RPC found by decompile 2026-09-21 (see `internal/toyohr/service.go`), left unregistered since nothing confirms its shape |
-| `Schedule` | `SelectVsParams`/`SelectVsSchedules`/`SelectSeasonSchedules`/`SelectLeagueSchedules` answer "nothing scheduled" — the map/mode rotation content is Nintendo's own game design data, not something this server can fabricate. `SelectCoopSchedules` is **not** empty: every operator-scheduled, unended Salmon Run shift is served for real, backed by `SaveCoopShift`/`GenerateAndSaveCoopShifts` and `switchnetctl coop` — see [`../TODO.md`](../TODO.md) §1.4 |
-| `LobbyMessaging` | done, including `SendMessage` — in-memory delivery to connected players via a per-lobby hub |
-| `UserScreening` | done. `CreateReport` is logged for the operator (it is data the caller hands over, not data this server needs to already have); `GetViolation` always answers none |
-| `CloudSave.GetSaveRecord` | answers `NotFound` for every account — a fresh account genuinely has no cloud save on a real server either, so this is a correct answer rather than a placeholder. The other five `CloudSave` RPCs are left unimplemented: real player data this server has no legitimate way to have, see CLAUDE.md's "anything needing a game dump" boundary |
-| `Canola`/`Locker` | empty/`NotFound` reads; the writes are unimplemented — no `internal/ugcstore` exists to write into. `nn.npln.ugcstore.v1.Screening`'s two RPCs (`CreateReport`, and `CreateDocumentReport` — the latter a real method a 2026-09-21 decompile found with no current proto entry) are unregistered for the same reason |
-| `CoopScenario`/`Replay` | `NotFound` reads; `FulfillReservations` answers an empty valid list |
-| `GameRecord` | **the one that matters most, and left entirely `Unimplemented`.** Battle results come from here, and they are the missing half of a Splatfest verdict — `InitializeAttributes` alone carries per-mode X Power seed values with no defensible default. A 2026-09-21 decompile found the service has five more real RPCs than any proto currently defines — `ResetUdemae`, `PrepareTag`, `PrepareBankaraPowerMeasurement`, `PrepareWeaponPowerMeasurement`, `PrepareLeaguePowerMeasurement` — see `internal/toyohr/backlog.go` |
+**All of them are built to some degree**; [`../TODO.md`](../TODO.md) §1.4 has
+the current state of each, and `internal/toyohr/README.md` the reasoning.
+In short: Splatfests end to end (including `SelectFestBreakingNews`,
+missing from the proto); generated Versus/Season rotations and a real Salmon
+Run rotation shaped like the working Nextendo captures; per-player cloud save
+storage; `GameRecord/InitializeAttributes` and the tag calls; lobby
+messaging; empty-but-valid Canola/Locker/CoopScenario/Replay reads.
 
 See [`../TODO.md`](../TODO.md) §1.4 for the file-by-file detail and what each
 remaining `TODO(capture-needed)` would settle. Log every unimplemented RPC
@@ -389,6 +381,11 @@ build error rather than a PNG packed into the archive.
 > nothing here: Splatoon 3 carries its own statically linked TLS stack and pins
 > its own certificates.
 
+Solved on hardware on 2026-09-23 with four patches, not one — the game also
+pins the server key, sets its own verify option and installs a separate
+verify callback on the gRPC channel; see
+[`switch/README.md` part 3](../switch/README.md#part-3-splatoon-3-pins-its-own-certificates).
+
 The failure signature is worth memorising, because it looks identical to a dozen
 unrelated bugs: the TLS handshake **completes**, and the game then abandons the
 call before sending a single HTTP/2 HEADERS frame. A connection in the log, and no
@@ -401,12 +398,9 @@ applying silently.
 
 ### What is left
 
-[`../TODO.md`](../TODO.md) is the live list, and it is short: a texture converter
-(deliberately external), the remaining `toyohr` services in whatever order the
-console asks for them, and **a console**. The first hardware test is worth more
-than any further server work, and
-[`switch/README.md`](../switch/README.md#verify-splatoon-3-in-order) is the
-sequence for it.
+[`../TODO.md`](../TODO.md) is the live list. The current blocker is the hall
+(§4.2); after that, native BCAT serving (§2.4) and fest asset conversion
+(§2.1) are the large pieces left.
 
 ## Phase 3 — the eShop, a separate module
 
@@ -977,4 +971,7 @@ Every phase is limited by what is documented, and the friends and commerce layer
 are the least documented parts. [`CAPTURES/README.md`](CAPTURES/README.md) lists
 what is still guessed, in priority order; [`PACKET_CAPTURE.md`](PACKET_CAPTURE.md)
 covers how to capture it — including a method that needs no console MITM and
-carries no ban risk.
+carries no ban risk. This deployment's console never runs Atmosphère against
+Nintendo, so a capture of Nintendo from it is tcpdump only; request and response
+shapes come from RE, GDB on the emuMMC, captures against SwitchNet, and facts
+other projects have published.
