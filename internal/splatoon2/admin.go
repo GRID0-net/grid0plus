@@ -25,9 +25,14 @@ type callLog struct {
 }
 
 // CallEntry is one call a console made.
+//
+// PIDs are sent as strings everywhere in this API: they are 64-bit, and a
+// JSON number above 2^53 reaches the dashboard's JavaScript already rounded
+// to a different player.
 type CallEntry struct {
 	At     time.Time `json:"at"`
-	PID    uint64    `json:"pid"`
+	PID    uint64    `json:"pid,string"`
+	UserID string    `json:"userId"`
 	Method string    `json:"method"`
 	OK     bool      `json:"ok"`
 }
@@ -35,7 +40,7 @@ type CallEntry struct {
 const recentCalls = 200
 
 func (s *Server) noteCall(c *nex.Conn, req *nex.Request, resp *nex.Response) {
-	e := CallEntry{At: s.Now(), PID: c.PID, Method: s.MethodName(req.Protocol, req.Method), OK: resp == nil || resp.OK()}
+	e := CallEntry{At: s.Now(), PID: c.PID, UserID: rendezvous.UserIDForPID(c.PID), Method: s.MethodName(req.Protocol, req.Method), OK: resp == nil || resp.OK()}
 	s.calls.mu.Lock()
 	s.calls.recent = append(s.calls.recent, e)
 	if len(s.calls.recent) > recentCalls {
@@ -46,7 +51,7 @@ func (s *Server) noteCall(c *nex.Conn, req *nex.Request, resp *nex.Response) {
 }
 
 type adminPlayer struct {
-	PID         uint64     `json:"pid"`
+	PID         uint64     `json:"pid,string"`
 	UserID      string     `json:"userId"`
 	Nickname    string     `json:"nickname"`
 	RemoteIP    string     `json:"remoteIp"`
@@ -61,9 +66,45 @@ type adminPlayer struct {
 }
 
 type adminMember struct {
-	PID      uint64 `json:"pid"`
+	PID      uint64 `json:"pid,string"`
 	UserID   string `json:"userId"`
 	Nickname string `json:"nickname"`
+}
+
+// adminRelay is rendezvous.RelayStats with players named by user id.
+type adminRelay struct {
+	AdvertiseIP string           `json:"advertiseIp"`
+	PortBase    int              `json:"portBase"`
+	PortSpan    int              `json:"portSpan"`
+	Allowed     []string         `json:"allowed"`
+	AllowAll    bool             `json:"allowAll"`
+	Opened      uint64           `json:"opened"`
+	Forwarded   uint64           `json:"forwarded"`
+	Rejected    uint64           `json:"rejected"`
+	Pairs       []adminRelayPair `json:"pairs"`
+}
+
+type adminRelayPair struct {
+	A         string `json:"a"`
+	B         string `json:"b"`
+	Port      int    `json:"port"`
+	Forwarded uint64 `json:"forwarded"`
+	Rejected  uint64 `json:"rejected"`
+	IdleSecs  int    `json:"idleSeconds"`
+}
+
+func toAdminRelay(rs rendezvous.RelayStats) *adminRelay {
+	out := &adminRelay{AdvertiseIP: rs.AdvertiseIP, PortBase: rs.PortBase, PortSpan: rs.PortSpan,
+		AllowAll: rs.AllowAll, Opened: rs.Opened, Forwarded: rs.Forwarded, Rejected: rs.Rejected,
+		Allowed: []string{}, Pairs: []adminRelayPair{}}
+	for _, pid := range rs.Allowed {
+		out.Allowed = append(out.Allowed, rendezvous.UserIDForPID(pid))
+	}
+	for _, p := range rs.Pairs {
+		out.Pairs = append(out.Pairs, adminRelayPair{A: rendezvous.UserIDForPID(p.A), B: rendezvous.UserIDForPID(p.B),
+			Port: p.Port, Forwarded: p.Forwarded, Rejected: p.Rejected, IdleSecs: p.IdleSecs})
+	}
+	return out
 }
 
 type adminGathering struct {
@@ -96,13 +137,13 @@ type adminResult struct {
 
 // Status is what the dashboard shows.
 type Status struct {
-	Players    []adminPlayer          `json:"players"`
-	Gatherings []adminGathering       `json:"gatherings"`
-	Calls      []CallEntry            `json:"calls"`
-	Methods    []adminMethod          `json:"methods"`
-	Results    []adminResult          `json:"results"`
-	Relay      *rendezvous.RelayStats `json:"relay,omitempty"`
-	Uptime     int                    `json:"uptimeSeconds"`
+	Players    []adminPlayer    `json:"players"`
+	Gatherings []adminGathering `json:"gatherings"`
+	Calls      []CallEntry      `json:"calls"`
+	Methods    []adminMethod    `json:"methods"`
+	Results    []adminResult    `json:"results"`
+	Relay      *adminRelay      `json:"relay,omitempty"`
+	Uptime     int              `json:"uptimeSeconds"`
 }
 
 // Status snapshots the game server.
@@ -163,8 +204,7 @@ func (s *Server) Status() Status {
 			Mode: r.GameMode, Rule: r.Rule, Stage: r.Stage, Result: r.Result, At: time.Unix(r.At, 0).UTC()})
 	}
 	if s.relay != nil {
-		rs := s.relay.Stats()
-		st.Relay = &rs
+		st.Relay = toAdminRelay(s.relay.Stats())
 	}
 	st.Uptime = int(s.Now().Sub(s.started).Seconds())
 	return st

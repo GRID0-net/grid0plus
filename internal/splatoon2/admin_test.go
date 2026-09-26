@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -66,12 +67,21 @@ func TestTheAdminStatusListsAConnectedPlayerAndTheirCalls(t *testing.T) {
 	if pl["userId"] != rendezvous.UserIDForPID(p.PID) || pl["remoteIp"] == "" || pl["nat"] == nil {
 		t.Fatalf("player %v", pl)
 	}
+	// A PID is above 2^53 as often as not; as a JSON number the page would
+	// read it back as a different player.
+	if pl["pid"] != strconv.FormatUint(p.PID, 10) {
+		t.Fatalf("pid sent as %#v, want the exact decimal string", pl["pid"])
+	}
 	calls, _ := st["calls"].([]any)
 	if len(calls) == 0 {
 		t.Fatal("no calls recorded")
 	}
-	if m := calls[0].(map[string]any)["method"].(string); !strings.Contains(m, "DataStore") {
+	newest := calls[0].(map[string]any)
+	if m := newest["method"].(string); !strings.Contains(m, "DataStore") {
 		t.Fatalf("newest call is %q, want the DataStore one", m)
+	}
+	if newest["userId"] != rendezvous.UserIDForPID(p.PID) || newest["pid"] != strconv.FormatUint(p.PID, 10) {
+		t.Fatalf("call names %v / %v", newest["userId"], newest["pid"])
 	}
 	if _, ok := st["methods"].([]any); !ok {
 		t.Fatalf("no method counts: %v", st)

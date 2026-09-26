@@ -951,14 +951,14 @@ function renderSplatoon2(st) {
     ...(st.methods || []).map((m) =>
       Object.assign(document.createElement("span"), { className: "pill", textContent: `${m.name} × ${m.count}` }))
   );
-  const byPID = new Map(ps.map((p) => [p.pid, p]));
+  const byUser = new Map(ps.map((p) => [p.userId, p]));
   $("#s2-calls tbody").replaceChildren(
     ...(st.calls || []).slice(0, 50).map((c) => {
       const tr = document.createElement("tr");
-      const p = byPID.get(c.pid);
+      const p = byUser.get(c.userId);
       const ok = document.createElement("td");
       ok.innerHTML = c.ok ? "" : `<span class="pill warn">error</span>`;
-      tr.append(td(ago(c.at)), td(p ? s2Name(p) : String(c.pid)), td(c.method), ok);
+      tr.append(td(ago(c.at)), td(p ? s2Name(p) : s2Name(c)), td(c.method), ok);
       return tr;
     })
   );
@@ -966,16 +966,17 @@ function renderSplatoon2(st) {
   const relay = st.relay;
   $("#s2-relay-panel").hidden = !relay;
   if (relay) {
-    const pairs = relay.Pairs || [];
+    const pairs = relay.pairs || [];
     $("#s2-relay-summary").textContent =
-      `${relay.AdvertiseIP}:${relay.PortBase}–${relay.PortBase + relay.PortSpan - 1} · ` +
-      `${relay.AllowAll ? "anyone who needs it" : `${(relay.Allowed || []).length} allowed`} · ` +
-      `${relay.Forwarded} forwarded, ${relay.Rejected} refused`;
+      `${relay.advertiseIp}:${relay.portBase}–${relay.portBase + relay.portSpan - 1} · ` +
+      `${relay.allowAll ? "anyone who needs it" : `allowed: ${(relay.allowed || []).map((u) => playerName(u)).join(", ") || "nobody"}`} · ` +
+      `${relay.forwarded} forwarded, ${relay.rejected} refused`;
     $("#s2-relay-empty").hidden = pairs.length > 0;
     $("#s2-relay tbody").replaceChildren(
       ...pairs.map((p) => {
         const tr = document.createElement("tr");
-        tr.append(td(`${p.A} ↔ ${p.B}`), td(p.Port), td(p.Forwarded), td(p.Rejected), td(waited(p.IdleSecs)));
+        tr.append(td(`${playerName(p.a)} ↔ ${playerName(p.b)}`), td(p.port), td(p.forwarded), td(p.rejected),
+          td(waited(p.idleSeconds)));
         return tr;
       })
     );
