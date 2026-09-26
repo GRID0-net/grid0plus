@@ -7,7 +7,6 @@
 package splatoon2
 
 import (
-	"context"
 	"log/slog"
 	"time"
 
@@ -82,11 +81,8 @@ func New(opts Options) *Server {
 			PublicStationType: 3,
 			PublicStationPa:   false,
 		},
-		IDTokens: opts.IDTokens,
-		UserExists: func(pid uint64) bool {
-			u, err := store.GetUser(context.Background(), rendezvous.UserIDForPID(pid))
-			return err == nil && !u.Deleted
-		},
+		IDTokens:    opts.IDTokens,
+		Store:       store,
 		Log:         opts.Log,
 		Now:         opts.Now,
 		IdleTimeout: opts.IdleTimeout,

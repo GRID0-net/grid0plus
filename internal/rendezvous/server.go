@@ -15,6 +15,7 @@
 package rendezvous
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log/slog"
@@ -24,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/identity"
 	"github.com/n-popescu/switchnet/internal/nex"
 )
@@ -78,10 +80,11 @@ type Method func(c *nex.Conn, req *nex.Request) *nex.Response
 type Options struct {
 	Title    Title
 	IDTokens *identity.IDTokens
-	// UserExists answers GetPID/GetName. Nil answers "no such user" to both.
-	UserExists func(pid uint64) bool
-	Log        *slog.Logger
-	Now        func() time.Time
+	// Store keeps what outlives a session (see Records), and answers
+	// GetPID/GetName.
+	Store db.Store
+	Log   *slog.Logger
+	Now   func() time.Time
 	// IdleTimeout is nex.Server's.
 	IdleTimeout time.Duration
 }
@@ -92,7 +95,7 @@ type Server struct {
 	log      *slog.Logger
 	now      func() time.Time
 	idTokens *identity.IDTokens
-	exists   func(pid uint64) bool
+	store    db.Store
 
 	nex       *nex.Server
 	secureKey []byte
@@ -122,7 +125,7 @@ func New(opts Options) *Server {
 		log:       opts.Log,
 		now:       opts.Now,
 		idTokens:  opts.IDTokens,
-		exists:    opts.UserExists,
+		store:     opts.Store,
 		protocols: map[uint16]*protocol{},
 		players:   map[uint64]*nex.Conn{},
 	}
@@ -132,9 +135,6 @@ func New(opts Options) *Server {
 	s.log = s.log.With("title", opts.Title.Name)
 	if s.now == nil {
 		s.now = time.Now
-	}
-	if s.exists == nil {
-		s.exists = func(uint64) bool { return false }
 	}
 
 	// The secure server's own key: random per process, never configured.
@@ -166,7 +166,19 @@ func New(opts Options) *Server {
 		},
 	}
 	s.registerSecureConnection()
+	s.registerUtility()
 	return s
+}
+
+// exists reports whether pid is a live user.
+func (s *Server) exists(pid uint64) bool {
+	if s.store == nil || pid == 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	u, err := s.store.GetUser(ctx, UserIDForPID(pid))
+	return err == nil && !u.Deleted
 }
 
 // ServeHTTP serves the WebSocket endpoint.

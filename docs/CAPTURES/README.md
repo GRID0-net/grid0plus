@@ -842,6 +842,19 @@ specifically* — narrower than the system-wide patch, and what
 documents. Regenerate it after every title update: it is gated on the game
 version and stops applying silently.
 
+## Splatoon 2 (NEX)
+
+Splatoon 2 is a NEX title (`internal/rendezvous`, `internal/splatoon2`). Its
+wire shapes come from Kinnay's wiki, which documents most of the protocols
+method by method; what the wiki leaves open is below. A "capture" here means a
+decrypted capture of a console talking to SwitchNet (the WebSocket is TLS, so
+nginx's side is where to look), or static RE of Splatoon 2 — never of the
+console talking to Nintendo, whose Splatoon 2 servers no longer answer.
+
+| Where | What is guessed | What a capture would settle |
+| --- | --- | --- |
+| `rendezvous.getSettings` | Utility `GetIntegerSettings`/`GetStringSettings` answer an empty map | whether Splatoon 2 reads any setting, and which |
+
 ## Phase 3 — the eShop
 
 The eShop commerce API is the **least documented thing in this whole project**.

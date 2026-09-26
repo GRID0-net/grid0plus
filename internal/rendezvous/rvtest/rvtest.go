@@ -58,11 +58,8 @@ func New(t testing.TB, title rendezvous.Title, configure func(*rendezvous.Server
 	srv := rendezvous.New(rendezvous.Options{
 		Title:    title,
 		IDTokens: identity.NewIDTokens(key, store, log),
-		UserExists: func(pid uint64) bool {
-			_, err := store.GetUser(context.Background(), rendezvous.UserIDForPID(pid))
-			return err == nil
-		},
-		Log: log,
+		Store:    store,
+		Log:      log,
 	})
 	if configure != nil {
 		configure(srv, store)
