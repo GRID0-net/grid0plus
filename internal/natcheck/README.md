@@ -72,3 +72,11 @@ what makes that observation trustworthy. (Running it in Docker used to be a
 real footgun here: the userland proxy rewrote the reply's source address, so
 every message type appeared to come from the same place and classification
 came out wrong — in a way that looked like a NAT problem, not a Docker one.)
+
+## Sharing what it observes
+
+With `redis.url` set, every reachability message's source address — the
+external port the console's router mapped for its Pia socket — is written to
+Redis (`internal/natobs`), off the read loop so a slow Redis never delays a
+reply. `cmd/nex` reads it to correct the public stations it hands out for
+Splatoon 2 (see `internal/rendezvous`'s bridge).

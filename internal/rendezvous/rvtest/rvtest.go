@@ -20,6 +20,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/identity"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/natobs"
 	"github.com/n-popescu/switchnet/internal/nex"
 	"github.com/n-popescu/switchnet/internal/nex/nextest"
 	"github.com/n-popescu/switchnet/internal/rendezvous"
@@ -33,9 +34,11 @@ type Env struct {
 	URL    string
 	// HTTPURL is the same server as plain HTTP.
 	HTTPURL string
-	Title   rendezvous.Title
-	issuer  *sjwt.Issuer
-	n       int
+	// NATObs is what the NAT-check responder has "observed".
+	NATObs *natobs.Memory
+	Title  rendezvous.Title
+	issuer *sjwt.Issuer
+	n      int
 }
 
 // DefaultTitle is a title for tests that do not care which.
@@ -49,6 +52,8 @@ type Deps struct {
 	Store    *db.Memory
 	IDTokens *identity.IDTokens
 	Log      *slog.Logger
+	// NATObs is an in-memory observation store the test can fill.
+	NATObs *natobs.Memory
 }
 
 // New starts a plain rendezvous server. configure runs before it serves, to
@@ -56,7 +61,8 @@ type Deps struct {
 func New(t testing.TB, title rendezvous.Title, configure func(*rendezvous.Server, *db.Memory)) *Env {
 	t.Helper()
 	return Start(t, title, func(d Deps) (*rendezvous.Server, http.Handler) {
-		srv := rendezvous.New(rendezvous.Options{Title: title, IDTokens: d.IDTokens, Store: d.Store, Log: d.Log})
+		srv := rendezvous.New(rendezvous.Options{Title: title, IDTokens: d.IDTokens, Store: d.Store, Log: d.Log,
+			NATObservations: d.NATObs})
 		if configure != nil {
 			configure(srv, d.Store)
 		}
@@ -78,11 +84,12 @@ func Start(t testing.TB, title rendezvous.Title, build func(Deps) (*rendezvous.S
 	if testing.Verbose() {
 		log = slog.New(slog.NewTextHandler(testWriter{t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
-	srv, handler := build(Deps{Store: store, IDTokens: identity.NewIDTokens(key, store, log), Log: log})
+	obs := natobs.NewMemory()
+	srv, handler := build(Deps{Store: store, IDTokens: identity.NewIDTokens(key, store, log), Log: log, NATObs: obs})
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	return &Env{T: t, Store: store, Server: srv, URL: "ws" + strings.TrimPrefix(ts.URL, "http"),
-		HTTPURL: ts.URL, Title: title, issuer: sjwt.NewIssuer(key, "", true)}
+		HTTPURL: ts.URL, Title: title, NATObs: obs, issuer: sjwt.NewIssuer(key, "", true)}
 }
 
 type testWriter struct{ t testing.TB }
@@ -184,6 +191,19 @@ func (e *Env) Login() *Player {
 // LoginAs logs an existing user in.
 func (e *Env) LoginAs(userID, deviceAccountID string) *Player {
 	e.T.Helper()
+	return e.login(userID, deviceAccountID, "")
+}
+
+// LoginFrom logs a new user in as though its connection came from ip, the
+// way nginx reports a console's address (X-Real-IP).
+func (e *Env) LoginFrom(ip string) *Player {
+	e.T.Helper()
+	userID, da := e.User()
+	return e.login(userID, da, ip)
+}
+
+func (e *Env) login(userID, deviceAccountID, ip string) *Player {
+	e.T.Helper()
 	pid, err := rendezvous.PIDForUserID(userID)
 	if err != nil {
 		e.T.Fatal(err)
@@ -206,8 +226,12 @@ func (e *Env) LoginAs(userID, deviceAccountID string) *Player {
 	if err != nil {
 		e.T.Fatal(err)
 	}
+	var hdr http.Header
+	if ip != "" {
+		hdr = http.Header{"X-Real-Ip": []string{ip}}
+	}
 	secure, err := nextest.Dial(e.URL, nextest.Options{AccessKey: e.Title.AccessKey, Port: rendezvous.SecurePort,
-		ConnectPayload: nex.ConnectRequest(ticket, pid, 1, 7)})
+		ConnectPayload: nex.ConnectRequest(ticket, pid, 1, 7), Header: hdr})
 	if err != nil {
 		e.T.Fatal(err)
 	}

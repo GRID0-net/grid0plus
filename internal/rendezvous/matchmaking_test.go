@@ -446,3 +446,37 @@ func TestASquadJoinsTogetherAndTheOthersAreToldWhere(t *testing.T) {
 		t.Fatal("the squad mate was not told which lobby they are in")
 	}
 }
+
+func TestAHostsPublicStationCarriesTheObservedNATPort(t *testing.T) {
+	e := rvtest.New(t, rvtest.DefaultTitle, nil)
+	host := e.LoginFrom("203.0.113.5")
+	host.Register(t, "prudp:/address=192.168.1.20;port=49152;type=0")
+	_ = e.NATObs.Record(context.Background(), "203.0.113.5", 61000)
+	a := auto(t, host, template(2, 8, 0, ""))
+	joiner := e.LoginFrom("198.51.100.7")
+	auto(t, joiner, template(2, 8, 0, ""))
+
+	urls := func() []*nex.StationURL {
+		w := nex.NewWriter()
+		w.U32(a.ID)
+		return nex.ReadList(joiner.MustCall(t, rendezvous.ProtocolMatchMaking, 16, w.Bytes()), (*nex.Reader).StationURL)
+	}
+	var public *nex.StationURL
+	for _, u := range urls() {
+		if u.Get("address") == "203.0.113.5" {
+			public = u
+		}
+	}
+	if public == nil || public.Int("port") != 61000 {
+		t.Fatalf("host's public station %v", public)
+	}
+
+	// A second console behind the same IP makes the observation ambiguous:
+	// the reported port is kept.
+	e.LoginFrom("203.0.113.5")
+	for _, u := range urls() {
+		if u.Get("address") == "203.0.113.5" && u.Int("port") != 49152 {
+			t.Fatalf("bridged with two consoles behind one IP: %v", u)
+		}
+	}
+}

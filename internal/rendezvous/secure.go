@@ -192,7 +192,9 @@ func (s *Server) requestConnectionData(c *nex.Conn, req *nex.Request) *nex.Respo
 	w.Bool(t != nil)
 	var urls []*nex.StationURL
 	if t != nil {
-		urls = Stations(t)
+		for _, u := range Stations(t) {
+			urls = append(urls, s.stationFor(t, c, u))
+		}
 	}
 	nex.WriteList(w, urls, func(w *nex.Writer, u *nex.StationURL) {
 		w.Struct(0, func(w *nex.Writer) {
@@ -210,7 +212,9 @@ func (s *Server) requestURLs(c *nex.Conn, req *nex.Request) *nex.Response {
 	w.Bool(t != nil)
 	var urls []*nex.StationURL
 	if t != nil {
-		urls = Stations(t)
+		for _, u := range Stations(t) {
+			urls = append(urls, s.stationFor(t, c, u))
+		}
 	}
 	nex.WriteList(w, urls, (*nex.Writer).StationURL)
 	return req.Success(w.Bytes())

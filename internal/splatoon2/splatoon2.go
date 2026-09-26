@@ -41,8 +41,10 @@ type Options struct {
 	Config   config.Splatoon2
 	Store    db.Store
 	IDTokens *identity.IDTokens
-	Log      *slog.Logger
-	Now      func() time.Time
+	// NATObservations corrects public stations; nil leaves them as reported.
+	NATObservations rendezvous.NATObservations
+	Log             *slog.Logger
+	Now             func() time.Time
 	// IdleTimeout drops a silent console.
 	IdleTimeout time.Duration
 }
@@ -83,11 +85,12 @@ func New(opts Options) *Server {
 			PublicStationType: 3,
 			PublicStationPa:   false,
 		},
-		IDTokens:    opts.IDTokens,
-		Store:       store,
-		Log:         opts.Log,
-		Now:         opts.Now,
-		IdleTimeout: opts.IdleTimeout,
+		IDTokens:        opts.IDTokens,
+		Store:           store,
+		NATObservations: opts.NATObservations,
+		Log:             opts.Log,
+		Now:             opts.Now,
+		IdleTimeout:     opts.IdleTimeout,
 	})
 	s := &Server{Server: rv, store: store, log: rv.Log()}
 	s.registerExtensions()

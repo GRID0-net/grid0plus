@@ -117,6 +117,12 @@ type Config struct {
 	// AdvertisedIP is the address the server reports as its own local IP in the
 	// last field of a reply. Empty means it is derived from the socket.
 	AdvertisedIP string
+	// Observe, when set, is told the source address of every reachability
+	// message: the external port the console's router mapped for its Pia
+	// socket, which the NEX game server uses to correct the stations it
+	// hands out (internal/natobs). Called on the read loop, after the reply
+	// has gone: it must not block.
+	Observe func(ip net.IP, port int)
 }
 
 // Server is the NAT-check responder.
@@ -264,6 +270,10 @@ func (s *Server) respond(msg Message, from *net.UDPAddr) {
 	if _, err := conn.WriteToUDP(reply.Encode(), from); err != nil {
 		s.log.Warn("natcheck: write", "to", from, "type", msg.Type, "error", err)
 		return
+	}
+	if s.cfg.Observe != nil && (msg.Type == TypeReachability || msg.Type == TypeReachabilityAlt ||
+		msg.Type == TypeReachabilityAlt2) {
+		s.cfg.Observe(from.IP, from.Port)
 	}
 	s.log.Debug("natcheck: replied",
 		"type", msg.Type, "to", from, "from", conn.LocalAddr())

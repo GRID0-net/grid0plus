@@ -12,10 +12,14 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"net"
+	"time"
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/natcheck"
+	"github.com/n-popescu/switchnet/internal/natobs"
 	"github.com/n-popescu/switchnet/internal/service"
 	"github.com/n-popescu/switchnet/internal/stunresponder"
 )
@@ -32,11 +36,50 @@ func main() {
 	}
 	log = service.Logger(cfg.Log, "natcheck")
 
+	ctx, cancel := service.SignalContext()
+	defer cancel()
+
+	// What the responder observes goes to the NEX game server through Redis,
+	// when there is one. Written off the read loop: a slow Redis must never
+	// delay a NAT-check reply, whose timing is part of what it measures.
+	var observe func(net.IP, int)
+	if cfg.Redis.URL != "" {
+		obs, err := natobs.NewRedis(ctx, cfg.Redis.URL)
+		if err != nil {
+			service.Fatal(log, "connect redis", err)
+		}
+		defer obs.Close()
+		type seen struct {
+			ip   string
+			port int
+		}
+		queue := make(chan seen, 256)
+		go func() {
+			for o := range queue {
+				wctx, wcancel := context.WithTimeout(ctx, 2*time.Second)
+				if err := obs.Record(wctx, o.ip, o.port); err != nil {
+					log.Debug("natcheck: observation not shared", "error", err)
+				}
+				wcancel()
+			}
+		}()
+		observe = func(ip net.IP, port int) {
+			select {
+			case queue <- seen{ip.String(), port}:
+			default: // full: drop it, the console re-checks
+			}
+		}
+	} else {
+		log.Info("natcheck: redis.url is not set, so observed NAT mappings are not shared " +
+			"with the NEX game server; its stations keep the ports consoles report")
+	}
+
 	srv, err := natcheck.Listen(natcheck.Config{
 		PrimaryListen:   cfg.NATCheck.PrimaryListen,
 		SecondaryListen: cfg.NATCheck.SecondaryListen,
 		AlternateListen: cfg.NATCheck.AlternateListen,
 		AdvertisedIP:    cfg.Network.PublicIP,
+		Observe:         observe,
 	}, log)
 	if err != nil {
 		service.Fatal(log, "listen", err)
@@ -44,9 +87,6 @@ func main() {
 	defer func() { _ = srv.Close() }()
 
 	log.Info("listening", "addrs", srv.Addrs())
-
-	ctx, cancel := service.SignalContext()
-	defer cancel()
 
 	errCh := make(chan error, 2)
 

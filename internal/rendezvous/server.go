@@ -84,8 +84,11 @@ type Options struct {
 	// Store keeps what outlives a session (see Records), and answers
 	// GetPID/GetName.
 	Store db.Store
-	Log   *slog.Logger
-	Now   func() time.Time
+	// NATObservations, when set, corrects the port of a console's public
+	// station to the one the NAT-check responder saw mapped (see bridge).
+	NATObservations NATObservations
+	Log             *slog.Logger
+	Now             func() time.Time
 	// IdleTimeout is nex.Server's.
 	IdleTimeout time.Duration
 }
@@ -97,6 +100,7 @@ type Server struct {
 	now      func() time.Time
 	idTokens *identity.IDTokens
 	store    db.Store
+	natObs   NATObservations
 
 	nex       *nex.Server
 	secureKey []byte
@@ -132,6 +136,7 @@ func New(opts Options) *Server {
 		now:       opts.Now,
 		idTokens:  opts.IDTokens,
 		store:     opts.Store,
+		natObs:    opts.NATObservations,
 		protocols: map[uint16]*protocol{},
 		players:   map[uint64]*nex.Conn{},
 	}

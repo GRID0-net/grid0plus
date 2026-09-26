@@ -1,8 +1,10 @@
 package rendezvous
 
 import (
+	"context"
 	"net"
 	"sync/atomic"
+	"time"
 
 	"github.com/n-popescu/switchnet/internal/nex"
 )
@@ -191,14 +193,61 @@ func lanStation(c *nex.Conn) *nex.StationURL {
 	return nil
 }
 
-// stationFor is the station a viewer should be given for owner: the hook a
-// relay uses to substitute itself (see SetStationRewriter). Unchanged by
-// default.
+// stationFor is the station a viewer should be given for owner: bridged to
+// the observed NAT mapping, then offered to the relay (SetStationRewriter).
 func (s *Server) stationFor(owner, viewer *nex.Conn, st *nex.StationURL) *nex.StationURL {
+	st = s.bridge(owner, st)
 	if rw := s.rewriter.Load(); rw != nil {
 		return (*rw)(owner, viewer, st)
 	}
 	return st
+}
+
+// NATObservations looks up the external port the NAT-check responder saw
+// mapped for a public IP (internal/natobs).
+type NATObservations interface {
+	Lookup(ctx context.Context, ip string) (int, bool)
+}
+
+// bridge corrects the port of a console's public station.
+//
+// The public station is built from the connection's address and the port
+// the console itself reported -- its LOCAL port, which is only right when
+// the router preserves ports. The NAT-check responder saw the port the
+// router actually mapped for the Pia socket, and a peer's probe has to aim at
+// that one; aimed at the local port it never lands and the match loops back
+// to matchmaking. NextendoNetwork closes the same gap the same way (facts
+// only).
+//
+// Only when exactly one connected console sits behind that public IP: the
+// observation is keyed by IP, so with two consoles in one household it
+// could be either's, and a wrong port is worse than the reported one.
+func (s *Server) bridge(owner *nex.Conn, st *nex.StationURL) *nex.StationURL {
+	if s.natObs == nil {
+		return st
+	}
+	ip := PublicIP(owner)
+	if ip == "" || st.Get("address") != ip || !s.soleOnIP(owner, ip) {
+		return st
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	port, ok := s.natObs.Lookup(ctx, ip)
+	if !ok || int64(port) == st.Int("port") {
+		return st
+	}
+	c := st.Copy()
+	c.SetInt("port", int64(port))
+	return c
+}
+
+func (s *Server) soleOnIP(owner *nex.Conn, ip string) bool {
+	for _, c := range s.Players() {
+		if c.PID != owner.PID && c.RemoteIP == ip {
+			return false
+		}
+	}
+	return true
 }
 
 // StationRewriter can change the station one console is given for another.

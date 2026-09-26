@@ -21,6 +21,8 @@ import (
 	"github.com/n-popescu/switchnet/internal/health"
 	"github.com/n-popescu/switchnet/internal/identity"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/switchnet/internal/natobs"
+	"github.com/n-popescu/switchnet/internal/rendezvous"
 	"github.com/n-popescu/switchnet/internal/service"
 	"github.com/n-popescu/switchnet/internal/splatoon2"
 )
@@ -56,14 +58,33 @@ func main() {
 	}
 	idTokens := identity.NewIDTokens(baasIDKey, store, log)
 
+	// What cmd/natcheck observed of each console's NAT, shared through Redis:
+	// without it, a console behind a router that does not preserve ports is
+	// handed to its peers at a port nothing listens on. See internal/natobs.
+	var natObs rendezvous.NATObservations
+	if cfg.Redis.URL != "" {
+		obs, err := natobs.NewRedis(ctx, cfg.Redis.URL)
+		if err != nil {
+			service.Fatal(log, "connect redis", err)
+		}
+		defer obs.Close()
+		natObs = obs
+	} else {
+		log.Warn("nex: redis.url is not set, so the NAT-check responder's observations do not " +
+			"reach this server. Consoles behind routers that remap ports will be handed to their " +
+			"peers at the wrong port, and their matches will not start. Set redis.url for both " +
+			"natcheck and nex.")
+	}
+
 	titles := map[string]http.Handler{}
 	if cfg.NEX.Splatoon2.Enabled {
 		titles[splatoon2.Host] = splatoon2.New(splatoon2.Options{
-			Config:      cfg.NEX.Splatoon2,
-			Store:       store,
-			IDTokens:    idTokens,
-			Log:         log.With("title", "splatoon2"),
-			IdleTimeout: time.Duration(cfg.NEX.IdleTimeout) * time.Second,
+			Config:          cfg.NEX.Splatoon2,
+			Store:           store,
+			IDTokens:        idTokens,
+			NATObservations: natObs,
+			Log:             log.With("title", "splatoon2"),
+			IdleTimeout:     time.Duration(cfg.NEX.IdleTimeout) * time.Second,
 		})
 	}
 	if len(titles) == 0 {
