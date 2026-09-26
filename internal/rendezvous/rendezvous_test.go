@@ -299,3 +299,17 @@ func TestAnUnknownMethodIsAnsweredNotImplemented(t *testing.T) {
 		t.Fatal("an error carries a body")
 	}
 }
+
+func TestPlayingOverNEXCountsAsBeingOnline(t *testing.T) {
+	e := rvtest.New(t, rvtest.DefaultTitle, nil)
+	p := e.Login()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		pr, err := e.Store.GetPresence(context.Background(), p.UserID)
+		if err == nil && !pr.LastSeenAt.IsZero() {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("a connected NEX player was never seen")
+}

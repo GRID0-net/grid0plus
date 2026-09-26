@@ -181,6 +181,7 @@ func New(opts Options) *Server {
 	s.registerNATTraversal()
 	s.registerMatchmaking()
 	s.registerRanking()
+	s.registerPresence()
 	return s
 }
 
