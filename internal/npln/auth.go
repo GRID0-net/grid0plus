@@ -10,6 +10,7 @@ import (
 	gojwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/identity"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 )
 
@@ -265,72 +266,22 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 // exactly the seam docs/ARCHITECTURE.md describes: a game server learns which
 // player is connecting without trusting anything the game told it.
 func (s *Server) exchangeIDToken(ctx context.Context, idToken string) (Caller, error) {
-	if idToken == "" {
+	c, err := s.idTokens.Resolve(ctx, idToken)
+	if err != nil {
 		return Caller{}, ErrUnauthenticated
 	}
-
-	var claims sjwt.BAASTokenClaims
-	if err := s.idTokens.Verify(idToken, &claims); err != nil {
-		s.log.Debug("npln: rejected id token", "error", err)
-		return Caller{}, ErrUnauthenticated
-	}
-	if claims.Type != "id_token" {
-		// An access token is for the account API, not for a game server.
-		// Accepting one here would let a game server act as the player against
-		// their own account — which is the reason the two keys are separate.
-		s.log.Debug("npln: refused a non-id token at the game-server seam", "typ", claims.Type)
-		return Caller{}, ErrUnauthenticated
-	}
-	if claims.Subject == "" {
-		return Caller{}, ErrUnauthenticated
-	}
-
-	return s.resolveCaller(ctx, claims.Subject, claims.DeviceAccountID, claims.IssuedAt)
+	return Caller{UserID: c.UserID, DeviceAccountID: c.DeviceAccountID}, nil
 }
 
-// resolveCaller is the "is this identity still good" check shared by every
-// token this server accepts as proof of a player: a user that still exists,
-// and -- if the token names a console -- a device account that still belongs
-// to that user and was not revoked after the token was minted. exchangeIDToken
-// and exchangeRefreshToken both reduce to this once they've verified their
-// own token's signature and picked a subject out of it.
+// resolveCaller is the "is this identity still good" check for a token this
+// server minted itself (a refresh token). It is internal/identity's check --
+// the same one every game server makes -- mapped onto this package's error.
 func (s *Server) resolveCaller(ctx context.Context, userID, deviceAccountID string, issuedAt int64) (Caller, error) {
-	user, err := s.store.GetUser(ctx, userID)
+	c, err := identity.Resolve(ctx, s.store, s.log, userID, deviceAccountID, issuedAt)
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return Caller{}, ErrUnauthenticated
-		}
-		s.log.Error("npln: load user", "user", userID, "error", err)
 		return Caller{}, ErrUnauthenticated
 	}
-	if user.Deleted {
-		return Caller{}, ErrUnauthenticated
-	}
-
-	if deviceAccountID != "" {
-		da, err := s.store.GetDeviceAccount(ctx, deviceAccountID)
-		switch {
-		case errors.Is(err, db.ErrNotFound):
-			return Caller{}, ErrUnauthenticated
-		case err != nil:
-			s.log.Error("npln: load device account", "error", err)
-			return Caller{}, ErrUnauthenticated
-		}
-		if da.DeletedAt != nil || da.UserID != userID {
-			return Caller{}, ErrUnauthenticated
-		}
-		if da.TokensRevokedBefore != nil && time.Unix(issuedAt, 0).Before(*da.TokensRevokedBefore) {
-			// Same check as internal/baas/router.go's authenticate, and for the
-			// same reason: a token minted before an operator revoked this
-			// device account's tokens stays cryptographically valid, but must
-			// not seed or extend an NPLN session either.
-			s.log.Warn("npln: refused a token minted before its device account's tokens were revoked",
-				"device_account", deviceAccountID)
-			return Caller{}, ErrUnauthenticated
-		}
-	}
-
-	return Caller{UserID: userID, DeviceAccountID: deviceAccountID}, nil
+	return Caller{UserID: c.UserID, DeviceAccountID: c.DeviceAccountID}, nil
 }
 
 // refreshTokenTTL is how long a minted refresh token stays valid before the

@@ -28,6 +28,7 @@ import (
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/identity"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	"github.com/n-popescu/switchnet/internal/matchmaking"
 	"github.com/n-popescu/switchnet/internal/messaging"
@@ -59,7 +60,7 @@ type Server struct {
 	// idTokens verifies the RS256 BAAS id tokens presented at the phase-1 seam.
 	// A different key AND a different algorithm from the one above, which is
 	// what stops either being accepted where the other belongs.
-	idTokens *sjwt.Verifier
+	idTokens *identity.IDTokens
 
 	tenant         string
 	issuerName     string
@@ -213,7 +214,7 @@ func New(opts Options) (*Server, error) {
 		log:                    opts.Log,
 		tokens:                 sjwt.NewECVerifier(opts.AccessKey),
 		issuer:                 sjwt.NewECIssuer(opts.AccessKey, opts.Config.JWKSURL),
-		idTokens:               sjwt.NewVerifier(opts.BAASIDKey),
+		idTokens:               identity.NewIDTokens(opts.BAASIDKey, opts.Store, opts.Log),
 		tenant:                 opts.Config.Tenant,
 		sessionHost:            opts.Config.SessionHost,
 		sessionPort:            int32(opts.Config.SessionPort),
