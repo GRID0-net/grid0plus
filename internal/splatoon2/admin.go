@@ -234,6 +234,7 @@ func (s *Server) AdminHandler(token string) http.Handler {
 	mux.HandleFunc("POST /splatoon2/players/{id}/gear-order", guard(s.adminPlaceOrder))
 	mux.HandleFunc("DELETE /splatoon2/players/{id}/gear-order", guard(s.adminCancelOrder))
 	mux.HandleFunc("POST /splatoon2/players/{id}/disconnect", guard(s.adminDisconnect))
+	s.registerAdminRecords(mux, guard)
 	return mux
 }
 

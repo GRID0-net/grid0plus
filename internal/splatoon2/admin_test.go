@@ -124,3 +124,67 @@ func TestTheOperatorCanDisconnectAPlayer(t *testing.T) {
 		t.Fatalf("a second disconnect got %d, want 404", code)
 	}
 }
+
+func TestTheAdminRecordsShowWhatTheGameStored(t *testing.T) {
+	e := newEnv(t)
+	h := e.s2.AdminHandler("tok")
+	a, b := e.Login(), e.Login()
+	vote(t, a, 4056, 0)
+	vote(t, b, 4056, 1)
+	festScore(t, a, 4056, 0, 1200)
+	a.MustCall(t, rendezvous.ProtocolRanking, 16, leaguePoint(77, "18011508T", 2100, a.PID, b.PID))
+	a.MustCall(t, splatoon2.ProtocolDataStore, 47, append(coconutMeta(4056, []byte("drawing")), 0x01, 0x00, 0x00))
+	if err := e.s2.PlaceGearOrder(b.PID, splatoon2.GearOrder{Kind: 2, ID: 7, Skill: 1, Price: 900}); err != nil {
+		t.Fatal(err)
+	}
+	b.MustCall(t, splatoon2.ProtocolDataStore, 57, []byte{9, 9, 9})
+
+	_, fests := adminDo(t, h, "GET", "/splatoon2/fests", "tok", "")
+	f := fests["fests"].([]any)[0].(map[string]any)
+	if f["festivalId"] != float64(4056) || f["votes"].([]any)[0] != float64(1) || f["votes"].([]any)[1] != float64(1) ||
+		f["scores"].([]any)[0] != float64(1200) {
+		t.Fatalf("fest %v", f)
+	}
+
+	_, leagues := adminDo(t, h, "GET", "/splatoon2/leagues", "tok", "")
+	l := leagues["leagues"].([]any)[0].(map[string]any)
+	team := l["teams"].([]any)[0].(map[string]any)
+	if l["leagueId"] != "18011508T" || team["tagId"] != "77" || team["point"] != float64(2100) ||
+		len(team["members"].([]any)) != 2 {
+		t.Fatalf("league %v", l)
+	}
+
+	_, plaza := adminDo(t, h, "GET", "/splatoon2/plaza", "tok", "")
+	post := plaza["posts"].([]any)[0].(map[string]any)
+	if post["userId"] != rendezvous.UserIDForPID(a.PID) || post["festivalId"] != float64(4056) ||
+		post["bytes"] != float64(len("drawing")) || post["hidden"] != false {
+		t.Fatalf("post %v", post)
+	}
+	id := post["dataId"].(string)
+	if code, out := adminDo(t, h, "POST", "/splatoon2/plaza/"+id+"/hidden", "tok", `{"hidden":true}`); code != http.StatusOK ||
+		out["posts"].([]any)[0].(map[string]any)["hidden"] != true {
+		t.Fatalf("hide: %d %v", code, out)
+	}
+	if code, _ := adminDo(t, h, "POST", "/splatoon2/plaza/1/hidden", "tok", `{"hidden":true}`); code != http.StatusNotFound {
+		t.Fatalf("hiding a post that does not exist got %d", code)
+	}
+
+	_, orders := adminDo(t, h, "GET", "/splatoon2/gear-orders", "tok", "")
+	o := orders["orders"].([]any)[0].(map[string]any)
+	if o["userId"] != rendezvous.UserIDForPID(b.PID) || o["order"].(map[string]any)["price"] != float64(900) {
+		t.Fatalf("orders %v", orders)
+	}
+
+	_, ups := adminDo(t, h, "GET", "/splatoon2/uploads", "tok", "")
+	u := ups["uploads"].([]any)[0].(map[string]any)
+	if u["kind"] != "time_attack" || u["userId"] != rendezvous.UserIDForPID(b.PID) || u["bytes"] != float64(3) {
+		t.Fatalf("uploads %v", ups)
+	}
+
+	for _, path := range []string{"/splatoon2/fests", "/splatoon2/leagues", "/splatoon2/plaza",
+		"/splatoon2/gear-orders", "/splatoon2/uploads"} {
+		if code, _ := adminDo(t, h, "GET", path, "", ""); code != http.StatusUnauthorized {
+			t.Errorf("%s without a token got %d", path, code)
+		}
+	}
+}

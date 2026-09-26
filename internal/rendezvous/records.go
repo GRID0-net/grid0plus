@@ -91,3 +91,14 @@ func List[T any](r *Records, kind, owner string) ([]T, error) {
 	}
 	return out, nil
 }
+
+// ListRaw is List without the decoding, for a caller that needs each
+// record's owner or key as well as its value.
+func (r *Records) ListRaw(kind string) ([]db.NEXRecord, error) {
+	if r.store == nil {
+		return nil, nil
+	}
+	ctx, cancel := recordCtx()
+	defer cancel()
+	return r.store.ListNEXRecords(ctx, db.NEXRecordQuery{Title: r.title, Kind: kind})
+}
