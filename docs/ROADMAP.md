@@ -13,6 +13,7 @@ hardware: phase 1 works, and phase 2 gets as far as Splatoon 3's hall.
 | --- | --- | --- |
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | **running on a real console**; received-requests view still shows 2124-0104 |
 | [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | **running on a real console up to the hall**, which fails ([`TODO.md`](../TODO.md) §4.2) |
+| [S2](#splatoon-2--nex) | NEX game server for Splatoon 2, dashboard tab | code complete, exercised end to end with Kinnay's NintendoClients, **not yet tried on a console** |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
 | [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet tried on a console** |
 | [5](#phase-5--account-system-refactor--a-discord-bot) | account creation/linking refactor, a Discord bot as the primary registration and per-user control surface | **planned, not started** |
@@ -402,6 +403,42 @@ applying silently.
 [`../TODO.md`](../TODO.md) is the live list. The current blocker is the hall
 (§4.2); after that, native BCAT serving (§2.4) and fest asset conversion
 (§2.1) are the large pieces left.
+
+## Splatoon 2 — NEX
+
+Not a phase of its own in the sense above — it depends on phase 1 exactly
+as phase 2 does, and on nothing in phase 2 — but a second game server stack.
+Splatoon 2 predates NPLN: its game server is NEX, PRUDP-Lite over a TLS
+WebSocket to `g2df33d01-lp1.s.n.srv.nintendo.net`, with Kerberos-style
+tickets and RMC calls.
+
+What exists (`internal/nex`, `internal/rendezvous`, `internal/splatoon2`,
+`cmd/nex`):
+
+- the transport and login, with the BAAS id token as the credential and the
+  SwitchNet user id as the PID, fail-closed like everything else;
+- every protocol Splatoon 2 is known to call: secure connection, NAT
+  traversal, notifications, matchmaking (three protocols), Utility, Ranking
+  with Splatoon 2's league/Splatfest/X Power methods, DataStore with match
+  results, Annie's gear orders, plaza posts and play logs;
+- the parts that make matches start rather than merely form: NAT-aware
+  matching, same-household LAN stations, the NAT-check bridge (through
+  Redis) and an optional per-pair relay;
+- match history beside Splatoon 3's, presence while playing, and a
+  dashboard tab.
+
+What is left:
+
+1. **A console.** Nothing here has met one. The first run will say whether
+   the login half's WebSocket, the `0.0.0.1` secure station and the
+   PRUDP versions are right; `nex`'s log names every call.
+2. **The guessed shapes**, in
+   [`CAPTURES/README.md`](CAPTURES/README.md#splatoon-2-nex): the ranking
+   and DataStore readings, and which of the fallback DataStore methods
+   the game calls — each one logs a warning naming it.
+3. **Anything Splatoon 2 reads outside NEX** — its BCAT delivery data in
+   particular — is not served for it yet. What it needs there is unverified
+   and belongs in its own change once a console shows what it asks for.
 
 ## Phase 3 — the eShop, a separate module
 

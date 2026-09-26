@@ -307,6 +307,31 @@ honestly-empty.
 | BCAT pack building (serving it natively is [`TODO.md`](TODO.md) §2.4) | `internal/bcat` |
 | Dashboard: players, matchmaking, Splatfests, match history, Debug tab | `internal/dashboard`, `cmd/dashboard` |
 
+## What Splatoon 2 support implements
+
+Splatoon 2 is a NEX title: the stack Nintendo's games used before NPLN,
+PRUDP over a TLS WebSocket. `cmd/nex` serves it, built from the public
+protocol documentation (Kinnay's wiki and NintendoClients), Pretendo's
+AGPL servers for semantics, and the measured behaviour NextendoNetwork
+published about Splatoon 2 (facts only; none of its code). Exercised end to
+end with Kinnay's NintendoClients against the running services — login,
+secure connection, two consoles matched into one lobby with their
+notifications — **not yet tried on a console**. See
+[`internal/splatoon2/README.md`](internal/splatoon2/README.md) for every
+method and [`docs/CAPTURES/README.md`](docs/CAPTURES/README.md#splatoon-2-nex)
+for the shapes that are still readings.
+
+| Feature | Where |
+| --- | --- |
+| PRUDP-Lite over WebSocket, RMC, NEX types, Kerberos tickets | `internal/nex` |
+| Login with a SwitchNet id token, fail-closed (the PID *is* the user id) | `internal/rendezvous/auth.go`, `internal/identity` |
+| Matchmaking: auto-matchmake, browse, create/join, friend-join, host and owner migration, notifications | `internal/rendezvous` |
+| NAT traversal: probes, NAT-aware matching, the NAT-check bridge, an optional per-pair relay | `internal/rendezvous`, `internal/natobs` |
+| Ranking (standard and Splatoon 2's league, Splatfest, X Power, event methods) | `internal/rendezvous/ranking.go`, `internal/splatoon2/ranking.go` |
+| DataStore: match results, Annie's gear orders, Splatfest plaza posts, play logs | `internal/splatoon2/datastore.go` |
+| Match history beside Splatoon 3's; presence while playing | `internal/splatoon2`, `internal/rendezvous/presence.go` |
+| Dashboard: connected players, lobbies, calls, relay, gear orders, disconnect | the Splatoon 2 tab |
+
 ## What phase 4 implements
 
 OLSC (Online Save Cloud) — the OS-level per-game save-data backup tied to a
@@ -371,7 +396,15 @@ internal/
   toolbox/       the public API the SwitchNet Toolbox .nro asks for updates
                  and server status
   dashboard/     the operator's web UI: players, matchmaking, Splatfests,
-                 match history, a Debug tab
+                 match history, Splatoon 2, a Debug tab
+
+  # Splatoon 2 (NEX); see internal/splatoon2/README.md
+  nex/           PRUDP-Lite, the WebSocket transport, RMC, NEX types, Kerberos
+  rendezvous/    a NEX game server: login, secure connection, matchmaking,
+                 NAT traversal, notifications, Utility, Ranking, the relay
+  splatoon2/     Splatoon 2's own methods, DataStore, and its operator API
+  identity/      the id-token check NEX and NPLN logins share
+  natobs/        natcheck's NAT observations, shared with nex through Redis
 switch/          console-side setup and the generated hosts file
 scripts/         start.sh, update.sh, install-systemd.sh, gen-certs.sh,
                  seed-dev-data.sh, seed-phase2.sh, smoke-npln/,

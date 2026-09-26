@@ -98,6 +98,22 @@ already has open, so it works even before the admin API is configured — the
 one part of the Matchmaking tab that does not need `cmd/npln` to be
 reachable at all.
 
+## The Splatoon 2 tab is another process's state
+
+Splatoon 2's lobbies and connections live in `cmd/nex`, so the tab reads
+them over nex's admin API (`splatoon2.go`), exactly as the matchmaking panel
+reads npln's: `dashboard.nex_admin_url`/`nex_admin_token` here,
+`nex.admin_listen`/`admin_token` there, and a panel that says it is not
+configured rather than an empty list. The admin client is the same one; only
+the 401 message differs, so a mismatched token names the two settings to
+compare.
+
+It polls every five seconds on its own clock, outside `refresh()`: its most
+useful part is the list of methods consoles are calling, which is how a
+method this server answers wrongly shows up while someone is watching a
+console fail. Splatoon 2's finished matches are in the Matches tab, under
+tenant `splatoon2`.
+
 ## A player row opens onto stores that already exist
 
 Clicking a row in the Players table opens a detail panel -- friends, device

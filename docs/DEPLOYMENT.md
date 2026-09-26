@@ -110,6 +110,8 @@ console finds it via a resolver you already run, configured with
 | 8088, 8089 | TCP | localhost only | gamesync; npln's matchmaking admin API (off unless configured) |
 | 8090 | TCP | localhost only | `toolbox` — see below |
 | 8091 | TCP | localhost only | `scsi` — phase 4's OLSC cloud save |
+| 8092, 8093 | TCP | localhost only | `nex` (Splatoon 2), and its admin API (off unless configured) |
+| 30100–30999 | **UDP** | **the consoles** | the NEX relay, **only if `nex.relay.enabled`** |
 | 5432, 6379 | TCP | localhost only | Postgres, Redis |
 
 The UDP rules are the ones people forget. A firewall that only opens TCP gives
@@ -130,13 +132,26 @@ port directly rather than through the tenant host on 443, so the edge needs a
 second listener and the firewall needs a second rule. Without it the game
 authenticates, opens its gRPC channel, and then cannot sync the lobby.
 
-**Note which NAT mechanism applies to which title.** Phase 1's titles use the Pia
-NAT-check pair on 10025/10125. **Splatoon 3 does not** — it uses ICE, so
+**Note which NAT mechanism applies to which title.** Phase 1's titles and
+Splatoon 2 use the Pia NAT-check pair on 10025/10125. **Splatoon 3 does not** — it uses ICE, so
 `natcheck` is not involved and `npln.ice_servers` is what matters. Those
 addresses have to be reachable *from the console*, not from the server; getting
 them wrong gives a lobby that fills and a match that never starts, which from the
 server side looks exactly like a matchmaking bug. `switchnetctl check` warns when
 the list is empty, and consoles on one LAN work without it.
+
+### Splatoon 2's process
+
+| Service | Listens | Notes |
+| --- | --- | --- |
+| `nex` | 8092, and 8093 if `admin_token` is set | every NEX title on one WebSocket listener behind nginx. **Set `redis.url`** for both `natcheck` and `nex`: it is how the NAT-check responder's view of each console's router reaches the game server, and without it a console behind a router that remaps ports is handed to its peers at a port nothing listens on |
+
+The relay (`nex.relay`) is off by default. It carries match traffic through
+this machine for pairs of consoles that cannot reach each other, one UDP port
+per pair from `port_base`/`port_span` (30100–30999 by default), on
+`advertise_ip` (default `network.public_ip`). Open that range to the consoles
+only if you enable it, and start with `allow` naming the one player who
+cannot connect: `switchnetctl check` warns when it is enabled for nobody.
 
 ### Phase 2's processes
 

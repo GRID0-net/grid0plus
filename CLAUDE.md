@@ -20,6 +20,7 @@ Four phases, tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | --- | --- | --- |
 | 1 | accounts + the stock friends list | **running on a real console**: sign-in, Nintendo Account linking and the friend list work; the received-requests view still shows 2124-0104 (client-side, parked) |
 | 2 | NPLN game server for Splatoon 3, and a dashboard | **running on a real console up to the hall**, which fails with a communication error (`TODO.md` §4.2) — see [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-2--splatoon-3-npln--dashboard) |
+| S2 | NEX game server for Splatoon 2, and a dashboard tab | code complete; exercised end to end with Kinnay's NintendoClients, **not yet tried on a console** — see [`internal/splatoon2/README.md`](internal/splatoon2/README.md) |
 | 3 | eShop, served from local NSP dumps | **out of this repository** — planned as a separate, optional module. Not started. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-3--the-eshop-a-separate-module) |
 | 4 | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet tried on a console, storage backend local disk**. See [`docs/ROADMAP.md`](docs/ROADMAP.md#phase-4--cloud-save-backup-olsc) and `internal/scsi/README.md` |
 

@@ -115,6 +115,13 @@ dauth request — and because it keeps their dependencies honest.
 | `scsi` | 8091 | `storage.lp1.scsi…`, `permission.lp1.sata…` (phase 4) | yes |
 | `stubs` | 8084 | ctest, frs, five, op2, dragons, penne, npns, znc, … | no |
 | `natcheck` | 10025/10125 UDP | `nncs{1,2}-lp1.n.n.srv.nintendo.net` | no |
+| `nex` | 8092 (+8093 admin) | NEX game servers: `g2df33d01-lp1.s.n.srv.nintendo.net` (Splatoon 2) | yes |
+
+`nex` serves every NEX title from one listener; nginx passes the WebSocket
+upgrade through and the Host header picks the title. Its login is the same
+BAAS id token NPLN accepts, checked by the same code (`internal/identity`),
+and a player's NEX PID is their SwitchNet user id — there is no second
+identity to map. See [`internal/rendezvous`](../internal/rendezvous/README.md).
 
 `dauth` deliberately has no database connection. It is the first thing a console
 talks to, so keeping it free of a database dependency means a database outage
