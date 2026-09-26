@@ -55,6 +55,9 @@ type Server struct {
 	store db.Store
 	log   *slog.Logger
 	relay *rendezvous.Relay
+
+	calls   callLog
+	started time.Time
 }
 
 // SetRelay records the relay serving this game server, for the dashboard.
@@ -96,7 +99,8 @@ func New(opts Options) *Server {
 		Now:             opts.Now,
 		IdleTimeout:     opts.IdleTimeout,
 	})
-	s := &Server{Server: rv, store: store, log: rv.Log()}
+	s := &Server{Server: rv, store: store, log: rv.Log(), calls: callLog{counts: map[string]int64{}}, started: rv.Now()}
+	s.OnCall(s.noteCall)
 	s.registerExtensions()
 	s.registerRanking()
 	s.registerDataStore()

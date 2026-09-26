@@ -78,8 +78,9 @@ func main() {
 	}
 
 	titles := map[string]http.Handler{}
+	var s2 *splatoon2.Server
 	if cfg.NEX.Splatoon2.Enabled {
-		s2 := splatoon2.New(splatoon2.Options{
+		s2 = splatoon2.New(splatoon2.Options{
 			Config:          cfg.NEX.Splatoon2,
 			Store:           store,
 			IDTokens:        idTokens,
@@ -146,6 +147,15 @@ func main() {
 	if cfg.NEX.AdminToken != "" && cfg.NEX.AdminListen == "" {
 		service.Fatal(log, "serve admin api", errors.New(
 			"nex.admin_token is set but nex.admin_listen is empty, so the admin API would not be served anywhere"))
+	}
+	if s2 != nil && cfg.NEX.AdminToken != "" {
+		admin := s2.AdminHandler(cfg.NEX.AdminToken)
+		go func() {
+			log.Info("nex: admin api listening", "addr", cfg.NEX.AdminListen)
+			if err := service.ServeHTTPWithHealth(ctx, log, cfg.NEX.AdminListen, admin, healthz); err != nil {
+				log.Error("nex: admin api stopped", "error", err)
+			}
+		}()
 	}
 
 	log.Info("nex: serving", "addr", cfg.NEX.Listen, "splatoon2", cfg.NEX.Splatoon2.Enabled)

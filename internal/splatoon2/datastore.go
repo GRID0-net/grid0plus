@@ -71,6 +71,8 @@ func (s *Server) dataStoreFallback(c *nex.Conn, req *nex.Request) *nex.Response 
 	return req.Success(nil)
 }
 
+func uint64Key(v uint64) string { return strconv.FormatUint(v, 10) }
+
 func newDataID() uint64 {
 	var b [8]byte
 	_, _ = rand.Read(b[:])
@@ -139,7 +141,7 @@ func writeOrderedInfo(w *nex.Writer, o GearOrder) {
 
 // PlaceGearOrder orders gear for a player, replacing any open order.
 func (s *Server) PlaceGearOrder(pid uint64, o GearOrder) error {
-	return s.Records().Put(kindGearOrder, strconv.FormatUint(pid, 10), rendezvous.UserIDForPID(pid), o)
+	return s.Records().Put(kindGearOrder, uint64Key(pid), rendezvous.UserIDForPID(pid), o)
 }
 
 // GearOrderOf returns a player's open order.
