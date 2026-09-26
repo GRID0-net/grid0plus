@@ -529,3 +529,36 @@ func TestAForcedPlayerIsHandedTheRelayInsteadOfTheirPeersPublicStation(t *testin
 		}
 	}
 }
+
+// A console that reconnects -- a dropped connection, a restarted game -- has
+// a fresh session: it does not know it was ever in a lobby. The lobby it was
+// in must lose it, or it holds a player who is not there, and a lobby like
+// that never starts. Found running two NintendoClients consoles twice: the
+// second run's lobbies sat beside the first's, still listing the reconnected
+// consoles.
+func TestAReconnectingConsoleLeavesItsOldLobby(t *testing.T) {
+	e := rvtest.New(t, rvtest.DefaultTitle, nil)
+	host, joiner := e.Login(), e.Login()
+	a := auto(t, host, template(2, 8, rendezvous.FlagMigrateOwner, ""))
+	auto(t, joiner, template(2, 8, rendezvous.FlagMigrateOwner, ""))
+	notifications(t, host)
+
+	again := e.LoginAs(joiner.UserID, "")
+	saw := notifications(t, host)
+	if len(saw) != 1 || saw[0].Type != rendezvous.NotifyParticipantLeft || saw[0].Param2 != joiner.PID {
+		t.Fatalf("host was told %+v, want the reconnected player's departure", saw)
+	}
+	g, ok := e.Server.Matchmaker().GatheringOf(host.PID)
+	if !ok || g.ID != a.ID || len(g.Participants) != 1 || g.Participants[0] != host.PID {
+		t.Fatalf("the old lobby still holds %+v", g)
+	}
+	if _, in := e.Server.Matchmaker().GatheringOf(again.PID); in {
+		t.Fatal("the reconnected console is still in a lobby it never joined")
+	}
+
+	// Its new connection plays on: it can matchmake straight back in.
+	back := auto(t, again, template(2, 8, rendezvous.FlagMigrateOwner, ""))
+	if back.ID != a.ID {
+		t.Fatalf("rejoined %d, want the open lobby %d", back.ID, a.ID)
+	}
+}

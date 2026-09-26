@@ -104,16 +104,28 @@ func (s *Server) registerMatchmaking() {
 	m := &Matchmaker{s: s, gatherings: map[uint32]*gathering{}, nextGID: 1,
 		notifData: map[uint64]map[uint32]NotificationEvent{}}
 	s.mm = m
+	forget := func(pid uint64) {
+		m.leaveAll(pid, NotifyParticipantLeft)
+		m.mu.Lock()
+		delete(m.notifData, pid)
+		m.mu.Unlock()
+	}
+	// A secure connection that has just been made is in no lobby: anything
+	// its player is still listed in belongs to a previous connection, which a
+	// console that reconnects -- a dropped connection, a restarted game --
+	// knows nothing about. Left there, the lobby holds a player who is not in
+	// it and never starts. It runs before the new connection is served a
+	// single call, so nothing it has joined can be undone.
+	s.OnConnect(func(c *nex.Conn) { forget(c.PID) })
 	s.OnDisconnect(func(c *nex.Conn) {
-		// A newer connection for the same player may already have replaced
-		// this one; its lobbies are the newer connection's now.
+		// A newer connection for the same player has already replaced this
+		// one, and its connect has already done this; doing it again now
+		// would take the newer connection out of the lobby it has joined
+		// since.
 		if s.Player(c.PID) != nil {
 			return
 		}
-		m.leaveAll(c.PID, NotifyParticipantLeft)
-		m.mu.Lock()
-		delete(m.notifData, c.PID)
-		m.mu.Unlock()
+		forget(c.PID)
 	})
 	m.register()
 }
