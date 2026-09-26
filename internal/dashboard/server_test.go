@@ -702,6 +702,20 @@ func TestASplatoon2MatchIsLabelledInTheSharedHistory(t *testing.T) {
 	if games["s2"] != "Splatoon 2" || games["s3"] != nil {
 		t.Fatalf("games %v", games)
 	}
+
+	// Each game's tab asks for its own.
+	for game, want := range map[string]string{"splatoon2": "s2", "splatoon3": "s3"} {
+		rows = nil
+		getJSON(t, srv, "/api/matches?game="+game, &rows)
+		if len(rows) != 1 || rows[0]["id"] != want {
+			t.Errorf("?game=%s listed %v, want only %s", game, rows, want)
+		}
+	}
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/matches?game=splatoon1", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("an unknown game got %d, want 400", rec.Code)
+	}
 }
 
 func TestThePlayerPageShowsThePresenceTimestampsSeparately(t *testing.T) {

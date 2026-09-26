@@ -1866,6 +1866,28 @@ func testMatches(t *testing.T, s Store) {
 	if len(list) != 2 {
 		t.Errorf("re-recording an existing match id created a duplicate: %d matches", len(list))
 	}
+
+	// Per tenant: another game's match is in the full list and in its own,
+	// and in neither of the other game's.
+	s2 := Match{ID: "s2-1", Tenant: "splatoon2", Mode: "mode 12", HostUserID: "aaaaaaaaaaaaaaaa",
+		PlayerIDs: []string{"aaaaaaaaaaaaaaaa"}, CreatedAt: now.Add(time.Minute)}
+	if err := s.CreateMatch(ctx, s2); err != nil {
+		t.Fatalf("create s2: %v", err)
+	}
+	if all, _ := s.ListMatches(ctx, 10); len(all) != 3 {
+		t.Errorf("full list has %d matches, want 3", len(all))
+	}
+	s3only, err := s.ListMatchesForTenant(ctx, "dce9377b", 10)
+	if err != nil || len(s3only) != 2 || s3only[0].ID != "session-newer" {
+		t.Errorf("dce9377b's matches = %+v, %v; want its two, newest first", s3only, err)
+	}
+	s2only, err := s.ListMatchesForTenant(ctx, "splatoon2", 1)
+	if err != nil || len(s2only) != 1 || s2only[0].ID != "s2-1" {
+		t.Errorf("splatoon2's matches = %+v, %v; want just s2-1", s2only, err)
+	}
+	if none, _ := s.ListMatchesForTenant(ctx, "nobody", 10); len(none) != 0 {
+		t.Errorf("an unknown tenant matched %d matches", len(none))
+	}
 }
 
 // testPing is in the contract because health checks read it, and a Ping that

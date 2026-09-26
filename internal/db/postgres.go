@@ -1402,8 +1402,21 @@ func (p *Postgres) ListMatches(ctx context.Context, limit int) ([]Match, error) 
 	if limit <= 0 || limit > DefaultMatchListLimit {
 		limit = DefaultMatchListLimit
 	}
-	rows, err := p.pool.Query(ctx,
+	return p.listMatches(ctx,
 		`SELECT `+matchColumns+` FROM npln_matches ORDER BY created_at DESC LIMIT $1`, limit)
+}
+
+func (p *Postgres) ListMatchesForTenant(ctx context.Context, tenant string, limit int) ([]Match, error) {
+	if limit <= 0 || limit > DefaultMatchListLimit {
+		limit = DefaultMatchListLimit
+	}
+	return p.listMatches(ctx,
+		`SELECT `+matchColumns+` FROM npln_matches WHERE tenant = $2 ORDER BY created_at DESC LIMIT $1`,
+		limit, tenant)
+}
+
+func (p *Postgres) listMatches(ctx context.Context, query string, args ...any) ([]Match, error) {
+	rows, err := p.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, mapErr(err)
 	}

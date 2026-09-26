@@ -900,8 +900,24 @@ type matchRow struct {
 // binary).
 const splatoon2Tenant = "splatoon2"
 
+// handleMatches lists match history: ?game=splatoon3 or ?game=splatoon2 for
+// one game's tab, or both (the player detail panel) without it.
 func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
-	matches, err := s.store.ListMatches(r.Context(), db.DefaultMatchListLimit)
+	var (
+		matches []db.Match
+		err     error
+	)
+	switch game := r.URL.Query().Get("game"); game {
+	case "":
+		matches, err = s.store.ListMatches(r.Context(), db.DefaultMatchListLimit)
+	case "splatoon3":
+		matches, err = s.store.ListMatchesForTenant(r.Context(), s.tenant, db.DefaultMatchListLimit)
+	case "splatoon2":
+		matches, err = s.store.ListMatchesForTenant(r.Context(), splatoon2Tenant, db.DefaultMatchListLimit)
+	default:
+		http.Error(w, "game must be splatoon3 or splatoon2", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		s.fail(w, "list matches", err)
 		return

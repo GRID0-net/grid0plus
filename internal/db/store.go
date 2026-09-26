@@ -700,6 +700,10 @@ type Store interface {
 	// ListMatches returns the most recent matches, newest first, capped at
 	// limit.
 	ListMatches(ctx context.Context, limit int) ([]Match, error)
+	// ListMatchesForTenant is ListMatches for one game's tenant. Filtered
+	// here rather than by the caller, so that one busy game cannot push the
+	// other's matches past the limit.
+	ListMatchesForTenant(ctx context.Context, tenant string, limit int) ([]Match, error)
 
 	// ---- devices and device accounts (continued) ----
 

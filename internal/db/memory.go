@@ -1420,13 +1420,25 @@ func (m *Memory) CreateMatch(_ context.Context, match Match) error {
 }
 
 func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
+	return m.listMatches("", limit), nil
+}
+
+func (m *Memory) ListMatchesForTenant(_ context.Context, tenant string, limit int) ([]Match, error) {
+	return m.listMatches(tenant, limit), nil
+}
+
+// listMatches filters by tenant unless it is empty.
+func (m *Memory) listMatches(tenant string, limit int) []Match {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	out := make([]Match, len(m.matches))
-	for i, match := range m.matches {
+	out := make([]Match, 0, len(m.matches))
+	for _, match := range m.matches {
+		if tenant != "" && match.Tenant != tenant {
+			continue
+		}
 		match.PlayerIDs = append([]string(nil), match.PlayerIDs...)
-		out[i] = match
+		out = append(out, match)
 	}
 	// Newest first, matching the PostgreSQL implementation's ORDER BY
 	// created_at DESC.
@@ -1437,5 +1449,5 @@ func (m *Memory) ListMatches(_ context.Context, limit int) ([]Match, error) {
 	if limit < len(out) {
 		out = out[:limit]
 	}
-	return out, nil
+	return out
 }
