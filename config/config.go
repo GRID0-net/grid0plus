@@ -36,6 +36,7 @@ type Config struct {
 	SCSI      SCSI      `yaml:"scsi"`
 	Stubs     Stubs     `yaml:"stubs"`
 	NPLN      NPLN      `yaml:"npln"`
+	NEX       NEX       `yaml:"nex"`
 	BCAT      BCAT      `yaml:"bcat"`
 	Dashboard Dashboard `yaml:"dashboard"`
 	Toolbox   Toolbox   `yaml:"toolbox"`
@@ -420,6 +421,48 @@ type NPLN struct {
 	AdminToken string `yaml:"admin_token"`
 }
 
+// NEX configures cmd/nex: the NEX game servers, which is to say Splatoon 2.
+//
+// NEX is the protocol stack before NPLN. A Switch reaches a NEX title's
+// server as a WebSocket on g<game server id>-lp1.s.n.srv.nintendo.net:443,
+// which nginx terminates and hands to Listen. One listener serves every
+// title; nginx's Host header picks which.
+type NEX struct {
+	// Listen is the WebSocket backend nginx proxies to. Plain HTTP: nginx
+	// terminates TLS.
+	Listen string `yaml:"listen"`
+
+	// IdleTimeout, in seconds, drops a console that has sent nothing for that
+	// long. A console that went away without closing is otherwise still "in"
+	// its lobby, and a lobby with a player who is not there never starts.
+	IdleTimeout int `yaml:"idle_timeout"`
+
+	// AdminListen and AdminToken are the operator API the dashboard reads:
+	// who is connected, the lobbies, recent calls. Like npln's, it is served
+	// only when a token is set and is never reached by a console.
+	AdminListen string `yaml:"admin_listen"`
+	AdminToken  string `yaml:"admin_token"`
+
+	Splatoon2 Splatoon2 `yaml:"splatoon2"`
+}
+
+// Splatoon2 configures the Splatoon 2 game server.
+type Splatoon2 struct {
+	// Enabled serves Splatoon 2 at all.
+	Enabled bool `yaml:"enabled"`
+
+	// SecureAddress and SecurePort move the secure half of the game server.
+	//
+	// Empty (the default) keeps it on the same WebSocket as the
+	// authentication half: the station the console is handed says "0.0.0.1",
+	// which a Switch reads as "where you already are" (Kinnay's wiki). That is
+	// one hostname, one certificate name and one nginx block, and it is the
+	// shape to try first. If a console turns out not to honour it, point
+	// these at the edge (a second TLS port, or the same one) instead.
+	SecureAddress string `yaml:"secure_address"`
+	SecurePort    int    `yaml:"secure_port"`
+}
+
 // Rotation is the stage and mode rotation Splatoon 3's lobby shows.
 //
 // **The identifiers are Splatoon 3's own internal numbering.** Stage ids are
@@ -712,6 +755,12 @@ func Default() Config {
 			SessionHost:   "t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			SessionPort:   443,
 		},
+		NEX: NEX{
+			Listen:      "127.0.0.1:8092",
+			IdleTimeout: 60,
+			AdminListen: "127.0.0.1:8093",
+			Splatoon2:   Splatoon2{Enabled: true},
+		},
 		BCAT: BCAT{
 			ConverterTimeout: 120,
 			SubstituteFestID: true,
@@ -831,6 +880,9 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_NPLN_VERSUS_GRACE_PERIOD", &c.NPLN.VersusGracePeriod)
 	envInt("SWITCHNET_NPLN_COOP_GRACE_PERIOD", &c.NPLN.CoopGracePeriod)
 	envBool("SWITCHNET_NPLN_REGIONAL_LATENCY_SERVERS", &c.NPLN.RegionalLatencyServers)
+	envStr("SWITCHNET_NEX_LISTEN", &c.NEX.Listen)
+	envStr("SWITCHNET_NEX_ADMIN_LISTEN", &c.NEX.AdminListen)
+	envStr("SWITCHNET_NEX_ADMIN_TOKEN", &c.NEX.AdminToken)
 	envStr("SWITCHNET_NPLN_ADMIN_LISTEN", &c.NPLN.AdminListen)
 	envStr("SWITCHNET_NPLN_ADMIN_TOKEN", &c.NPLN.AdminToken)
 	envBool("SWITCHNET_STUBS_LOG_BODIES", &c.Stubs.LogBodies)
@@ -924,6 +976,22 @@ func (c Config) Validate() error {
 			errs = append(errs, fmt.Errorf(
 				"aauth.title_overrides[%s].online_play_policy: %q is invalid", id, o.OnlinePlayPolicy))
 		}
+	}
+	if c.NEX.Listen == "" {
+		errs = append(errs, errors.New("nex.listen is required: nginx proxies the NEX hostnames to it"))
+	}
+	if c.NEX.IdleTimeout <= 0 {
+		errs = append(errs, errors.New("nex.idle_timeout must be positive"))
+	}
+	if a := c.NEX.Splatoon2.SecureAddress; a != "" {
+		if p := c.NEX.Splatoon2.SecurePort; p <= 0 || p > 65535 {
+			errs = append(errs, fmt.Errorf(
+				"nex.splatoon2.secure_port: %d is not a port, and secure_address %q needs one", p, a))
+		}
+	} else if c.NEX.Splatoon2.SecurePort != 0 {
+		errs = append(errs, errors.New(
+			"nex.splatoon2.secure_port is set without secure_address, so it would be ignored: "+
+				"set both to move the secure server, or neither to keep it on the same host"))
 	}
 	if c.NPLN.PlayersPerMatch == 1 {
 		// One is not a small match, it is a match that starts the instant

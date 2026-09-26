@@ -32,7 +32,7 @@ import (
 // runServices is every service `run` knows how to build and start, in the
 // same order the Makefile and scripts/update.sh already use. switchnetctl
 // itself is a CLI, not a service, so it is not in this list.
-var runServices = []string{"dauth", "aauth", "baas", "scsi", "stubs", "natcheck", "npln", "dashboard", "toolbox"}
+var runServices = []string{"dauth", "aauth", "baas", "scsi", "stubs", "natcheck", "npln", "nex", "dashboard", "toolbox"}
 
 // shutdownGrace is how long a service gets to exit after SIGTERM before run
 // gives up and sends SIGKILL. internal/service's own shutdown timeout is
@@ -238,6 +238,10 @@ func httpProbeAddr(cfg config.Config, service string) string {
 		return upstreamAddr(cfg.Dashboard.Listen)
 	case "toolbox":
 		return upstreamAddr(cfg.Toolbox.Listen)
+	case "nex":
+		// On its main listener, unconditionally: unlike npln's, nex's
+		// health needs no token to be served.
+		return upstreamAddr(cfg.NEX.Listen)
 	case "npln":
 		if cfg.NPLN.AdminToken == "" {
 			return ""

@@ -332,6 +332,11 @@ func hostsFile(cfg config.Config) string {
 		}
 	}
 
+	section("NEX game servers: Splatoon 2")
+	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNEX) {
+		emit(ip, h)
+	}
+
 	section("NAT check")
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNATCheck) {
 		addr := ip
@@ -389,6 +394,8 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceNPLN:     cfg.NPLN.Listen,
 		nintendo.ServiceNPLNRest: cfg.NPLN.RestListen,
 		nintendo.ServiceGamesync: cfg.NPLN.GamesyncListen,
+
+		nintendo.ServiceNEX: cfg.NEX.Listen,
 	}
 	names := map[nintendo.Service]string{
 		nintendo.ServiceDAuth:    "dauth",
@@ -399,6 +406,7 @@ func nginxConf(cfg config.Config) string {
 		nintendo.ServiceNPLN:     "npln",
 		nintendo.ServiceNPLNRest: "npln_rest",
 		nintendo.ServiceGamesync: "gamesync",
+		nintendo.ServiceNEX:      "nex",
 	}
 
 	var b strings.Builder
@@ -431,6 +439,8 @@ func nginxConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
+	// NEX (Splatoon 2), served by cmd/nex.
+	fmt.Fprintf(&b, "upstream switchnet_nex { server %s; }\n", upstreamAddr(backends[nintendo.ServiceNEX]))
 	b.WriteString("\n")
 
 	for _, svc := range nintendo.ProxiedServices {
@@ -479,6 +489,17 @@ func nginxConf(cfg config.Config) string {
 			}
 			b.WriteString(grpcServerBlock(cfg, names[svc],
 				listenPort(cfg, hosts), grouped[variant{verifyClient: true, http2: true}]))
+			b.WriteString("\n")
+			continue
+		}
+		if svc == nintendo.ServiceNEX {
+			b.WriteString("# NEX (Splatoon 2) is a WebSocket held for the whole play session:\n")
+			b.WriteString("# an HTTP/1.1 Upgrade, so no http2, and no ssl_verify_client -- the\n")
+			b.WriteString("# only server Splatoon 2 is known to work against sends neither. The\n")
+			b.WriteString("# console's address goes in X-Real-IP: cmd/nex builds the public\n")
+			b.WriteString("# station peers aim at from it, and without it every console would\n")
+			b.WriteString("# be 127.0.0.1.\n")
+			b.WriteString(websocketServerBlock(cfg, tlsNamesOf(hosts)))
 			b.WriteString("\n")
 			continue
 		}
@@ -756,6 +777,36 @@ func frontlineServerBlock(cfg config.Config, serverNames []string) string {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
         # The frontline connection is a long-lived stream, not a request.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+`, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
+}
+
+// websocketServerBlock is the edge for the NEX hosts.
+func websocketServerBlock(cfg config.Config, serverNames []string) string {
+	return fmt.Sprintf(`server {
+    listen %d ssl;
+    server_name %s;
+
+    ssl_certificate     /etc/switchnet/certs/edge.crt;
+    ssl_certificate_key /etc/switchnet/certs/edge.key;
+
+    access_log /var/log/nginx/switchnet-nex.log;
+
+    location / {
+        proxy_pass http://switchnet_nex;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host       $host;
+        proxy_set_header X-Real-IP  $remote_addr;
+
+        # A console holds this socket for its whole online session and pings
+        # well inside cmd/nex's own idle timeout, which is what drops a
+        # console that went away. nginx must not beat it to it.
         proxy_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;

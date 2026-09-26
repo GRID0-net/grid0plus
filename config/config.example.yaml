@@ -520,6 +520,36 @@ npln:
   admin_token: ""
 
 # ---------------------------------------------------------------------------
+# nex -- NEX game servers: Splatoon 2
+# ---------------------------------------------------------------------------
+nex:
+  # NEX is the stack before NPLN. A Switch reaches a NEX title as a WebSocket
+  # on g<game server id>-lp1.s.n.srv.nintendo.net:443; nginx terminates TLS
+  # there and proxies here. One listener serves every title (nginx's Host
+  # header picks which). Loopback: only nginx reaches it.
+  listen: "127.0.0.1:8092"
+
+  # Seconds of silence before a console is dropped. A console that went away
+  # without closing is otherwise still "in" its lobby, and a lobby holding a
+  # player who is not there never starts.
+  idle_timeout: 60
+
+  # The read-only operator API the dashboard's Splatoon 2 panel uses:
+  # connected players, lobbies, recent calls. Served ONLY when admin_token is
+  # set; never reached by a console. Must match dashboard.nex_admin_token.
+  admin_listen: "127.0.0.1:8093"
+  admin_token: ""
+
+  splatoon2:
+    enabled: true
+    # Where the secure half of the game server lives. Empty keeps it on the
+    # same WebSocket as the login half -- the console is told "0.0.0.1",
+    # which a Switch reads as "where you already are". Set both only if a
+    # console turns out not to honour that; see internal/splatoon2/README.md.
+    secure_address: ""
+    secure_port: 0
+
+# ---------------------------------------------------------------------------
 # toolbox: the public API for the SwitchNet Toolbox homebrew app
 # ---------------------------------------------------------------------------
 toolbox:

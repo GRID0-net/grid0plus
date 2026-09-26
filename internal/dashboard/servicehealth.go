@@ -79,6 +79,7 @@ func probes(cfg ServiceAddresses) []probe {
 		{name: "baas", addr: cfg.BAAS, kind: "http"},
 		{name: "stubs", addr: cfg.Stubs, kind: "http"},
 		{name: "npln", addr: cfg.NPLNAdmin, kind: "http"},
+		{name: "nex", addr: cfg.NEX, kind: "http"},
 		{
 			name: "natcheck", addr: cfg.NATCheck, kind: "none",
 			// A real probe would have to speak Pia's NAT-check protocol and
@@ -104,6 +105,7 @@ type ServiceAddresses struct {
 	BAAS      string
 	Stubs     string
 	NPLNAdmin string
+	NEX       string
 	NATCheck  string
 }
 
@@ -115,6 +117,7 @@ func AddressesFrom(cfg config.Config) ServiceAddresses {
 		BAAS:      cfg.BAAS.Listen,
 		Stubs:     cfg.Stubs.Listen,
 		NPLNAdmin: cfg.NPLN.AdminListen,
+		NEX:       cfg.NEX.Listen,
 		NATCheck:  cfg.NATCheck.PrimaryListen,
 	}
 }

@@ -46,6 +46,12 @@ const (
 	// either through the other's block completes the TLS handshake and then
 	// fails in a way neither side logs.
 	ServiceNPLNRest Service = "npln_rest"
+	// ServiceNEX is the NEX game servers (Splatoon 2): a WebSocket per
+	// console, carrying PRUDP-Lite. Its own service because nginx must
+	// proxy it as a WebSocket upgrade over HTTP/1.1 -- neither grpc_pass nor
+	// a plain proxy_pass block completes the upgrade -- and must not send
+	// the console a TLS CertificateRequest.
+	ServiceNEX Service = "nex"
 	// ServiceEShop is the eShop: the storefront, the commerce API, the eLicense
 	// server and the content server (phase 3).
 	ServiceEShop Service = "eshop"
@@ -589,6 +595,22 @@ var Hosts = []Host{
 		Comment: "NPLN game session host (Splatoon 3 lobby), on port 7575",
 	},
 
+	// ---- NEX game servers ---------------------------------------------
+	// A Switch finds a NEX title's game server by DNS alone:
+	// g<game server id>-lp1.s.n.srv.nintendo.net, port 443, a WebSocket
+	// (Kinnay, NEX Overview). Both halves of the game server -- login and
+	// play -- are on this one name; see internal/rendezvous.
+	//
+	// NoClientCertRequest and NoHTTP2 follow the only server Splatoon 2 is
+	// known to work against: NextendoNetwork's (facts only) never sends a
+	// CertificateRequest and offers only http/1.1 in ALPN, because a
+	// WebSocket upgrade is an HTTP/1.1 exchange.
+	{
+		Pattern: "g2df33d01-lp1.s.n.srv.nintendo.net",
+		Service: ServiceNEX, TLS: true, NoClientCertRequest: true, NoHTTP2: true,
+		Comment: "NEX game server: Splatoon 2 (game server 2DF33D01)",
+	},
+
 	// ---- Telemetry: redirected to a sink, not null-routed -----------------
 	// Used to be null-routed, reasoned as "tells Nintendo nothing either
 	// way, and this way it does not fill our logs" -- and reasoned, wrongly,
@@ -831,7 +853,7 @@ func TLSHostnames() []string {
 // order their server blocks should be emitted.
 var ProxiedServices = []Service{
 	ServiceDAuth, ServiceAAuth, ServiceBAAS, ServiceSCSI,
-	ServiceNPLNRest, ServiceNPLN, ServiceGamesync, ServiceStubs,
+	ServiceNPLNRest, ServiceNPLN, ServiceGamesync, ServiceNEX, ServiceStubs,
 }
 
 // Resolution says what a DNS server should do with a query.
