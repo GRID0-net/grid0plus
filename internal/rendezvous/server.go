@@ -116,9 +116,10 @@ type Server struct {
 }
 
 type protocol struct {
-	name    string
-	methods map[uint32]Method
-	names   map[uint32]string
+	name     string
+	methods  map[uint32]Method
+	names    map[uint32]string
+	fallback Method
 }
 
 // New builds a server with TicketGranting on the authentication port and
@@ -213,6 +214,20 @@ func (s *Server) Handle(protocolID uint16, protocolName string, methodID uint32,
 	}
 	p.methods[methodID] = m
 	p.names[methodID] = methodName
+}
+
+// HandleFallback answers every method of a protocol that has no handler of
+// its own. For a title whose proven server is known to answer a whole
+// protocol a certain way; see internal/splatoon2's DataStore.
+func (s *Server) HandleFallback(protocolID uint16, protocolName string, m Method) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.protocols[protocolID]
+	if p == nil {
+		p = &protocol{name: protocolName, methods: map[uint32]Method{}, names: map[uint32]string{}}
+		s.protocols[protocolID] = p
+	}
+	p.fallback = m
 }
 
 // MethodName is "Protocol.Method" for logs and the dashboard, or the numbers
@@ -339,6 +354,9 @@ func (s *Server) serveSecure(c *nex.Conn, req *nex.Request) *nex.Response {
 	var m Method
 	if p := s.protocols[req.Protocol]; p != nil {
 		m = p.methods[req.Method]
+		if m == nil {
+			m = p.fallback
+		}
 	}
 	s.mu.RUnlock()
 

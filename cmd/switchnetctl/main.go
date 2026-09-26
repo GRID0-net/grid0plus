@@ -796,6 +796,10 @@ func websocketServerBlock(cfg config.Config, serverNames []string) string {
 
     access_log /var/log/nginx/switchnet-nex.log;
 
+    # The same name also takes DataStore uploads (Splatoon 2's play logs),
+    # which cmd/nex caps at 4 MiB itself.
+    client_max_body_size 4m;
+
     location / {
         proxy_pass http://switchnet_nex;
         proxy_http_version 1.1;

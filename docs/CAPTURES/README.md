@@ -855,6 +855,18 @@ console talking to Nintendo, whose Splatoon 2 servers no longer answer.
 | --- | --- | --- |
 | `rendezvous.getSettings` | Utility `GetIntegerSettings`/`GetStringSettings` answer an empty map | whether Splatoon 2 reads any setting, and which |
 | `rendezvous.uploadScore` | Ranking `orderBy` 0 ranks higher scores first; `updateMode` 0 keeps the better score | the meaning of both, from an upload and the ranking read back |
+| `splatoon2.uploadFestivalScore` | `battleResult` 1 is a win | its encoding |
+| `splatoon2.getFestivalResult` | a team's score is the sum of its players' uploads; the revision-1 byte is 0 | a real FestivalResult |
+| `splatoon2.getLeagueResult` | `status` 0, `rankRatio` the team's percentile | a real LeagueResult |
+| `splatoon2.storeRaw` | `UploadXPower` (22) and `UploadEventMatchResult` (24) are void uploads, kept byte for byte | either request's shape |
+| `splatoon2.getXPowerRanking` | answers Ranking::NotFound | `GetXPowerRanking` (23)'s request and response |
+| `splatoon2.getEventMatchResult` | answers an empty list (NextendoNetwork's accepted answer) | the element type |
+| `splatoon2.GameModeName` | game modes shown as numbers | Splatoon 2's game-mode numbering |
+| `splatoon2.getOrderedGear` | "nothing ordered" is DataStore::NotFound | the real answer for a player with no order |
+| `splatoon2.coconutGet` | `getType` is ignored; the get info's URL serves the post's binary data | a real CoconutGetObjectInfos answer |
+| `splatoon2.prepareGetPlayLog` | answers DataStore::NotFound | what the game asks for and does with it |
+| `splatoon2.dataStoreFallback` | any other DataStore method: empty success (NextendoNetwork's proven answer) | which methods Splatoon 2 calls — each warn log line names one |
+| Ranking 26 `AcquireEventMatchRight` | not implemented: answers NotImplemented | its request and response |
 
 ## Phase 3 — the eShop
 

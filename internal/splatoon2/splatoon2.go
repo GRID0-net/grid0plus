@@ -8,6 +8,8 @@ package splatoon2
 
 import (
 	"log/slog"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/n-popescu/switchnet/config"
@@ -87,5 +89,19 @@ func New(opts Options) *Server {
 		Now:         opts.Now,
 		IdleTimeout: opts.IdleTimeout,
 	})
-	return &Server{Server: rv, store: store, log: rv.Log()}
+	s := &Server{Server: rv, store: store, log: rv.Log()}
+	s.registerExtensions()
+	s.registerRanking()
+	s.registerDataStore()
+	return s
+}
+
+// ServeHTTP serves the game server's hostname: the NEX WebSocket, and the
+// DataStore object URLs this server hands out on the same name.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/datastore/") && r.Header.Get("Sec-WebSocket-Key") == "" {
+		s.serveObjects(w, r)
+		return
+	}
+	s.Server.ServeHTTP(w, r)
 }

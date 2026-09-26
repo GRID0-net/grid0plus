@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -30,9 +31,11 @@ type Env struct {
 	Store  *db.Memory
 	Server *rendezvous.Server
 	URL    string
-	Title  rendezvous.Title
-	issuer *sjwt.Issuer
-	n      int
+	// HTTPURL is the same server as plain HTTP.
+	HTTPURL string
+	Title   rendezvous.Title
+	issuer  *sjwt.Issuer
+	n       int
 }
 
 // DefaultTitle is a title for tests that do not care which.
@@ -41,9 +44,29 @@ var DefaultTitle = rendezvous.Title{
 	AuthMinorVersion: 3, SecureMinorVersion: 0, PublicStationType: 3,
 }
 
-// New starts a server. configure runs before it serves, to register a
-// title's protocols.
+// Deps is what a server under test is built from.
+type Deps struct {
+	Store    *db.Memory
+	IDTokens *identity.IDTokens
+	Log      *slog.Logger
+}
+
+// New starts a plain rendezvous server. configure runs before it serves, to
+// register a title's protocols.
 func New(t testing.TB, title rendezvous.Title, configure func(*rendezvous.Server, *db.Memory)) *Env {
+	t.Helper()
+	return Start(t, title, func(d Deps) (*rendezvous.Server, http.Handler) {
+		srv := rendezvous.New(rendezvous.Options{Title: title, IDTokens: d.IDTokens, Store: d.Store, Log: d.Log})
+		if configure != nil {
+			configure(srv, d.Store)
+		}
+		return srv, srv
+	})
+}
+
+// Start starts whatever build returns -- a title's own server, which
+// wraps a rendezvous.Server and may serve more than its WebSocket.
+func Start(t testing.TB, title rendezvous.Title, build func(Deps) (*rendezvous.Server, http.Handler)) *Env {
 	t.Helper()
 	ring := sjwt.NewKeyring(filepath.Join(t.TempDir(), "keys"), true)
 	key, err := ring.Key(sjwt.IssuerBAASID)
@@ -55,19 +78,11 @@ func New(t testing.TB, title rendezvous.Title, configure func(*rendezvous.Server
 	if testing.Verbose() {
 		log = slog.New(slog.NewTextHandler(testWriter{t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}
-	srv := rendezvous.New(rendezvous.Options{
-		Title:    title,
-		IDTokens: identity.NewIDTokens(key, store, log),
-		Store:    store,
-		Log:      log,
-	})
-	if configure != nil {
-		configure(srv, store)
-	}
-	ts := httptest.NewServer(srv)
+	srv, handler := build(Deps{Store: store, IDTokens: identity.NewIDTokens(key, store, log), Log: log})
+	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	return &Env{T: t, Store: store, Server: srv, URL: "ws" + strings.TrimPrefix(ts.URL, "http"),
-		Title: title, issuer: sjwt.NewIssuer(key, "", true)}
+		HTTPURL: ts.URL, Title: title, issuer: sjwt.NewIssuer(key, "", true)}
 }
 
 type testWriter struct{ t testing.TB }
