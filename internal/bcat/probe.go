@@ -77,24 +77,18 @@ import (
 // decompile because News shares this same string table -- not a
 // Splatfest-relevant field.
 //
-// One more open question the same decompile raises rather than settles: the
-// local cache path `bcat-dl:/applications/%016llx/list.msgpack.bafmeta`
-// names the cached list as MessagePack, not JSON. The field names above are
-// still real regardless of encoding -- a msgpack map still has string keys,
-// and the JSONPath strings are the client's own generic field-lookup syntax,
-// not proof of wire format -- but whether the actual HTTP response body is
-// JSON text or msgpack-encoded is unconfirmed. `bcat-dl:` is a local mount,
-// not a network trace, so this decompile cannot tell the two apart; a
-// capture of the real HTTP exchange (Content-Type header alone would settle
-// it) is the only way to know which this server should actually answer.
+// The same decompile left two questions that a public client of the live
+// servers has since answered (TODO.md §2.4, 2026-09-26 update, from
+// BCAT-Manager): the list body is itself a `bcat` container whose decrypted
+// payload is MessagePack, which matches the local cache path
+// `bcat-dl:/applications/%016llx/list.msgpack.bafmeta`, and the container's
+// 0x120-byte header layout is written out in that section.
 //
-// TODO(capture-needed): field semantics above, the JSON-vs-msgpack wire
-// encoding question, and the delivery container's header layout (still only
-// known as 0x120 bytes with an RSA-2048 signature at offset 0x20) -- the
-// list response's wire encoding and the binary container its `url` field
-// points at are two separate things this decompile did not equally resolve.
-// Change: this file, and TODO.md §2.4's second stage becomes writable for
-// the field-shape half regardless of which encoding turns out to be real.
+// TODO(capture-needed): field semantics above (what `mode`'s values mean,
+// what `conditions.serial` matches), which hash the 16-byte `digest` is, and
+// whether bcat.nso checks the container's RSA signature -- the last is what
+// decides whether this server can answer natively. Change: this file, and
+// TODO.md §2.4's second stage.
 type Probe struct {
 	log *slog.Logger
 	rec *wirelog.Recorder

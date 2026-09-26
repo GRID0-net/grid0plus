@@ -347,6 +347,54 @@ the *signature verification* stage 2 is about. Stage 1 is still the thing
 that needs an operator and a console; this only means stage 2's payoff, if
 run, would land on a server that already knows most of what to answer with.
 
+**Update, 2026-09-26: most of the wire format is now known, from a public
+client of the live servers.** [BCAT-Manager](https://github.com/Random06457/BCAT-Manager)
+downloads and decrypts real lists from Nintendo's CDN. It has no licence, so
+these are facts read from it, not code taken from it:
+
+- **List path:** `bcat-list-lp1…/api/nx/v1/list/nx_data_<title id, 16 lowercase
+  hex>`. No token is sent; the request carries
+  `User-Agent: libcurl (nnBcat; <uuid>; SDK <a.b.c.d>)` and
+  `X-Nintendo-Serial-Number`.
+- **The list body is itself a `bcat` container,** and its decrypted payload
+  is **MessagePack**. That settles the JSON-vs-MessagePack question above.
+  Top-level fields: `topic_id`, `service_status`, `na_required`,
+  `required_application_version`, `directories`. Each directory also has
+  `by_country_group`. Digests are 32 hex characters (16 bytes). The tool's
+  default `mode` is `"async"`.
+- **Container header (0x120 bytes):**
+
+  | offset | size | field |
+  | --- | --- | --- |
+  | 0x0 | 4 | magic `bcat` |
+  | 0x4 | 1 | version, written as 1 |
+  | 0x5 | 1 | crypto: 1/2/3 = AES-128/192/256-CTR, 4 = plaintext |
+  | 0x6 | 1 | signature hash: 0 = SHA-1, 1 = SHA-256 |
+  | 0x7 | 1 | secret index, 0-31 |
+  | 0x8 | 8 | padding |
+  | 0x10 | 0x10 | CTR IV |
+  | 0x20 | 0x100 | RSA-2048 signature |
+
+  The payload follows at 0x120.
+- **Key:** PBKDF2-HMAC-SHA256, 4096 rounds. The password is the title's
+  passphrase as ASCII. The salt is the 16-hex-digit title id followed by
+  secret string `index`, one of 32 16-hex-character strings. Those strings
+  are Nintendo's; like the nisasyst table, they would live in an
+  operator-local file and never be committed.
+
+**What this leaves, and it is all in `bcat.nso`:**
+
+1. **Is the signature checked, and can one patch skip it?** The tool cannot
+   sign; it only re-imports an existing signature. Still the blocker.
+2. **Is crypto type 4 (plaintext) accepted for a download?** If it is,
+   neither the passphrase nor the secret strings are needed.
+3. **Which hash the list's 16-byte `digest` is,** and whether the console
+   compares it with what it downloaded.
+4. **Whether a `url` may name a host other than `bcat-data-lp1`.**
+
+Any IPS patch from (1) is tied to one build of `bcat.nso`, so it has to be
+made against the firmware the consoles actually run.
+
 **Done when** there is a written record, under `docs/CAPTURES/`, of what the
 console requested and how it reacted. Either answer is worth having; right now
 the repository has neither.
