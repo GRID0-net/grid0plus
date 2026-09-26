@@ -100,6 +100,7 @@ func TestPresenceIsResolvedTheSameWayTheFriendsAppletSeesIt(t *testing.T) {
 	ctx := context.Background()
 
 	addUser(t, store, "playing", "playing")
+	addUser(t, store, "playing2", "playing2")
 	addUser(t, store, "idle", "idle")
 	addUser(t, store, "gone", "gone")
 	addUser(t, store, "signed-out", "signed-out")
@@ -109,6 +110,9 @@ func TestPresenceIsResolvedTheSameWayTheFriendsAppletSeesIt(t *testing.T) {
 	// Reported PLAYING, recently: shows as playing, with the app.
 	store.UpdatePresence(ctx, "playing", db.PresencePatch{
 		State: p("PLAYING"), AppID: p("0100c2500fc20000"), ReportedAt: &now})
+	// Splatoon 2, European edition: one of three title ids for one game.
+	store.UpdatePresence(ctx, "playing2", db.PresencePatch{
+		State: p("PLAYING"), AppID: p("0100F8F0000A2000"), ReportedAt: &now})
 
 	// Never reported, but seen recently. This is the Home Menu case: the
 	// console reports nothing there but keeps polling, and without the
@@ -146,6 +150,9 @@ func TestPresenceIsResolvedTheSameWayTheFriendsAppletSeesIt(t *testing.T) {
 
 	if got["playing"].Activity != "Splatoon 3" {
 		t.Errorf("playing activity = %q, want Splatoon 3", got["playing"].Activity)
+	}
+	if got["playing2"].Activity != "Splatoon 2" {
+		t.Errorf("playing2 activity = %q, want Splatoon 2", got["playing2"].Activity)
 	}
 	// The app fields must be cleared whenever the state is not PLAYING: a
 	// console that closes a game reports ONLINE without clearing them.

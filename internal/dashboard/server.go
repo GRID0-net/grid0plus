@@ -446,6 +446,9 @@ func titleName(appID string) string {
 	switch strings.ToLower(appID) {
 	case "0100c2500fc20000":
 		return "Splatoon 3"
+	case "01003bc0000a0000", "0100f8f0000a2000", "01003c700009c000":
+		// Americas, Europe, Japan: internal/splatoon2's README.
+		return "Splatoon 2"
 	case "0100152000022000":
 		return "Mario Kart 8 Deluxe"
 	case "01006f8002326000":
