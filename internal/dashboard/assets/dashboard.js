@@ -207,6 +207,10 @@ function renderPlayers() {
   $("#stat-playing").textContent = inGame("Splatoon 3").length;
   const s2 = inGame("Splatoon 2");
   $("#s2-stat-playing").textContent = s2.length;
+  // Annie's form lists every account; filled here, where players arrive,
+  // rather than only when that tab loads -- which, for the tab a reload
+  // reopens, can be before the first list of players has.
+  renderS2OrderPlayers();
   $("#s2-player-strip").replaceChildren(
     ...(s2.length
       ? s2.map((p) => {
