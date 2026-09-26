@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/n-popescu/switchnet/internal/db"
@@ -108,6 +109,10 @@ type Server struct {
 	onConnect    []func(*nex.Conn)
 	onDisconnect []func(*nex.Conn)
 	onCall       []func(c *nex.Conn, req *nex.Request, resp *nex.Response)
+	onPunch      []PunchHook
+
+	rewriter atomic.Pointer[StationRewriter]
+	mm       *Matchmaker
 }
 
 type protocol struct {
@@ -167,6 +172,8 @@ func New(opts Options) *Server {
 	}
 	s.registerSecureConnection()
 	s.registerUtility()
+	s.registerNATTraversal()
+	s.registerMatchmaking()
 	return s
 }
 

@@ -42,6 +42,15 @@ type stationsKey struct{}
 type stationSet struct {
 	mu   sync.Mutex
 	urls []*nex.StationURL
+	// wasReplaced is set by the first ReplaceURL: the console has re-reported
+	// a station after its NAT check.
+	wasReplaced bool
+}
+
+func (s *stationSet) replaced() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.wasReplaced
 }
 
 func stationsOf(c *nex.Conn) *stationSet {
@@ -257,6 +266,7 @@ func (s *Server) replaceURL(c *nex.Conn, req *nex.Request) *nex.Response {
 	if !replaced {
 		set.urls = append(set.urls, fresh)
 	}
+	set.wasReplaced = true
 	set.mu.Unlock()
 	s.log.Info("nex: station replaced", "pid", c.PID, "station", fresh.String())
 	return req.Success(nil)
