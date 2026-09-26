@@ -9,37 +9,40 @@ not carry.
 | Reference | [BCAT Content Container](https://switchbrew.org/wiki/BCAT_Content_Container), [BCAT Servers](https://github.com/kinnay/NintendoClients/wiki/BCAT-Servers) |
 | Needs a database | no |
 
-## This does not serve BCAT — but the reason is narrower than it looks
+## This does not serve BCAT yet — and the blocker is now known exactly
 
 SwitchNet builds the delivery cache directly rather than speaking BCAT's
-delivery protocol. Two reasons have been given for that at different times, and
-only one of them holds:
+delivery protocol. As of 2026-09-26 the reason is no longer "nobody has
+documented how"; both unknowns have been settled, one from a public client
+of the live servers and one from disassembling the `bcat` sysmodule itself.
 
-**The reason that does NOT hold on its own.** Nintendo's delivery container
-carries an RSA-2048 signature at offset 0x20 of its 0x120 header. It is
-tempting to conclude the console verifies it and that producing one would mean
-forging a Nintendo signature — but switchbrew documents only that the *field
-exists*. It says nothing about a verification step, nothing about what happens
-on failure, and no public source establishes either. More to the point, a
-console running SwitchNet already has sigpatches: bypassing Nintendo signature
-checks is the normal state of a CFW console, and `ROADMAP.md` §3.3 already
-depends on exactly that for phase 3. Whether those patches reach the `bcat`
-sysmodule is untested — `sys-patch` covers `fs`, `es`, `ldr` and `nifm`, and
-`bcat` is not on that list — but "untested" is not "impossible".
+**The container format is known.** The `list` body is itself an encrypted
+`bcat` container whose payload is MessagePack; the 0x120-byte header layout
+and the key derivation are in TODO.md §2.4. Serving the manifest is no
+longer inventing a shape.
 
-**The reason that does hold.** The response body of
-`/api/nx/v1/list/<name>` is undocumented. Kinnay's wiki gives the paths and
-nothing else; no public implementation exists. Serving BCAT means inventing the
-manifest the console parses, and a wrong manifest gives a console that
-connects, receives something unparseable, and fails with nothing in any log —
-which is CLAUDE.md rule 6, not rule 2.
+**The signature is verified, and that is the blocker.** `bcat.nso`
+(22.5.0) runs an RSA-2048 verify over each decrypted container's payload
+against a public key baked into the module, and on failure wipes the buffer
+and returns result 2002-4106 — read directly from the disassembly, not
+guessed from switchbrew's note that the field exists. So a
+SwitchNet-produced container is refused unless `bcat.nso` is patched to
+force the verify to pass. That is the same class of patch this project
+already ships for Splatoon 3's TLS (an ExeFS/IPS patch, built with
+borntohonk's pattern tooling against the exact firmware build), and it is
+*not* forging Nintendo's signature — rule 2 stays intact. `sys-patch`
+covers `fs`, `es`, `ldr` and `nifm`, not `bcat`, so this needs its own
+patch shipped alongside SwitchNet's others.
 
-So: **not "we cannot", but "nobody has documented how".** TODO.md §2.4 has the
-experiment that would change this. If it comes back positive, revisit properly
-rather than treating this paragraph as settled.
+**Encryption is not a blocker.** The header validator accepts crypto type 0
+(plaintext), so a served container needs no passphrase and none of the
+module's secret strings; only the signature does.
 
-Building the cache directly sidesteps the question entirely, which is why it is
-what this package does today.
+So: serving BCAT natively is possible, gated on one `bcat.nso` patch per
+firmware build plus the `list`/`data` responses. TODO.md §2.4 tracks it.
+Building the cache directly still sidesteps the patch entirely, which is why
+it remains what this package does today — but §2.4a's homebrew installer is
+now a fallback, not the only option.
 
 ## The probe, and why it exists before the experiment does
 

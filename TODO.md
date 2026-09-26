@@ -382,25 +382,57 @@ these are facts read from it, not code taken from it:
   are Nintendo's; like the nisasyst table, they would live in an
   operator-local file and never be committed.
 
-**What this leaves, and it is all in `bcat.nso`:**
+**Update, 2026-09-26: `bcat.nso` (22.5.0, build id 6D9772A733E2370B…) was
+disassembled and the two questions that decide the design are answered.**
+The operator supplied the firmware; the module was extracted with
+`switchnet_bcat_extract.py` and read in Ghidra. No Nintendo key bytes are
+recorded here or committed anywhere.
 
-1. **Is the signature checked, and can one patch skip it?** The tool cannot
-   sign; it only re-imports an existing signature. Still the blocker.
-2. **Is crypto type 4 (plaintext) accepted for a download?** If it is,
-   neither the passphrase nor the secret strings are needed.
+1. **The signature is verified, and its failure is enforced.** After a
+   container is decrypted, the module runs an RSA-2048 verify over the
+   payload against a public key baked into `bcat.nso` (a production key and
+   a development key, chosen by the `bcat!production_mode` setting). On a
+   failed verify it wipes the decrypted buffer and returns `0x2A07A`
+   (result 2002-4106). Both the whole-file path and the streaming path do
+   this; no input value skips it. So serving a container SwitchNet produced
+   needs **either** Nintendo's private key (impossible, and forging it is
+   forbidden by rule 2) **or** a patch to `bcat.nso` that forces the verify
+   result to pass — the same class of patch this repo already ships for
+   Splatoon 3's TLS, produced the same way (borntohonk's `find_patterns` /
+   `make_patches`). That patch is the whole decision, and it is now known to
+   be the *only* blocker.
+2. **Plaintext containers are accepted; no passphrase or secret strings are
+   needed.** The 0x120 header validator accepts crypto type 0, and the
+   cipher setup treats 0 as "no encryption" (1/2/3 are AES-128/192/256-CTR).
+   The `crypto > 3` guard means BCAT-Manager's "type 4 = plaintext" reading
+   is really "type 0 = plaintext, written by a tool that stored index+1".
+   SwitchNet can therefore serve type-0 containers and skip the whole
+   PBKDF2/secret-string layer; only the signature stands in the way.
+
+Still open, and less important than the two above:
+
 3. **Which hash the list's 16-byte `digest` is,** and whether the console
-   compares it with what it downloaded.
+   rejects a mismatch. (Splatoon 3's own delivery-cache digest is MD5 in
+   Ryujinx/Citron HLE, but bcat's list digest is a separate field.)
 4. **Whether a `url` may name a host other than `bcat-data-lp1`.**
 
-Any IPS patch from (1) is tied to one build of `bcat.nso`, so it has to be
-made against the firmware the consoles actually run.
+The verify patch is tied to one build of `bcat.nso`, so it must be made
+against the firmware the consoles run. This one is 22.5.0; a firmware
+update needs the patch regenerated.
 
-**Done when** there is a written record, under `docs/CAPTURES/`, of what the
-console requested and how it reacted. Either answer is worth having; right now
-the repository has neither.
+**Done when** SwitchNet answers the `list` and `data` requests and a patched
+console downloads and reads a SwitchNet-built container, with a written
+record under `docs/CAPTURES/`. The signature question that blocked this is
+now settled; what remains is building the patch and the list/data responses.
 
-**An autonomous agent cannot run stage 1** — it needs a console. The question is
-recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md).
+**Stage 1 (what the console asks for) still needs a console**, and is
+recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md); it is no longer on the
+critical path, since the container format and the blocker are both known.
+
+**The full implementation plan is [`docs/BCAT_NATIVE.md`](docs/BCAT_NATIVE.md)**
+— the server (list/data responses from the existing seed folders), the
+`bcat.nso` signature-bypass patch, the emulator-first verification path, and
+the small open questions. Nothing there is built yet.
 
 ### 2.4a The `.nro` installer — **P2, the path that works today**
 

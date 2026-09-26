@@ -84,11 +84,16 @@ import (
 // `bcat-dl:/applications/%016llx/list.msgpack.bafmeta`, and the container's
 // 0x120-byte header layout is written out in that section.
 //
+// The signature question that used to sit here is answered: a 2026-09-26
+// disassembly of bcat.nso (22.5.0) showed the module verifies an RSA-2048
+// signature over each decrypted container and refuses on failure, so serving
+// SwitchNet's own containers needs a bcat.nso patch (never a forged
+// signature). The full design for native serving, including this, is in
+// docs/BCAT_NATIVE.md; TODO.md §2.4 has the RE findings.
+//
 // TODO(capture-needed): field semantics above (what `mode`'s values mean,
-// what `conditions.serial` matches), which hash the 16-byte `digest` is, and
-// whether bcat.nso checks the container's RSA signature -- the last is what
-// decides whether this server can answer natively. Change: this file, and
-// TODO.md §2.4's second stage.
+// what `conditions.serial` matches) and which hash the 16-byte `digest` is.
+// Change: this file.
 type Probe struct {
 	log *slog.Logger
 	rec *wirelog.Recorder
