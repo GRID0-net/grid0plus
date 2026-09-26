@@ -865,6 +865,7 @@ console talking to Nintendo, whose Splatoon 2 servers no longer answer.
 | `splatoon2.getOrderedGear` | "nothing ordered" is DataStore::NotFound | the real answer for a player with no order |
 | `splatoon2.coconutGet` | `getType` is ignored; the get info's URL serves the post's binary data | a real CoconutGetObjectInfos answer |
 | `splatoon2.prepareGetPlayLog` | answers DataStore::NotFound | what the game asks for and does with it |
+| *(not handled)* | Ranking 26 `AcquireEventMatchRight` answers NotImplemented: Kinnay names it with no shape, and no known server answers it | whether Splatoon 2 calls it, and its request and response |
 | `splatoon2.dataStoreFallback` | any other DataStore method: empty success (NextendoNetwork's proven answer) | which methods Splatoon 2 calls — each warn log line names one |
 | Ranking 26 `AcquireEventMatchRight` | not implemented: answers NotImplemented | its request and response |
 

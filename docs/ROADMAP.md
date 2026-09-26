@@ -437,8 +437,27 @@ What is left:
    and DataStore readings, and which of the fallback DataStore methods
    the game calls — each one logs a warning naming it.
 3. **Anything Splatoon 2 reads outside NEX** — its BCAT delivery data in
-   particular — is not served for it yet. What it needs there is unverified
-   and belongs in its own change once a console shows what it asks for.
+   particular — is not served for it. No known replacement server serves it
+   either (see below); what it needs is unverified and belongs in its own
+   change once a console shows what it asks for.
+
+Against [NextendoNetwork's Splatoon 2 server](https://github.com/NextendoNetwork/splatoon-2)
+(PolyForm Shield; read for facts, none of its code used), feature by
+feature:
+
+| Nextendo | SwitchNet |
+| --- | --- |
+| login, secure connection, matchmaking, notifications (its `nextendo-nex` core) | `internal/nex`, `internal/rendezvous` |
+| Utility 9/10, Ranking 18/19/25 (empty lists), MatchmakeExtension 60 (empty list) | all of these, with 18 and 60 answered from real state; plus Ranking 16–24 and the standard 1–15 |
+| DataStore: an empty success for every method ("a stub", in its README) | match results, gear orders, plaza posts, play logs, time attack; the empty success only for the rest |
+| presence reported to its account service | `TouchPresence` on every connection and call |
+| NAT classes, same-household stations, NAT-check port bridge | the same, `nattraversal.go`, `internal/natobs` |
+| per-pair relay with an allow list, `!` to force, "all" | `nex.relay` (`allow`, `!`, `allow_all`) |
+| relay settings in flag files re-read every two seconds, and an automatically maintained allow section | config only; a change is a restart — **not carried over** |
+| online check: an account that is disabled, unverified or already online elsewhere is refused | disabled (`Deleted`) accounts are refused by `internal/identity`; a second connection replaces the first. "Unverified" has no SwitchNet equivalent |
+| dashboard API: stats, relay, kick | the admin API and the dashboard's Splatoon 2 tab |
+| GeoIP lookup of each player | **not carried over**: it sends player addresses off the network |
+| anonymous PID for an unverifiable login, fail-open account check | **deliberately not carried over** (CLAUDE.md: identity is fail-closed) |
 
 ## Phase 3 — the eShop, a separate module
 
