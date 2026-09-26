@@ -243,6 +243,16 @@ func warn(cfg config.Config) {
 				"They must be the same value, or the dashboard's matchmaking controls "+
 				"will fail every request with a plain 401.")
 	}
+	if (cfg.Dashboard.NEXAdminToken == "") != (cfg.NEX.AdminToken == "") {
+		fmt.Fprintln(os.Stderr,
+			"warning: exactly one of dashboard.nex_admin_token and nex.admin_token is set. "+
+				"They must agree, or the dashboard's Splatoon 2 panel either says it is not "+
+				"configured or fails every request with a 401.")
+	} else if cfg.Dashboard.NEXAdminToken != cfg.NEX.AdminToken {
+		fmt.Fprintln(os.Stderr,
+			"warning: dashboard.nex_admin_token does not match nex.admin_token, so the "+
+				"dashboard's Splatoon 2 panel will fail every request with a 401.")
+	}
 	if r := cfg.NEX.Relay; r.Enabled && len(r.Allow) == 0 && !r.AllowAll {
 		fmt.Fprintln(os.Stderr,
 			"warning: nex.relay is enabled but nex.relay.allow is empty and allow_all is off, "+

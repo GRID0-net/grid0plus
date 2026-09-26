@@ -28,14 +28,22 @@ import (
 // promptly rather than hanging while the operator presses the button again.
 const matchmakingTimeout = 5 * time.Second
 
-// matchmakingClient talks to npln's admin API.
-type matchmakingClient struct {
+// adminClient talks to a game server's admin API: npln's, or nex's.
+type adminClient struct {
 	base  string
 	token string
 	http  *http.Client
+	// mismatch is what a 401 means: the two settings that must agree.
+	mismatch string
 }
 
-func newMatchmakingClient(address, token string) *matchmakingClient {
+func newMatchmakingClient(address, token string) *adminClient {
+	return newAdminClient(address, token,
+		"the game server rejected the admin token; "+
+			"npln.admin_token and dashboard.npln_admin_token must match")
+}
+
+func newAdminClient(address, token, mismatch string) *adminClient {
 	if address == "" || token == "" {
 		return nil
 	}
@@ -48,10 +56,11 @@ func newMatchmakingClient(address, token string) *matchmakingClient {
 		base = "http://" + base
 	}
 
-	return &matchmakingClient{
-		base:  base,
-		token: token,
-		http:  &http.Client{Timeout: matchmakingTimeout},
+	return &adminClient{
+		base:     base,
+		token:    token,
+		http:     &http.Client{Timeout: matchmakingTimeout},
+		mismatch: mismatch,
 	}
 }
 
@@ -60,7 +69,7 @@ func newMatchmakingClient(address, token string) *matchmakingClient {
 // Errors carry npln's own message rather than a status code: "nobody is queuing
 // for turf_war" is the whole explanation, and replacing it with "409" would make
 // the operator go and read a log to find out what the page already knew.
-func (c *matchmakingClient) call(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+func (c *adminClient) call(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
 	var payload io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -93,8 +102,7 @@ func (c *matchmakingClient) call(ctx context.Context, method, path string, body 
 	if resp.StatusCode != http.StatusOK {
 		message := strings.TrimSpace(string(raw))
 		if resp.StatusCode == http.StatusUnauthorized {
-			message = "the game server rejected the admin token; " +
-				"npln.admin_token and dashboard.npln_admin_token must match"
+			message = c.mismatch
 		}
 		if message == "" {
 			message = resp.Status

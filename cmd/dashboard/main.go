@@ -76,6 +76,8 @@ func main() {
 
 		NPLNAdminURL:   cfg.Dashboard.NPLNAdminURL,
 		NPLNAdminToken: cfg.Dashboard.NPLNAdminToken,
+		NEXAdminURL:    cfg.Dashboard.NEXAdminURL,
+		NEXAdminToken:  cfg.Dashboard.NEXAdminToken,
 		Addresses:      dashboard.AddressesFrom(cfg),
 	})
 	if err != nil {

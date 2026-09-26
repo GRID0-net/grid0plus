@@ -312,6 +312,11 @@ dashboard:
   npln_admin_url: "127.0.0.1:8089"
   npln_admin_token: ""
 
+  # The same for the Splatoon 2 panel: must match nex.admin_listen and
+  # nex.admin_token below. Leave either empty and the panel says so.
+  nex_admin_url: "127.0.0.1:8093"
+  nex_admin_token: ""
+
   # A shared secret required on every request. Empty means NO authentication:
   # anyone who can reach this port can schedule and cancel Splatfests.
   #
@@ -534,8 +539,9 @@ nex:
   # player who is not there never starts.
   idle_timeout: 60
 
-  # The read-only operator API the dashboard's Splatoon 2 panel uses:
-  # connected players, lobbies, recent calls. Served ONLY when admin_token is
+  # The operator API the dashboard's Splatoon 2 panel uses: connected
+  # players, lobbies, recent calls, the relay, and the controls to disconnect
+  # a player or place an Annie order for one. Served ONLY when admin_token is
   # set; never reached by a console. Must match dashboard.nex_admin_token.
   admin_listen: "127.0.0.1:8093"
   admin_token: ""

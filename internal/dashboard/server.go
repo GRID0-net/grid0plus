@@ -88,6 +88,11 @@ type Options struct {
 	NPLNAdminURL   string
 	NPLNAdminToken string
 
+	// NEXAdminURL and NEXAdminToken reach cmd/nex's Splatoon 2 operator API,
+	// on the same terms: leave either empty and the panel says so.
+	NEXAdminURL   string
+	NEXAdminToken string
+
 	// Addresses is where each service listens, for the health view. Taken from
 	// the same config the services themselves read, so a changed port cannot
 	// leave the page probing the old one.
@@ -110,7 +115,9 @@ type Server struct {
 	now      func() time.Time
 
 	// matchmaking is nil when the controls are not configured.
-	matchmaking *matchmakingClient
+	matchmaking *adminClient
+	// splatoon2 is nil when the Splatoon 2 panel is not configured.
+	splatoon2 *adminClient
 
 	addresses ServiceAddresses
 	// probeClient is separate from the matchmaking client: health probes must
@@ -164,6 +171,7 @@ func New(opts Options) (*Server, error) {
 		token:       opts.Token,
 		now:         opts.Now,
 		matchmaking: newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
+		splatoon2:   newSplatoon2Client(opts.NEXAdminURL, opts.NEXAdminToken),
 		addresses:   opts.Addresses,
 		probeClient: &http.Client{Timeout: probeTimeout},
 		tmpl:        tmpl,
@@ -199,6 +207,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/start", s.guard(s.handleForceStart))
 	mux.HandleFunc("POST /api/matchmaking/modes/{mode}/size", s.guard(s.handleSetModeSize))
 	mux.HandleFunc("POST /api/matchmaking/tickets/{id}/cancel", s.guard(s.handleCancelTicket))
+	mux.HandleFunc("GET /api/splatoon2", s.guard(s.handleSplatoon2))
+	mux.HandleFunc("POST /api/splatoon2/players/{id}/gear-order", s.guard(s.handleSplatoon2GearOrder))
+	mux.HandleFunc("DELETE /api/splatoon2/players/{id}/gear-order", s.guard(s.handleSplatoon2CancelGearOrder))
+	mux.HandleFunc("POST /api/splatoon2/players/{id}/disconnect", s.guard(s.handleSplatoon2Disconnect))
 
 	mux.HandleFunc("GET /api/debug/stats", s.guard(s.handleDebugStats))
 	mux.HandleFunc("GET /api/debug/accounts/{id}", s.guard(s.handleDebugAccount))

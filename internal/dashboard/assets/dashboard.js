@@ -841,6 +841,198 @@ $("#mm-modes").addEventListener("change", async (e) => {
   }
 });
 
+// ---- splatoon 2 -------------------------------------------------------------
+
+let splatoon2 = { configured: false };
+
+/** A NEX player is known by PID and user id; the players list by user id. */
+function s2Name(p) {
+  const known = players.find((x) => x.id === p.userId);
+  return known ? known.nickname : (p.nickname || p.userId);
+}
+
+function td(text) {
+  const c = document.createElement("td");
+  c.textContent = text;
+  return c;
+}
+
+function renderSplatoon2(st) {
+  splatoon2 = st;
+  $("#s2-unconfigured").hidden = st.configured;
+  $("#s2-configured").hidden = !st.configured;
+  if (!st.configured) {
+    $("#s2-unconfigured-reason").textContent = st.reason || "";
+    return;
+  }
+
+  const ps = st.players || [];
+  const lobbies = st.gatherings || [];
+  $("#s2-summary").textContent =
+    `${ps.length} connected · ${lobbies.length} lobb${lobbies.length === 1 ? "y" : "ies"}`;
+  $("#s2-players-empty").hidden = ps.length > 0;
+  $("#s2-players tbody").replaceChildren(
+    ...ps.map((p) => {
+      const tr = document.createElement("tr");
+      const nat = p.punches ? `${p.nat} · ${p.punches - p.punchFailures}/${p.punches} punches` : p.nat;
+      tr.append(
+        td(s2Name(p)),
+        td(p.remoteIp),
+        td(nat),
+        td(p.gathering ? `#${p.gathering}` : "—"),
+        td(ago(p.connectedAt)),
+      );
+      const actions = document.createElement("td");
+      if (p.gearOrder) {
+        const pill = document.createElement("span");
+        pill.className = "pill on";
+        pill.title = `gear ${p.gearOrder.id}, ability ${p.gearOrder.skill}, ${p.gearOrder.price}g`;
+        pill.textContent = "order waiting";
+        const cancel = document.createElement("button");
+        cancel.className = "btn btn-ghost btn-tiny";
+        cancel.dataset.s2Cancel = p.userId;
+        cancel.textContent = "Cancel order";
+        actions.append(pill, " ", cancel);
+      }
+      const kick = document.createElement("button");
+      kick.className = "btn btn-ghost btn-danger btn-tiny";
+      kick.dataset.s2Disconnect = p.userId;
+      kick.title = "End this console's connection; it leaves its lobby at once";
+      kick.textContent = "Disconnect";
+      actions.append(" ", kick);
+      tr.append(actions);
+      return tr;
+    })
+  );
+
+  // Keep the order form's choice across a refresh.
+  const sel = $("#s2-order-player");
+  const chosen = sel.value;
+  sel.replaceChildren(
+    ...ps.map((p) => Object.assign(document.createElement("option"), { value: p.userId, textContent: s2Name(p) }))
+  );
+  if (ps.some((p) => p.userId === chosen)) sel.value = chosen;
+
+  $("#s2-lobbies-empty").hidden = lobbies.length > 0;
+  $("#s2-lobbies").replaceChildren(
+    ...lobbies.map((g) => {
+      const card = document.createElement("div");
+      card.className = "mm-session";
+      const flags = [
+        g.started ? `<span class="pill on">in a match</span>` : "",
+        g.open ? "" : `<span class="pill">closed</span>`,
+        g.private ? `<span class="pill">private</span>` : "",
+      ].join(" ");
+      const names = (g.players || []).map((m) => escape(s2Name(m))).join(", ");
+      const host = (g.players || []).find((m) => m.userId === g.host);
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">#${g.id} ${escape(g.mode)} ${flags}</div>
+          <div class="meta">${(g.players || []).length} / ${g.max} ·
+            host ${escape(host ? s2Name(host) : g.host)} · ${new Date(g.createdAt).toLocaleTimeString()}</div>
+          <div class="meta">${names}</div>
+        </div>`;
+      return card;
+    })
+  );
+
+  const results = st.results || [];
+  $("#s2-results-empty").hidden = results.length > 0;
+  $("#s2-results tbody").replaceChildren(
+    ...results.map((r) => {
+      const tr = document.createElement("tr");
+      tr.append(td(ago(r.at)), td(s2Name(r)), td(r.method), td(r.rule), td(r.stage), td(r.result));
+      return tr;
+    })
+  );
+
+  $("#s2-uptime").textContent = `up ${waited(st.uptimeSeconds || 0)}`;
+  $("#s2-methods").replaceChildren(
+    ...(st.methods || []).map((m) =>
+      Object.assign(document.createElement("span"), { className: "pill", textContent: `${m.name} × ${m.count}` }))
+  );
+  const byPID = new Map(ps.map((p) => [p.pid, p]));
+  $("#s2-calls tbody").replaceChildren(
+    ...(st.calls || []).slice(0, 50).map((c) => {
+      const tr = document.createElement("tr");
+      const p = byPID.get(c.pid);
+      const ok = document.createElement("td");
+      ok.innerHTML = c.ok ? "" : `<span class="pill warn">error</span>`;
+      tr.append(td(ago(c.at)), td(p ? s2Name(p) : String(c.pid)), td(c.method), ok);
+      return tr;
+    })
+  );
+
+  const relay = st.relay;
+  $("#s2-relay-panel").hidden = !relay;
+  if (relay) {
+    const pairs = relay.Pairs || [];
+    $("#s2-relay-summary").textContent =
+      `${relay.AdvertiseIP}:${relay.PortBase}–${relay.PortBase + relay.PortSpan - 1} · ` +
+      `${relay.AllowAll ? "anyone who needs it" : `${(relay.Allowed || []).length} allowed`} · ` +
+      `${relay.Forwarded} forwarded, ${relay.Rejected} refused`;
+    $("#s2-relay-empty").hidden = pairs.length > 0;
+    $("#s2-relay tbody").replaceChildren(
+      ...pairs.map((p) => {
+        const tr = document.createElement("tr");
+        tr.append(td(`${p.A} ↔ ${p.B}`), td(p.Port), td(p.Forwarded), td(p.Rejected), td(waited(p.IdleSecs)));
+        return tr;
+      })
+    );
+  }
+}
+
+async function loadSplatoon2() {
+  try {
+    renderSplatoon2(await api("/api/splatoon2"));
+  } catch (e) {
+    renderSplatoon2({ configured: false, reason: e.message });
+  }
+}
+
+$("#s2-players").addEventListener("click", async (e) => {
+  const kick = e.target.closest("[data-s2-disconnect]");
+  const cancel = e.target.closest("[data-s2-cancel]");
+  if (!kick && !cancel) return;
+  try {
+    if (kick) {
+      if (!confirm("Disconnect this console? It leaves its lobby at once.")) return;
+      renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(kick.dataset.s2Disconnect)}/disconnect`,
+        { method: "POST" }));
+    } else {
+      renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(cancel.dataset.s2Cancel)}/gear-order`,
+        { method: "DELETE" }));
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("#s2-order-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("#s2-order-error");
+  err.hidden = true;
+  const user = $("#s2-order-player").value;
+  const order = {
+    kind: Number($("#s2-order-kind").value),
+    id: Number($("#s2-order-id").value),
+    skill: Number($("#s2-order-skill").value),
+    price: Number($("#s2-order-price").value),
+  };
+  if (!user) {
+    err.textContent = "Nobody is connected to order for.";
+    err.hidden = false;
+    return;
+  }
+  try {
+    renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(user)}/gear-order`,
+      { method: "POST", body: JSON.stringify(order) }));
+  } catch (x) {
+    err.textContent = x.message;
+    err.hidden = false;
+  }
+});
+
 // ---- player detail ----------------------------------------------------------
 
 /**
@@ -1458,6 +1650,11 @@ setInterval(loadDebugStats, 30000);
 // not a control, so nothing here needs to update between polls.
 loadScheduleViewer();
 setInterval(loadScheduleViewer, 30000);
+
+// On its own clock, like health: the NEX server is another process, and a
+// console's calls are worth seeing within seconds while tracing a problem.
+loadSplatoon2();
+setInterval(loadSplatoon2, 5000);
 
 connect();
 // Presence arrives on the stream; this catches everything else -- a fest

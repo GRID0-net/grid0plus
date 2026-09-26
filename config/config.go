@@ -597,6 +597,12 @@ type Dashboard struct {
 	// showing an empty queue that reads as "nobody is playing".
 	NPLNAdminURL   string `yaml:"npln_admin_url"`
 	NPLNAdminToken string `yaml:"npln_admin_token"`
+
+	// NEXAdminURL and NEXAdminToken reach cmd/nex's Splatoon 2 operator API,
+	// and must match nex.admin_listen and nex.admin_token. Without them the
+	// Splatoon 2 panel says it is not configured.
+	NEXAdminURL   string `yaml:"nex_admin_url"`
+	NEXAdminToken string `yaml:"nex_admin_token"`
 }
 
 // Stubs configures the catch-all server.
@@ -896,6 +902,8 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)
 	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_URL", &c.Dashboard.NPLNAdminURL)
 	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_TOKEN", &c.Dashboard.NPLNAdminToken)
+	envStr("SWITCHNET_DASHBOARD_NEX_ADMIN_URL", &c.Dashboard.NEXAdminURL)
+	envStr("SWITCHNET_DASHBOARD_NEX_ADMIN_TOKEN", &c.Dashboard.NEXAdminToken)
 
 	envStr("SWITCHNET_NPLN_LISTEN", &c.NPLN.Listen)
 	envStr("SWITCHNET_NPLN_REST_LISTEN", &c.NPLN.RestListen)

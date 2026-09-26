@@ -51,6 +51,7 @@
   <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
   <button role="tab" aria-selected="false" data-view="players">Players</button>
   <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
+  <button role="tab" aria-selected="false" data-view="splatoon2">Splatoon 2</button>
   <button role="tab" aria-selected="false" data-view="matches">Matches</button>
   <button role="tab" aria-selected="false" data-view="health">Health</button>
   <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
@@ -183,6 +184,122 @@
         </div>
         <div id="mm-sessions"></div>
         <p class="empty" id="mm-sessions-empty" hidden>No matches running.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Splatoon 2 -->
+  <section id="view-splatoon2" class="view">
+    <!-- Shown when nex.admin_* is not set, for the same reason as the
+         matchmaking panel: an empty list would read as "nobody is playing". -->
+    <div class="panel" id="s2-unconfigured" hidden>
+      <h2>The Splatoon 2 panel is not set up</h2>
+      <p class="empty" id="s2-unconfigured-reason"></p>
+      <p class="note">Splatoon 2's game server is the <code>nex</code> process,
+        not the dashboard, so the two have to be introduced to each other.</p>
+    </div>
+
+    <div id="s2-configured" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Connected</h2>
+          <span class="meta" id="s2-summary"></span>
+        </div>
+        <table class="grid" id="s2-players">
+          <thead>
+            <tr><th>Player</th><th>From</th><th>NAT</th><th>Lobby</th><th>Connected</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="s2-players-empty" hidden>No console is connected.
+          A console that opens Splatoon 2 appears here once it logs in.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Lobbies</h2>
+          <span class="meta">Peer-to-peer once started; the relay carries only the pairs it is allowed to.</span>
+        </div>
+        <div id="s2-lobbies"></div>
+        <p class="empty" id="s2-lobbies-empty" hidden>No lobbies.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Order gear with Annie</h2>
+        <p class="note">What the SplatNet 2 app did: the gear is waiting at
+          Annie's shop in the game the next time the player visits it.</p>
+        <form id="s2-order-form" class="fest-form">
+          <label>
+            <span>Player</span>
+            <select id="s2-order-player" required></select>
+          </label>
+          <label>
+            <span>Kind</span>
+            <input type="number" id="s2-order-kind" value="0" required>
+            <small>The gear slot, as the game numbers it.</small>
+          </label>
+          <label>
+            <span>Gear id</span>
+            <input type="number" id="s2-order-id" required>
+          </label>
+          <label>
+            <span>Main ability id</span>
+            <input type="number" id="s2-order-skill" value="0" required>
+          </label>
+          <label>
+            <span>Price</span>
+            <input type="number" id="s2-order-price" min="0" value="0" required>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn">Place order</button>
+          </div>
+          <p class="form-error" id="s2-order-error" hidden></p>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Recent results</h2>
+        </div>
+        <table class="grid" id="s2-results">
+          <thead>
+            <tr><th>When</th><th>Player</th><th>Upload</th><th>Rule</th><th>Stage</th><th>Result</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="s2-results-empty" hidden>No results uploaded yet.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Calls</h2>
+          <span class="meta" id="s2-uptime"></span>
+        </div>
+        <p class="note">Every method a console has called since the server
+          started. A method answered with an error, or one that only ever
+          appears with no follow-up, is where to look when the game stops
+          somewhere.</p>
+        <div id="s2-methods" class="chips"></div>
+        <table class="grid" id="s2-calls">
+          <thead>
+            <tr><th>When</th><th>Player</th><th>Method</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel" id="s2-relay-panel" hidden>
+        <div class="panel-head">
+          <h2>Relay</h2>
+          <span class="meta" id="s2-relay-summary"></span>
+        </div>
+        <table class="grid" id="s2-relay">
+          <thead>
+            <tr><th>Pair</th><th>Port</th><th>Forwarded</th><th>Refused</th><th>Idle</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="s2-relay-empty" hidden>No pair is being relayed.</p>
       </div>
     </div>
   </section>

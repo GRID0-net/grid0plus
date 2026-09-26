@@ -451,7 +451,8 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--pad); }
 .badge.online  { color: var(--ink-b); background: color-mix(in srgb, var(--ink-b) 14%, transparent); border-color: color-mix(in srgb, var(--ink-b) 34%, transparent); }
 .badge.offline { color: var(--fg-faint); background: var(--bg-sunk); border-color: var(--line); }
 
-input[type="search"], input[type="text"], input[type="datetime-local"] {
+input[type="search"], input[type="text"], input[type="datetime-local"],
+.fest-form input[type="number"], .fest-form select {
   background: var(--bg-sunk);
   border: 1px solid var(--line);
   border-radius: 9px;
@@ -494,6 +495,7 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
 .fest-form label > span em { color: var(--fg-faint); font-style: normal; font-weight: 400; }
 .fest-form small { font-weight: 400; color: var(--fg-faint); font-size: 12px; line-height: 1.45; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+#s2-methods { margin: 10px 0 14px; }
 .chips label {
   flex-direction: row; align-items: center; gap: 6px;
   background: var(--bg-sunk); border: 1px solid var(--line);
