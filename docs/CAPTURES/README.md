@@ -854,6 +854,7 @@ console talking to Nintendo, whose Splatoon 2 servers no longer answer.
 | Where | What is guessed | What a capture would settle |
 | --- | --- | --- |
 | `rendezvous.getSettings` | Utility `GetIntegerSettings`/`GetStringSettings` answer an empty map | whether Splatoon 2 reads any setting, and which |
+| `rendezvous.uploadScore` | Ranking `orderBy` 0 ranks higher scores first; `updateMode` 0 keeps the better score | the meaning of both, from an upload and the ranking read back |
 
 ## Phase 3 — the eShop
 
