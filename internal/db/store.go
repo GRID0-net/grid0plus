@@ -195,6 +195,37 @@ type UGCDocument struct {
 	UpdateTime time.Time
 }
 
+// NEXRecord is one piece of state a NEX game server keeps for a title: a
+// unique id, a Splatfest vote, an uploaded match result. See migration 0021
+// for why these share one table.
+type NEXRecord struct {
+	// Title is the game server ("splatoon2").
+	Title string
+	// Kind is what the record is ("unique_id", "fest_vote", ...).
+	Kind string
+	// Key is unique within (Title, Kind).
+	Key string
+	// Owner is the user id the record belongs to, "" for none.
+	Owner string
+	// Value is the title's own encoding; the store does not look inside.
+	Value     []byte
+	UpdatedAt time.Time
+}
+
+// NEXRecordQuery selects records of one kind.
+type NEXRecordQuery struct {
+	Title string
+	Kind  string
+	// Owner narrows to one user's records when set.
+	Owner string
+	// Limit bounds the result; zero or anything above DefaultNEXRecordLimit
+	// means DefaultNEXRecordLimit.
+	Limit int
+}
+
+// DefaultNEXRecordLimit bounds ListNEXRecords.
+const DefaultNEXRecordLimit = 1000
+
 // NARefreshToken is one Nintendo Account link refresh token. TokenSHA256 is
 // the lowercase hex SHA-256 of the token; the token itself is never stored.
 type NARefreshToken struct {
@@ -727,6 +758,16 @@ type Store interface {
 	PutUGCDocument(ctx context.Context, d UGCDocument) error
 	// DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
 	DeleteUGCDocument(ctx context.Context, name string) error
+
+	// PutNEXRecord creates or replaces a record.
+	PutNEXRecord(ctx context.Context, r NEXRecord) error
+	// GetNEXRecord returns a record, or ErrNotFound.
+	GetNEXRecord(ctx context.Context, title, kind, key string) (NEXRecord, error)
+	// ListNEXRecords returns a kind's records, most recently updated first
+	// (then by key), optionally only one owner's.
+	ListNEXRecords(ctx context.Context, q NEXRecordQuery) ([]NEXRecord, error)
+	// DeleteNEXRecord removes a record, or returns ErrNotFound.
+	DeleteNEXRecord(ctx context.Context, title, kind, key string) error
 
 	// ---- friend requests ----
 

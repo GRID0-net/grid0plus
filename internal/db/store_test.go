@@ -67,6 +67,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"friendships":               testFriendships,
 		"naRefreshTokens":           testNARefreshTokens,
 		"ugcDocuments":              testUGCDocuments,
+		"nexRecords":                testNEXRecords,
 		"friendRequests":            testFriendRequests,
 		"blocks":                    testBlocks,
 		"presence":                  testPresence,
@@ -2019,5 +2020,74 @@ func testUGCDocuments(t *testing.T, s Store) {
 	}
 	if err := s.DeleteUGCDocument(ctx, name); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+func testNEXRecords(t *testing.T, s Store) {
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	if _, err := s.GetNEXRecord(ctx, "splatoon2", "fest_vote", "1:a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("get before put: err = %v, want ErrNotFound", err)
+	}
+	put := func(kind, key, owner, value string, at time.Time) {
+		t.Helper()
+		if err := s.PutNEXRecord(ctx, NEXRecord{Title: "splatoon2", Kind: kind, Key: key, Owner: owner,
+			Value: []byte(value), UpdatedAt: at}); err != nil {
+			t.Fatalf("put %s/%s: %v", kind, key, err)
+		}
+	}
+	put("fest_vote", "1:a", "a", `{"team":0}`, now)
+	put("fest_vote", "1:b", "b", `{"team":1}`, now.Add(time.Second))
+	put("fest_vote", "1:c", "a", `{"team":1}`, now.Add(2*time.Second))
+	put("unique_id", "1:a", "a", `{}`, now) // same key, another kind: a separate record
+	if err := s.PutNEXRecord(ctx, NEXRecord{Title: "other", Kind: "fest_vote", Key: "1:a", UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetNEXRecord(ctx, "splatoon2", "fest_vote", "1:a")
+	if err != nil || got.Owner != "a" || string(got.Value) != `{"team":0}` || !got.UpdatedAt.Equal(now) {
+		t.Fatalf("get: %+v %v", got, err)
+	}
+
+	// Replacing keeps one record with the new content.
+	put("fest_vote", "1:a", "a", `{"team":1}`, now.Add(3*time.Second))
+	all, err := s.ListNEXRecords(ctx, NEXRecordQuery{Title: "splatoon2", Kind: "fest_vote"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, r := range all {
+		keys = append(keys, r.Key)
+	}
+	if strings.Join(keys, ",") != "1:a,1:c,1:b" {
+		t.Fatalf("list order %v, want most recently updated first", keys)
+	}
+
+	mine, err := s.ListNEXRecords(ctx, NEXRecordQuery{Title: "splatoon2", Kind: "fest_vote", Owner: "a"})
+	if err != nil || len(mine) != 2 {
+		t.Fatalf("owner filter: %d records, err %v", len(mine), err)
+	}
+	if one, _ := s.ListNEXRecords(ctx, NEXRecordQuery{Title: "splatoon2", Kind: "fest_vote", Limit: 1}); len(one) != 1 {
+		t.Fatalf("limit: %d records", len(one))
+	}
+	if none, _ := s.ListNEXRecords(ctx, NEXRecordQuery{Title: "splatoon2", Kind: "nothing"}); len(none) != 0 {
+		t.Fatalf("an unused kind listed %d records", len(none))
+	}
+
+	// An empty value is a record, not an absence.
+	put("empty", "k", "", "", now)
+	if r, err := s.GetNEXRecord(ctx, "splatoon2", "empty", "k"); err != nil || len(r.Value) != 0 {
+		t.Fatalf("empty value: %+v %v", r, err)
+	}
+
+	if err := s.DeleteNEXRecord(ctx, "splatoon2", "fest_vote", "1:a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteNEXRecord(ctx, "splatoon2", "fest_vote", "1:a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+	if _, err := s.GetNEXRecord(ctx, "other", "fest_vote", "1:a"); err != nil {
+		t.Fatal("deleting one title's record touched another's")
 	}
 }

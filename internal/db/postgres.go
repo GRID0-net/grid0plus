@@ -707,6 +707,72 @@ func (p *Postgres) DeleteUGCDocument(ctx context.Context, name string) error {
 	return nil
 }
 
+// ---- NEX game-server records ----------------------------------------------
+
+// PutNEXRecord creates or replaces a record.
+func (p *Postgres) PutNEXRecord(ctx context.Context, r NEXRecord) error {
+	if r.Value == nil {
+		r.Value = []byte{}
+	}
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO nex_records (title, kind, key, owner, value, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (title, kind, key) DO UPDATE
+		SET owner = EXCLUDED.owner, value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+		r.Title, r.Kind, r.Key, r.Owner, r.Value, r.UpdatedAt)
+	return mapErr(err)
+}
+
+// GetNEXRecord returns a record, or ErrNotFound.
+func (p *Postgres) GetNEXRecord(ctx context.Context, title, kind, key string) (NEXRecord, error) {
+	var r NEXRecord
+	err := p.pool.QueryRow(ctx, `
+		SELECT title, kind, key, owner, value, updated_at
+		FROM nex_records WHERE title = $1 AND kind = $2 AND key = $3`, title, kind, key).
+		Scan(&r.Title, &r.Kind, &r.Key, &r.Owner, &r.Value, &r.UpdatedAt)
+	return r, mapErr(err)
+}
+
+// ListNEXRecords returns a kind's records, most recently updated first.
+func (p *Postgres) ListNEXRecords(ctx context.Context, q NEXRecordQuery) ([]NEXRecord, error) {
+	limit := q.Limit
+	if limit <= 0 || limit > DefaultNEXRecordLimit {
+		limit = DefaultNEXRecordLimit
+	}
+	rows, err := p.pool.Query(ctx, `
+		SELECT title, kind, key, owner, value, updated_at
+		FROM nex_records
+		WHERE title = $1 AND kind = $2 AND ($3 = '' OR owner = $3)
+		ORDER BY updated_at DESC, key
+		LIMIT $4`, q.Title, q.Kind, q.Owner, limit)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []NEXRecord
+	for rows.Next() {
+		var r NEXRecord
+		if err := rows.Scan(&r.Title, &r.Kind, &r.Key, &r.Owner, &r.Value, &r.UpdatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, r)
+	}
+	return out, mapErr(rows.Err())
+}
+
+// DeleteNEXRecord removes a record, or returns ErrNotFound.
+func (p *Postgres) DeleteNEXRecord(ctx context.Context, title, kind, key string) error {
+	tag, err := p.pool.Exec(ctx, `DELETE FROM nex_records WHERE title = $1 AND kind = $2 AND key = $3`,
+		title, kind, key)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ---- Nintendo Account refresh tokens -------------------------------------
 
 // CreateNARefreshToken stores a refresh token, and drops any that expired

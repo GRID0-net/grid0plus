@@ -43,6 +43,7 @@ type Memory struct {
 
 	naRefreshTokens map[string]NARefreshToken
 	ugcDocuments    map[string]UGCDocument
+	nexRecords      map[nexRecordKey]NEXRecord
 
 	saveDataArchives map[string]SaveDataArchive
 	// componentFiles is keyed by archive id then component file id, the same
@@ -68,6 +69,7 @@ func NewMemory() *Memory {
 
 		naRefreshTokens: map[string]NARefreshToken{},
 		ugcDocuments:    map[string]UGCDocument{},
+		nexRecords:      map[nexRecordKey]NEXRecord{},
 
 		saveDataArchives: map[string]SaveDataArchive{},
 		componentFiles:   map[string]map[string]ComponentFile{},
@@ -588,6 +590,73 @@ func (m *Memory) DeleteUGCDocument(_ context.Context, name string) error {
 		return ErrNotFound
 	}
 	delete(m.ugcDocuments, name)
+	return nil
+}
+
+// ---- NEX game-server records ----------------------------------------------
+
+type nexRecordKey struct{ title, kind, key string }
+
+func cloneNEXRecord(r NEXRecord) NEXRecord {
+	r.Value = append([]byte{}, r.Value...)
+	return r
+}
+
+// PutNEXRecord creates or replaces a record.
+func (m *Memory) PutNEXRecord(_ context.Context, r NEXRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nexRecords[nexRecordKey{r.Title, r.Kind, r.Key}] = cloneNEXRecord(r)
+	return nil
+}
+
+// GetNEXRecord returns a record, or ErrNotFound.
+func (m *Memory) GetNEXRecord(_ context.Context, title, kind, key string) (NEXRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	r, ok := m.nexRecords[nexRecordKey{title, kind, key}]
+	if !ok {
+		return NEXRecord{}, ErrNotFound
+	}
+	return cloneNEXRecord(r), nil
+}
+
+// ListNEXRecords returns a kind's records, most recently updated first.
+func (m *Memory) ListNEXRecords(_ context.Context, q NEXRecordQuery) ([]NEXRecord, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []NEXRecord
+	for k, r := range m.nexRecords {
+		if k.title != q.Title || k.kind != q.Kind || (q.Owner != "" && r.Owner != q.Owner) {
+			continue
+		}
+		out = append(out, cloneNEXRecord(r))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		}
+		return out[i].Key < out[j].Key
+	})
+	limit := q.Limit
+	if limit <= 0 || limit > DefaultNEXRecordLimit {
+		limit = DefaultNEXRecordLimit
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// DeleteNEXRecord removes a record, or returns ErrNotFound.
+func (m *Memory) DeleteNEXRecord(_ context.Context, title, kind, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := nexRecordKey{title, kind, key}
+	if _, ok := m.nexRecords[k]; !ok {
+		return ErrNotFound
+	}
+	delete(m.nexRecords, k)
 	return nil
 }
 
