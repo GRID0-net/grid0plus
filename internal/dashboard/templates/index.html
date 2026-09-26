@@ -28,7 +28,8 @@
     </svg>
     <div>
       <h1>SwitchNet</h1>
-      <p class="sub">Splatoon&nbsp;3 · tenant <code id="tenant">dce9377b</code></p>
+      <p class="sub" id="game-sub-splatoon3">Splatoon&nbsp;3 · tenant <code id="tenant">dce9377b</code></p>
+      <p class="sub" id="game-sub-splatoon2" hidden>Splatoon&nbsp;2 · NEX game server <code>2DF33D01</code></p>
     </div>
   </div>
   <div class="top-actions">
@@ -47,22 +48,42 @@
   </div>
 </header>
 
+<!-- Which game the tabs below are about. Players, Health and Debug are
+     about accounts and services, not a game, and are there for both. -->
+<div class="game-bar">
+  <div class="game-switch" role="radiogroup" aria-label="Game">
+    <button type="button" role="radio" aria-checked="true"  data-game="splatoon3">Splatoon&nbsp;3</button>
+    <button type="button" role="radio" aria-checked="false" data-game="splatoon2">Splatoon&nbsp;2</button>
+  </div>
+</div>
+
 <nav class="tabs" role="tablist">
-  <button role="tab" aria-selected="true"  data-view="overview">Overview</button>
+  <button role="tab" aria-selected="true"  data-game="splatoon3" data-view="overview">Overview</button>
+  <button role="tab" aria-selected="false" data-game="splatoon3" data-view="matchmaking">Matchmaking</button>
+  <button role="tab" aria-selected="false" data-game="splatoon3" data-view="matches">Matches</button>
+  <button role="tab" aria-selected="false" data-game="splatoon3" data-view="fests">Splatfests</button>
+  <button role="tab" aria-selected="false" data-game="splatoon3" data-view="coop">Salmon Run</button>
+  <button role="tab" aria-selected="false" data-game="splatoon3" data-view="schedule">Schedule</button>
+
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-overview">Overview</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-lobbies">Lobbies</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-matches">Matches</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-fests">Splatfests</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-rankings">Rankings</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-plaza">Plaza</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-annie">Annie</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-schedule">Schedule</button>
+  <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-server">Server</button>
+
+  <span class="tabs-gap" aria-hidden="true"></span>
   <button role="tab" aria-selected="false" data-view="players">Players</button>
-  <button role="tab" aria-selected="false" data-view="matchmaking">Matchmaking</button>
-  <button role="tab" aria-selected="false" data-view="splatoon2">Splatoon 2</button>
-  <button role="tab" aria-selected="false" data-view="matches">Matches</button>
   <button role="tab" aria-selected="false" data-view="health">Health</button>
-  <button role="tab" aria-selected="false" data-view="fests">Splatfests</button>
-  <button role="tab" aria-selected="false" data-view="coop">Salmon Run</button>
-  <button role="tab" aria-selected="false" data-view="schedule">Schedule</button>
   <button role="tab" aria-selected="false" data-view="debug">Debug</button>
 </nav>
 
 <main>
   <!-- Overview -->
-  <section id="view-overview" class="view is-active">
+  <section data-game="splatoon3" id="view-overview" class="view is-active">
     <div class="stat-row">
       <div class="stat stat-online">
         <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
@@ -72,7 +93,7 @@
       <div class="stat stat-playing">
         <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg>
         <span class="stat-value" id="stat-playing">–</span>
-        <span class="stat-label">in game</span>
+        <span class="stat-label">playing Splatoon 3</span>
       </div>
       <div class="stat stat-accounts">
         <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
@@ -101,7 +122,7 @@
   </section>
 
   <!-- Matches -->
-  <section id="view-matches" class="view">
+  <section data-game="splatoon3" id="view-matches" class="view">
     <div class="panel">
       <h2>Recent matches</h2>
       <table class="grid" id="matches-table">
@@ -156,7 +177,7 @@
   </section>
 
   <!-- Matchmaking -->
-  <section id="view-matchmaking" class="view">
+  <section data-game="splatoon3" id="view-matchmaking" class="view">
     <!-- Shown when npln.admin_* is not set. Explaining the gap beats an empty
          queue, which reads as "nobody is playing". -->
     <div class="panel" id="mm-unconfigured" hidden>
@@ -188,124 +209,262 @@
     </div>
   </section>
 
-  <!-- Splatoon 2 -->
-  <section id="view-splatoon2" class="view">
-    <!-- Shown when nex.admin_* is not set, for the same reason as the
-         matchmaking panel: an empty list would read as "nobody is playing". -->
-    <div class="panel" id="s2-unconfigured" hidden>
-      <h2>The Splatoon 2 panel is not set up</h2>
-      <p class="empty" id="s2-unconfigured-reason"></p>
-      <p class="note">Splatoon 2's game server is the <code>nex</code> process,
-        not the dashboard, so the two have to be introduced to each other.</p>
+  <!-- Splatoon 2. Its state lives in cmd/nex; every view below reads it over
+       nex's admin API, and all of them give way to #s2-unconfigured when
+       that is not set up -- an empty list would read as "nobody is playing". -->
+  <div class="panel" id="s2-unconfigured" hidden>
+    <h2>Splatoon 2 is not connected to the dashboard</h2>
+    <p class="empty" id="s2-unconfigured-reason"></p>
+    <p class="note">Splatoon 2's game server is the <code>nex</code> process,
+      not the dashboard, so the two have to be introduced to each other.</p>
+  </div>
+
+  <section data-game="splatoon2" id="view-s2-overview" class="view">
+    <div class="stat-row">
+      <div class="stat stat-online">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
+        <span class="stat-value" id="s2-stat-playing">–</span>
+        <span class="stat-label">playing Splatoon 2</span>
+        <span class="stat-note">by their consoles' presence</span>
+      </div>
+      <div class="stat stat-playing">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
+        <span class="stat-value" id="s2-stat-connected">–</span>
+        <span class="stat-label">on the game server</span>
+      </div>
+      <div class="stat stat-queue">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18v-2a4 4 0 0 1 4-4h1a4 4 0 0 1 4 4v2"/><circle cx="7.5" cy="7.5" r="3"/><path d="M15 18v-1.5a3.8 3.8 0 0 1 3-3.7 3 3 0 1 0-2.2-5.4"/></svg>
+        <span class="stat-value" id="s2-stat-lobbied">–</span>
+        <span class="stat-label">in lobbies</span>
+        <span class="stat-note" id="s2-stat-lobbies-note"></span>
+      </div>
+      <div class="stat stat-accounts">
+        <svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span class="stat-value" id="s2-stat-matches">–</span>
+        <span class="stat-label">matches recorded</span>
+      </div>
     </div>
 
-    <div id="s2-configured" hidden>
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Connected</h2>
-          <span class="meta" id="s2-summary"></span>
-        </div>
-        <table class="grid" id="s2-players">
-          <thead>
-            <tr><th>Player</th><th>From</th><th>NAT</th><th>Lobby</th><th>Connected</th><th></th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <p class="empty" id="s2-players-empty" hidden>No console is connected.
-          A console that opens Splatoon 2 appears here once it logs in.</p>
+    <div class="panel">
+      <h2>Latest Splatfest</h2>
+      <div id="s2-fest-banner" class="fest-banner is-empty">
+        <p class="empty">No console has voted in a Splatfest yet.</p>
       </div>
+    </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Lobbies</h2>
-          <span class="meta">Peer-to-peer once started; the relay carries only the pairs it is allowed to.</span>
-        </div>
-        <div id="s2-lobbies"></div>
-        <p class="empty" id="s2-lobbies-empty" hidden>No lobbies.</p>
-      </div>
+    <div class="panel">
+      <h2>Who's playing Splatoon 2</h2>
+      <ul class="player-strip" id="s2-player-strip"></ul>
+    </div>
+  </section>
 
-      <div class="panel">
-        <h2>Order gear with Annie</h2>
-        <p class="note">What the SplatNet 2 app did: the gear is waiting at
-          Annie's shop in the game the next time the player visits it.</p>
-        <form id="s2-order-form" class="fest-form">
-          <label>
-            <span>Player</span>
-            <select id="s2-order-player" required></select>
-          </label>
-          <label>
-            <span>Kind</span>
-            <input type="number" id="s2-order-kind" value="0" required>
-            <small>The gear slot, as the game numbers it.</small>
-          </label>
-          <label>
-            <span>Gear id</span>
-            <input type="number" id="s2-order-id" required>
-          </label>
-          <label>
-            <span>Main ability id</span>
-            <input type="number" id="s2-order-skill" value="0" required>
-          </label>
-          <label>
-            <span>Price</span>
-            <input type="number" id="s2-order-price" min="0" value="0" required>
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="btn">Place order</button>
-          </div>
-          <p class="form-error" id="s2-order-error" hidden></p>
-        </form>
+  <section data-game="splatoon2" id="view-s2-lobbies" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Connected</h2>
+        <span class="meta" id="s2-summary"></span>
       </div>
+      <table class="grid" id="s2-players">
+        <thead>
+          <tr><th>Player</th><th>From</th><th>NAT</th><th>Lobby</th><th>Connected</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-players-empty" hidden>No console is connected.
+        A console that opens Splatoon 2's online modes appears here once it logs in.</p>
+    </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Recent results</h2>
-        </div>
-        <table class="grid" id="s2-results">
-          <thead>
-            <tr><th>When</th><th>Player</th><th>Upload</th><th>Rule</th><th>Stage</th><th>Result</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <p class="empty" id="s2-results-empty" hidden>No results uploaded yet.</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Lobbies</h2>
+        <span class="meta">Peer-to-peer once started; the relay carries only the pairs it is allowed to.</span>
       </div>
+      <div id="s2-lobbies"></div>
+      <p class="empty" id="s2-lobbies-empty" hidden>No lobbies.</p>
+    </div>
+  </section>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Calls</h2>
-          <span class="meta" id="s2-uptime"></span>
-        </div>
-        <p class="note">Every method a console has called since the server
-          started. A method answered with an error, or one that only ever
-          appears with no follow-up, is where to look when the game stops
-          somewhere.</p>
-        <div id="s2-methods" class="chips"></div>
-        <table class="grid" id="s2-calls">
-          <thead>
-            <tr><th>When</th><th>Player</th><th>Method</th><th></th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
+  <section data-game="splatoon2" id="view-s2-matches" class="view">
+    <div class="panel">
+      <h2>Recent matches</h2>
+      <table class="grid" id="s2-matches-table">
+        <thead>
+          <tr><th>When</th><th>Mode</th><th>Host</th><th>Players</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-matches-empty" hidden>No matches yet. A lobby is
+        recorded here when it closes to start a match.</p>
+    </div>
 
-      <div class="panel" id="s2-relay-panel" hidden>
-        <div class="panel-head">
-          <h2>Relay</h2>
-          <span class="meta" id="s2-relay-summary"></span>
+    <div class="panel">
+      <h2>Results uploaded</h2>
+      <p class="note">What each console reported after a match: its own
+        result, rule and stage, as numbers -- Splatoon 2's numbering is not
+        mapped here yet (docs/CAPTURES).</p>
+      <table class="grid" id="s2-results">
+        <thead>
+          <tr><th>When</th><th>Player</th><th>Upload</th><th>Rule</th><th>Stage</th><th>Result</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-results-empty" hidden>No results uploaded since the server started.</p>
+    </div>
+  </section>
+
+  <section data-game="splatoon2" id="view-s2-fests" class="view">
+    <div class="panel panel-note">
+      <p>Splatoon 2 learns about a Splatfest -- its teams, dates and
+        artwork -- through BCAT, which SwitchNet does not serve for it, so
+        there is nothing to schedule here. What is here is what consoles
+        told this server: every vote and every score, per fest id.</p>
+    </div>
+    <div id="s2-fests" class="fest-list"></div>
+    <p class="empty" id="s2-fests-empty" hidden>No console has voted in or scored for a Splatfest.</p>
+  </section>
+
+  <section data-game="splatoon2" id="view-s2-rankings" class="view">
+    <div class="panel">
+      <h2>League</h2>
+      <p class="note">Each league is ranked the way the game is answered:
+        by each team's best point. A team is its members, whatever order
+        they queued in.</p>
+      <div id="s2-leagues"></div>
+      <p class="empty" id="s2-leagues-empty" hidden>No league results uploaded.</p>
+    </div>
+    <div class="panel">
+      <h2>Kept, not yet read</h2>
+      <p class="note">X Power, event match results and Octo Expansion clear
+        times arrive in a shape nobody has documented, so they are stored
+        whole for the day they can be decoded. That they arrive, and from
+        whom, is what can be shown.</p>
+      <table class="grid" id="s2-uploads">
+        <thead>
+          <tr><th>When</th><th>Player</th><th>What</th><th>Size</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-uploads-empty" hidden>Nothing uploaded.</p>
+    </div>
+  </section>
+
+  <section data-game="splatoon2" id="view-s2-plaza" class="view">
+    <div class="panel">
+      <h2>Splatfest plaza posts</h2>
+      <p class="note">The drawings players post in Inkopolis Square during a
+        Splatfest. A post a player reports is hidden from everyone but its
+        author; hide or show one here.</p>
+      <table class="grid" id="s2-posts">
+        <thead>
+          <tr><th>Fest</th><th>Author</th><th>Language</th><th>Rating</th><th>Size</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-posts-empty" hidden>No posts.</p>
+    </div>
+  </section>
+
+  <section data-game="splatoon2" id="view-s2-annie" class="view">
+    <div class="panel">
+      <h2>Order gear with Annie</h2>
+      <p class="note">What the SplatNet 2 app did: the gear is waiting at
+        Annie's shop in the game the next time the player visits it. Any
+        account can be given an order, connected or not.</p>
+      <form id="s2-order-form" class="fest-form">
+        <label>
+          <span>Player</span>
+          <select id="s2-order-player" required></select>
+        </label>
+        <label>
+          <span>Kind</span>
+          <input type="number" id="s2-order-kind" value="0" required>
+          <small>The gear slot, as the game numbers it.</small>
+        </label>
+        <label>
+          <span>Gear id</span>
+          <input type="number" id="s2-order-id" required>
+        </label>
+        <label>
+          <span>Main ability id</span>
+          <input type="number" id="s2-order-skill" value="0" required>
+        </label>
+        <label>
+          <span>Price</span>
+          <input type="number" id="s2-order-price" min="0" value="0" required>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn">Place order</button>
         </div>
-        <table class="grid" id="s2-relay">
-          <thead>
-            <tr><th>Pair</th><th>Port</th><th>Forwarded</th><th>Refused</th><th>Idle</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <p class="empty" id="s2-relay-empty" hidden>No pair is being relayed.</p>
+        <p class="form-error" id="s2-order-error" hidden></p>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Waiting at the shop</h2>
+      <table class="grid" id="s2-orders">
+        <thead>
+          <tr><th>Player</th><th>Kind</th><th>Gear</th><th>Ability</th><th>Price</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-orders-empty" hidden>No orders waiting.</p>
+    </div>
+  </section>
+
+  <section data-game="splatoon2" data-static id="view-s2-schedule" class="view">
+    <div class="panel">
+      <h2>Map and Salmon Run rotations</h2>
+      <p>Splatoon 2 does not ask its game server for rotations. It reads
+        them from BCAT, the background delivery the console downloads on its
+        own -- the game even has a debug scene for viewing the schedules BCAT
+        delivered.</p>
+      <p>SwitchNet answers every BCAT request with <em>304 Not Modified</em>
+        (<code>internal/nintendo/hosts.go</code>), so a console keeps
+        whatever it last downloaded, and a console that never downloaded any
+        has none. Serving Splatoon 2's BCAT is not done: it needs its data
+        format and the console's verification of it worked out first, as
+        Splatoon 3's does (<code>TODO.md</code> §2.4). Until then there is
+        no rotation on this server to show or edit.</p>
+    </div>
+  </section>
+
+  <section data-game="splatoon2" id="view-s2-server" class="view">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Calls</h2>
+        <span class="meta" id="s2-uptime"></span>
       </div>
+      <p class="note">Every method a console has called since the server
+        started. A method answered with an error, or one that only ever
+        appears with no follow-up, is where to look when the game stops
+        somewhere.</p>
+      <div id="s2-methods" class="chips"></div>
+      <table class="grid" id="s2-calls">
+        <thead>
+          <tr><th>When</th><th>Player</th><th>Method</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel" id="s2-relay-panel">
+      <div class="panel-head">
+        <h2>Relay</h2>
+        <span class="meta" id="s2-relay-summary"></span>
+      </div>
+      <p class="empty" id="s2-relay-off" hidden>Off: <code>nex.relay.enabled</code>
+        is not set. Consoles reach each other directly or not at all.</p>
+      <table class="grid" id="s2-relay">
+        <thead>
+          <tr><th>Pair</th><th>Port</th><th>Forwarded</th><th>Refused</th><th>Idle</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" id="s2-relay-empty" hidden>No pair is being relayed.</p>
     </div>
   </section>
 
   <!-- Splatfests -->
-  <section id="view-fests" class="view">
+  <section data-game="splatoon3" id="view-fests" class="view">
     <div class="panel">
       <h2>Schedule a Splatfest</h2>
       <form id="fest-form" class="fest-form">
@@ -386,7 +545,7 @@
   </section>
 
   <!-- Salmon Run / Big Run -->
-  <section id="view-coop" class="view">
+  <section data-game="splatoon3" id="view-coop" class="view">
     <div class="panel">
       <h2>Schedule a shift</h2>
       <form id="coop-form" class="fest-form">
@@ -499,7 +658,7 @@
   </section>
 
   <!-- Schedule viewer -->
-  <section id="view-schedule" class="view">
+  <section data-game="splatoon3" id="view-schedule" class="view">
     <div class="panel panel-note">
       <p>
         What a console would actually be told right now for each mode --

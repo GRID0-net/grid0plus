@@ -275,6 +275,64 @@ code {
   border-bottom-color: var(--ink-a);
 }
 .tabs button:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 2px; }
+/* A phone gets a row that scrolls sideways, not tab labels broken over two
+ * lines. */
+.tabs { overflow-x: auto; scrollbar-width: thin; }
+.tabs button { white-space: nowrap; flex: none; padding: 10px 11px; }
+.tabs button[hidden] { display: none; }
+/* Pushes the tabs every game shares (Players, Health, Debug) to the right,
+ * so which tabs change with the game is visible at a glance. */
+.tabs-gap { flex: 1 0 12px; }
+
+/* ---- game switch ------------------------------------------------------- */
+
+.game-bar {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px var(--pad) 0;
+}
+.game-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-sunk);
+}
+.game-switch button {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--fg-dim);
+  background: transparent;
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.game-switch button:hover { color: var(--fg); }
+/* Not pink or green: those mean "in game" and "online" and nothing else. */
+.game-switch button[aria-checked="true"] {
+  color: var(--bg);
+  background: var(--fg);
+}
+.game-switch button:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 2px; }
+
+/* A Splatoon 2 view with the NEX server not connected shows the one
+ * explanation above it instead of its own empty lists. */
+.view.is-active.is-gated { display: none; }
+
+.s2-vote-bar {
+  height: 8px;
+  border-radius: 999px;
+  margin: 10px 0;
+  background: var(--fg-faint);
+  overflow: hidden;
+}
+.s2-vote-bar span { display: block; height: 100%; background: var(--ink-c); }
+tr.is-hidden td { color: var(--fg-faint); }
 
 /* ---- layout ------------------------------------------------------------ */
 
@@ -845,3 +903,5 @@ input:focus-visible { outline: 2px solid var(--ink-c); outline-offset: 1px; }
   color: var(--fg-faint);
   word-break: break-all;
 }
+
+.grid.compact td, .grid.compact th { padding: 6px 10px; }

@@ -91,6 +91,37 @@ func TestTheSplatoon2PanelForwardsTokenPathAndOrder(t *testing.T) {
 	}
 }
 
+func TestTheSplatoon2SectionsReachOnlyTheirOwnRoutes(t *testing.T) {
+	var paths []string
+	srv := withNEX(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{"posts":[]}`))
+	}))
+	for _, section := range []string{"fests", "leagues", "plaza", "gear-orders", "uploads"} {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/splatoon2/"+section, nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"configured":true`) {
+			t.Errorf("%s: %d %s", section, rec.Code, rec.Body.String())
+		}
+	}
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/splatoon2/players", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("an unlisted section got %d, want 404", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/api/splatoon2/plaza/123/hidden",
+		strings.NewReader(`{"hidden":true}`)))
+	if rec.Code != http.StatusOK {
+		t.Errorf("hide: %d", rec.Code)
+	}
+	want := []string{"GET /splatoon2/fests", "GET /splatoon2/leagues", "GET /splatoon2/plaza",
+		"GET /splatoon2/gear-orders", "GET /splatoon2/uploads", "POST /splatoon2/plaza/123/hidden"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Errorf("upstream saw %v", paths)
+	}
+}
+
 func TestAWrongNEXTokenNamesTheTwoSettings(t *testing.T) {
 	srv := withNEX(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no", http.StatusUnauthorized)

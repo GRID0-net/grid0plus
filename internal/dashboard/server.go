@@ -211,6 +211,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/splatoon2/players/{id}/gear-order", s.guard(s.handleSplatoon2GearOrder))
 	mux.HandleFunc("DELETE /api/splatoon2/players/{id}/gear-order", s.guard(s.handleSplatoon2CancelGearOrder))
 	mux.HandleFunc("POST /api/splatoon2/players/{id}/disconnect", s.guard(s.handleSplatoon2Disconnect))
+	mux.HandleFunc("GET /api/splatoon2/{section}", s.guard(s.handleSplatoon2Section))
+	mux.HandleFunc("POST /api/splatoon2/plaza/{id}/hidden", s.guard(s.handleSplatoon2PostHidden))
 
 	mux.HandleFunc("GET /api/debug/stats", s.guard(s.handleDebugStats))
 	mux.HandleFunc("GET /api/debug/accounts/{id}", s.guard(s.handleDebugAccount))

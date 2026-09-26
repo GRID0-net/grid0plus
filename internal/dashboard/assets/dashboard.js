@@ -79,12 +79,53 @@ async function api(path, options) {
 
 // ---- tabs -----------------------------------------------------------------
 
-$$(".tabs button").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    $$(".tabs button").forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
-    $$(".view").forEach((v) => v.classList.toggle("is-active", v.id === `view-${tab.dataset.view}`));
-  });
-});
+// Two games, one page. Each game has its own tabs; Players, Health and Debug
+// are about accounts and services and belong to both. The chosen game and
+// each game's last tab are remembered per browser -- a convenience, so it
+// is fine for that to fail.
+const GAMES = ["splatoon3", "splatoon2"];
+let game = "splatoon3";
+const lastTab = { splatoon3: "overview", splatoon2: "s2-overview" };
+try {
+  const saved = JSON.parse(localStorage.getItem("switchnet.dashboard.game") || "null");
+  if (saved && GAMES.includes(saved.game)) {
+    game = saved.game;
+    Object.assign(lastTab, saved.lastTab || {});
+  }
+} catch {}
+
+function remember() {
+  try {
+    localStorage.setItem("switchnet.dashboard.game", JSON.stringify({ game, lastTab }));
+  } catch {}
+}
+
+function showView(view) {
+  if (!$(`#view-${view}`)) view = game === "splatoon2" ? "s2-overview" : "overview";
+  $$(".tabs button").forEach((t) => t.setAttribute("aria-selected", String(t.dataset.view === view)));
+  $$(".view").forEach((v) => v.classList.toggle("is-active", v.id === `view-${view}`));
+  const tab = $(`.tabs button[data-view="${view}"]`);
+  if (tab && tab.dataset.game) lastTab[tab.dataset.game] = view;
+  remember();
+  gateSplatoon2();
+  loadS2Section(view);
+}
+
+function setGame(g) {
+  game = g;
+  document.body.dataset.game = g;
+  $$(".game-switch button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.game === g)));
+  $$(".tabs button[data-game]").forEach((t) => (t.hidden = t.dataset.game !== g));
+  GAMES.forEach((x) => ($(`#game-sub-${x}`).hidden = x !== g));
+  const active = $(".view.is-active");
+  // Staying on a shared tab (Players, say) is what someone switching games
+  // from there expects; a game's own tab gives way to the other game's.
+  showView(active && !active.dataset.game ? active.id.slice(5) : lastTab[g]);
+  if (g === "splatoon2") loadSplatoon2().then(() => loadS2Section($(".view.is-active").id.slice(5)));
+}
+
+$$(".tabs button").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
+$$(".game-switch button").forEach((b) => b.addEventListener("click", () => setGame(b.dataset.game)));
 
 // ---- rendering ------------------------------------------------------------
 
@@ -159,6 +200,23 @@ function renderPlayers() {
   );
   $("#players-empty").hidden = players.length > 0;
 
+  // Each game's overview counts only the players in that game: presence
+  // carries the title, and "in game" across both would say nothing about
+  // either.
+  const inGame = (title) => players.filter((p) => p.state === "PLAYING" && p.activity === title);
+  $("#stat-playing").textContent = inGame("Splatoon 3").length;
+  const s2 = inGame("Splatoon 2");
+  $("#s2-stat-playing").textContent = s2.length;
+  $("#s2-player-strip").replaceChildren(
+    ...(s2.length
+      ? s2.map((p) => {
+          const li = document.createElement("li");
+          li.innerHTML = avatarWithStatusHTML(p) + `<span>${escape(p.nickname)}</span>`;
+          return li;
+        })
+      : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Nobody is playing Splatoon 2." })])
+  );
+
   // The overview strip shows only people who are actually around: a wall of
   // offline names is what the table is for.
   const around = players.filter((p) => p.state !== "OFFLINE");
@@ -178,7 +236,6 @@ function renderPlayers() {
 
 function renderOverview(o) {
   $("#stat-online").textContent = o.online;
-  $("#stat-playing").textContent = o.playing;
   $("#stat-players").textContent = o.players;
 
   // Null and zero mean different things here and are shown differently. Null is
@@ -233,17 +290,21 @@ function renderSeed(seed) {
     <div class="meta mono">${escape(seed.revision || "")}</div>`;
 }
 
+// matches is every game's history, for the player detail panel; each
+// game's Matches tab asks for its own (s3Matches, s2Matches), so that one
+// busy game cannot push the other's past the list's limit.
 let matches = [];
+let s3Matches = [];
 
-function renderMatches() {
-  const tbody = $("#matches-table tbody");
+function renderMatchTable(tableSel, emptySel, list) {
+  const tbody = $(`${tableSel} tbody`);
   if (!tbody) return;
   tbody.replaceChildren(
-    ...matches.map((m) => {
+    ...list.map((m) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td style="color:var(--fg-dim)">${ago(m.createdAt)}</td>
-        <td>${m.game ? `<span class="pill on">${escape(m.game)}</span> ` : ""}<code>${escape(m.mode)}</code>
+        <td><code>${escape(m.mode)}</code>
           ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
         </td>
         <td><strong>${escape(playerName(m.hostUserId))}</strong></td>
@@ -251,7 +312,11 @@ function renderMatches() {
       return tr;
     })
   );
-  $("#matches-empty").hidden = matches.length > 0;
+  $(emptySel).hidden = list.length > 0;
+}
+
+function renderMatches() {
+  renderMatchTable("#matches-table", "#matches-empty", s3Matches);
 }
 
 const PHASES = ["announced", "first_half", "second_half", "counting", "closed"];
@@ -843,7 +908,10 @@ $("#mm-modes").addEventListener("change", async (e) => {
 
 // ---- splatoon 2 -------------------------------------------------------------
 
-let splatoon2 = { configured: false };
+// Null until the first answer: the page must not flash "not connected"
+// while it is still asking.
+let splatoon2 = null;
+let s2Matches = [];
 
 /** A NEX player is known by PID and user id; the players list by user id. */
 function s2Name(p) {
@@ -857,10 +925,12 @@ function td(text) {
   return c;
 }
 
+/** Splatoon 2's two Splatfest teams, as the game numbers them. */
+const s2Team = (i) => (i === 0 ? "Alpha" : "Bravo");
+
 function renderSplatoon2(st) {
   splatoon2 = st;
-  $("#s2-unconfigured").hidden = st.configured;
-  $("#s2-configured").hidden = !st.configured;
+  gateSplatoon2();
   if (!st.configured) {
     $("#s2-unconfigured-reason").textContent = st.reason || "";
     return;
@@ -868,50 +938,37 @@ function renderSplatoon2(st) {
 
   const ps = st.players || [];
   const lobbies = st.gatherings || [];
+  const lobbied = new Set(lobbies.flatMap((g) => (g.players || []).map((m) => m.userId)));
+  $("#s2-stat-connected").textContent = ps.length;
+  $("#s2-stat-lobbied").textContent = lobbied.size;
+  $("#s2-stat-lobbies-note").textContent =
+    `${lobbies.length} lobb${lobbies.length === 1 ? "y" : "ies"}, ${lobbies.filter((g) => g.started).length} in a match`;
   $("#s2-summary").textContent =
     `${ps.length} connected · ${lobbies.length} lobb${lobbies.length === 1 ? "y" : "ies"}`;
+
   $("#s2-players-empty").hidden = ps.length > 0;
   $("#s2-players tbody").replaceChildren(
     ...ps.map((p) => {
       const tr = document.createElement("tr");
       const nat = p.punches ? `${p.nat} · ${p.punches - p.punchFailures}/${p.punches} punches` : p.nat;
-      tr.append(
-        td(s2Name(p)),
-        td(p.remoteIp),
-        td(nat),
-        td(p.gathering ? `#${p.gathering}` : "—"),
-        td(ago(p.connectedAt)),
-      );
+      tr.append(td(s2Name(p)), td(p.remoteIp), td(nat), td(p.gathering ? `#${p.gathering}` : "—"), td(ago(p.connectedAt)));
       const actions = document.createElement("td");
       if (p.gearOrder) {
-        const pill = document.createElement("span");
-        pill.className = "pill on";
-        pill.title = `gear ${p.gearOrder.id}, ability ${p.gearOrder.skill}, ${p.gearOrder.price}g`;
-        pill.textContent = "order waiting";
-        const cancel = document.createElement("button");
-        cancel.className = "btn btn-ghost btn-tiny";
-        cancel.dataset.s2Cancel = p.userId;
-        cancel.textContent = "Cancel order";
-        actions.append(pill, " ", cancel);
+        actions.append(Object.assign(document.createElement("span"), {
+          className: "pill on", textContent: "order waiting",
+          title: `gear ${p.gearOrder.id}, ability ${p.gearOrder.skill}, ${p.gearOrder.price}g`,
+        }), " ");
       }
       const kick = document.createElement("button");
       kick.className = "btn btn-ghost btn-danger btn-tiny";
       kick.dataset.s2Disconnect = p.userId;
       kick.title = "End this console's connection; it leaves its lobby at once";
       kick.textContent = "Disconnect";
-      actions.append(" ", kick);
+      actions.append(kick);
       tr.append(actions);
       return tr;
     })
   );
-
-  // Keep the order form's choice across a refresh.
-  const sel = $("#s2-order-player");
-  const chosen = sel.value;
-  sel.replaceChildren(
-    ...ps.map((p) => Object.assign(document.createElement("option"), { value: p.userId, textContent: s2Name(p) }))
-  );
-  if (ps.some((p) => p.userId === chosen)) sel.value = chosen;
 
   $("#s2-lobbies-empty").hidden = lobbies.length > 0;
   $("#s2-lobbies").replaceChildren(
@@ -923,14 +980,14 @@ function renderSplatoon2(st) {
         g.open ? "" : `<span class="pill">closed</span>`,
         g.private ? `<span class="pill">private</span>` : "",
       ].join(" ");
-      const names = (g.players || []).map((m) => escape(s2Name(m))).join(", ");
-      const host = (g.players || []).find((m) => m.userId === g.host);
+      const members = g.players || [];
+      const host = members.find((m) => m.userId === g.host);
       card.innerHTML = `
         <div class="cols">
           <div class="fid">#${g.id} ${escape(g.mode)} ${flags}</div>
-          <div class="meta">${(g.players || []).length} / ${g.max} ·
+          <div class="meta">${members.length} / ${g.max} ·
             host ${escape(host ? s2Name(host) : g.host)} · ${new Date(g.createdAt).toLocaleTimeString()}</div>
-          <div class="meta">${names}</div>
+          <div class="meta">${members.map((m) => escape(s2Name(m))).join(", ")}</div>
         </div>`;
       return card;
     })
@@ -964,7 +1021,10 @@ function renderSplatoon2(st) {
   );
 
   const relay = st.relay;
-  $("#s2-relay-panel").hidden = !relay;
+  $("#s2-relay-off").hidden = !!relay;
+  $("#s2-relay").hidden = !relay;
+  $("#s2-relay-summary").textContent = "";
+  $("#s2-relay-empty").hidden = true;
   if (relay) {
     const pairs = relay.pairs || [];
     $("#s2-relay-summary").textContent =
@@ -991,19 +1051,218 @@ async function loadSplatoon2() {
   }
 }
 
+/**
+ * Every Splatoon 2 view but the static ones is about cmd/nex's state; with
+ * nex not connected they all give way to the one explanation, rather than
+ * each showing an empty list that reads as "nobody is playing".
+ */
+function gateSplatoon2() {
+  const view = $(".view.is-active");
+  const gated = !!view && view.dataset.game === "splatoon2" && !("static" in view.dataset) &&
+    splatoon2 !== null && !splatoon2.configured;
+  $("#s2-unconfigured").hidden = !gated;
+  $$(".view").forEach((v) => v.classList.toggle("is-gated", gated && v === view));
+}
+
+// Each record view is read when it opens, and again while it stays open:
+// each walks a whole kind of record, which the five-second status poll has
+// no business doing.
+const s2Sections = {
+  "s2-overview": async () => {
+    const [f, ms] = await Promise.all([api("/api/splatoon2/fests"), api("/api/matches?game=splatoon2")]);
+    renderS2FestBanner(f.fests || []);
+    s2Matches = ms;
+    $("#s2-stat-matches").textContent = ms.length;
+  },
+  "s2-matches": async () => {
+    s2Matches = await api("/api/matches?game=splatoon2");
+    renderMatchTable("#s2-matches-table", "#s2-matches-empty", s2Matches);
+  },
+  "s2-fests": async () => renderS2Fests((await api("/api/splatoon2/fests")).fests || []),
+  "s2-rankings": async () => {
+    const [l, u] = await Promise.all([api("/api/splatoon2/leagues"), api("/api/splatoon2/uploads")]);
+    renderS2Leagues(l.leagues || []);
+    renderS2Uploads(u.uploads || []);
+  },
+  "s2-plaza": async () => renderS2Posts((await api("/api/splatoon2/plaza")).posts || []),
+  "s2-annie": async () => {
+    renderS2OrderPlayers();
+    renderS2Orders((await api("/api/splatoon2/gear-orders")).orders || []);
+  },
+};
+
+async function loadS2Section(view) {
+  const load = s2Sections[view];
+  if (!load || !splatoon2 || !splatoon2.configured) return;
+  try {
+    await load();
+  } catch (e) {
+    // The status poll already says when nex is unreachable; this one view's
+    // failure is only logged, not drawn over what it last showed.
+    console.warn(`splatoon 2: ${view}: ${e.message}`);
+  }
+}
+
+function festBar(t) {
+  const total = t.votes[0] + t.votes[1];
+  const share = total ? Math.round((t.votes[0] / total) * 100) : 50;
+  return `<div class="s2-vote-bar" title="${s2Team(0)} ${t.votes[0]} : ${t.votes[1]} ${s2Team(1)}">
+      <span style="width:${share}%"></span></div>`;
+}
+
+function renderS2FestBanner(fests) {
+  const banner = $("#s2-fest-banner");
+  if (!fests.length) {
+    banner.classList.add("is-empty");
+    banner.innerHTML = `<p class="empty">No console has voted in a Splatfest yet.</p>`;
+    return;
+  }
+  const f = fests[0];
+  banner.classList.remove("is-empty");
+  banner.innerHTML = `
+    <div class="fid">Splatfest ${f.festivalId}</div>
+    <div class="meta">${s2Team(0)} ${f.votes[0]} votes · ${s2Team(1)} ${f.votes[1]} votes ·
+      ${f.battles[0] + f.battles[1]} battles reported</div>
+    ${festBar(f)}`;
+}
+
+function renderS2Fests(fests) {
+  $("#s2-fests-empty").hidden = fests.length > 0;
+  $("#s2-fests").replaceChildren(
+    ...fests.map((f) => {
+      const card = document.createElement("div");
+      card.className = "fest-card";
+      const row = (i) => `<tr><td>${s2Team(i)}</td><td>${f.votes[i]}</td><td>${f.scores[i]}</td>
+        <td>${f.wins[i]} / ${f.battles[i]}</td></tr>`;
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">Splatfest ${f.festivalId}</div>
+          ${festBar(f)}
+          <table class="grid compact">
+            <thead><tr><th>Team</th><th>Votes</th><th>Score</th><th>Wins / battles</th></tr></thead>
+            <tbody>${row(0)}${row(1)}</tbody>
+          </table>
+        </div>`;
+      return card;
+    })
+  );
+}
+
+function renderS2Leagues(leagues) {
+  $("#s2-leagues-empty").hidden = leagues.length > 0;
+  $("#s2-leagues").replaceChildren(
+    ...leagues.map((l) => {
+      const card = document.createElement("div");
+      card.className = "mm-session";
+      const rows = l.teams.map((t, i) => `<tr><td>${i + 1}</td><td>${t.point}</td>
+        <td>${t.members.map((m) => escape(playerName(m.userId))).join(", ")}</td>
+        <td>${t.matchCount}</td><td><code>${escape(t.tagId)}</code></td></tr>`).join("");
+      card.innerHTML = `
+        <div class="fid">League <code>${escape(l.leagueId)}</code>
+          <span class="pill">${l.teams.length} team${l.teams.length === 1 ? "" : "s"}</span></div>
+        <table class="grid compact">
+          <thead><tr><th>#</th><th>Best point</th><th>Team</th><th>Matches</th><th>Tag</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      return card;
+    })
+  );
+}
+
+const s2UploadKind = { xpower: "X Power", event_match_result: "Event match result", time_attack: "Octo Expansion times" };
+
+function renderS2Uploads(ups) {
+  $("#s2-uploads-empty").hidden = ups.length > 0;
+  $("#s2-uploads tbody").replaceChildren(
+    ...ups.map((u) => {
+      const tr = document.createElement("tr");
+      tr.append(td(ago(u.at)), td(playerName(u.userId)), td(s2UploadKind[u.kind] || u.kind), td(`${u.bytes} bytes`));
+      return tr;
+    })
+  );
+}
+
+function renderS2Posts(posts) {
+  $("#s2-posts-empty").hidden = posts.length > 0;
+  $("#s2-posts tbody").replaceChildren(
+    ...posts.map((p) => {
+      const tr = document.createElement("tr");
+      if (p.hidden) tr.className = "is-hidden";
+      tr.append(td(p.festivalId), td(playerName(p.userId)), td(p.language || "—"), td(p.rating),
+        td(`${p.bytes} bytes`));
+      const act = document.createElement("td");
+      if (p.hidden) act.append(Object.assign(document.createElement("span"), { className: "pill warn", textContent: "hidden" }), " ");
+      const b = document.createElement("button");
+      b.className = `btn btn-ghost btn-tiny${p.hidden ? "" : " btn-danger"}`;
+      b.dataset.s2Post = p.dataId;
+      b.dataset.hide = String(!p.hidden);
+      b.textContent = p.hidden ? "Show" : "Hide";
+      act.append(b);
+      tr.append(act);
+      return tr;
+    })
+  );
+}
+
+/** Any account can be given an order: the game collects it whenever that player next visits the shop. */
+function renderS2OrderPlayers() {
+  const sel = $("#s2-order-player");
+  const chosen = sel.value;
+  sel.replaceChildren(
+    ...players.map((p) => Object.assign(document.createElement("option"), { value: p.id, textContent: p.nickname }))
+  );
+  if (players.some((p) => p.id === chosen)) sel.value = chosen;
+}
+
+function renderS2Orders(orders) {
+  $("#s2-orders-empty").hidden = orders.length > 0;
+  $("#s2-orders tbody").replaceChildren(
+    ...orders.map((o) => {
+      const tr = document.createElement("tr");
+      tr.append(td(playerName(o.userId)), td(o.order.kind), td(o.order.id), td(o.order.skill), td(`${o.order.price}g`));
+      const act = document.createElement("td");
+      const b = document.createElement("button");
+      b.className = "btn btn-ghost btn-tiny";
+      b.dataset.s2Cancel = o.userId;
+      b.textContent = "Cancel";
+      act.append(b);
+      tr.append(act);
+      return tr;
+    })
+  );
+}
+
 $("#s2-players").addEventListener("click", async (e) => {
   const kick = e.target.closest("[data-s2-disconnect]");
-  const cancel = e.target.closest("[data-s2-cancel]");
-  if (!kick && !cancel) return;
+  if (!kick) return;
+  if (!confirm("Disconnect this console? It leaves its lobby at once.")) return;
   try {
-    if (kick) {
-      if (!confirm("Disconnect this console? It leaves its lobby at once.")) return;
-      renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(kick.dataset.s2Disconnect)}/disconnect`,
-        { method: "POST" }));
-    } else {
-      renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(cancel.dataset.s2Cancel)}/gear-order`,
-        { method: "DELETE" }));
-    }
+    renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(kick.dataset.s2Disconnect)}/disconnect`,
+      { method: "POST" }));
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("#s2-orders").addEventListener("click", async (e) => {
+  const cancel = e.target.closest("[data-s2-cancel]");
+  if (!cancel) return;
+  try {
+    renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(cancel.dataset.s2Cancel)}/gear-order`,
+      { method: "DELETE" }));
+    await loadS2Section("s2-annie");
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("#s2-posts").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-s2-post]");
+  if (!b) return;
+  try {
+    const out = await api(`/api/splatoon2/plaza/${encodeURIComponent(b.dataset.s2Post)}/hidden`,
+      { method: "POST", body: JSON.stringify({ hidden: b.dataset.hide === "true" }) });
+    renderS2Posts(out.posts || []);
   } catch (err) {
     alert(err.message);
   }
@@ -1021,13 +1280,14 @@ $("#s2-order-form").addEventListener("submit", async (e) => {
     price: Number($("#s2-order-price").value),
   };
   if (!user) {
-    err.textContent = "Nobody is connected to order for.";
+    err.textContent = "There is no account to order for.";
     err.hidden = false;
     return;
   }
   try {
     renderSplatoon2(await api(`/api/splatoon2/players/${encodeURIComponent(user)}/gear-order`,
       { method: "POST", body: JSON.stringify(order) }));
+    await loadS2Section("s2-annie");
   } catch (x) {
     err.textContent = x.message;
     err.hidden = false;
@@ -1093,7 +1353,7 @@ function renderPlayerDetail(d) {
         .map(
           (m) => `
         <li>
-          <span class="pill">${escape(m.mode)}</span>
+          ${m.game ? `<span class="pill on">${escape(m.game)}</span>` : ""}<span class="pill">${escape(m.mode)}</span>
           <span class="meta">${m.hostUserId === d.id ? "hosted" : "played"} · ${ago(m.createdAt)}</span>
         </li>`
         )
@@ -1579,15 +1839,17 @@ function connect() {
 
 async function refresh() {
   try {
-    const [o, ps, fs, cs, ms] = await Promise.all([
+    const [o, ps, fs, cs, ms, s3ms] = await Promise.all([
       api("/api/overview"),
       api("/api/players"),
       api("/api/fests"),
       api("/api/coop-shifts"),
       api("/api/matches"),
+      api("/api/matches?game=splatoon3"),
     ]);
     players = ps;
     matches = ms;
+    s3Matches = s3ms;
     renderOverview(o);
     renderPlayers();
     renderFests(fs);
@@ -1652,10 +1914,17 @@ setInterval(loadDebugStats, 30000);
 loadScheduleViewer();
 setInterval(loadScheduleViewer, 30000);
 
-// On its own clock, like health: the NEX server is another process, and a
-// console's calls are worth seeing within seconds while tracing a problem.
-loadSplatoon2();
-setInterval(loadSplatoon2, 5000);
+// Splatoon 2's live status on its own five-second clock, like health: the
+// NEX server is another process, and a console's calls are worth seeing
+// within seconds while tracing a problem. Only while Splatoon 2 is the game
+// on screen -- nobody is reading it otherwise. The open record view follows
+// on a slower one.
+setGame(game);
+setInterval(() => game === "splatoon2" && loadSplatoon2(), 5000);
+setInterval(() => {
+  const v = $(".view.is-active");
+  if (game === "splatoon2" && v) loadS2Section(v.id.slice(5));
+}, 15000);
 
 connect();
 // Presence arrives on the stream; this catches everything else -- a fest

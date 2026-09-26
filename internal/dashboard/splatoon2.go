@@ -55,6 +55,36 @@ func (s *Server) handleSplatoon2Disconnect(w http.ResponseWriter, r *http.Reques
 	s.splatoon2Action(w, r, http.MethodPost, splatoon2PlayerPath(r, "disconnect"), nil)
 }
 
+// splatoon2Sections are the NEX server's read-only record views, each read
+// when its tab opens. Listed, rather than passing any path through, so the
+// dashboard cannot be used to reach an admin route it does not know about.
+var splatoon2Sections = map[string]bool{
+	"fests": true, "leagues": true, "plaza": true, "gear-orders": true, "uploads": true,
+}
+
+// handleSplatoon2Section returns one of splatoon2Sections.
+func (s *Server) handleSplatoon2Section(w http.ResponseWriter, r *http.Request) {
+	section := r.PathValue("section")
+	if !splatoon2Sections[section] {
+		http.NotFound(w, r)
+		return
+	}
+	s.splatoon2Action(w, r, http.MethodGet, "/splatoon2/"+section, nil)
+}
+
+// handleSplatoon2PostHidden hides a plaza post, or shows it again.
+func (s *Server) handleSplatoon2PostHidden(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Hidden bool `json:"hidden"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&req); err != nil {
+		http.Error(w, "malformed request", http.StatusBadRequest)
+		return
+	}
+	s.splatoon2Action(w, r, http.MethodPost,
+		"/splatoon2/plaza/"+url.PathEscape(r.PathValue("id"))+"/hidden", req)
+}
+
 func splatoon2PlayerPath(r *http.Request, action string) string {
 	return "/splatoon2/players/" + url.PathEscape(r.PathValue("id")) + "/" + action
 }
