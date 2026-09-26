@@ -444,6 +444,36 @@ type NEX struct {
 	AdminToken  string `yaml:"admin_token"`
 
 	Splatoon2 Splatoon2 `yaml:"splatoon2"`
+
+	Relay NEXRelay `yaml:"relay"`
+}
+
+// NEXRelay configures the relay for consoles that cannot reach each other
+// directly (internal/rendezvous/relay.go): one UDP port per pair of players,
+// on this server's public address, forwarding between them.
+//
+// Off by default, and even when on it relays only the players Allow names
+// (or everyone who needs it, with AllowAll): it moves match traffic through
+// the operator's own connection, and NextendoNetwork's experience (facts
+// only) is that deciding who "needs" it went wrong often enough that
+// players who connected fine were pulled onto it. Start with the one
+// player who cannot connect.
+type NEXRelay struct {
+	Enabled bool `yaml:"enabled"`
+	// AdvertiseIP is the public address consoles send relayed traffic to.
+	// Empty means network.public_ip.
+	AdvertiseIP string `yaml:"advertise_ip"`
+	// ListenIP is what the relay's sockets bind to. Empty is every interface.
+	ListenIP string `yaml:"listen_ip"`
+	// PortBase and PortSpan are the UDP port range pairs are given ports
+	// from. The router must forward the whole range to this machine.
+	PortBase int `yaml:"port_base"`
+	PortSpan int `yaml:"port_span"`
+	// Allow lists user ids (16 hex digits) that may be relayed; prefix one
+	// with "!" to relay it straight away rather than after its punches fail.
+	Allow []string `yaml:"allow"`
+	// AllowAll relays anyone whose NAT is strict or whose punches all fail.
+	AllowAll bool `yaml:"allow_all"`
 }
 
 // Splatoon2 configures the Splatoon 2 game server.
@@ -760,6 +790,7 @@ func Default() Config {
 			IdleTimeout: 60,
 			AdminListen: "127.0.0.1:8093",
 			Splatoon2:   Splatoon2{Enabled: true},
+			Relay:       NEXRelay{PortBase: 30100, PortSpan: 900},
 		},
 		BCAT: BCAT{
 			ConverterTimeout: 120,
@@ -992,6 +1023,27 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New(
 			"nex.splatoon2.secure_port is set without secure_address, so it would be ignored: "+
 				"set both to move the secure server, or neither to keep it on the same host"))
+	}
+	if r := c.NEX.Relay; r.Enabled {
+		ip := r.AdvertiseIP
+		if ip == "" {
+			ip = c.Network.PublicIP
+		}
+		if net.ParseIP(ip) == nil {
+			errs = append(errs, errors.New(
+				"nex.relay is enabled but neither nex.relay.advertise_ip nor network.public_ip is an IP address: "+
+					"consoles would be told to send their match traffic nowhere"))
+		}
+		if r.PortBase <= 0 || r.PortSpan <= 0 || r.PortBase+r.PortSpan > 65536 {
+			errs = append(errs, fmt.Errorf("nex.relay: ports %d..%d are not a valid UDP range",
+				r.PortBase, r.PortBase+r.PortSpan-1))
+		}
+		for _, id := range r.Allow {
+			id = strings.TrimPrefix(id, "!")
+			if _, err := strconv.ParseUint(id, 16, 64); err != nil || len(id) != 16 {
+				errs = append(errs, fmt.Errorf("nex.relay.allow: %q is not a 16-hex-digit user id", id))
+			}
+		}
 	}
 	if c.NPLN.PlayersPerMatch == 1 {
 		// One is not a small match, it is a match that starts the instant

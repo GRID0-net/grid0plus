@@ -549,6 +549,24 @@ nex:
     secure_address: ""
     secure_port: 0
 
+  # The relay, for two consoles that cannot punch through to each other: the
+  # server stands in as each one's public address and forwards between them,
+  # one UDP port per pair. Off by default -- it carries match traffic through
+  # your connection -- and even on, it relays only who you list. Forward the
+  # whole port range (UDP) from your router to this machine.
+  relay:
+    enabled: false
+    advertise_ip: ""       # empty: network.public_ip
+    listen_ip: ""          # empty: every interface
+    port_base: 30100
+    port_span: 900
+    # User ids (the dashboard shows them). "!<id>" relays that player straight
+    # away instead of waiting for their direct connection to fail.
+    allow: []
+    # Relay anyone whose NAT is strict or whose punches all fail. Leave off
+    # until the relay is proven for one player.
+    allow_all: false
+
 # ---------------------------------------------------------------------------
 # toolbox: the public API for the SwitchNet Toolbox homebrew app
 # ---------------------------------------------------------------------------

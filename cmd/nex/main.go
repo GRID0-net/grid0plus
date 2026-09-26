@@ -11,6 +11,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -78,7 +79,7 @@ func main() {
 
 	titles := map[string]http.Handler{}
 	if cfg.NEX.Splatoon2.Enabled {
-		titles[splatoon2.Host] = splatoon2.New(splatoon2.Options{
+		s2 := splatoon2.New(splatoon2.Options{
 			Config:          cfg.NEX.Splatoon2,
 			Store:           store,
 			IDTokens:        idTokens,
@@ -86,6 +87,24 @@ func main() {
 			Log:             log.With("title", "splatoon2"),
 			IdleTimeout:     time.Duration(cfg.NEX.IdleTimeout) * time.Second,
 		})
+		titles[splatoon2.Host] = s2
+		if r := cfg.NEX.Relay; r.Enabled {
+			ip := r.AdvertiseIP
+			if ip == "" {
+				ip = cfg.Network.PublicIP
+			}
+			relay, err := rendezvous.NewRelay(s2.Server, rendezvous.RelayConfig{
+				AdvertiseIP: ip, ListenIP: r.ListenIP, PortBase: r.PortBase, PortSpan: r.PortSpan,
+				Allow: r.Allow, AllowAll: r.AllowAll,
+			})
+			if err != nil {
+				service.Fatal(log, "start relay", err)
+			}
+			defer relay.Close()
+			s2.SetRelay(relay)
+			log.Info("nex: relay on", "advertise", ip, "ports", fmt.Sprintf("%d-%d", r.PortBase, r.PortBase+r.PortSpan-1),
+				"allowed", len(r.Allow), "allow_all", r.AllowAll)
+		}
 	}
 	if len(titles) == 0 {
 		log.Warn("nex: no title is enabled; every connection will be refused")

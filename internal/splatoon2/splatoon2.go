@@ -54,7 +54,11 @@ type Server struct {
 	*rendezvous.Server
 	store db.Store
 	log   *slog.Logger
+	relay *rendezvous.Relay
 }
+
+// SetRelay records the relay serving this game server, for the dashboard.
+func (s *Server) SetRelay(r *rendezvous.Relay) { s.relay = r }
 
 // New builds the server.
 func New(opts Options) *Server {

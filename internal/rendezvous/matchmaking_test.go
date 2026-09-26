@@ -480,3 +480,52 @@ func TestAHostsPublicStationCarriesTheObservedNATPort(t *testing.T) {
 		}
 	}
 }
+
+func TestAForcedPlayerIsHandedTheRelayInsteadOfTheirPeersPublicStation(t *testing.T) {
+	var relay *rendezvous.Relay
+	e := rvtest.New(t, rvtest.DefaultTitle, nil)
+	host := e.LoginFrom("203.0.113.5")
+	joiner := e.LoginFrom("198.51.100.7")
+	var err error
+	relay, err = rendezvous.NewRelay(e.Server, rendezvous.RelayConfig{AdvertiseIP: "192.0.2.1", ListenIP: "127.0.0.1",
+		PortBase: 41000, PortSpan: 50, Allow: []string{"!" + joiner.UserID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+
+	host.Register(t, "prudp:/address=192.168.1.20;port=49152;CID=3;type=0")
+	a := auto(t, host, template(2, 8, 0, ""))
+	auto(t, joiner, template(2, 8, 0, ""))
+	w := nex.NewWriter()
+	w.U32(a.ID)
+	urls := nex.ReadList(joiner.MustCall(t, rendezvous.ProtocolMatchMaking, 16, w.Bytes()), (*nex.Reader).StationURL)
+	var lan, public *nex.StationURL
+	for _, u := range urls {
+		switch u.Get("address") {
+		case "192.168.1.20":
+			lan = u
+		case "192.0.2.1":
+			public = u
+		}
+	}
+	if lan == nil || lan.Get("CID") != "3" {
+		t.Fatalf("the LAN station must be left alone: %v", urls)
+	}
+	if public == nil || public.Int("port") < 41000 || public.Int("port") >= 41050 {
+		t.Fatalf("the public station was not repointed at the relay: %v", urls)
+	}
+	st := relay.Stats()
+	if len(st.Pairs) != 1 || st.Pairs[0].Port != int(public.Int("port")) {
+		t.Fatalf("relay stats %+v", st)
+	}
+	// A pair nobody allowed is left direct.
+	other := e.LoginFrom("198.51.100.99")
+	auto(t, other, template(2, 8, 0, ""))
+	urls = nex.ReadList(other.MustCall(t, rendezvous.ProtocolMatchMaking, 16, w.Bytes()), (*nex.Reader).StationURL)
+	for _, u := range urls {
+		if u.Get("address") == "192.0.2.1" {
+			t.Fatalf("an unlisted pair was relayed: %v", urls)
+		}
+	}
+}

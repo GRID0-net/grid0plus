@@ -243,6 +243,17 @@ func warn(cfg config.Config) {
 				"They must be the same value, or the dashboard's matchmaking controls "+
 				"will fail every request with a plain 401.")
 	}
+	if r := cfg.NEX.Relay; r.Enabled && len(r.Allow) == 0 && !r.AllowAll {
+		fmt.Fprintln(os.Stderr,
+			"warning: nex.relay is enabled but nex.relay.allow is empty and allow_all is off, "+
+				"so it relays nobody. Add the user id of the player who cannot connect.")
+	}
+	if r := cfg.NEX.Relay; r.Enabled {
+		fmt.Fprintf(os.Stderr,
+			"note: nex.relay is enabled: forward UDP %d-%d from the router to this machine, "+
+				"or relayed consoles will send their match traffic into a closed port.\n",
+			r.PortBase, r.PortBase+r.PortSpan-1)
+	}
 	if base := strings.TrimPrefix(cfg.BAAS.ImageBaseURL, "https://"); strings.ContainsRune(base, '/') {
 		fmt.Fprintln(os.Stderr,
 			"warning: baas.image_base_url has a path after the host ('"+cfg.BAAS.ImageBaseURL+"'). "+
