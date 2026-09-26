@@ -887,7 +887,15 @@ type matchRow struct {
 	PlayerIDs  []string `json:"playerIds"`
 	Forced     bool     `json:"forced"`
 	CreatedAt  string   `json:"createdAt"`
+	// Game is set for a match that is not Splatoon 3's: the history is
+	// shared, and "mode 12" alone does not say which game it was.
+	Game string `json:"game,omitempty"`
 }
+
+// splatoon2Tenant is the tenant cmd/nex files Splatoon 2's matches under
+// (splatoon2.Tenant; not imported, to keep the game server out of this
+// binary).
+const splatoon2Tenant = "splatoon2"
 
 func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
 	matches, err := s.store.ListMatches(r.Context(), db.DefaultMatchListLimit)
@@ -897,11 +905,15 @@ func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]matchRow, 0, len(matches))
 	for _, m := range matches {
-		out = append(out, matchRow{
+		row := matchRow{
 			ID: m.ID, Mode: m.Mode, HostUserID: m.HostUserID,
 			PlayerIDs: m.PlayerIDs, Forced: m.Forced,
 			CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339),
-		})
+		}
+		if m.Tenant == splatoon2Tenant {
+			row.Game = "Splatoon 2"
+		}
+		out = append(out, row)
 	}
 	writeJSON(w, out)
 }

@@ -243,7 +243,7 @@ function renderMatches() {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td style="color:var(--fg-dim)">${ago(m.createdAt)}</td>
-        <td><code>${escape(m.mode)}</code>
+        <td>${m.game ? `<span class="pill on">${escape(m.game)}</span> ` : ""}<code>${escape(m.mode)}</code>
           ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
         </td>
         <td><strong>${escape(playerName(m.hostUserId))}</strong></td>

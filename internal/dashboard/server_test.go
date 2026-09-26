@@ -674,6 +674,29 @@ func TestTheMatchListOutlivesTheAccountsInIt(t *testing.T) {
 	}
 }
 
+func TestASplatoon2MatchIsLabelledInTheSharedHistory(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	ctx := context.Background()
+	for _, m := range []db.Match{
+		{ID: "s3", Tenant: "dce9377b", Mode: "turf_war", HostUserID: "a", PlayerIDs: []string{"a"}, CreatedAt: now},
+		{ID: "s2", Tenant: "splatoon2", Mode: "mode 12", HostUserID: "a", PlayerIDs: []string{"a"}, CreatedAt: now.Add(time.Second)},
+	} {
+		if err := store.CreateMatch(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows []map[string]any
+	getJSON(t, srv, "/api/matches", &rows)
+	games := map[any]any{}
+	for _, r := range rows {
+		games[r["id"]] = r["game"]
+	}
+	if games["s2"] != "Splatoon 2" || games["s3"] != nil {
+		t.Fatalf("games %v", games)
+	}
+}
+
 func TestThePlayerPageShowsThePresenceTimestampsSeparately(t *testing.T) {
 	now := time.Now().UTC()
 	srv, store := newTestServer(t, "", now)
