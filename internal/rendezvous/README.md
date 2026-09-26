@@ -35,7 +35,8 @@ DataStore; see `internal/splatoon2`.
 
 Gatherings are in memory (`matchmaking.go`): a lobby means nothing once its
 consoles are gone, and a player leaves every gathering the moment their
-connection ends. Pretendo's AGPL matchmaking is the model for the semantics;
+connection ends -- or the moment they connect again, since a console that
+reconnects has a fresh session and does not know it was in one. Pretendo's AGPL matchmaking is the model for the semantics;
 where Splatoon 2's proven server behaves differently, that wins and the
 comment says so:
 

@@ -98,21 +98,41 @@ already has open, so it works even before the admin API is configured — the
 one part of the Matchmaking tab that does not need `cmd/npln` to be
 reachable at all.
 
-## The Splatoon 2 tab is another process's state
+## One page, two games
 
-Splatoon 2's lobbies and connections live in `cmd/nex`, so the tab reads
-them over nex's admin API (`splatoon2.go`), exactly as the matchmaking panel
-reads npln's: `dashboard.nex_admin_url`/`nex_admin_token` here,
-`nex.admin_listen`/`admin_token` there, and a panel that says it is not
-configured rather than an empty list. The admin client is the same one; only
-the 401 message differs, so a mismatched token names the two settings to
-compare.
+The page is split by game: a switch at the top picks Splatoon 3 or
+Splatoon 2, and each has its own tabs. Players, Health and Debug are about
+accounts and services rather than a game, so they are there for both. What
+is per game is per game all the way down: each overview counts only the
+players whose presence names that game, and each Matches tab asks the
+server for its own game's history (`/api/matches?game=`) rather than
+filtering one list, which a busy game would otherwise crowd the other out
+of.
 
-It polls every five seconds on its own clock, outside `refresh()`: its most
+Splatoon 2's state lives in `cmd/nex`, so its tabs read it over nex's admin
+API (`splatoon2.go`), exactly as the matchmaking panel reads npln's:
+`dashboard.nex_admin_url`/`nex_admin_token` here, `nex.admin_listen`/
+`admin_token` there. The admin client is the same one; only the 401 message
+differs, so a mismatched token names the two settings to compare. With it
+not set up, every Splatoon 2 tab but Schedule gives way to one explanation,
+rather than each showing an empty list that reads as "nobody is playing".
+
+Its live status (connected consoles, lobbies, calls, relay) is polled every
+five seconds, and only while Splatoon 2 is the game on screen; its most
 useful part is the list of methods consoles are calling, which is how a
 method this server answers wrongly shows up while someone is watching a
-console fail. Splatoon 2's finished matches are in the Matches tab, under
-tenant `splatoon2`.
+console fail. The record views -- Splatfests, Rankings, Plaza, Annie's
+orders -- walk a whole kind of record each, so each is read when its tab
+opens and every fifteen seconds while it stays open. The proxy passes on
+only the sections it names (`splatoon2Sections`), so the dashboard cannot
+be used to reach an admin route it does not know about.
+
+**Splatoon 2's Schedule tab shows no schedule, deliberately.** The game
+reads its map and Salmon Run rotations from BCAT, not from its game server,
+and SwitchNet answers BCAT with 304 for every title. An editor here would
+look like a control and change nothing a console reads; the tab says so
+instead. Its Splatfests tab has no scheduling form for the same reason:
+a Splatfest reaches Splatoon 2 through BCAT too.
 
 ## A player row opens onto stores that already exist
 

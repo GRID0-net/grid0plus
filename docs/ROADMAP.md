@@ -455,7 +455,7 @@ feature:
 | per-pair relay with an allow list, `!` to force, "all" | `nex.relay` (`allow`, `!`, `allow_all`) |
 | relay settings in flag files re-read every two seconds, and an automatically maintained allow section | config only; a change is a restart — **not carried over** |
 | online check: an account that is disabled, unverified or already online elsewhere is refused | disabled (`Deleted`) accounts are refused by `internal/identity`; a second connection replaces the first. "Unverified" has no SwitchNet equivalent |
-| dashboard API: stats, relay, kick | the admin API and the dashboard's Splatoon 2 tab |
+| dashboard API: stats, relay, kick | the admin API and the dashboard's Splatoon 2 side, which also shows Splatfests, leagues, plaza posts and orders |
 | GeoIP lookup of each player | **not carried over**: it sends player addresses off the network |
 | anonymous PID for an unverifiable login, fail-open account check | **deliberately not carried over** (CLAUDE.md: identity is fail-closed) |
 

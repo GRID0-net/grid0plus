@@ -57,7 +57,7 @@ prepared) and `GET /datastore/coconut/<id>` (a plaza post's data).
 - **League.** A team is identified by `AcquireTagId` (the same id for the same
   members in any order) and ranked against the other teams of its league.
 - **Annie's gear orders.** The SplatNet 2 app is gone; the operator places an
-  order from the dashboard's Splatoon 2 tab, and the game picks it up at the
+  order from the dashboard's Annie tab, and the game picks it up at the
   shop.
 - **Plaza posts.** A post is stored with its binary and served back to other
   players; a reported post is hidden from everyone but its author.
@@ -67,8 +67,20 @@ Every guessed shape is a `TODO(capture-needed)`, listed in
 
 ## Operator API
 
-`nex.admin_listen` with `nex.admin_token` (`admin.go`): the connected players
-(address, NAT, lobby, open order), the lobbies, recent results, every method
-called with counts, the relay's pairs; and controls to disconnect a player
-or place and cancel a gear order. The dashboard's Splatoon 2 tab reads it
-(`dashboard.nex_admin_url`/`nex_admin_token`). Not served without a token.
+`nex.admin_listen` with `nex.admin_token`. Not served without a token.
+
+| Route | What |
+| --- | --- |
+| `GET /splatoon2` | the live status: connected players (address, NAT, lobby, open order), lobbies, recent results, every method called with counts, the relay's pairs (`admin.go`) |
+| `GET /splatoon2/fests` | every Splatfest voted or scored in, with its tally (`admin_records.go`) |
+| `GET /splatoon2/leagues` | every league, its teams ranked by best point |
+| `GET /splatoon2/plaza` | every plaza post, without its image |
+| `GET /splatoon2/gear-orders` | every order Annie is holding, connected or not |
+| `GET /splatoon2/uploads` | X Power, event match and Octo Expansion uploads kept unread |
+| `POST /splatoon2/players/{id}/gear-order`, `DELETE` the same | place or cancel an order |
+| `POST /splatoon2/players/{id}/disconnect` | end a console's connection |
+| `POST /splatoon2/plaza/{dataId}/hidden` | hide or show a plaza post |
+
+PIDs travel as decimal strings: a JSON number above 2^53 reaches the page
+already rounded to another player. The dashboard's Splatoon 2 side reads all
+of it (`dashboard.nex_admin_url`/`nex_admin_token`).

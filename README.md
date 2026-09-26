@@ -330,7 +330,7 @@ for the shapes that are still readings.
 | Ranking (standard and Splatoon 2's league, Splatfest, X Power, event methods) | `internal/rendezvous/ranking.go`, `internal/splatoon2/ranking.go` |
 | DataStore: match results, Annie's gear orders, Splatfest plaza posts, play logs | `internal/splatoon2/datastore.go` |
 | Match history beside Splatoon 3's; presence while playing | `internal/splatoon2`, `internal/rendezvous/presence.go` |
-| Dashboard: connected players, lobbies, calls, relay, gear orders, disconnect | the Splatoon 2 tab |
+| Dashboard: its own side of the page -- overview, lobbies, matches and results, Splatfests, league rankings, plaza moderation, Annie's orders, calls and relay | `internal/dashboard`, the Splatoon 2 switch |
 
 ## What phase 4 implements
 
