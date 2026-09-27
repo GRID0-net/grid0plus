@@ -241,6 +241,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /2.0.0/users/{uid}/friends/{other}", s.authenticated(s.removeFriend))
 	mux.Handle("GET /2.0.0/users/{uid}/relationships/{other}", s.authenticated(s.getRelationship))
 
+	// An emulator's friend service reads friends and writes presence here.
+	// See emulator.go.
+	s.registerEmulatorRoutes(mux)
+
 	// ---- endpoints answered but not implemented ----
 	// The console calls these and treats a failure as a fault. None of them
 	// affects accounts or friends, so an empty success is the correct answer —
