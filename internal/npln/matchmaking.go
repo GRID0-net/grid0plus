@@ -80,7 +80,17 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		m.s.recordMatch(ctx, sess, false)
 	}
 
-	proto, err := m.s.ticketProto(ticket)
+	// Always answer SEARCHING, with no session, even when this ticket completed a match on
+	// arrival. The console reads its result from TrackMatchmakingTicket, which it only opens
+	// after a SEARCHING answer: given SUCCEEDED here (2026-09-27 hardware, the second of two
+	// players) it never tracked the ticket, never called AllocateIceServerSet, and the match
+	// never started. Nintendo's CreateMatchmakingTicket answers SEARCHING and the result
+	// arrives on Track (NextendoNetwork's capture notes, facts only). Track starts with the
+	// ticket's current state, so a ticket matched here is SUCCEEDED on its first frame.
+	searching := ticket
+	searching.State = matchmaking.StateSearching
+	searching.SessionID = ""
+	proto, err := m.s.ticketProto(searching)
 	if err != nil {
 		return nil, err
 	}

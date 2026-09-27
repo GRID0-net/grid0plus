@@ -34,9 +34,7 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
-	if second.GetState() != mmpb.MatchmakingTicket_SUCCEEDED {
-		t.Fatalf("the ticket that completes a match should succeed, got %v", second.GetState())
-	}
+	second = trackResult(t, client, two, second)
 
 	matched := second.GetMatchedUserSessions()
 	if len(matched) != 2 {

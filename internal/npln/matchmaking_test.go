@@ -52,8 +52,10 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
-	if second.GetState() != mmpb.MatchmakingTicket_SUCCEEDED {
-		t.Fatalf("the ticket that completes a match should succeed, got %v", second.GetState())
+	// Even the ticket that completes a match is answered SEARCHING: the console only learns
+	// the result from Track (2026-09-27 hardware; see CreateMatchmakingTicket).
+	if second.GetState() != mmpb.MatchmakingTicket_SEARCHING {
+		t.Fatalf("the ticket that completes a match should answer SEARCHING from Create, got %v", second.GetState())
 	}
 
 	streamTwo, err := client.TrackMatchmakingTicket(two,
@@ -252,6 +254,7 @@ func TestAGameSessionIsNotReadableByAPlayerWhoIsNotInIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
+	matched = trackResult(t, client, two, matched)
 	name := matched.GetGameSession().GetName()
 	if name == "" {
 		t.Fatal("no session was formed")
@@ -297,6 +300,7 @@ func TestSyncGameSessionFromTheHostDoesNotMoveTheSessionEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
 	}
+	matched = trackResult(t, client, joinerCtx, matched)
 	name := matched.GetGameSession().GetName()
 
 	sessions := mmpb.NewGameSessionServiceClient(h.conn)
@@ -348,6 +352,7 @@ func TestSyncGameSessionRefusesAPortUpdateFromANonHostPlayer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
 	}
+	matched = trackResult(t, client, joinerCtx, matched)
 	name := matched.GetGameSession().GetName()
 
 	sessions := mmpb.NewGameSessionServiceClient(h.conn)
@@ -389,6 +394,7 @@ func TestSyncGameSessionRefusesAStrangerTheSameWayGetGameSessionDoes(t *testing.
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (joiner): %v", err)
 	}
+	matched = trackResult(t, client, joinerCtx, matched)
 	name := matched.GetGameSession().GetName()
 
 	sessions := mmpb.NewGameSessionServiceClient(h.conn)
@@ -419,6 +425,7 @@ func TestAFormedMatchIsRecordedToHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
+	matched = trackResult(t, client, two, matched)
 	if matched.GetState() != mmpb.MatchmakingTicket_SUCCEEDED {
 		t.Fatalf("no match formed: %v", matched.GetState())
 	}
@@ -767,4 +774,18 @@ func TestStreamingResponsesCarryTheirNPLNGRPCType(t *testing.T) {
 	if got := md.Get("npln-grpc-type"); len(got) != 1 || got[0] != "ServerStreaming" {
 		t.Errorf("npln-grpc-type = %v, want [ServerStreaming]", got)
 	}
+}
+
+// trackResult reads a ticket's result the way a console does: over TrackMatchmakingTicket,
+// since CreateMatchmakingTicket always answers SEARCHING.
+func trackResult(
+	t *testing.T, client mmpb.MatchmakerClient, ctx context.Context, ticket *mmpb.MatchmakingTicket,
+) *mmpb.MatchmakingTicket {
+	t.Helper()
+	stream, err := client.TrackMatchmakingTicket(ctx,
+		&mmpb.TrackMatchmakingTicketRequest{Name: ticket.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket: %v", err)
+	}
+	return awaitSucceeded(t, stream)
 }

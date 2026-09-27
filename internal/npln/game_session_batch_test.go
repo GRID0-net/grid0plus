@@ -30,6 +30,7 @@ func matchTwoPlayers(t *testing.T, h *harness) (name string, one, two context.Co
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
+	matched = trackResult(t, client, two, matched)
 	name = matched.GetGameSession().GetName()
 	if name == "" {
 		t.Fatal("no session was formed")
