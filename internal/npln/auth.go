@@ -12,6 +12,7 @@ import (
 	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/identity"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
 )
 
 // Caller is the resolved identity behind one request.
@@ -405,6 +406,18 @@ const sessionTokenTTL = time.Hour
 // The signature is what makes the ids trustworthy: a console cannot write its
 // own gsid, so a match cannot be joined by naming yourself into it.
 func (s *Server) issueSessionToken(userID, sessionID string) (string, error) {
+	return s.issueSessionTokenForDefinition(userID, sessionID, nil)
+}
+
+// issueSessionTokenForDefinition carries the same match attributes and latency
+// readings the console submitted with its ticket. The client receives this JWT
+// inside MatchedUserSession, so substituting empty claim values changes the
+// match it sees even though the outer protobuf echoes its UserDefinition.
+func (s *Server) issueSessionTokenForDefinition(userID, sessionID string, def *mmpb.UserDefinition) (string, error) {
+	attr, ltcy, err := sessionDefinitionClaims(def)
+	if err != nil {
+		return "", errInternal()
+	}
 	now := s.now()
 	tok, err := s.issuer.SignSessionToken(nplnClaims{
 		Subject:  userID,
@@ -412,9 +425,9 @@ func (s *Server) issueSessionToken(userID, sessionID string) (string, error) {
 		IssuedAt: now.Unix(),
 		Expires:  now.Add(sessionTokenTTL).Unix(),
 		Gamesync: &gamesyncClaim{
-			Attr: "{}",
+			Attr: attr,
 			GSID: sessionID,
-			LTCY: `{"latencies":{}}`,
+			LTCY: ltcy,
 			// A Splatfest team. SwitchNet announces fests but does not place a
 			// player on a team, so this is empty rather than guessed.
 			Team: "",

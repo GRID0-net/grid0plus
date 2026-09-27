@@ -67,6 +67,14 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 
 	gotOne := awaitSucceeded(t, streamOne)
 	gotTwo := awaitSucceeded(t, streamTwo)
+	for _, got := range []*mmpb.MatchmakingTicket{gotOne, gotTwo} {
+		if len(got.GetGameSession().GetUserSessions()) != 0 {
+			t.Errorf("public Track ticket embedded %d user sessions; the recipient's session belongs in matched_user_sessions", len(got.GetGameSession().GetUserSessions()))
+		}
+		if len(got.GetMatchedUserSessions()) != 1 {
+			t.Errorf("public Track ticket has %d matched user sessions, want the recipient's one", len(got.GetMatchedUserSessions()))
+		}
+	}
 
 	if gotOne.GetGameSession().GetName() == "" {
 		t.Fatal("a succeeded ticket carries no game session")
@@ -103,6 +111,9 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 		}
 		if got.GetName() != gotOne.GetGameSession().GetName() {
 			t.Errorf("GetGameSession (%s) returned a different session", tc.name)
+		}
+		if len(got.GetUserSessions()) != 2 {
+			t.Errorf("GetGameSession (%s) returned %d user sessions, want the roster of two", tc.name, len(got.GetUserSessions()))
 		}
 	}
 }

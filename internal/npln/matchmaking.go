@@ -811,6 +811,12 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		return out, nil
 	}
 	out.GameSession = s.sessionProto(sess)
+	if !sess.Room {
+		// In a public-match Track result the user's session is identified by
+		// matched_user_sessions. The working reference sends no embedded
+		// user_sessions here; GetGameSession supplies the roster separately.
+		out.GameSession.UserSessions = nil
+	}
 	matched, err := s.matchedUserSessions(sess, t.UserID, def)
 	if err != nil {
 		// The session exists and is named, but no player can open it without a
@@ -927,12 +933,12 @@ func (s *Server) matchedUserSessions(
 	// the session host, never in the ticket. Handing every console every
 	// player's entry and token (as this did) left both idle after SUCCEEDED
 	// on 2026-09-27 hardware.
-	token, err := s.issueSessionToken(userID, sess.ID)
-	if err != nil {
-		return nil, err
-	}
 	if def == nil {
 		def = &mmpb.UserDefinition{User: s.userResourceName(userID)}
+	}
+	token, err := s.issueSessionTokenForDefinition(userID, sess.ID, def)
+	if err != nil {
+		return nil, err
 	}
 	return []*mmpb.MatchedUserSession{{
 		UserDefinition:     def,

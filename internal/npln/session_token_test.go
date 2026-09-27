@@ -1,11 +1,14 @@
 package npln
 
 import (
+	"encoding/json"
 	"github.com/google/uuid"
 	"strings"
 	"testing"
 
+	commonpb "github.com/n-popescu/switchnet/proto/common"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead is the 2321-4992 fix
@@ -30,7 +33,17 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 	if _, err := client.CreateMatchmakingTicket(one, ticketFor("turf-war")); err != nil {
 		t.Fatalf("CreateMatchmakingTicket (one): %v", err)
 	}
-	second, err := client.CreateMatchmakingTicket(two, ticketFor("turf-war"))
+	request := ticketFor("turf-war")
+	request.MatchmakingTicket.UserDefinitions = []*mmpb.UserDefinition{{
+		Attributes: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"match_hash": {ValueType: &commonpb.Value_StringValue{StringValue: "sample-match"}},
+			"mmr":        {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 42}},
+		}},
+		LatencyData: &mmpb.LatencyData{Latencies: map[string]*durationpb.Duration{
+			"region-a": durationpb.New(25_000_000),
+		}},
+	}}
+	second, err := client.CreateMatchmakingTicket(two, request)
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
@@ -127,6 +140,25 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 		}
 		if gs["typ"] != float64(1) {
 			t.Errorf("%s: gamesync.typ = %v, want 1", userID, gs["typ"])
+		}
+		var attrs map[string]map[string]any
+		if err := json.Unmarshal([]byte(gs["attr"].(string)), &attrs); err != nil {
+			t.Fatalf("gamesync.attr is not typed JSON: %v", err)
+		}
+		if attrs["match_hash"]["type"] != "string" || attrs["match_hash"]["value"] != "sample-match" ||
+			attrs["mmr"]["type"] != "integer" || attrs["mmr"]["value"] != float64(42) {
+			t.Errorf("gamesync.attr lost the console's submitted values: %v", attrs)
+		}
+		var latencies struct {
+			Latencies map[string]struct {
+				Nanos int64 `json:"nanos"`
+			} `json:"latencies"`
+		}
+		if err := json.Unmarshal([]byte(gs["ltcy"].(string)), &latencies); err != nil {
+			t.Fatalf("gamesync.ltcy is not JSON: %v", err)
+		}
+		if latencies.Latencies["region-a"].Nanos != 25_000_000 {
+			t.Errorf("gamesync.ltcy lost the console's region measurement: %v", latencies.Latencies)
 		}
 
 		// The token the client reads is also the one it presents back to
