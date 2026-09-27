@@ -1002,6 +1002,13 @@ func TestAWatchedDocumentChangeReachesTheOtherConsole(t *testing.T) {
 	if dc.GetDocumentChangeType() != syncpb.DocumentChange_UPDATED {
 		t.Errorf("change type = %v, want UPDATED", dc.GetDocumentChangeType())
 	}
+	boundary, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("recv live snapshot boundary: %v", err)
+	}
+	if tc := boundary.GetTargetChange(); tc == nil || tc.GetTargetId() != "target-players" || tc.GetTargetChangeType() != syncpb.TargetChange_UPDATED {
+		t.Errorf("live snapshot boundary = %v, want UPDATED for target-players", boundary)
+	}
 
 	// Nothing else: the subtree write and the other lobby's must not arrive.
 	deleted := make(chan *syncpb.DocumentChange, 1)

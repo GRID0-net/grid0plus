@@ -732,6 +732,18 @@ func (s *Server) KeepUserSession(
 			}); err != nil {
 				return err
 			}
+			// Splatoon buffers live document changes until a target boundary.
+			// The initial snapshot has LISTED, but later writes need their own
+			// boundary or the room never observes its session documents.
+			if err := stream.Send(&syncpb.KeepUserSessionResponse{
+				ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
+					TargetChange: &syncpb.TargetChange{
+						TargetId: change.GetTargetId(), TargetChangeType: syncpb.TargetChange_UPDATED,
+					},
+				},
+			}); err != nil {
+				return err
+			}
 		}
 	}
 }
