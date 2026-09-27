@@ -105,12 +105,15 @@ type Server struct {
 
 // session is one console's authenticated gamesync session.
 type session struct {
-	userID       string
-	userSession  string
-	accessToken  string
-	refreshToken string
-	createdAt    time.Time
-	expiresAt    time.Time
+	mu            sync.Mutex
+	userID        string
+	userSession   string
+	accessToken   string
+	refreshToken  string
+	createdAt     time.Time
+	expiresAt     time.Time
+	activeStreams int
+	deferments    map[string][]*syncpb.WriteOperation
 }
 
 // New builds the service.
@@ -479,13 +482,9 @@ func (s *Server) WriteDocuments(
 		return nil, errUnauthenticated
 	}
 	if len(req.GetDefermentOperations()) > 0 {
-		s.log.Warn("gamesync: write includes unsupported deferments",
-			"writes", len(req.GetWriteOperations()), "deferments", len(req.GetDefermentOperations()))
-		// A deferment is a batch of writes to apply later, on a trigger nothing
-		// here models. Refused rather than dropped: a client that queued a
-		// write for later and was told "done" would wait for an effect that
-		// never arrives.
-		return nil, status.Error(codes.Unimplemented, "")
+		if err := validateDeferments(req.GetDefermentOperations()); err != nil {
+			return nil, err
+		}
 	}
 
 	results, commit, err := s.docs.apply(req.GetWriteOperations())
@@ -495,6 +494,10 @@ func (s *Server) WriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	if len(req.GetDefermentOperations()) > 0 {
+		caller, _ := callerFrom(ctx)
+		s.stageDeferments(caller, req.GetDefermentOperations())
+	}
 
 	return &syncpb.WriteDocumentsResponse{
 		WriteResults: results,
@@ -660,7 +663,13 @@ func (s *Server) KeepUserSession(
 	}
 
 	sub := s.watch.subscribe(caller.userID)
-	defer s.watch.unsubscribe(sub)
+	caller.mu.Lock()
+	caller.activeStreams++
+	caller.mu.Unlock()
+	defer func() {
+		s.watch.unsubscribe(sub)
+		s.endSessionStream(caller)
+	}()
 
 	// Writes go out from one goroutine only. gRPC allows one concurrent Send
 	// per stream, and the reader loop below sends echoes while changes arrive

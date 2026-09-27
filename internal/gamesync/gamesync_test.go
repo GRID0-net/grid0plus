@@ -783,6 +783,53 @@ func TestRollingBackTwiceIsNotAnError(t *testing.T) {
 
 // ---- the watch stream ----------------------------------------------------
 
+func TestADefermentIsAcknowledgedAndRunsWhenTheUserSessionCloses(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	ctx, cancel := context.WithTimeout(alice, time.Second)
+	defer cancel()
+	stream, err := h.client.KeepUserSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An echo proves the watch is established before scheduling cleanup.
+	if err := stream.Send(&syncpb.KeepUserSessionRequest{
+		RequestType: &syncpb.KeepUserSessionRequest_Echo{Echo: "ready"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{
+		DefermentOperations: []*syncpb.DefermentOperation{{
+			OperationType: &syncpb.DefermentOperation_UpdateDeferment{
+				UpdateDeferment: &syncpb.UpdateDefermentRequest{Deferment: &syncpb.Deferment{
+					Name: "cleanup/alice", WriteOperations: []*syncpb.WriteOperation{
+						merge(doc("rooms/1/state", map[string]*commonpb.Value{"closed": intValue(1)})),
+					},
+				}},
+			},
+		}},
+	})
+	if err != nil || resp.GetCommitTime() == nil {
+		t.Fatalf("register cleanup = %v, %v", resp, err)
+	}
+	if _, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: "rooms/1/state"}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cleanup ran before session closed: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != io.EOF {
+		t.Fatalf("closed stream = %v, want EOF", err)
+	}
+	got, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: "rooms/1/state"})
+	if err != nil || got.GetFields().GetFields()["closed"].GetIntegerValue() != 1 {
+		t.Fatalf("deferred cleanup = %v, %v", got, err)
+	}
+}
+
 func TestOwnUserSessionArrivesBeforeWatchSnapshotCompletes(t *testing.T) {
 	h := newHarness(t)
 	alice := h.session("token-alice")
