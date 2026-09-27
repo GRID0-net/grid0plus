@@ -19,6 +19,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -502,7 +503,18 @@ func (s *Server) streamInterceptor(
 	// waiting for it to close before noting it was ever reached would often
 	// mean never.
 	s.noteFirstSeen(info.FullMethod, nil)
-	err = handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	// Every stream's open and close, with message counts: nginx and the unary
+	// log only see a stream once it ends, which hid what the console was doing
+	// while it sat in matchmaking (2026-09-27).
+	caller, _ := CallerFrom(ctx)
+	s.log.Info("npln: stream open", "method", info.FullMethod, "user", caller.UserID)
+	counted := &countingStream{wrappedStream: wrappedStream{ServerStream: ss, ctx: ctx}}
+	counted.log = func(n int64) {
+		s.log.Info("npln: stream message", "method", info.FullMethod, "user", caller.UserID, "recv", n)
+	}
+	err = handler(srv, counted)
+	s.log.Info("npln: stream closed", "method", info.FullMethod, "user", caller.UserID,
+		"recv", counted.recv.Load(), "sent", counted.sent.Load(), "code", status.Code(err))
 	s.noteUnimplemented(info.FullMethod, err)
 	return err
 }
@@ -643,3 +655,28 @@ type wrappedStream struct {
 }
 
 func (w wrappedStream) Context() context.Context { return w.ctx }
+
+// countingStream counts the messages a stream carries each way.
+type countingStream struct {
+	wrappedStream
+	recv, sent atomic.Int64
+	log        func(n int64)
+}
+
+func (c *countingStream) RecvMsg(m any) error {
+	err := c.wrappedStream.RecvMsg(m)
+	if err == nil {
+		if n := c.recv.Add(1); n == 1 || n == 10 || n == 100 || n == 1000 {
+			c.log(n)
+		}
+	}
+	return err
+}
+
+func (c *countingStream) SendMsg(m any) error {
+	err := c.wrappedStream.SendMsg(m)
+	if err == nil {
+		c.sent.Add(1)
+	}
+	return err
+}
