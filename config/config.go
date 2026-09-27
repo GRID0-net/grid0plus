@@ -345,6 +345,10 @@ type NPLN struct {
 	// to the mode's size (which forms immediately). Zero forms the instant
 	// two players are present. A lone player is never on this clock.
 	CoopGracePeriod int `yaml:"coop_grace_period"`
+	// TrackMinimumSeconds holds a completed ticket before sending SUCCEEDED,
+	// measured from opening TrackMatchmakingTicket. Zero disables the hold.
+	// This is a diagnostic for the reference's >=14-second Track duration.
+	TrackMinimumSeconds int `yaml:"track_minimum_seconds"`
 
 	// RegionalLatencyServers advertises one reachable latency endpoint under
 	// seven measured regions for a controlled hardware compatibility check.
@@ -378,13 +382,11 @@ type NPLN struct {
 	// SessionHost and SessionPort are what a match puts in GameSession.host
 	// and .port: where each console opens its gamesync session for that match.
 	//
-	// The tenant host on 443, not gamesync's own :7575. NextendoNetwork/
-	// splatoon-3 measured the difference on hardware: announced as a literal
-	// address on :7575 the session channel completes TLS and then never sends
-	// a request (2321-4992); announced as the tenant name on :443 it works.
-	// nginx sends the Gamesync service path on the tenant host to gamesync
-	// (see switchnetctl's grpcServerBlock), so nothing else has to move. Like
-	// FrontlineHost, it must be a name the console's hosts file redirects.
+	// A 2026-09-27 capture of a working Nextendo Ryujinx session shows a
+	// literal IPv4 address on :7575. An older Nextendo hardware note reports
+	// that the tenant hostname on :443 worked where a literal address did not.
+	// Both are supported by the edge; the deployed value should follow the
+	// client being tested. Names must be in the redirected hosts list.
 	SessionHost string `yaml:"session_host"`
 	SessionPort int    `yaml:"session_port"`
 
@@ -922,6 +924,7 @@ func applyEnv(c *Config) {
 	envInt("SWITCHNET_NPLN_TICKET_TTL", &c.NPLN.TicketTTL)
 	envInt("SWITCHNET_NPLN_VERSUS_GRACE_PERIOD", &c.NPLN.VersusGracePeriod)
 	envInt("SWITCHNET_NPLN_COOP_GRACE_PERIOD", &c.NPLN.CoopGracePeriod)
+	envInt("SWITCHNET_NPLN_TRACK_MINIMUM_SECONDS", &c.NPLN.TrackMinimumSeconds)
 	envBool("SWITCHNET_NPLN_REGIONAL_LATENCY_SERVERS", &c.NPLN.RegionalLatencyServers)
 	envStr("SWITCHNET_NEX_LISTEN", &c.NEX.Listen)
 	envStr("SWITCHNET_NEX_ADMIN_LISTEN", &c.NEX.AdminListen)

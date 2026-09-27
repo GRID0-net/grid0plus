@@ -148,6 +148,7 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 	// already happened.
 	updates, stop := m.s.queue.Watch(id)
 	defer stop()
+	trackOpenedAt := time.Now()
 
 	// Nintendo's stream always runs SEARCHING, PLACING, SUCCEEDED (NextendoNetwork's
 	// capture notes, facts only). A ticket that matched inside Create would otherwise
@@ -193,6 +194,17 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 				case <-time.After(time.Second):
 				case <-ctx.Done():
 					return ctx.Err()
+				}
+			}
+			if t.State == matchmaking.StateSucceeded && m.s.trackMinimum > 0 {
+				if remaining := time.Until(trackOpenedAt.Add(m.s.trackMinimum)); remaining > 0 {
+					m.s.log.Info("npln: holding matched ticket for reference Track duration",
+						"ticket", id, "remaining", remaining)
+					select {
+					case <-time.After(remaining):
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 				}
 			}
 			if err := send(t); err != nil {
@@ -857,9 +869,9 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		// name the host player ("users/<id>") with the port it published via
 		// SyncGameSession, a reading nothing on the wire supported; a console
 		// given a user name to dial opens no session and reports 2321-4992.
-		// The working reference (NextendoNetwork/splatoon-3) announces its
-		// session server here, and measured that the tenant name on :443 is
-		// the form that works. See config.NPLN.SessionHost.
+		// The 2026-09-27 working Ryujinx capture announces a literal IP on
+		// :7575; an older console measurement preferred the tenant name on
+		// :443. See config.NPLN.SessionHost for the deployment choice.
 		Host:         s.sessionHost,
 		Port:         s.sessionPort,
 		CreateTime:   timestamppb.New(sess.CreatedAt),

@@ -49,6 +49,9 @@ type Server struct {
 	// config.NPLN.SessionHost.
 	sessionHost string
 	sessionPort int32
+	// Zero normally; a VM-only comparison probe can hold SUCCEEDED until
+	// the Track stream has run as long as the shortest captured real one.
+	trackMinimum time.Duration
 
 	// ticketDefs holds each ticket's user definition as the console sent it
 	// (attributes, latencies, team), keyed by ticket id, so every frame of
@@ -224,6 +227,7 @@ func New(opts Options) (*Server, error) {
 		tenant:                 opts.Config.Tenant,
 		sessionHost:            opts.Config.SessionHost,
 		sessionPort:            int32(opts.Config.SessionPort),
+		trackMinimum:           time.Duration(opts.Config.TrackMinimumSeconds) * time.Second,
 		issuerName:             opts.Config.Issuer,
 		appID:                  opts.Config.AppID,
 		accessTokenTTL:         opts.Config.AccessTokenTTL,

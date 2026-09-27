@@ -118,6 +118,33 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 	}
 }
 
+func TestMatchedTicketCanWaitForReferenceTrackDuration(t *testing.T) {
+	h := newHarnessWith(t, func(c *config.NPLN) { c.TrackMinimumSeconds = 2 })
+	h.createUser("first", "device-first")
+	h.createUser("second", "device-second")
+	client := mmpb.NewMatchmakerClient(h.conn)
+	firstCtx := h.ctx(h.sessionFor(t, "first", "device-first"), "")
+	secondCtx := h.ctx(h.sessionFor(t, "second", "device-second"), "")
+	if _, err := client.CreateMatchmakingTicket(firstCtx, ticketFor("turf-war")); err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.CreateMatchmakingTicket(secondCtx, ticketFor("turf-war"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	stream, err := client.TrackMatchmakingTicket(secondCtx, &mmpb.TrackMatchmakingTicketRequest{Name: second.GetName()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := awaitSucceeded(t, stream); got.GetState() != mmpb.MatchmakingTicket_SUCCEEDED {
+		t.Fatalf("final state = %v", got.GetState())
+	}
+	if elapsed := time.Since(start); elapsed < 2*time.Second {
+		t.Errorf("SUCCEEDED arrived after %s, before the configured two-second minimum", elapsed)
+	}
+}
+
 // TestACancelledTicketIsNeverMatched is the other half of §1.1's criterion.
 //
 // The dangerous version of getting this wrong is silent: the cancelled player

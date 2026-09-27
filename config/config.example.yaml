@@ -462,12 +462,15 @@ npln:
 
   # Where a match tells each console to open its gamesync session
   # (GameSession.host and .port). The tenant host on 443: nginx sends the
-  # Gamesync service path there to gamesync. A working reference server
-  # measured that a literal address on gamesync's own :7575 accepts TLS and
-  # then never gets a request (2321-4992), while the tenant name on :443
-  # works. Must be a name the console's hosts file redirects.
+  # Gamesync service path there to gamesync. A 2026-09-27 working Ryujinx
+  # capture instead uses a literal IP on :7575. Both edge routes exist; use
+  # the endpoint your clients actually reach. Hostnames must be redirected.
   session_host: "t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
   session_port: 443
+
+  # Optional reference-timing probe: minimum age of TrackMatchmakingTicket
+  # before sending SUCCEEDED. Zero leaves normal matchmaking timing unchanged.
+  track_minimum_seconds: 0
 
   # Record every JSON front-end request and response to this directory.
   #
