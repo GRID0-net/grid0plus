@@ -455,8 +455,15 @@ func (b *botAPI) sendFriendRequest(w http.ResponseWriter, r *http.Request, user 
 	case body.DiscordUserID != "":
 		target, err = b.s.store.GetUserByDiscordID(r.Context(), body.DiscordUserID)
 	case body.FriendCode != "":
+		code := normaliseFriendCode(body.FriendCode)
+		if code == "" {
+			// Never pass an empty code on: an empty filter is no filter, and
+			// the request would go to whoever FindUsers returns first.
+			writeBotError(w, http.StatusBadRequest, "bad_friend_code", "a friend code is twelve digits")
+			return
+		}
 		var found []db.User
-		found, err = b.s.store.FindUsers(r.Context(), db.UserQuery{FriendCode: normaliseFriendCode(body.FriendCode), Limit: 1})
+		found, err = b.s.store.FindUsers(r.Context(), db.UserQuery{FriendCode: code, Limit: 1})
 		if err == nil && len(found) == 0 {
 			err = db.ErrNotFound
 		}

@@ -203,6 +203,12 @@ func TestFriendRequestsBetweenBotUsers(t *testing.T) {
 	if resp, _ := b.call("DELETE", "/bot/v1/friends/"+bobID, aliceDiscord, nil); resp.StatusCode != http.StatusNoContent {
 		t.Errorf("unfriend: %d", resp.StatusCode)
 	}
+	// A malformed code must never reach the lookup as an empty filter,
+	// which would match somebody arbitrary.
+	if resp, body := b.call("POST", "/bot/v1/friend-requests", aliceDiscord,
+		map[string]string{"friendCode": "12"}); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("malformed friend code: %d %v", resp.StatusCode, body)
+	}
 	if resp, _ := b.call("POST", "/bot/v1/friend-requests", aliceDiscord,
 		map[string]string{"discordUserId": "100000000000000099"}); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("request to an unregistered Discord user: %d", resp.StatusCode)
