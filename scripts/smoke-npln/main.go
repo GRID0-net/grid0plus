@@ -118,18 +118,25 @@ func main() {
 	}
 	fmt.Printf("player 2: ticket %s\n", second.GetState())
 
-	matched, err := stream.Recv()
+	stream2, err := mm.TrackMatchmakingTicket(sessions[1],
+		&mmpb.TrackMatchmakingTicketRequest{Name: second.GetName()})
 	if err != nil {
-		log.Fatalf("player 1 was never told its ticket matched: %v", err)
+		log.Fatalf("player 2: track: %v", err)
 	}
+
+	// Two players below npln.players_per_match are an even count, so the match
+	// forms only after npln.versus_grace_period with nobody else arriving. The
+	// stream says PLACING while that runs; read past it to the match.
+	matched := waitMatched("player 1", stream)
 	fmt.Printf("player 1: told %s, host %s, %d players\n", matched.GetState(),
 		matched.GetGameSession().GetHost(), len(matched.GetMatchedUserSessions()))
+	other := waitMatched("player 2", stream2)
 
 	// The assertion that matters: two players told about DIFFERENT sessions is a
 	// lobby that never fills, and it looks fine from either side alone.
-	if matched.GetGameSession().GetName() != second.GetGameSession().GetName() {
+	if matched.GetGameSession().GetName() != other.GetGameSession().GetName() {
 		log.Fatalf("the two players were told about different sessions:\n  %s\n  %s",
-			matched.GetGameSession().GetName(), second.GetGameSession().GetName())
+			matched.GetGameSession().GetName(), other.GetGameSession().GetName())
 	}
 	session := matched.GetGameSession().GetName()
 	fmt.Printf("both players: session %s\n", session)
@@ -273,4 +280,23 @@ func lastSegment(name string) string {
 		return name[i+1:]
 	}
 	return name
+}
+
+// waitMatched reads a ticket stream until the ticket succeeds, printing each
+// state it passes through, and stops the run on any other ending.
+func waitMatched(who string, stream grpc.ServerStreamingClient[mmpb.MatchmakingTicket]) *mmpb.MatchmakingTicket {
+	for {
+		t, err := stream.Recv()
+		if err != nil {
+			log.Fatalf("%s was never told its ticket matched: %v", who, err)
+		}
+		switch t.GetState() {
+		case mmpb.MatchmakingTicket_SUCCEEDED:
+			return t
+		case mmpb.MatchmakingTicket_SEARCHING, mmpb.MatchmakingTicket_PLACING:
+			fmt.Printf("%s: %s\n", who, t.GetState())
+		default:
+			log.Fatalf("%s: ticket ended %s instead of matching", who, t.GetState())
+		}
+	}
 }
