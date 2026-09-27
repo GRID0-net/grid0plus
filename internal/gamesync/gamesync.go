@@ -253,6 +253,7 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 	}
 	token := bearerFrom(ctx)
 	if token == "" {
+		s.log.Info("gamesync: call arrived without a session token", "method", method)
 		return nil, errUnauthenticated
 	}
 
@@ -261,6 +262,7 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 	s.mu.Unlock()
 
 	if !ok {
+		s.log.Info("gamesync: call presented an unknown session token", "method", method)
 		return nil, errUnauthenticated
 	}
 	if !s.now().Before(sess.expiresAt) {
