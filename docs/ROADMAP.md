@@ -16,7 +16,7 @@ hardware: phase 1 works, and phase 2 gets as far as Splatoon 3's hall.
 | [S2](#splatoon-2--nex) | NEX game server for Splatoon 2, dashboard tab | code complete, exercised end to end with Kinnay's NintendoClients, **not yet tried on a console** |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
 | [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet tried on a console** |
-| [5](#phase-5--account-system-refactor--a-discord-bot) | account creation/linking refactor, a Discord bot as the primary registration and per-user control surface | **planned, not started** |
+| [5](#phase-5--account-system-refactor--a-discord-bot) | account creation/linking refactor, a Discord bot as the only registration path and per-user control surface | **built and deployed 2026-09-27**; not yet exercised end to end on a console |
 
 Phase 3 is scoped differently from 1 and 2: it is not going into `internal/`
 here at all. See its section below for why and what that means in practice.
@@ -804,10 +804,36 @@ console.
 
 ## Phase 5 — account system refactor + a Discord bot
 
-**Not started. This section is a plan, not a design that has been implemented
-or validated against real hardware.** It records a decision to make later,
-not a decision already made — everything below is free to change once actual
-implementation starts and runs into something this plan did not anticipate.
+**Built 2026-09-27.** What shipped, and where it differs from the plan below:
+
+- **The bot lives in its own repository**, `n-popescu/switchnet-discord`
+  (private), not `cmd/discordbot`. It is a thin client of a bot API inside
+  `baas` (`internal/baas/botapi.go`, `baas.bot_api` in `config.yaml`): a
+  loopback-only listener, a shared bearer token, the caller named by Discord
+  user id. The account rules stay in this repository and are shared with the
+  console's own endpoints, not reimplemented in the bot.
+- **The bot is the only way to create a person's account.** The `/register`
+  web page is gone. A console's own `POST /1.0.0/users` stays: a console still
+  needs its placeholder before it links. Both are gated on
+  `baas.allow_registration`.
+- **5.3 is not a separate table.** A console's placeholder stays a `users` row,
+  marked `provisional`, because an unlinked console uses its id for tokens,
+  profile and friends like any user. It is counted apart and deleted in the
+  same transaction as `ReassignDeviceAccount` moves its last device account to
+  a person. Migration 0022 marked existing ones and deleted the orphans
+  linking had already left (37 on the live server).
+- **Commands:** `/register`, `/reset-password`, `/whoami`, `/fc`, `/fc-add`,
+  `/fc-pending` (with buttons), `/fc-remove`, `/friends`, `/online`,
+  `/status`, `/avatar`. `/matches` is not built. `/online` leaves out anyone
+  whose presence setting is SELF. See the bot's README.
+- **Avatars:** the bot fetches Discord's CDN as a 256×256 JPEG and uploads it
+  through the same code path as a console upload; re-syncing deletes the
+  replaced file.
+
+Still open: the Switch-side test (link a console with bot-issued credentials,
+then check the placeholder is gone and the friend list works).
+
+The original plan follows, kept for its reasoning.
 
 **Depends on phase 1's code** (the account/login/friend-code layer this
 touches), **but not on phase 1's hardware verification** the way phases 3 and

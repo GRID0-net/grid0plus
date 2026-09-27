@@ -319,7 +319,13 @@ debugging on hardware tractable.
 
 - [ ] **10. Turn registration off.** Once every console is registered, set
       `baas.allow_registration: false`, so somebody who finds the server cannot
-      add themselves to it.
+      add themselves to it. This also stops the Discord bot's `/register`.
+
+People get their accounts from the Discord bot
+([`n-popescu/switchnet-discord`](https://github.com/n-popescu/switchnet-discord)):
+set `baas.bot_api` (a loopback `listen` and a token from `openssl rand -hex 32`)
+and install the bot on the same host, as its README describes. There is no
+registration web page any more.
 
 ## Operating it
 

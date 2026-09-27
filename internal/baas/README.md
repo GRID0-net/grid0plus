@@ -28,7 +28,8 @@ to**, and the only place in SwitchNet where identity is decided.
 | `errors.go` | Nintendo's error response shape |
 | `models.go` | the wire objects, and visibility scoping |
 | `nalink.go` | the Nintendo Account link flow (`accounts.nintendo.com`) — SwitchNet's own login page, not a copy of anyone's real OAuth |
-| `website.go` | self-service person registration, independent of any console |
+| `people.go` | creating a person's account (login, password hash, friend code), independent of any console |
+| `botapi.go` | the Discord bot's account API (`baas.bot_api`): the only way to create a person's account, plus friends, avatars, who is online and status. Loopback only, shared token, caller named by Discord user id; see [`n-popescu/switchnet-discord`](https://github.com/n-popescu/switchnet-discord) |
 | `provision.go` | device account id/password shape and validation, shared by registration and login |
 | `ratelimit.go` | the sliding-window limiter over login attempts |
 | `wire.go` | form/JSON body decoding shared by every handler |
