@@ -13,6 +13,7 @@ import (
 
 	"github.com/n-popescu/switchnet/config"
 	"github.com/n-popescu/switchnet/internal/baas"
+	"github.com/n-popescu/switchnet/internal/dashboard"
 	"github.com/n-popescu/switchnet/internal/db"
 	"github.com/n-popescu/switchnet/internal/health"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
@@ -126,6 +127,28 @@ func main() {
 	}
 
 	healthz := health.New("baas").Add("database", store.Ping)
+
+	// The Discord bot's account API, on its own loopback listener. Config
+	// validation has already refused a listen address without a real token.
+	if cfg.BAAS.BotAPI.Listen != "" {
+		bot := srv.BotHandler(baas.BotAPIOptions{
+			Token: cfg.BAAS.BotAPI.Token,
+			Health: func(ctx context.Context) []baas.ServiceStatus {
+				probed := dashboard.ProbeServices(ctx, cfg)
+				out := make([]baas.ServiceStatus, 0, len(probed))
+				for _, p := range probed {
+					out = append(out, baas.ServiceStatus{Name: p.Name, Status: p.Status, Detail: p.Detail})
+				}
+				return out
+			},
+		})
+		go func() {
+			if err := service.ServeHTTP(ctx, log.With("listener", "bot_api"), cfg.BAAS.BotAPI.Listen, bot); err != nil {
+				log.Error("bot API stopped", "error", err)
+			}
+		}()
+		log.Info("bot API listening", "addr", cfg.BAAS.BotAPI.Listen)
+	}
 
 	if err := service.ServeHTTPWithHealth(ctx, log, cfg.BAAS.Listen, srv.Handler(), healthz); err != nil {
 		service.Fatal(log, "serve", err)

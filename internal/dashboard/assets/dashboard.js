@@ -191,7 +191,7 @@ function renderPlayers() {
       const tr = document.createElement("tr");
       tr.dataset.player = p.id;
       tr.innerHTML = `
-        <td><span class="player-cell">${avatarWithStatusHTML(p, "avatar-sm")}<strong>${escape(p.nickname)}</strong></span></td>
+        <td><span class="player-cell">${avatarWithStatusHTML(p, "avatar-sm")}<strong>${escape(p.nickname)}</strong>${p.login ? ` <span style="color:var(--fg-dim)">@${escape(p.login)}</span>` : ""}${p.unlinked ? ` <span class="badge" title="A console that has not linked to a person's account yet">unlinked console</span>` : ""}</span></td>
         <td><span class="badge ${stateClass(p.state)}">${stateWord(p.state)}</span></td>
         <td>${p.activity ? escape(p.activity) : "<span style='color:var(--fg-faint)'>—</span>"}</td>
         <td style="color:var(--fg-dim)">${ago(p.lastSeenAt)}</td>`;

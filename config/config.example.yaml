@@ -196,6 +196,15 @@ baas:
   # add themselves to it.
   allow_registration: true
 
+  # The Discord bot's account API (n-popescu/switchnet-discord): the only way
+  # to create a person's account, plus friends, avatars, who is online and
+  # service status. Loopback only; the bot runs on this host. Empty listen
+  # turns it off. The token is a shared secret the bot also holds:
+  # openssl rand -hex 32. Registration through it honours allow_registration.
+  bot_api:
+    listen: ""   # e.g. "127.0.0.1:8096"
+    token: ""
+
   # How many login attempts (POST /1.0.0/login and federation) one client
   # address gets per login_window_seconds, before further attempts from it are
   # refused until the window rolls forward. 0 disables the limit. A device

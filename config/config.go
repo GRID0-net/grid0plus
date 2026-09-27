@@ -235,6 +235,21 @@ type BAAS struct {
 	// account passwords, so far too chatty and sensitive to leave on. See
 	// internal/stubs.Config.LogBodies for the same pattern elsewhere.
 	LogBodies bool `yaml:"log_bodies"`
+
+	// BotAPI is the Discord bot's account API (internal/baas/botapi.go),
+	// the only way to create a person's account.
+	BotAPI BotAPI `yaml:"bot_api"`
+}
+
+// BotAPI configures the Discord bot's account API.
+type BotAPI struct {
+	// Listen is where it listens. Keep it on loopback: the bot runs on the
+	// same host, and nothing else should reach it. Empty turns it off.
+	Listen string `yaml:"listen"`
+	// Token is the shared secret the bot sends as a bearer token, at least
+	// 32 characters (openssl rand -hex 32). The same value goes in the
+	// bot's own configuration.
+	Token string `yaml:"token"`
 }
 
 // SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
@@ -880,6 +895,8 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_AAUTH_POLICY_HANDLER", &c.AAuth.PolicyHandler)
 
 	envStr("SWITCHNET_BAAS_LISTEN", &c.BAAS.Listen)
+	envStr("SWITCHNET_BAAS_BOT_API_LISTEN", &c.BAAS.BotAPI.Listen)
+	envStr("SWITCHNET_BAAS_BOT_API_TOKEN", &c.BAAS.BotAPI.Token)
 	envStr("SWITCHNET_BAAS_ISSUER", &c.BAAS.Issuer)
 	envStr("SWITCHNET_BAAS_AUDIENCE", &c.BAAS.Audience)
 	envStr("SWITCHNET_BAAS_IMAGE_DIR", &c.BAAS.ImageDir)
@@ -989,6 +1006,11 @@ func (c Config) Validate() error {
 	}
 	if c.BAAS.ConsolePresenceTTL <= 0 {
 		errs = append(errs, errors.New("baas.console_presence_ttl must be positive"))
+	}
+	if c.BAAS.BotAPI.Listen != "" && len(c.BAAS.BotAPI.Token) < 32 {
+		errs = append(errs, errors.New(
+			"baas.bot_api.token must be at least 32 characters when baas.bot_api.listen is set "+
+				"(openssl rand -hex 32)"))
 	}
 	if c.BAAS.AccessTokenTTL <= 0 {
 		errs = append(errs, errors.New("baas.access_token_ttl must be positive"))

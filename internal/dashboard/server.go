@@ -394,6 +394,12 @@ type Player struct {
 	Activity   string `json:"activity,omitempty"`
 	AppID      string `json:"appId,omitempty"`
 	LastSeenAt string `json:"lastSeenAt,omitempty"`
+	// Login is the person's SwitchNet login, set by the Discord bot. Empty
+	// for a console that has not linked to a person's account yet
+	// (Unlinked).
+	Login    string `json:"login,omitempty"`
+	Discord  bool   `json:"discord,omitempty"`
+	Unlinked bool   `json:"unlinked,omitempty"`
 }
 
 func (s *Server) players(ctx context.Context) ([]Player, error) {
@@ -420,7 +426,10 @@ func (s *Server) players(ctx context.Context) ([]Player, error) {
 		if name == "" {
 			name = u.ID
 		}
-		row := Player{ID: u.ID, Nickname: name, State: p.State, AppID: appID}
+		row := Player{
+			ID: u.ID, Nickname: name, State: p.State, AppID: appID,
+			Login: u.LoginUsername, Discord: u.DiscordUserID != "", Unlinked: u.Provisional,
+		}
 		if appID != "" {
 			row.Activity = titleName(appID)
 		}

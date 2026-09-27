@@ -124,21 +124,7 @@ func AddressesFrom(cfg config.Config) ServiceAddresses {
 
 // handleHealth probes every service and reports what it found.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	list := probes(s.addresses)
-
-	results := make([]ServiceHealth, len(list))
-	var wg sync.WaitGroup
-
-	// In parallel, because a page that waits for six sequential three-second
-	// timeouts takes eighteen seconds to tell the operator everything is down.
-	for i, p := range list {
-		wg.Add(1)
-		go func(i int, p probe) {
-			defer wg.Done()
-			results[i] = s.probeOne(r.Context(), p)
-		}(i, p)
-	}
-	wg.Wait()
+	results := probeAll(r.Context(), s.probeClient, s.addresses)
 
 	// The dashboard itself, answered directly rather than over a socket to
 	// itself: it is obviously up if this response is being written, and dialling
@@ -151,13 +137,39 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"services": results})
 }
 
-func (s *Server) probeOne(ctx context.Context, p probe) ServiceHealth {
+// ProbeServices checks every service's health from outside the dashboard,
+// for the Discord bot's /status (internal/baas/botapi.go).
+func ProbeServices(ctx context.Context, cfg config.Config) []ServiceHealth {
+	results := probeAll(ctx, &http.Client{Timeout: probeTimeout}, AddressesFrom(cfg))
+	sort.Slice(results, func(i, j int) bool { return results[i].Name < results[j].Name })
+	return results
+}
+
+func probeAll(ctx context.Context, client *http.Client, addrs ServiceAddresses) []ServiceHealth {
+	list := probes(addrs)
+	results := make([]ServiceHealth, len(list))
+	var wg sync.WaitGroup
+
+	// In parallel, because a page that waits for six sequential three-second
+	// timeouts takes eighteen seconds to tell the operator everything is down.
+	for i, p := range list {
+		wg.Add(1)
+		go func(i int, p probe) {
+			defer wg.Done()
+			results[i] = probeOne(ctx, client, p)
+		}(i, p)
+	}
+	wg.Wait()
+	return results
+}
+
+func probeOne(ctx context.Context, client *http.Client, p probe) ServiceHealth {
 	started := time.Now()
 	out := ServiceHealth{Name: p.name, Addr: p.addr, Kind: p.kind}
 
 	switch p.kind {
 	case "http":
-		s.probeHTTP(ctx, p, &out)
+		probeHTTP(ctx, client, p, &out)
 	default:
 		out.Status = "unknown"
 		out.Detail = p.why
@@ -168,7 +180,7 @@ func (s *Server) probeOne(ctx context.Context, p probe) ServiceHealth {
 }
 
 // probeHTTP asks a service's own /healthz.
-func (s *Server) probeHTTP(ctx context.Context, p probe, out *ServiceHealth) {
+func probeHTTP(ctx context.Context, client *http.Client, p probe, out *ServiceHealth) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
@@ -179,7 +191,7 @@ func (s *Server) probeHTTP(ctx context.Context, p probe, out *ServiceHealth) {
 		return
 	}
 
-	resp, err := s.probeClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		out.Status = "down"
 		out.Detail = "not answering at " + dialAddr(p.addr)
