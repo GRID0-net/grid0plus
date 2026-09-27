@@ -53,6 +53,15 @@ type User struct {
 	LoginUsername     string
 	LoginPasswordHash string
 
+	// Provisional marks the user a console's own POST /1.0.0/users had to
+	// invent before anyone said who the person is. It works like any user
+	// until its console links to a real person's account; then it is
+	// deleted (ReassignDeviceAccount). Not counted as a person.
+	Provisional bool
+	// DiscordUserID links the user to the Discord account that registered it
+	// through the bot. Empty for any user that did not.
+	DiscordUserID string
+
 	Deleted bool
 
 	BlocksUpdatedAt  time.Time
@@ -327,6 +336,7 @@ type UserPatch struct {
 	Permissions         *Permissions
 	Extras              *ExtrasByScope
 	Deleted             *bool
+	LoginPasswordHash   *string
 }
 
 // PresencePatch is a set of optional changes to a presence row.
@@ -481,7 +491,10 @@ const DefaultMatchListLimit = 200
 // together tell an operator whether "nobody's here" means "empty database"
 // or "everyone got deleted".
 type Stats struct {
+	// Users counts people: ProvisionalUsers, the placeholders consoles
+	// create before linking, are counted apart.
 	Users                 int
+	ProvisionalUsers      int
 	DeletedUsers          int
 	DeviceAccounts        int
 	DeletedDeviceAccounts int
@@ -618,6 +631,8 @@ type Store interface {
 	// GetUserByLoginUsername looks up a user by their login username.
 	// ErrNotFound if none matches.
 	GetUserByLoginUsername(ctx context.Context, username string) (User, error)
+	// GetUserByDiscordID looks up the user a Discord account registered.
+	GetUserByDiscordID(ctx context.Context, discordUserID string) (User, error)
 	// GetUser returns a user by id, or ErrNotFound.
 	GetUser(ctx context.Context, id string) (User, error)
 	// UpdateUser applies a patch and returns the updated user.
@@ -713,6 +728,10 @@ type Store interface {
 	// internal/baas/accounts.go) — this changes who a credential belongs to,
 	// not who is allowed to present it. ErrNotFound if the device account or
 	// the target user does not exist.
+	//
+	// If the user it moves away from is provisional and has no device
+	// account left, that user is deleted in the same transaction: it was
+	// only ever this console's placeholder.
 	ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error
 
 	// UndeleteDeviceAccount clears DeletedAt, letting a soft-deleted device

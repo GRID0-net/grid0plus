@@ -96,18 +96,18 @@ const userColumns = `
 	thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 	permissions, extras, deleted,
 	blocks_updated_at, friends_updated_at, created_at, updated_at,
-	login_username, login_password_hash`
+	login_username, login_password_hash, provisional, discord_user_id`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
 	var perms, extras []byte
-	var loginUsername, loginPasswordHash *string
+	var loginUsername, loginPasswordHash, discordUserID *string
 	err := row.Scan(
 		&u.ID, &u.Nickname, &u.Country, &u.Birthday,
 		&u.ThumbnailURL, &u.Thumbnail2URL, &u.ThumbnailUploadedAt,
 		&perms, &extras, &u.Deleted,
 		&u.BlocksUpdatedAt, &u.FriendsUpdatedAt, &u.CreatedAt, &u.UpdatedAt,
-		&loginUsername, &loginPasswordHash,
+		&loginUsername, &loginPasswordHash, &u.Provisional, &discordUserID,
 	)
 	if err != nil {
 		return User{}, mapErr(err)
@@ -117,6 +117,9 @@ func scanUser(row pgx.Row) (User, error) {
 	}
 	if loginPasswordHash != nil {
 		u.LoginPasswordHash = *loginPasswordHash
+	}
+	if discordUserID != nil {
+		u.DiscordUserID = *discordUserID
 	}
 	if err := json.Unmarshal(perms, &u.Permissions); err != nil {
 		return User{}, fmt.Errorf("decode permissions for %s: %w", u.ID, err)
@@ -152,11 +155,11 @@ func (p *Postgres) CreateUser(ctx context.Context, u User, da DeviceAccount) err
 			id, nickname, country, birthday,
 			thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 			permissions, extras,
-			blocks_updated_at, friends_updated_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10)`,
+			blocks_updated_at, friends_updated_at, created_at, updated_at, provisional)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10,$11)`,
 		u.ID, u.Nickname, u.Country, u.Birthday,
 		u.ThumbnailURL, u.Thumbnail2URL, u.ThumbnailUploadedAt,
-		perms, extras, u.CreatedAt)
+		perms, extras, u.CreatedAt, u.Provisional)
 	if err != nil {
 		return mapErr(err)
 	}
@@ -206,12 +209,12 @@ func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User) error {
 			thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 			permissions, extras,
 			blocks_updated_at, friends_updated_at, created_at, updated_at,
-			login_username, login_password_hash)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10,$11,$12)`,
+			login_username, login_password_hash, discord_user_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10,$11,$12,$13)`,
 		u.ID, u.Nickname, u.Country, u.Birthday,
 		u.ThumbnailURL, u.Thumbnail2URL, u.ThumbnailUploadedAt,
 		perms, extras, u.CreatedAt,
-		u.LoginUsername, u.LoginPasswordHash)
+		u.LoginUsername, u.LoginPasswordHash, nullIfEmpty(u.DiscordUserID))
 	if err != nil {
 		return mapErr(err)
 	}
@@ -242,6 +245,15 @@ func (p *Postgres) CreateDeviceAccountForUser(ctx context.Context, da DeviceAcco
 func (p *Postgres) GetUserByLoginUsername(ctx context.Context, username string) (User, error) {
 	return scanUser(p.pool.QueryRow(ctx,
 		`SELECT `+userColumns+` FROM users WHERE lower(login_username) = lower($1)`, username))
+}
+
+// GetUserByDiscordID looks up the user a Discord account registered.
+func (p *Postgres) GetUserByDiscordID(ctx context.Context, discordUserID string) (User, error) {
+	if discordUserID == "" {
+		return User{}, ErrNotFound
+	}
+	return scanUser(p.pool.QueryRow(ctx,
+		`SELECT `+userColumns+` FROM users WHERE discord_user_id = $1`, discordUserID))
 }
 
 // GetUser returns a user by id.
@@ -293,6 +305,9 @@ func (p *Postgres) UpdateUser(ctx context.Context, id string, patch UserPatch) (
 	}
 	if patch.Deleted != nil {
 		add("deleted", *patch.Deleted)
+	}
+	if patch.LoginPasswordHash != nil {
+		add("login_password_hash", *patch.LoginPasswordHash)
 	}
 
 	q := `UPDATE users SET ` + strings.Join(sets, ", ") +
@@ -469,16 +484,31 @@ func (p *Postgres) DeleteDeviceAccount(ctx context.Context, userID, id string) e
 // device_accounts.user_id foreign key does the "does the target user exist"
 // check for free: a violation maps to ErrNotFound (see mapErr).
 func (p *Postgres) ReassignDeviceAccount(ctx context.Context, deviceAccountID, newUserID string) error {
-	tag, err := p.pool.Exec(ctx, `
-		UPDATE device_accounts SET user_id = $2, updated_at = now()
-		WHERE id = $1`, deviceAccountID, newUserID)
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var oldUserID string
+	err = tx.QueryRow(ctx, `
+		UPDATE device_accounts d SET user_id = $2, updated_at = now()
+		FROM device_accounts old
+		WHERE d.id = $1 AND old.id = d.id
+		RETURNING old.user_id`, deviceAccountID, newUserID).Scan(&oldUserID)
 	if err != nil {
 		return mapErr(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+	if oldUserID != newUserID {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM users u
+			WHERE u.id = $1 AND u.provisional
+			  AND NOT EXISTS (SELECT 1 FROM device_accounts d WHERE d.user_id = u.id)`,
+			oldUserID); err != nil {
+			return mapErr(err)
+		}
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // UndeleteDeviceAccount clears deleted_at.
@@ -1636,7 +1666,8 @@ func scanComponentFile(row interface{ Scan(...any) error }) (ComponentFile, erro
 func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
 	var s Stats
 	err := p.pool.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM users),
+		(SELECT count(*) FROM users WHERE NOT provisional),
+		(SELECT count(*) FROM users WHERE provisional),
 		(SELECT count(*) FROM users WHERE deleted),
 		(SELECT count(*) FROM device_accounts),
 		(SELECT count(*) FROM device_accounts WHERE deleted_at IS NOT NULL),
@@ -1647,7 +1678,7 @@ func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
 		(SELECT count(*) FROM npln_matches),
 		(SELECT count(*) FROM images),
 		(SELECT count(*) FROM scsi_save_data_archives)
-	`).Scan(&s.Users, &s.DeletedUsers, &s.DeviceAccounts, &s.DeletedDeviceAccounts,
+	`).Scan(&s.Users, &s.ProvisionalUsers, &s.DeletedUsers, &s.DeviceAccounts, &s.DeletedDeviceAccounts,
 		&s.Devices, &s.Friendships, &s.Fests, &s.CoopShifts, &s.Matches, &s.Images,
 		&s.SaveDataArchives)
 	return s, mapErr(err)

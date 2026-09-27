@@ -147,10 +147,13 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 		// capture. Real accounts have a thumbnail (even the default one) from
 		// the moment they exist, same reasoning as EmptyExtras' defaults.
 		ThumbnailUploadedAt: &now,
-		BlocksUpdatedAt:     now,
-		FriendsUpdatedAt:    now,
-		CreatedAt:           now,
-		UpdatedAt:           now,
+		// This console's placeholder until it links to a real person's
+		// account, which deletes it (db.Store.ReassignDeviceAccount).
+		Provisional:      true,
+		BlocksUpdatedAt:  now,
+		FriendsUpdatedAt: now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 	deviceAccount := db.DeviceAccount{
 		ID:             deviceAccountID,

@@ -82,6 +82,8 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"componentFiles":            testComponentFiles,
 		"ping":                      testPing,
 		"stats":                     testStats,
+		"provisionalUsers":          testProvisionalUsers,
+		"discordUsers":              testDiscordUsers,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -2111,5 +2113,126 @@ func testNEXRecords(t *testing.T, s Store) {
 	}
 	if _, err := s.GetNEXRecord(ctx, "other", "fest_vote", "1:a"); err != nil {
 		t.Fatal("deleting one title's record touched another's")
+	}
+}
+
+// makeProvisionalUser is makeUser for a console's pre-link placeholder.
+func makeProvisionalUser(t *testing.T, s Store) (User, DeviceAccount) {
+	t.Helper()
+	seq++
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	u := User{
+		ID: hexID(seq), Birthday: "0000-00-00",
+		Permissions: DefaultPermissions(now), Extras: EmptyExtras(),
+		Provisional:     true,
+		BlocksUpdatedAt: now, FriendsUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
+	}
+	da := DeviceAccount{
+		ID: hexID(seq + 100000), UserID: u.ID,
+		PasswordSHA256: "0000000000000000000000000000000000000000000000000000000000000000",
+		CreatedAt:      now, UpdatedAt: now,
+	}
+	if err := s.CreateUser(t.Context(), u, da); err != nil {
+		t.Fatalf("create provisional user: %v", err)
+	}
+	return u, da
+}
+
+// Linking a console moves its device account to the real person and must
+// delete the placeholder it leaves behind, with everything hanging off it.
+// A placeholder that still has another device account stays.
+func testProvisionalUsers(t *testing.T, s Store) {
+	ctx := t.Context()
+	person := makeUser(t, s, "Person")
+
+	throwaway, da := makeProvisionalUser(t, s)
+	if got, err := s.GetUser(ctx, throwaway.ID); err != nil || !got.Provisional {
+		t.Fatalf("provisional flag did not round-trip: %+v, %v", got, err)
+	}
+	if err := s.SetFriendCode(ctx, FriendCode{UserID: throwaway.ID, Code: "111122223333", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(), RegenerableAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("set friend code: %v", err)
+	}
+	if err := s.AddFriendship(ctx, throwaway.ID, person.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("add friendship: %v", err)
+	}
+
+	stats, err := s.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.ProvisionalUsers != 1 {
+		t.Errorf("provisional users = %d, want 1", stats.ProvisionalUsers)
+	}
+
+	if err := s.ReassignDeviceAccount(ctx, da.ID, person.ID); err != nil {
+		t.Fatalf("reassign: %v", err)
+	}
+	if _, err := s.GetUser(ctx, throwaway.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the placeholder survived linking: err = %v", err)
+	}
+	if _, err := s.GetFriendCode(ctx, throwaway.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the placeholder's friend code survived: err = %v", err)
+	}
+	if friends, err := s.ListFriends(ctx, person.ID, 10); err != nil || len(friends) != 0 {
+		t.Errorf("a friendship with the deleted placeholder survived: %+v, %v", friends, err)
+	}
+	if got, err := s.GetDeviceAccount(ctx, da.ID); err != nil || got.UserID != person.ID {
+		t.Errorf("device account after linking = %+v, %v", got, err)
+	}
+
+	// Two consoles' worth of device accounts: moving one keeps the user.
+	shared, first := makeProvisionalUser(t, s)
+	seq++
+	second := DeviceAccount{ID: hexID(seq + 100000), UserID: shared.ID,
+		PasswordSHA256: first.PasswordSHA256, CreatedAt: first.CreatedAt, UpdatedAt: first.UpdatedAt}
+	if err := s.CreateDeviceAccountForUser(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReassignDeviceAccount(ctx, first.ID, person.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetUser(ctx, shared.ID); err != nil {
+		t.Errorf("a placeholder with a device account left was deleted: %v", err)
+	}
+}
+
+func testDiscordUsers(t *testing.T, s Store) {
+	ctx := t.Context()
+	seq++
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	u := User{
+		ID: hexID(seq), Nickname: "disc", Birthday: "0000-00-00",
+		Permissions: DefaultPermissions(now), Extras: EmptyExtras(),
+		BlocksUpdatedAt: now, FriendsUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
+		LoginUsername: "disc", LoginPasswordHash: "$2a$10$old",
+		DiscordUserID: "123456789012345678",
+	}
+	if err := s.CreateUserWithLogin(ctx, u); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.GetUserByDiscordID(ctx, "123456789012345678")
+	if err != nil || got.ID != u.ID || got.DiscordUserID != u.DiscordUserID || got.Provisional {
+		t.Fatalf("GetUserByDiscordID = %+v, %v", got, err)
+	}
+	if _, err := s.GetUserByDiscordID(ctx, ""); !errors.Is(err, ErrNotFound) {
+		t.Errorf("empty discord id: err = %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetUserByDiscordID(ctx, "999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown discord id: err = %v, want ErrNotFound", err)
+	}
+
+	seq++
+	dup := u
+	dup.ID, dup.LoginUsername = hexID(seq), "disc2"
+	if err := s.CreateUserWithLogin(ctx, dup); !errors.Is(err, ErrConflict) {
+		t.Errorf("second user for one discord account: err = %v, want ErrConflict", err)
+	}
+
+	hash := "$2a$10$new"
+	if _, err := s.UpdateUser(ctx, u.ID, UserPatch{LoginPasswordHash: &hash}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetUser(ctx, u.ID); got.LoginPasswordHash != hash {
+		t.Errorf("password hash after update = %q", got.LoginPasswordHash)
 	}
 }

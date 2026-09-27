@@ -125,6 +125,9 @@ func (m *Memory) CreateUserWithLogin(_ context.Context, u User) error {
 		if existing.LoginUsername != "" && strings.EqualFold(existing.LoginUsername, u.LoginUsername) {
 			return fmt.Errorf("%w: login username %s is taken", ErrConflict, u.LoginUsername)
 		}
+		if u.DiscordUserID != "" && existing.DiscordUserID == u.DiscordUserID {
+			return fmt.Errorf("%w: discord user %s is registered", ErrConflict, u.DiscordUserID)
+		}
 	}
 	if u.Extras == nil {
 		u.Extras = EmptyExtras()
@@ -155,6 +158,21 @@ func (m *Memory) GetUserByLoginUsername(_ context.Context, username string) (Use
 	defer m.mu.RUnlock()
 	for _, u := range m.users {
 		if u.LoginUsername != "" && strings.EqualFold(u.LoginUsername, username) {
+			return cloneUser(u), nil
+		}
+	}
+	return User{}, ErrNotFound
+}
+
+// GetUserByDiscordID looks up the user a Discord account registered.
+func (m *Memory) GetUserByDiscordID(_ context.Context, discordUserID string) (User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if discordUserID == "" {
+		return User{}, ErrNotFound
+	}
+	for _, u := range m.users {
+		if u.DiscordUserID == discordUserID {
 			return cloneUser(u), nil
 		}
 	}
@@ -208,6 +226,9 @@ func (m *Memory) UpdateUser(_ context.Context, id string, p UserPatch) (User, er
 	}
 	if p.Deleted != nil {
 		u.Deleted = *p.Deleted
+	}
+	if p.LoginPasswordHash != nil {
+		u.LoginPasswordHash = *p.LoginPasswordHash
 	}
 	u.UpdatedAt = time.Now().UTC()
 	m.users[id] = u
@@ -367,10 +388,58 @@ func (m *Memory) ReassignDeviceAccount(_ context.Context, deviceAccountID, newUs
 	if _, ok := m.users[newUserID]; !ok {
 		return ErrNotFound
 	}
+	oldUserID := da.UserID
 	da.UserID = newUserID
 	da.UpdatedAt = time.Now().UTC()
 	m.deviceAccounts[deviceAccountID] = da
+	if old, ok := m.users[oldUserID]; ok && old.Provisional && oldUserID != newUserID {
+		for _, other := range m.deviceAccounts {
+			if other.UserID == oldUserID {
+				return nil
+			}
+		}
+		m.deleteUserLocked(oldUserID)
+	}
 	return nil
+}
+
+// deleteUserLocked removes a user and everything Postgres's ON DELETE
+// CASCADE foreign keys would remove with it.
+func (m *Memory) deleteUserLocked(id string) {
+	delete(m.users, id)
+	delete(m.friendCodes, id)
+	delete(m.presence, id)
+	delete(m.friendships, id)
+	for _, byFriend := range m.friendships {
+		delete(byFriend, id)
+	}
+	delete(m.blocks, id)
+	for _, byBlocked := range m.blocks {
+		delete(byBlocked, id)
+	}
+	for rid, r := range m.friendRequests {
+		if r.FromUserID == id || r.ToUserID == id {
+			delete(m.friendRequests, rid)
+		}
+	}
+	for daID, da := range m.deviceAccounts {
+		if da.UserID == id {
+			delete(m.deviceAccounts, daID)
+		}
+	}
+	for imgID, img := range m.images {
+		if img.OwnerID == id {
+			delete(m.images, imgID)
+		}
+	}
+	for tok, t := range m.naRefreshTokens {
+		if t.UserID == id {
+			delete(m.naRefreshTokens, tok)
+		}
+	}
+	for _, entries := range m.festEntries {
+		delete(entries, id)
+	}
 }
 
 // UndeleteDeviceAccount clears DeletedAt.
@@ -1156,6 +1225,10 @@ func (m *Memory) Stats(context.Context) (Stats, error) {
 		SaveDataArchives: len(m.saveDataArchives),
 	}
 	for _, u := range m.users {
+		if u.Provisional {
+			s.Users--
+			s.ProvisionalUsers++
+		}
 		if u.Deleted {
 			s.DeletedUsers++
 		}

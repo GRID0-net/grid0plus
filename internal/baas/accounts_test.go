@@ -2,6 +2,7 @@ package baas
 
 import (
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -1538,5 +1539,54 @@ func TestFederationNxAccountHasTheRealShapeNotTheOldPlaceholder(t *testing.T) {
 	nxAccount, _ := body.User.Extras[db.ScopeSelf]["nxAccount"].(string)
 	if len(nxAccount) != 232 {
 		t.Errorf("federation's own embedded extras.self.nxAccount has length %d, want 232", len(nxAccount))
+	}
+}
+
+// Linking a console to a real person's SwitchNet account used to leave the
+// user registerUser invented behind forever, counted as a player with no
+// console (ROADMAP 5.1). The placeholder is deleted when its only device
+// account moves to the person.
+func TestLinkingAConsoleLeavesNoThrowawayUserBehind(t *testing.T) {
+	h := newHarness(t)
+	a := h.register()
+	placeholder := a.UserID
+	if u, err := h.store.GetUser(t.Context(), placeholder); err != nil || !u.Provisional {
+		t.Fatalf("a console-created user should be provisional: %+v, %v", u, err)
+	}
+
+	now := h.clock()
+	person := db.User{
+		ID: "00000000000000aa", Birthday: "2000-01-01",
+		Permissions: db.DefaultPermissions(now), Extras: db.EmptyExtras(),
+		BlocksUpdatedAt: now, FriendsUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
+		LoginUsername: "person", LoginPasswordHash: "$2a$10$x",
+	}
+	if err := h.store.CreateUserWithLogin(t.Context(), person); err != nil {
+		t.Fatal(err)
+	}
+
+	idToken, err := h.srv.naIDIssuer.Sign(sjwt.BAASTokenClaims{
+		Subject: person.ID, Audience: "test",
+		IssuedAt: now.Unix(), Expires: now.Add(time.Minute).Unix(),
+		Issuer: "https://accounts.nintendo.com", TokenID: sjwt.NewTokenID(), Type: "id_token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := h.do(request{
+		method: "POST", path: "/1.0.0/federation", token: h.anonymousToken(),
+		form: url.Values{
+			"idp": {"nintendoAccount"}, "id": {a.DeviceAccountID},
+			"password": {a.Password}, "idToken": {idToken},
+		},
+	})
+	requireStatus(t, resp, 200)
+
+	if _, err := h.store.GetUser(t.Context(), placeholder); !errors.Is(err, db.ErrNotFound) {
+		t.Errorf("the console's placeholder user survived linking: err = %v", err)
+	}
+	da, err := h.store.GetDeviceAccount(t.Context(), a.DeviceAccountID)
+	if err != nil || da.UserID != person.ID {
+		t.Errorf("device account after linking = %+v, %v; want it on %s", da, err, person.ID)
 	}
 }
