@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -73,6 +75,9 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		m.s.log.Error("npln: enqueue", "user", caller.UserID, "error", err)
 		return nil, errMalformed(m.s.env)
 	}
+	if uds := req.GetMatchmakingTicket().GetUserDefinitions(); len(uds) > 0 {
+		m.s.ticketDefs.Store(ticket.ID, uds[0])
+	}
 	for _, sess := range sessions {
 		m.s.log.Info("npln: match formed",
 			"session", sess.ID, "mode", sess.Mode,
@@ -90,11 +95,7 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	searching := ticket
 	searching.State = matchmaking.StateSearching
 	searching.SessionID = ""
-	proto, err := m.s.ticketProto(searching)
-	if err != nil {
-		return nil, err
-	}
-	return proto, nil
+	return m.s.ticketProto(searching)
 }
 
 // recordMatch persists a formed session to the match history, for the
@@ -148,6 +149,24 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 	updates, stop := m.s.queue.Watch(id)
 	defer stop()
 
+	// Nintendo's stream always runs SEARCHING, PLACING, SUCCEEDED (NextendoNetwork's
+	// capture notes, facts only). A ticket that matched inside Create would otherwise
+	// open on SUCCEEDED; given that (2026-09-27 hardware, both consoles) the game took
+	// the session and did nothing with it.
+	sent := matchmaking.StateSearching
+	started := false
+	send := func(t matchmaking.Ticket) error {
+		msg, err := m.s.ticketProto(t)
+		if err != nil {
+			return err
+		}
+		m.s.log.Info("npln: track frame", "ticket", id, "state", msg.GetState().String(),
+			"bytes", proto.Size(msg))
+		started = true
+		sent = t.State
+		return stream.Send(msg)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -157,11 +176,26 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 			if !open {
 				return nil
 			}
-			proto, err := m.s.ticketProto(t)
-			if err != nil {
-				return err
+			if t.State == matchmaking.StateSucceeded && sent != matchmaking.StatePlacing {
+				early := t
+				early.SessionID = ""
+				if !started {
+					early.State = matchmaking.StateSearching
+					if err := send(early); err != nil {
+						return err
+					}
+				}
+				early.State = matchmaking.StatePlacing
+				if err := send(early); err != nil {
+					return err
+				}
+				select {
+				case <-time.After(time.Second):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
-			if err := stream.Send(proto); err != nil {
+			if err := send(t); err != nil {
 				return err
 			}
 			if t.State == matchmaking.StateSucceeded {
@@ -728,6 +762,17 @@ func turnProtocol(name string) mmpb.TurnServer_Protocol {
 // tenantPath is the resource-name prefix every matchmaking resource hangs off.
 func (s *Server) tenantPath() string { return "tenants/" + s.tenant }
 
+// concreteName resolves the "tenants/current/" alias to this server's tenant.
+func (s *Server) concreteName(name string) string {
+	if rest, ok := strings.CutPrefix(name, "tenants/current/"); ok {
+		return s.tenantPath() + "/" + rest
+	}
+	return name
+}
+
+// ticketPlacedMark is field 9 = 1 (tag 0x48, varint 1).
+var ticketPlacedMark = protoreflect.RawFields{0x48, 0x01}
+
 // ticketProto renders a queue ticket as the wire message.
 //
 // The resource-name shape is confirmed, not guessed: a 2026-09-20 decompile
@@ -742,13 +787,25 @@ func (s *Server) tenantPath() string { return "tenants/" + s.tenant }
 // package would otherwise cost a cosmetic mismatch instead of a broken Track
 // or Cancel -- this confirmation does not change that defensive choice.
 func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, error) {
+	def := &mmpb.UserDefinition{User: s.userResourceName(t.UserID)}
+	if v, ok := s.ticketDefs.Load(t.ID); ok {
+		sent := v.(*mmpb.UserDefinition)
+		def.Attributes = sent.GetAttributes()
+		def.LatencyData = sent.GetLatencyData()
+		def.Team = sent.GetTeam()
+	}
 	out := &mmpb.MatchmakingTicket{
-		Name:              s.tenantPath() + "/matchmakingTickets/" + t.ID,
-		MatchmakingConfig: t.Mode,
+		Name: s.tenantPath() + "/matchmakingTickets/" + t.ID,
+		// The game sends the tenants/current alias; Nintendo answers with the
+		// concrete tenant, and its stream carries no "tenants/current" anywhere.
+		MatchmakingConfig: s.concreteName(t.Mode),
 		State:             ticketState(t.State),
-		UserDefinitions: []*mmpb.UserDefinition{
-			{User: s.userResourceName(t.UserID)},
-		},
+		UserDefinitions:   []*mmpb.UserDefinition{def},
+	}
+	if t.State == matchmaking.StatePlacing || t.State == matchmaking.StateSucceeded {
+		// Field 9, unnamed in every reconstructed .proto: a varint 1 that
+		// Nintendo's ticket carries from PLACING on and never before.
+		out.ProtoReflect().SetUnknown(ticketPlacedMark)
 	}
 
 	if t.SessionID == "" {

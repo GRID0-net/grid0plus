@@ -3,6 +3,7 @@ package npln
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -788,4 +789,51 @@ func trackResult(
 		t.Fatalf("TrackMatchmakingTicket: %v", err)
 	}
 	return awaitSucceeded(t, stream)
+}
+
+// A ticket that completed its match inside Create must still stream the whole
+// SEARCHING, PLACING, SUCCEEDED sequence, with field 9 from PLACING on and the
+// config resolved off the tenants/current alias. Opening on SUCCEEDED left both
+// consoles holding a session they never used (2026-09-27 hardware).
+func TestATicketMatchedOnCreateStreamsSearchingPlacingSucceeded(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("player-one", "device-one")
+	h.createUser("player-two", "device-two")
+	one := h.ctx(h.sessionFor(t, "player-one", "device-one"), "")
+	two := h.ctx(h.sessionFor(t, "player-two", "device-two"), "")
+	client := mmpb.NewMatchmakerClient(h.conn)
+
+	const alias = "tenants/current/matchmakingConfigs/regular_match_config"
+	if _, err := client.CreateMatchmakingTicket(one, ticketFor(alias)); err != nil {
+		t.Fatalf("CreateMatchmakingTicket (one): %v", err)
+	}
+	second, err := client.CreateMatchmakingTicket(two, ticketFor(alias))
+	if err != nil {
+		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
+	}
+	if strings.Contains(second.GetMatchmakingConfig(), "tenants/current") {
+		t.Fatalf("config echoed as the alias: %q", second.GetMatchmakingConfig())
+	}
+
+	stream, err := client.TrackMatchmakingTicket(two,
+		&mmpb.TrackMatchmakingTicketRequest{Name: second.GetName()})
+	if err != nil {
+		t.Fatalf("TrackMatchmakingTicket: %v", err)
+	}
+	want := []mmpb.MatchmakingTicket_State{
+		mmpb.MatchmakingTicket_SEARCHING, mmpb.MatchmakingTicket_PLACING, mmpb.MatchmakingTicket_SUCCEEDED,
+	}
+	for i, st := range want {
+		got, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("frame %d: %v", i, err)
+		}
+		if got.GetState() != st {
+			t.Fatalf("frame %d: state %v, want %v", i, got.GetState(), st)
+		}
+		hasField9 := string(got.ProtoReflect().GetUnknown()) == "\x48\x01"
+		if hasField9 != (st != mmpb.MatchmakingTicket_SEARCHING) {
+			t.Fatalf("frame %d (%v): field 9 present=%v", i, st, hasField9)
+		}
+	}
 }

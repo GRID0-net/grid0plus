@@ -49,6 +49,11 @@ type Server struct {
 	sessionHost string
 	sessionPort int32
 
+	// ticketDefs holds each ticket's user definition as the console sent it
+	// (attributes, latencies, team), keyed by ticket id, so every frame of
+	// the ticket echoes it back the way Nintendo's does.
+	ticketDefs sync.Map
+
 	// tenantSeen logs, once, the npln-tenant-id form the console really sends.
 	tenantSeen sync.Once
 
