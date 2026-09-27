@@ -403,75 +403,95 @@ func (s *Server) createFriendRequest(w http.ResponseWriter, r *http.Request, c *
 		return
 	}
 
-	if target.ID == c.UserID {
+	req, err := s.sendFriendRequest(r.Context(), c.UserID, target)
+	switch {
+	case errors.Is(err, errSelfFriendRequest):
+		writeError(w, r, errInvalidParams)
+		return
+	case errors.Is(err, errFriendRequestRefused):
+		writeError(w, r, errForbidden)
+		return
+	case errors.Is(err, errAlreadyFriends):
+		writeError(w, r, errResourceAlreadyExists)
+		return
+	case err != nil:
+		writeInternalError(s.log, w, r, "send friend request", err)
+		return
+	}
+	if req.State == db.RequestAccepted {
+		writeJSON(w, http.StatusCreated, FriendRequestResponse{
+			ID:         req.ID,
+			SenderID:   req.FromUserID,
+			ReceiverID: req.ToUserID,
+			State:      requestStateToWire(db.RequestAccepted),
+			CreatedAt:  req.CreatedAt.Unix(),
+			UpdatedAt:  s.now().Unix(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusCreated, s.friendRequestResponse(r.Context(), req, c.UserID))
+}
+
+var (
+	errSelfFriendRequest    = errors.New("friend request to oneself")
+	errFriendRequestRefused = errors.New("target does not accept friend requests from the sender")
+	errAlreadyFriends       = errors.New("already friends")
+)
+
+// sendFriendRequest is every rule about adding a friend, shared by the
+// console's endpoint and the Discord bot's. A request crossing one the target
+// already sent is accepted instead: the returned request is then that
+// incoming one, in state RequestAccepted.
+func (s *Server) sendFriendRequest(ctx context.Context, fromID string, target db.User) (db.FriendRequest, error) {
+	if target.ID == fromID {
 		// Refusing this is not pedantry. When identity resolution upstream is
 		// broken, "add a friend" becomes a self-request surprisingly often, and
 		// a friend graph full of self-edges is very hard to read back.
-		s.log.Warn("baas: refused self friend request", "user", c.UserID)
-		writeError(w, r, errInvalidParams)
-		return
+		s.log.Warn("baas: refused self friend request", "user", fromID)
+		return db.FriendRequest{}, errSelfFriendRequest
 	}
 
-	blocked, err := s.store.IsBlockedEitherWay(r.Context(), c.UserID, target.ID)
+	blocked, err := s.store.IsBlockedEitherWay(ctx, fromID, target.ID)
 	if err != nil {
-		writeInternalError(s.log, w, r, "check blocks", err)
-		return
+		return db.FriendRequest{}, err
 	}
-	if blocked {
-		// Deliberately the same error as "does not accept requests", so a
-		// blocked sender cannot tell a block apart from a preference.
-		writeError(w, r, errForbidden)
-		return
+	// A block answers the same as "does not accept requests", so a blocked
+	// sender cannot tell a block apart from a preference.
+	if blocked || !target.Permissions.FriendRequestReception {
+		return db.FriendRequest{}, errFriendRequestRefused
 	}
 
-	if !target.Permissions.FriendRequestReception {
-		writeError(w, r, errForbidden)
-		return
-	}
-
-	if _, err := s.store.GetFriendship(r.Context(), c.UserID, target.ID); err == nil {
-		writeError(w, r, errResourceAlreadyExists)
-		return
+	if _, err := s.store.GetFriendship(ctx, fromID, target.ID); err == nil {
+		return db.FriendRequest{}, errAlreadyFriends
 	}
 
 	// If the target already asked us, accept instead of queueing a second
 	// request in the other direction. Two people who add each other at the same
 	// moment should end up friends, not with an unanswered request each.
-	if incoming, err := s.store.FindPendingRequest(r.Context(), target.ID, c.UserID); err == nil {
-		if err := s.acceptRequest(r.Context(), incoming); err != nil {
-			writeInternalError(s.log, w, r, "accept crossing friend request", err)
-			return
+	if incoming, err := s.store.FindPendingRequest(ctx, target.ID, fromID); err == nil {
+		if err := s.acceptRequest(ctx, incoming); err != nil {
+			return db.FriendRequest{}, err
 		}
 		s.log.Info("baas: friend requests crossed, became friends",
-			"user", c.UserID, "friend", target.ID)
-		writeJSON(w, http.StatusCreated, FriendRequestResponse{
-			ID:         incoming.ID,
-			SenderID:   incoming.FromUserID,
-			ReceiverID: incoming.ToUserID,
-			State:      requestStateToWire(db.RequestAccepted),
-			CreatedAt:  incoming.CreatedAt.Unix(),
-			UpdatedAt:  s.now().Unix(),
-		})
-		return
+			"user", fromID, "friend", target.ID)
+		incoming.State = db.RequestAccepted
+		return incoming, nil
 	}
 
 	now := s.now()
-	req, err := s.store.CreateFriendRequest(r.Context(), db.FriendRequest{
+	req, err := s.store.CreateFriendRequest(ctx, db.FriendRequest{
 		ID:         uuid.NewString(),
-		FromUserID: c.UserID,
+		FromUserID: fromID,
 		ToUserID:   target.ID,
 		State:      db.RequestPending,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	})
 	if err != nil {
-		writeInternalError(s.log, w, r, "create friend request", err)
-		return
+		return db.FriendRequest{}, err
 	}
-
-	s.log.Info("baas: friend request sent", "from", c.UserID, "to", target.ID, "request", req.ID)
-
-	writeJSON(w, http.StatusCreated, s.friendRequestResponse(r.Context(), req, c.UserID))
+	s.log.Info("baas: friend request sent", "from", fromID, "to", target.ID, "request", req.ID)
+	return req, nil
 }
 
 func (s *Server) parseFriendRequestBody(r *http.Request) (createFriendRequestBody, error) {
@@ -558,71 +578,84 @@ func (s *Server) resolveTarget(w http.ResponseWriter, r *http.Request, body crea
 // shape for a PATCH and guessing wrong would stop friend requests working with
 // nothing in the log to explain it.
 func (s *Server) resolveFriendRequest(w http.ResponseWriter, r *http.Request, c *caller) {
-	rid := r.PathValue("rid")
-
-	req, err := s.store.GetFriendRequest(r.Context(), rid)
+	state, err := parseRequestState(r)
+	if err != nil {
+		// Checked after the request itself only matters for the order of
+		// errors; an unreadable body is a bad request either way.
+		state = ""
+	}
+	req, err := s.settleFriendRequest(r.Context(), c.UserID, r.PathValue("rid"), state)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		writeError(w, r, errResourceNotFound)
 		return
-	case err != nil:
-		writeInternalError(s.log, w, r, "load friend request", err)
-		return
-	}
-
-	// Only the two parties may touch a request, and each may only do their own
-	// half: the recipient accepts or denies, the sender cancels.
-	if c.UserID != req.FromUserID && c.UserID != req.ToUserID {
-		s.log.Warn("baas: refused friend request action by a third party",
-			"caller", c.UserID, "request", rid)
+	case errors.Is(err, errNotYourRequest):
 		writeError(w, r, errInsufficientScope)
 		return
-	}
-	if req.State != db.RequestPending {
+	case errors.Is(err, errRequestNotPending):
 		writeError(w, r, errResourceAlreadyExists)
 		return
-	}
-
-	state, err := parseRequestState(r)
-	if err != nil {
+	case errors.Is(err, errBadRequestState):
 		writeError(w, r, errInvalidParams)
 		return
+	case err != nil:
+		writeInternalError(s.log, w, r, "resolve friend request", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.friendRequestResponse(r.Context(), req, c.UserID))
+}
+
+var (
+	errNotYourRequest    = errors.New("caller may not do that to this friend request")
+	errRequestNotPending = errors.New("friend request is no longer pending")
+	errBadRequestState   = errors.New("not a state a friend request can be moved to")
+)
+
+// settleFriendRequest accepts, denies or cancels a pending request. Only the
+// two parties may touch it, and each only their own half: the recipient
+// accepts or denies, the sender cancels.
+func (s *Server) settleFriendRequest(ctx context.Context, callerID, rid, state string) (db.FriendRequest, error) {
+	req, err := s.store.GetFriendRequest(ctx, rid)
+	if err != nil {
+		return db.FriendRequest{}, err
+	}
+	if callerID != req.FromUserID && callerID != req.ToUserID {
+		s.log.Warn("baas: refused friend request action by a third party",
+			"caller", callerID, "request", rid)
+		return db.FriendRequest{}, errNotYourRequest
+	}
+	if req.State != db.RequestPending {
+		return db.FriendRequest{}, errRequestNotPending
 	}
 
-	isRecipient := c.UserID == req.ToUserID
+	isRecipient := callerID == req.ToUserID
 	switch state {
 	case db.RequestAccepted, db.RequestDenied:
 		if !isRecipient {
-			writeError(w, r, errInsufficientScope)
-			return
+			return db.FriendRequest{}, errNotYourRequest
 		}
 	case db.RequestCancelled:
 		if isRecipient {
-			writeError(w, r, errInsufficientScope)
-			return
+			return db.FriendRequest{}, errNotYourRequest
 		}
 	default:
-		writeError(w, r, errInvalidParams)
-		return
+		return db.FriendRequest{}, errBadRequestState
 	}
 
 	if state == db.RequestAccepted {
-		if err := s.acceptRequest(r.Context(), req); err != nil {
-			writeInternalError(s.log, w, r, "accept friend request", err)
-			return
+		if err := s.acceptRequest(ctx, req); err != nil {
+			return db.FriendRequest{}, err
 		}
-	} else if err := s.store.SetFriendRequestState(r.Context(), req.ID, state, s.now()); err != nil {
-		writeInternalError(s.log, w, r, "resolve friend request", err)
-		return
+	} else if err := s.store.SetFriendRequestState(ctx, req.ID, state, s.now()); err != nil {
+		return db.FriendRequest{}, err
 	}
 
 	s.log.Info("baas: friend request resolved",
 		"request", req.ID, "from", req.FromUserID, "to", req.ToUserID,
-		"state", state, "by", c.UserID)
-
+		"state", state, "by", callerID)
 	req.State = state
 	req.UpdatedAt = s.now()
-	writeJSON(w, http.StatusOK, s.friendRequestResponse(r.Context(), req, c.UserID))
+	return req, nil
 }
 
 // acceptRequest marks a request accepted and creates the friendship.

@@ -186,12 +186,8 @@ func (s *Server) Handler() http.Handler {
 	// different keys.
 	s.registerCertificateRoutes(mux)
 
-	// Self-service registration for a person, independent of any console.
-	// See website.go.
-	mux.HandleFunc("GET /register", s.registerPage)
-	mux.HandleFunc("POST /register", s.registerSubmit)
-
-	// The username/password login /register creates an account for. Not
+	// The username/password login the Discord bot creates an account for
+	// (botapi.go; the bot is the only way to create one). Not
 	// /1.0.0/login: that path is the real, Nintendo-shaped device-account
 	// protocol and stays exactly that shape. This one needs no prior access
 	// token, unlike /1.0.0/login -- see loginByUsername's own doc comment.

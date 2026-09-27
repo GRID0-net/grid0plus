@@ -885,20 +885,14 @@ func TestLoginRefusesADeletedUser(t *testing.T) {
 	requireError(t, resp, 404, "deleted_user")
 }
 
-// registerWebsiteUser creates a person through the same path a real operator
-// uses (POST /register), for tests of POST /login (username/password) that
-// need one already to exist.
+// registerWebsiteUser creates a person with login credentials, through the
+// same createLoginUser the Discord bot's /register uses, for tests of POST
+// /login (username/password) that need one already to exist.
 func registerWebsiteUser(t *testing.T, h *harness, username, password string) {
 	t.Helper()
-	resp, err := http.PostForm(h.server.URL+"/register", url.Values{
-		"username": {username},
-		"password": {password},
-	})
-	if err != nil {
+	if _, err := h.srv.createLoginUser(t.Context(), username, username, password, ""); err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
-	requireStatus(t, resp, 200)
 }
 
 // TestLoginByUsernameIssuesTokensForAWebsiteRegisteredPerson is POST /login's

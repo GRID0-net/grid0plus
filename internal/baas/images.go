@@ -2,6 +2,7 @@ package baas
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -84,60 +85,17 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request, c *caller) 
 		return
 	}
 
-	// Decode the image before writing anything. This is what makes the endpoint
-	// safe: a file that does not decode as a JPEG never reaches the disk, so the
-	// image directory cannot be used to host arbitrary content served from a
-	// hostname the consoles trust.
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || format != "jpeg" {
-		s.log.Warn("baas: image upload is not a JPEG",
-			"user", c.UserID, "format", format, "error", err)
+	img, thumb1, err := s.storeProfileImage(r.Context(), c.UserID, raw)
+	if errors.Is(err, errNotAJPEG) {
 		writeError(w, r, errInvalidRawContent)
 		return
 	}
-
-	imageID, err := newHexID(16)
 	if err != nil {
-		writeInternalError(s.log, w, r, "generate image id", err)
+		writeInternalError(s.log, w, r, "store image", err)
 		return
 	}
-	// The filename is built from the generated id, never from the request, so
-	// there is no path to traverse.
-	relPath := imageID + ".jpg"
-
-	if err := os.MkdirAll(s.cfg.ImageDir, 0o750); err != nil {
-		writeInternalError(s.log, w, r, "create image directory", err)
-		return
-	}
-	if err := os.WriteFile(filepath.Join(s.cfg.ImageDir, relPath), raw, 0o640); err != nil {
-		writeInternalError(s.log, w, r, "write image", err)
-		return
-	}
-
-	now := s.now()
-	img := db.Image{
-		ID: imageID, OwnerID: c.UserID, Format: "jpg",
-		Width: cfg.Width, Height: cfg.Height, SizeBytes: len(raw),
-		RelPath: relPath, CreatedAt: now, UpdatedAt: now,
-	}
-	if err := s.store.CreateImage(r.Context(), img); err != nil {
-		writeInternalError(s.log, w, r, "record image", err)
-		return
-	}
-
-	thumb1, thumb2 := s.imageURLs(relPath)
-
-	// Point the user's thumbnail at the new image. Without this the upload
-	// succeeds and the profile picture never changes, which looks like the
-	// upload failing.
-	if _, err := s.store.UpdateUser(r.Context(), c.UserID, db.UserPatch{
-		ThumbnailURL:        &thumb1,
-		Thumbnail2URL:       &thumb2,
-		ThumbnailUploadedAt: &now,
-	}); err != nil {
-		writeInternalError(s.log, w, r, "update thumbnail", err)
-		return
-	}
+	imageID, now := img.ID, img.CreatedAt
+	cfg := struct{ Width, Height int }{img.Width, img.Height}
 
 	s.log.Info("baas: image uploaded",
 		"user", c.UserID, "image", imageID, "bytes", len(raw),
@@ -159,6 +117,61 @@ func (s *Server) uploadImage(w http.ResponseWriter, r *http.Request, c *caller) 
 		CreatedAt: now.Unix(),
 		UpdatedAt: now.Unix(),
 	})
+}
+
+var errNotAJPEG = errors.New("image is not a JPEG")
+
+// storeProfileImage writes a JPEG to the image directory, records it, and
+// makes it the user's profile picture. Shared by the console's upload and
+// the Discord bot's avatar sync.
+func (s *Server) storeProfileImage(ctx context.Context, userID string, raw []byte) (db.Image, string, error) {
+	// Decode the image before writing anything. This is what makes it safe: a
+	// file that does not decode as a JPEG never reaches the disk, so the
+	// image directory cannot be used to host arbitrary content served from a
+	// hostname the consoles trust.
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil || format != "jpeg" {
+		s.log.Warn("baas: image upload is not a JPEG",
+			"user", userID, "format", format, "error", err)
+		return db.Image{}, "", errNotAJPEG
+	}
+
+	imageID, err := newHexID(16)
+	if err != nil {
+		return db.Image{}, "", err
+	}
+	// The filename is built from the generated id, never from the request, so
+	// there is no path to traverse.
+	relPath := imageID + ".jpg"
+	if err := os.MkdirAll(s.cfg.ImageDir, 0o750); err != nil {
+		return db.Image{}, "", err
+	}
+	if err := os.WriteFile(filepath.Join(s.cfg.ImageDir, relPath), raw, 0o640); err != nil {
+		return db.Image{}, "", err
+	}
+
+	now := s.now()
+	img := db.Image{
+		ID: imageID, OwnerID: userID, Format: "jpg",
+		Width: cfg.Width, Height: cfg.Height, SizeBytes: len(raw),
+		RelPath: relPath, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.store.CreateImage(ctx, img); err != nil {
+		return db.Image{}, "", err
+	}
+
+	thumb1, thumb2 := s.imageURLs(relPath)
+	// Point the user's thumbnail at the new image. Without this the upload
+	// succeeds and the profile picture never changes, which looks like the
+	// upload failing.
+	if _, err := s.store.UpdateUser(ctx, userID, db.UserPatch{
+		ThumbnailURL:        &thumb1,
+		Thumbnail2URL:       &thumb2,
+		ThumbnailUploadedAt: &now,
+	}); err != nil {
+		return db.Image{}, "", err
+	}
+	return img, thumb1, nil
 }
 
 // imageEnvelopeSlack is how much bigger the JSON body may be than the image
