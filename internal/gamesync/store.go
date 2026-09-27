@@ -23,12 +23,14 @@ import (
 type store struct {
 	now func() time.Time
 
-	mu   sync.RWMutex
-	docs map[string]*syncpb.Document
+	mu      sync.RWMutex
+	docs    map[string]*syncpb.Document
+	globals map[string]*commonpb.Value
+	nextSeq int64
 }
 
 func newStore(now func() time.Time) *store {
-	return &store{now: now, docs: map[string]*syncpb.Document{}}
+	return &store{now: now, docs: map[string]*syncpb.Document{}, globals: map[string]*commonpb.Value{}}
 }
 
 func (s *store) get(name string) (*syncpb.Document, bool) {
@@ -324,6 +326,18 @@ func (s *store) transform(
 				}
 				return b
 			})
+		case *syncpb.FieldTransform_LoadGlobalValue:
+			next = s.globalValue(t.LoadGlobalValue)
+		case *syncpb.FieldTransform_StoreGlobalValue:
+			if current != nil {
+				next = proto.Clone(current).(*commonpb.Value)
+			} else {
+				next = s.globalValue(t.StoreGlobalValue)
+			}
+			s.globals[t.StoreGlobalValue] = proto.Clone(next).(*commonpb.Value)
+		case *syncpb.FieldTransform_ClearGlobalValue:
+			delete(s.globals, t.ClearGlobalValue)
+			next = &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: 0}}
 		default:
 			return nil, nil, status.Errorf(codes.Unimplemented,
 				"field transform %T is not implemented", ft.GetTransformType())
@@ -337,17 +351,33 @@ func (s *store) transform(
 	return stored, values, nil
 }
 
+// globalValue allocates a positive connection sequence on first use. The game
+// treats a null or zero sequence as absence of its own presence member.
+// Called under the store's write lock.
+func (s *store) globalValue(key string) *commonpb.Value {
+	if existing := s.globals[key]; existing != nil {
+		return proto.Clone(existing).(*commonpb.Value)
+	}
+	s.nextSeq++
+	v := &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: s.nextSeq}}
+	s.globals[key] = proto.Clone(v).(*commonpb.Value)
+	return v
+}
+
 // transformSupported reports whether a transform can be applied.
 //
-// The global-value transforms are not: they read and write a namespace shared
-// across documents that nothing here models, and treating them as no-ops would
-// have a client store a value it later reads back as absent.
+// Reject unknown transforms in the precondition pass, before any part of a
+// batch is applied. The supported global-value transforms use the same store
+// lock as documents so a later operation in this batch sees their result.
 func transformSupported(ft *syncpb.FieldTransform) bool {
 	switch ft.GetTransformType().(type) {
 	case *syncpb.FieldTransform_SetServerValue,
 		*syncpb.FieldTransform_Increment,
 		*syncpb.FieldTransform_Maximum,
-		*syncpb.FieldTransform_Minimum:
+		*syncpb.FieldTransform_Minimum,
+		*syncpb.FieldTransform_LoadGlobalValue,
+		*syncpb.FieldTransform_StoreGlobalValue,
+		*syncpb.FieldTransform_ClearGlobalValue:
 		return true
 	}
 	return false

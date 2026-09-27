@@ -167,6 +167,7 @@ func main() {
 	sync, err := gamesync.New(gamesync.Options{
 		Log:              log.With("listener", "gamesync"),
 		VerifyIDToken:    srv.VerifyMatchmakingIDToken,
+		ResolveSession:   srv.ResolveGamesyncSession,
 		IssueAccessToken: gamesyncProbeSigner,
 	})
 	if err != nil {

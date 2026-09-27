@@ -667,23 +667,16 @@ func TestATransformThisServerCannotApplyIsRefusedBeforeAnythingIsWritten(t *test
 	h := newHarness(t)
 	alice := h.session("token-alice")
 
-	// A global-value transform reads and writes a namespace shared across
-	// documents that nothing here models. Treating it as a no-op would have the
-	// client store a value it later reads back as absent -- so it is refused,
-	// and refused in the precondition pass so the batch cannot half-apply.
+	// An unset transform type cannot be applied. Reject it before the first
+	// write in the batch, preserving the document store's atomicity.
 	_, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{
 		WriteOperations: []*syncpb.WriteOperation{
 			merge(doc("lobbies/1/state", map[string]*commonpb.Value{"phase": stringValue("waiting")})),
 			{
 				OperationType: &syncpb.WriteOperation_TransformDocument{
 					TransformDocument: &syncpb.TransformDocumentRequest{
-						Name: "lobbies/1/score",
-						FieldTransforms: []*syncpb.FieldTransform{{
-							FieldPath: "global",
-							TransformType: &syncpb.FieldTransform_LoadGlobalValue{
-								LoadGlobalValue: "somewhere",
-							},
-						}},
+						Name:            "lobbies/1/score",
+						FieldTransforms: []*syncpb.FieldTransform{{FieldPath: "unknown"}},
 					},
 				},
 			},
@@ -695,6 +688,49 @@ func TestATransformThisServerCannotApplyIsRefusedBeforeAnythingIsWritten(t *test
 	if _, err := h.client.GetDocument(alice,
 		&syncpb.GetDocumentRequest{Name: "lobbies/1/state"}); status.Code(err) != codes.NotFound {
 		t.Error("the batch partly applied before the unsupported transform was noticed")
+	}
+}
+
+func TestGlobalValueTransformsReturnTypedConnectionSequences(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	transform := func(name string, kind string) (*syncpb.WriteDocumentsResponse, error) {
+		ft := &syncpb.FieldTransform{FieldPath: "upcsid"}
+		switch kind {
+		case "load":
+			ft.TransformType = &syncpb.FieldTransform_LoadGlobalValue{LoadGlobalValue: "connection"}
+		case "store":
+			ft.TransformType = &syncpb.FieldTransform_StoreGlobalValue{StoreGlobalValue: "connection"}
+		case "clear":
+			ft.TransformType = &syncpb.FieldTransform_ClearGlobalValue{ClearGlobalValue: "connection"}
+		}
+		return h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{WriteOperations: []*syncpb.WriteOperation{{
+			OperationType: &syncpb.WriteOperation_TransformDocument{TransformDocument: &syncpb.TransformDocumentRequest{
+				Name: name, FieldTransforms: []*syncpb.FieldTransform{ft},
+			}},
+		}}})
+	}
+	first, err := transform("rooms/1/member/alice", "load")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequence := first.GetWriteResults()[0].GetTransformResult().GetResults()[0].GetIntegerValue()
+	if sequence <= 0 {
+		t.Fatalf("first connection sequence = %d, want positive", sequence)
+	}
+	second, err := transform("rooms/1/member/bob", "load")
+	if err != nil || second.GetWriteResults()[0].GetTransformResult().GetResults()[0].GetIntegerValue() != sequence {
+		t.Fatalf("reloaded sequence = %v, %v", second, err)
+	}
+	if _, err := transform("rooms/1/member/alice", "store"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transform("rooms/1/member/alice", "clear"); err != nil {
+		t.Fatal(err)
+	}
+	third, err := transform("rooms/1/member/bob", "load")
+	if err != nil || third.GetWriteResults()[0].GetTransformResult().GetResults()[0].GetIntegerValue() <= sequence {
+		t.Fatalf("new sequence after clear = %v, %v", third, err)
 	}
 }
 
@@ -868,6 +904,34 @@ func TestOwnUserSessionArrivesBeforeWatchSnapshotCompletes(t *testing.T) {
 	last, err := stream.Recv()
 	if err != nil || last.GetTargetChange().GetTargetId() != "1" || last.GetTargetChange().GetTargetChangeType() != syncpb.TargetChange_LISTED {
 		t.Fatalf("snapshot end = %v, %v", last, err)
+	}
+	read, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: "docs/__us/token-alice"})
+	if err != nil || !proto.Equal(read, change.GetDocument()) {
+		t.Fatalf("point read disagrees with the watch snapshot: %v, %v", read, err)
+	}
+}
+
+func TestOwnPresenceAndPlayerStateHaveTheCapturedFieldTypes(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	presence, err := h.client.ListDocuments(alice, &syncpb.ListDocumentsRequest{Parent: "docs/__pgn/All/__pus"})
+	if err != nil || len(presence.GetDocuments()) != 1 {
+		t.Fatalf("presence collection = %v, %v", presence, err)
+	}
+	member := presence.GetDocuments()[0]
+	if member.GetName() != "docs/__pgn/All/__pus/token-alice" || member.GetFields().GetFields()["uid"].GetStringValue() != "alice" {
+		t.Fatalf("presence member = %v", member)
+	}
+	state, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: "docs/__pgn/All/__stu/token-alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := state.GetFields().GetFields()
+	if fields["suid"].GetStringValue() != "alice" || fields["suscid"].GetIntegerValue() != 10001 {
+		t.Fatalf("player state identity = %v", fields)
+	}
+	if _, ok := fields["pl"].GetValueType().(*commonpb.Value_BytesValue); !ok {
+		t.Fatalf("player state pl has type %T, want bytes", fields["pl"].GetValueType())
 	}
 }
 

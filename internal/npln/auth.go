@@ -11,6 +11,7 @@ import (
 	gojwt "github.com/golang-jwt/jwt/v5"
 
 	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/switchnet/internal/gamesync"
 	"github.com/n-popescu/switchnet/internal/identity"
 	sjwt "github.com/n-popescu/switchnet/internal/jwt"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
@@ -526,6 +527,48 @@ func (s *Server) VerifyMatchmakingIDToken(idToken string) (string, error) {
 		return "", errors.New("no subject")
 	}
 	return claims.Subject, nil
+}
+
+// ResolveGamesyncSession supplies the room state behind a verified session
+// token. Gamesync uses it to answer the room-document watches; a claimed
+// session id alone is not enough if that room has expired or the player left.
+func (s *Server) ResolveGamesyncSession(idToken string) (gamesync.SessionDetails, error) {
+	var claims nplnClaims
+	if err := s.tokens.Verify(idToken, &claims); err != nil {
+		return gamesync.SessionDetails{}, err
+	}
+	g := claims.Gamesync
+	if claims.Issuer != sessionTokenIssuer || g == nil || claims.Subject == "" ||
+		g.UID != claims.Subject || g.TID != s.tenant || g.GSID == "" ||
+		g.USID != userSessionID(g.GSID, claims.Subject) {
+		return gamesync.SessionDetails{}, errors.New("invalid gamesync session claims")
+	}
+	sess, ok := s.queue.Session(g.GSID)
+	if !ok {
+		return gamesync.SessionDetails{}, errors.New("game session no longer exists")
+	}
+	member := false
+	for _, id := range sess.Players {
+		if id == claims.Subject {
+			member = true
+			break
+		}
+	}
+	if !member {
+		return gamesync.SessionDetails{}, errors.New("user is not in game session")
+	}
+	d := gamesync.SessionDetails{
+		UserID: claims.Subject, UserSessionID: g.USID, SessionID: sess.ID,
+		Tenant: s.tenant, Mode: sess.Mode, Host: s.sessionHost, Port: s.sessionPort,
+		Capacity: sess.MaxPlayers, ParticipantCount: len(sess.Players), CreatedAt: sess.CreatedAt,
+	}
+	if sess.Room {
+		if meta, ok := s.roomMetaFor(sess.ID); ok {
+			d.Password = meta.password
+			d.Properties = meta.properties
+		}
+	}
+	return d, nil
 }
 
 // logAuthFailure records why a call was refused, at the level that makes the

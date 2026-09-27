@@ -63,6 +63,10 @@ type Options struct {
 	// IssueToken. Required: without it there is no way to tell who is calling,
 	// and the answer to that is never "assume".
 	VerifyIDToken TokenVerifier
+	// ResolveSession supplies verified matchmaking context for the room docs
+	// watched immediately after IssueToken. It must reject a token that does
+	// not belong to an active session and its named user session.
+	ResolveSession func(idToken string) (SessionDetails, error)
 	// IssueAccessToken is an optional diagnostic signer for the gamesync
 	// access token. The normal opaque token remains the default until hardware
 	// confirms whether the client parses this field as a JWT.
@@ -88,6 +92,7 @@ type Server struct {
 
 	log              *slog.Logger
 	verify           TokenVerifier
+	resolveSession   func(string) (SessionDetails, error)
 	issueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
 	sessionTTL       time.Duration
 	now              func() time.Time
@@ -114,6 +119,7 @@ type session struct {
 	expiresAt     time.Time
 	activeStreams int
 	deferments    map[string][]*syncpb.WriteOperation
+	details       *SessionDetails
 }
 
 // New builds the service.
@@ -137,6 +143,7 @@ func New(opts Options) (*Server, error) {
 	s := &Server{
 		log:              opts.Log,
 		verify:           opts.VerifyIDToken,
+		resolveSession:   opts.ResolveSession,
 		issueAccessToken: opts.IssueAccessToken,
 		sessionTTL:       opts.SessionTTL,
 		now:              opts.Now,
@@ -307,12 +314,21 @@ func (s *Server) IssueToken(
 		return nil, errUnauthenticated
 	}
 	s.log.Info("gamesync: client user session name", "name", req.GetUserSession())
+	var details *SessionDetails
+	if s.resolveSession != nil {
+		resolved, err := s.resolveSession(req.GetMatchmakingIdToken())
+		if err != nil || resolved.UserID != userID || resolved.UserSessionID != sessionID(req.GetUserSession()) {
+			return nil, errUnauthenticated
+		}
+		details = &resolved
+	}
 
 	sess, err := s.newSession(userID, req.GetUserSession())
 	if err != nil {
 		s.log.Error("gamesync: cannot issue session", "user", userID, "error", err)
 		return nil, status.Error(codes.Internal, "cannot issue gamesync session")
 	}
+	sess.details = details
 	s.log.Info("gamesync: issued a session", "user", userID)
 	return &syncpb.IssueTokenResponse{Token: s.tokenProto(sess)}, nil
 }
@@ -350,6 +366,7 @@ func (s *Server) RefreshToken(
 	if err != nil {
 		return nil, status.Error(codes.Internal, "cannot refresh gamesync session")
 	}
+	sess.details = found.details
 	return &syncpb.RefreshTokenResponse{Token: s.tokenProto(sess)}, nil
 }
 
@@ -390,10 +407,11 @@ func (s *Server) tokenProto(sess *session) *syncpb.Token {
 func (s *Server) GetDocument(
 	ctx context.Context, req *syncpb.GetDocumentRequest,
 ) (*syncpb.Document, error) {
-	if _, ok := callerFrom(ctx); !ok {
+	caller, ok := callerFrom(ctx)
+	if !ok {
 		return nil, errUnauthenticated
 	}
-	doc, ok := s.docs.get(req.GetName())
+	doc, ok := s.watchDocument(caller, req.GetName())
 	if !ok {
 		s.log.Info("gamesync: document missing", "name", req.GetName())
 		return nil, status.Error(codes.NotFound, "no such document")
@@ -410,14 +428,15 @@ func (s *Server) GetDocument(
 func (s *Server) ReadDocuments(
 	ctx context.Context, req *syncpb.ReadDocumentsRequest,
 ) (*syncpb.ReadDocumentsResponse, error) {
-	if _, ok := callerFrom(ctx); !ok {
+	caller, ok := callerFrom(ctx)
+	if !ok {
 		return nil, errUnauthenticated
 	}
 
 	mask := req.GetReadMask().GetPaths()
 	results := make([]*syncpb.ReadResult, 0, len(req.GetDocuments()))
 	for _, name := range req.GetDocuments() {
-		if doc, ok := s.docs.get(name); ok {
+		if doc, ok := s.watchDocument(caller, name); ok {
 			results = append(results, &syncpb.ReadResult{
 				Result: &syncpb.ReadResult_Found{Found: applyReadMask(doc, mask)},
 			})
@@ -438,11 +457,12 @@ func (s *Server) ReadDocuments(
 func (s *Server) ListDocuments(
 	ctx context.Context, req *syncpb.ListDocumentsRequest,
 ) (*syncpb.ListDocumentsResponse, error) {
-	if _, ok := callerFrom(ctx); !ok {
+	caller, ok := callerFrom(ctx)
+	if !ok {
 		return nil, errUnauthenticated
 	}
 
-	docs := s.docs.list(req.GetParent())
+	docs := s.collectionSnapshot(caller, req.GetParent())
 	mask := req.GetReadMask().GetPaths()
 	out := make([]*syncpb.Document, 0, len(docs))
 	for _, doc := range docs {
@@ -756,12 +776,7 @@ func (s *Server) handleWatchRequest(
 				}
 			}
 		} else if coll := target.GetCollection(); coll != nil {
-			docs = s.docs.list(coll.GetCollection())
-			if coll.GetCollection() == "docs/__us" {
-				if doc, ok := s.watchDocument(caller, "docs/__us/"+sessionID(caller.userSession)); ok {
-					docs = append(docs, doc)
-				}
-			}
+			docs = s.collectionSnapshot(caller, coll.GetCollection())
 		}
 		for _, doc := range docs {
 			send(out, &syncpb.KeepUserSessionResponse{
