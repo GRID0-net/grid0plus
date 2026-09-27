@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 func newTestServer(t *testing.T, token string, now time.Time) (*Server, *db.Memory) {

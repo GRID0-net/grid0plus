@@ -1148,7 +1148,7 @@ const file_proto_errdetails_nerror_proto_rawDesc = "" +
 	"\x1fUNAUTHENTICATED_INVALID_ACCOUNT\x10\x06\x12-\n" +
 	")UNAUTHENTICATED_APPLICATION_NOT_PERMITTED\x10\aB\x12\n" +
 	"\x10detail_code_typeB\xc3\x01\n" +
-	"\x16com.nn.npln.errdetailsB\vNerrorProtoP\x01Z/github.com/n-popescu/switchnet/proto/errdetails\xf8\x01\x01\xa2\x02\x03NNE\xaa\x02\x12Nn.Npln.Errdetails\xca\x02\x12Nn\\Npln\\Errdetails\xe2\x02\x1eNn\\Npln\\Errdetails\\GPBMetadata\xea\x02\x14Nn::Npln::Errdetailsb\x06proto3"
+	"\x16com.nn.npln.errdetailsB\vNerrorProtoP\x01Z/github.com/n-popescu/grid0plus/proto/errdetails\xf8\x01\x01\xa2\x02\x03NNE\xaa\x02\x12Nn.Npln.Errdetails\xca\x02\x12Nn\\Npln\\Errdetails\xe2\x02\x1eNn\\Npln\\Errdetails\\GPBMetadata\xea\x02\x14Nn::Npln::Errdetailsb\x06proto3"
 
 var (
 	file_proto_errdetails_nerror_proto_rawDescOnce sync.Once

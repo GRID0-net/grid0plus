@@ -1,11 +1,11 @@
 # internal/health
 
-`/healthz` for every SwitchNet HTTP service, and the checks behind the
+`/healthz` for every GRID0+ HTTP service, and the checks behind the
 dashboard's **Health** tab.
 
 | | |
 | --- | --- |
-| Reimplements | nothing of Nintendo's — `/healthz` is SwitchNet's own path, so it never collides with a console request |
+| Reimplements | nothing of Nintendo's — `/healthz` is GRID0+'s own path, so it never collides with a console request |
 | Needs a database | no (it reports on the ones a service uses) |
 
 ## Why checks, not a flag

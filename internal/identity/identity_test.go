@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/identity"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 type fixture struct {

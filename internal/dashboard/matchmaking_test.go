@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // withNPLN builds a dashboard pointed at a stand-in for cmd/npln's admin API.

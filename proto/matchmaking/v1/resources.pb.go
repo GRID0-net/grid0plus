@@ -7,7 +7,7 @@
 package matchmakingv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1789,7 +1789,7 @@ const file_proto_matchmaking_v1_resources_proto_rawDesc = "" +
 	"ACCEPTANCE\x10\x02\x12$\n" +
 	" INCLUDE_ID_TOKEN_FOR_SAME_CLIENT\x10\x03::\n" +
 	"\bimported\x12\x1c.google.protobuf.FileOptions\x18Ն\x03 \x01(\bR\bimportedB\xed\x01\n" +
-	"\x1acom.nn.npln.matchmaking.v1B\x0eResourcesProtoP\x01ZAgithub.com/n-popescu/switchnet/proto/matchmaking/v1;matchmakingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Matchmaking.V1\xca\x02\x16Nn\\Npln\\Matchmaking\\V1\xe2\x02\"Nn\\Npln\\Matchmaking\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Matchmaking::V1b\x06proto3"
+	"\x1acom.nn.npln.matchmaking.v1B\x0eResourcesProtoP\x01ZAgithub.com/n-popescu/grid0plus/proto/matchmaking/v1;matchmakingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Matchmaking.V1\xca\x02\x16Nn\\Npln\\Matchmaking\\V1\xe2\x02\"Nn\\Npln\\Matchmaking\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Matchmaking::V1b\x06proto3"
 
 var (
 	file_proto_matchmaking_v1_resources_proto_rawDescOnce sync.Once

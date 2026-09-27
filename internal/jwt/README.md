@@ -54,7 +54,7 @@ kept it in memory while the last writer won on disk.
 
 ## What is and is not verified
 
-SwitchNet **only ever verifies its own signature**. A token from real Nintendo
+GRID0+ **only ever verifies its own signature**. A token from real Nintendo
 does not verify here, and no attempt is made to verify one: device tokens,
 tickets and licences from a console are accepted as opaque strings on a private
 network, not validated against Nintendo.
@@ -69,13 +69,13 @@ What is enforced, with a test each:
 - an edited claim invalidates the signature.
 
 `ParseUnverified` exists for exactly one case: the Nintendo Account id token in a
-`/1.0.0/federation` request, which was issued by a server SwitchNet does not host
+`/1.0.0/federation` request, which was issued by a server GRID0+ does not host
 and cannot verify. Its output is used as a display label and **never** authorises
 anything.
 
 ## Key ids
 
-Nintendo uses a random UUID v4. SwitchNet derives a UUID-shaped id from the
+Nintendo uses a random UUID v4. GRID0+ derives a UUID-shaped id from the
 public key instead, so it survives a restart and cannot drift out of sync with
 the JWK set it is published in, while still looking like what a capture shows.
 

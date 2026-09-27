@@ -7,7 +7,7 @@
 // game". On Nintendo's server that proof is a ticket or gamecard certificate
 // signed by Nintendo, plus for gamecards a challenge answered by the cartridge.
 //
-// SwitchNet accepts the cert, ticket and challenge fields without looking at
+// GRID0+ accepts the cert, ticket and challenge fields without looking at
 // them, and never checks game ownership. That is the point of a private server
 // for consoles the operator owns: there is nobody to prove ownership to. It is
 // not a way to get an unowned game online against Nintendo's servers, because
@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/service"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 // Config is what the handler needs to run.
@@ -50,12 +50,12 @@ type Handler struct {
 
 	// challengeSeed is the 15-byte 'seed' returned with a gamecard challenge.
 	// On Nintendo's server it is a constant, the same in every environment.
-	// SwitchNet never verifies the reply, so it only has to be stable.
+	// GRID0+ never verifies the reply, so it only has to be stable.
 	challengeSeed []byte
 }
 
 // New returns an aauth handler. The verifier checks the device token the
-// console presents, which SwitchNet's own dauth server issued.
+// console presents, which GRID0+'s own dauth server issued.
 func New(cfg Config, issuer *sjwt.Issuer, deviceTokenVerifier *sjwt.Verifier, log *slog.Logger) *Handler {
 	seed := make([]byte, 15)
 	copy(seed, sjwt.DeriveHexID(cfg.DeviceIDSecret, 15, "aauth-challenge-seed"))
@@ -112,7 +112,7 @@ type challengeV5Response struct {
 // challenge issues a gamecard-presence challenge.
 //
 // The console answers it with Lotus3's ChallengeCardExistence, which only a
-// real cartridge can compute. SwitchNet never checks the answer, so the values
+// real cartridge can compute. GRID0+ never checks the answer, so the values
 // here just have to be the right length.
 func (h *Handler) challenge(w http.ResponseWriter, r *http.Request) {
 	params, err := parseForm(r)
@@ -185,7 +185,7 @@ type appTokenResponse struct {
 }
 
 // settings carries a per-title Nintendo Account client id. It is empty for
-// almost every title, and SwitchNet has no Nintendo Account integration, so it
+// almost every title, and GRID0+ has no Nintendo Account integration, so it
 // is always an empty list.
 type settings struct {
 	ClientID    string `json:"nas:client_id"`
@@ -223,7 +223,7 @@ func (h *Handler) applicationToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The device token was issued by SwitchNet's own dauth server, so this is
+	// The device token was issued by GRID0+'s own dauth server, so this is
 	// verifying our own signature — not Nintendo's. It catches a console with a
 	// stale token (a real condition, error 0103) and a request that skipped
 	// dauth entirely.

@@ -73,7 +73,7 @@ const file_proto_common_heartbeat_proto_rawDesc = "" +
 	"\x1cproto/common/heartbeat.proto\x12\x0enn.npln.common\x1a\x1egoogle/protobuf/duration.proto\"B\n" +
 	"\tHeartbeat\x125\n" +
 	"\binterval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\bintervalB\xab\x01\n" +
-	"\x12com.nn.npln.commonB\x0eHeartbeatProtoP\x01Z+github.com/n-popescu/switchnet/proto/common\xa2\x02\x03NNC\xaa\x02\x0eNn.Npln.Common\xca\x02\x0eNn\\Npln\\Common\xe2\x02\x1aNn\\Npln\\Common\\GPBMetadata\xea\x02\x10Nn::Npln::Commonb\x06proto3"
+	"\x12com.nn.npln.commonB\x0eHeartbeatProtoP\x01Z+github.com/n-popescu/grid0plus/proto/common\xa2\x02\x03NNC\xaa\x02\x0eNn.Npln.Common\xca\x02\x0eNn\\Npln\\Common\xe2\x02\x1aNn\\Npln\\Common\\GPBMetadata\xea\x02\x10Nn::Npln::Commonb\x06proto3"
 
 var (
 	file_proto_common_heartbeat_proto_rawDescOnce sync.Once

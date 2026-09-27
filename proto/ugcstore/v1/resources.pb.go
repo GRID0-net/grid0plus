@@ -7,7 +7,7 @@
 package ugcstorev1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -167,7 +167,7 @@ const file_proto_ugcstore_v1_resources_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bdocument\x18\x02 \x01(\tR\bdocument\x12\x14\n" +
 	"\x05scope\x18\x03 \x01(\tR\x05scopeB\xd5\x01\n" +
-	"\x17com.nn.npln.ugcstore.v1B\x0eResourcesProtoP\x01Z;github.com/n-popescu/switchnet/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
+	"\x17com.nn.npln.ugcstore.v1B\x0eResourcesProtoP\x01Z;github.com/n-popescu/grid0plus/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
 
 var (
 	file_proto_ugcstore_v1_resources_proto_rawDescOnce sync.Once

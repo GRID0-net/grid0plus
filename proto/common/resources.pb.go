@@ -45,7 +45,7 @@ const file_proto_common_resources_proto_rawDesc = "" +
 	"\n" +
 	"\x1cproto/common/resources.proto\x12\x0enn.npln.common\x1a google/protobuf/descriptor.proto\x1a\x19google/api/resource.proto::\n" +
 	"\bimported\x12\x1c.google.protobuf.FileOptions\x18І\x03 \x01(\bR\bimportedB\xae\x01\n" +
-	"\x12com.nn.npln.commonB\x0eResourcesProtoP\x01Z+github.com/n-popescu/switchnet/proto/common\xf8\x01\x01\xa2\x02\x03NNC\xaa\x02\x0eNn.Npln.Common\xca\x02\x0eNn\\Npln\\Common\xe2\x02\x1aNn\\Npln\\Common\\GPBMetadata\xea\x02\x10Nn::Npln::Commonb\x06proto3"
+	"\x12com.nn.npln.commonB\x0eResourcesProtoP\x01Z+github.com/n-popescu/grid0plus/proto/common\xf8\x01\x01\xa2\x02\x03NNC\xaa\x02\x0eNn.Npln.Common\xca\x02\x0eNn\\Npln\\Common\xe2\x02\x1aNn\\Npln\\Common\\GPBMetadata\xea\x02\x10Nn::Npln::Commonb\x06proto3"
 
 var file_proto_common_resources_proto_goTypes = []any{
 	(*descriptorpb.FileOptions)(nil), // 0: google.protobuf.FileOptions

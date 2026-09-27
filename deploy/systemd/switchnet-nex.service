@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet nex (Splatoon 2)
+Description=GRID0+ nex (Splatoon 2)
 PartOf=switchnet.target
 After=network-online.target docker.service
 Wants=network-online.target

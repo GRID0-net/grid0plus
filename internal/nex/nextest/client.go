@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // Client is one PRUDP connection on its own socket.

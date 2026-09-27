@@ -1,4 +1,4 @@
-// Command baas is SwitchNet's account and friends server.
+// Command baas is GRID0+'s account and friends server.
 //
 // It reimplements the BAAS API the stock Nintendo friends applet talks to. See
 // internal/baas for the endpoints and for why identity resolution here is
@@ -11,14 +11,14 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/baas"
-	"github.com/n-popescu/switchnet/internal/dashboard"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/health"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/baas"
+	"github.com/n-popescu/grid0plus/internal/dashboard"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/health"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 func main() {

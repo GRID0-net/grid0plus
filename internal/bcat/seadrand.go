@@ -3,7 +3,7 @@ package bcat
 // sead::Random, Nintendo's standard-library PRNG.
 //
 // It is here because Splatoon 3 derives a BCAT pack's AES initialisation vector
-// from it. Nothing else in SwitchNet needs a PRNG with these exact outputs, and
+// from it. Nothing else in GRID0+ needs a PRNG with these exact outputs, and
 // nothing here should ever be used as a source of randomness for anything that
 // needs to be unpredictable: it is a small xorshift seeded from a CRC-32, and
 // reproducing Nintendo's exact sequence is its only purpose.

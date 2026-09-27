@@ -61,11 +61,11 @@ nickname buffer at `+0x408`.
 field table over the Nintendo Account profile response, alongside
 `$.analyticsFor*`, `$.nickname`, `$.screenName`, `$.isChild` and `$.links.*`. It
 is not local state — so if the console's post-federation failure is a linkage
-check, whether SwitchNet serves that field in that response is a live question.
+check, whether GRID0+ serves that field in that response is a live question.
 
 ## What it newly suggests
 
-**Eight `accounts.nintendo.com` paths have no SwitchNet route.** The sysmodule
+**Eight `accounts.nintendo.com` paths have no GRID0+ route.** The sysmodule
 can construct 42 endpoints; every BAAS one is already served, but on the
 Nintendo Account host only `authorize`, `api/token`, `2.0.0/users/me` and
 `qrcode_param` are. Unserved, and all first-link surface:
@@ -112,7 +112,7 @@ command table being a `constexpr` list the compiler folded into code rather
 than a data table. So the command ids are **not** recoverable by table scan,
 and naming individual handlers would need the client proxies' ids correlated
 against argument shapes — a much deeper analysis than this pass, and one that
-would buy little here, since SwitchNet implements the HTTP protocol, not the
+would buy little here, since GRID0+ implements the HTTP protocol, not the
 IPC surface.
 
 **The OAuth procedures are in `playerSelect`.** `0100000000001007` carries
@@ -155,7 +155,7 @@ Two consequences for reading a real console's nginx log:
   it stops between the login and the push-channel PUT.
 - **A failure inside a console sysmodule leaves the same signature as one of
   these.** The `push_channels` body carries an **npns** device token, and every
-  host in the npns/penne chain is served by SwitchNet's generic stubs
+  host in the npns/penne chain is served by GRID0+'s generic stubs
   (`consumer.lp1.npns…`, `god.hac.lp1.penne…`) or by `nplnrest`'s
   unhandled-path fallback, which answers a bare `{}` — the two-byte 200 seen on
   `POST /v1/accounts/<id>/notification_tokens`. `internal/stubs` logs every
@@ -224,7 +224,7 @@ Checked mechanically against the 2026-08-26 working capture, the two responses
 this flow depends on (`/1.0.0/federation` and `/1.0.0/login`) carry **every
 path in both tables**: `$.user.id`, `.nickname`, `.thumbnailUrl`,
 `.thumbnail2Url`, `.extras.self.nxAccount`, `.links.nintendoAccount.id`, and
-the three token fields. The only paths the capture has and SwitchNet's do not
+the three token fields. The only paths the capture has and GRID0+'s do not
 are `$.user.links.friendCode.*` and `$.user.thumbnailUploadedAt`, and neither
 appears in any parser table above — so neither is on the path that could
 reject one of these responses.
@@ -254,7 +254,7 @@ earlier responses in the same session.** The console holds two ids across the
 session — the user id and the NA account id — and every later response must
 agree with what it cached.
 
-One real-server behaviour worth writing down, because SwitchNet was accused of
+One real-server behaviour worth writing down, because GRID0+ was accused of
 the opposite: **a real server changes the BAAS user id at federation.** The
 capture's own `POST /1.0.0/users` reply says `"id": "b6e4c0c851aa4db9"`,
 `"links": {}`, `"nickname": ""`, and hands out the device account password;
@@ -275,10 +275,10 @@ what it requires is that everything *after* that agrees with it.
   ([`nextendo-login-flow-2026-08-26.md`](nextendo-login-flow-2026-08-26.md))
   and confirmed every range the 2026-09-13 diff called fixed, including bytes
   22-25 reading zero. The narrowest remaining question is therefore not "what
-  does SwitchNet lose by inventing them" — nothing reads them — but whether a
+  does GRID0+ lose by inventing them" — nothing reads them — but whether a
   *future* console build compares a cached value against a refreshed one.
 - **Whether the ten login-only bytes the real server sent (payload 56-59 and
-  66-71) matter.** SwitchNet sends zeros there. Nothing in the validator reads
+  66-71) matter.** GRID0+ sends zeros there. Nothing in the validator reads
   them; a later check was never found. They land in the same copied region as
   the `01 00 01 01` at payload 40-43, which reads as four booleans
   (`personalAnalytics` / `personalNotification` / `friendRequestReception` and
@@ -310,6 +310,6 @@ what it requires is that everything *after* that agrees with it.
   cached a second earlier, and whether
   `links.nintendoAccount.id` equals the `id` the NA profile
   (`GET /2.0.0/users/me`) returned. Both are already true of every reply
-  SwitchNet builds — which is why the next attempt is worth logging rather
+  GRID0+ builds — which is why the next attempt is worth logging rather
   than reasoning about: the ids are the only variables left, and the server
   already knows all three.

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // healthServer builds a dashboard whose probes point at the given handlers.

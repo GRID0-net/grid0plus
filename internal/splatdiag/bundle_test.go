@@ -8,9 +8,9 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 func diagnosticString(s string) *commonpb.Value {

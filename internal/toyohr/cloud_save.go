@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/proto/common"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/proto/common"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // registerCloudSave attaches CloudSave with GetSaveRecord switched to a
@@ -62,13 +62,13 @@ func registerCloudSave(srv *grpc.Server, impl *Service) {
 // which is answered, not left Unimplemented, see WriteSaveRecord's own
 // doc comment.
 //
-// Two other shapes were tried and measured broken, and SwitchNet must not
+// Two other shapes were tried and measured broken, and GRID0+ must not
 // regress to either:
 //   - NotFound: the game creates nothing and loops on a communication
 //     error (UserScreening/GetViolation's own doc comment covers why an
 //     absent resource is still answered NotFound there instead -- the two
 //     RPCs measured differently, this one specifically did not tolerate it);
-//   - a real message whose SaveData is merely an empty MapValue (SwitchNet's
+//   - a real message whose SaveData is merely an empty MapValue (GRID0+'s
 //     own previous answer here, and the direct cause of a 2026-09-24
 //     hardware session where the console went silent right after this call,
 //     never issuing FestSchedule, the early GameRecord document reads, or

@@ -18,7 +18,7 @@ import (
 //
 // The console never proves who it is to the secure server directly. It proves
 // that it could decrypt what the authentication server sent it -- and the
-// authentication server only sent that after SwitchNet verified the player's
+// authentication server only sent that after GRID0+ verified the player's
 // BAAS id token. So the chain of identity is: id token -> login -> ticket ->
 // CONNECT, and the PID a secure connection acts as comes out of the ticket,
 // never out of anything the console says afterwards.

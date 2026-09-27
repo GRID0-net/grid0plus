@@ -13,9 +13,9 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 // ---- POST /1.0.0/application/token --------------------------------------
@@ -32,8 +32,8 @@ type tokenResponse struct {
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100applicationtoken
 //
 // This is the first BAAS call a console makes and the only one that needs no
-// access token. The device token it presents was issued by SwitchNet's own dauth
-// server, so verifying it checks SwitchNet's signature — it is not a claim about
+// access token. The device token it presents was issued by GRID0+'s own dauth
+// server, so verifying it checks GRID0+'s signature — it is not a claim about
 // the console being genuine.
 func (s *Server) applicationToken(w http.ResponseWriter, r *http.Request) {
 	form, err := parseForm(r)
@@ -140,7 +140,7 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 		Permissions: db.DefaultPermissions(now),
 		Extras:      db.EmptyExtras(),
 		// A live capture of a working account (2026-08-27) always carried a
-		// real thumbnailUploadedAt; a self-registered SwitchNet account never
+		// real thumbnailUploadedAt; a self-registered GRID0+ account never
 		// goes through an "upload a thumbnail" step, so it stayed nil forever
 		// otherwise -- the one structural gap left after everything else about
 		// the federation/login response was confirmed byte-identical to that
@@ -214,7 +214,7 @@ type loginSummaryNintendo struct {
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100login
 //
-// This is where identity is decided, and it is the one function in SwitchNet
+// This is where identity is decided, and it is the one function in GRID0+
 // that must never guess. The device account id and password name exactly one
 // user. If they do not match, the answer is invalid_device_account — never a
 // fallback to some other account.
@@ -362,16 +362,16 @@ func (s *Server) deviceAccountForLogin(ctx context.Context, userID string) (db.D
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100federation
 //
-// A REAL Nintendo Account id token cannot be verified here — SwitchNet does
+// A REAL Nintendo Account id token cannot be verified here — GRID0+ does
 // not have Nintendo's key — so in general this is treated as a label, not a
 // credential: its subject is recorded as a linked account id (see
 // recordNintendoAccountLink) and grants nothing on its own. Authentication is
 // still the device account id and password, exactly as in /1.0.0/login.
 //
-// One case is different: a token that verifies against SwitchNet's own
+// One case is different: a token that verifies against GRID0+'s own
 // idIssuer key can only exist because nalink.go minted it, for the person who
 // just signed in on the Nintendo Account link page. Its subject is a real,
-// existing SwitchNet user id — not an opaque label — and this is the only
+// existing GRID0+ user id — not an opaque label — and this is the only
 // place that reassigns the device account /1.0.0/users just created to that
 // person, rather than leaving the console permanently attached to the fresh,
 // empty, unreachable-by-username identity registerUser had to invent because
@@ -461,7 +461,7 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 
 	// Only past this point: the caller has just proven it holds this device
 	// account's password. attachToUserID (only ever set by federation, only
-	// ever from a SwitchNet-verified id token) says which existing person
+	// ever from a GRID0+-verified id token) says which existing person
 	// this device account should belong to instead of whoever registerUser
 	// gave it moments ago. This never runs on the strength of the id token
 	// alone — the password check above is what makes reassigning a
@@ -496,7 +496,7 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 // already been proven: signs the access and id tokens and writes the
 // response. Shared by every path that gets here through a different
 // credential check — completeLogin's device-account-id+password (the real
-// protocol) and loginByUsername's username+password (SwitchNet's own,
+// protocol) and loginByUsername's username+password (GRID0+'s own,
 // for a person logging an emulator in directly) — so the actual token
 // shape only exists in one place.
 func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form form, da db.DeviceAccount, nintendoAccountID string) {
@@ -640,7 +640,7 @@ func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form f
 
 // recordNintendoAccountLink stores a Nintendo Account id against a user.
 //
-// It lives in the 'self' extras rather than in a column because SwitchNet does
+// It lives in the 'self' extras rather than in a column because GRID0+ does
 // nothing with it: it exists so the console's "linked account" screen has
 // something to show, and so a capture round-trips.
 //
@@ -778,7 +778,7 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // only show what's fixed *within* that account, not what's fixed *across*
 // accounts, and CLAUDE.md's rule against inventing a plausible-looking
 // Nintendo internal still means the varying, call-context-keyed regions are
-// not reproduced here (nothing visible to SwitchNet explains what selects
+// not reproduced here (nothing visible to GRID0+ explains what selects
 // them). What changed from the original placeholder (the bare Nintendo
 // Account id, ~16 characters) began as only the parts confirmed real --
 // length and encoding -- and now also carries the skeleton the builder
@@ -791,7 +791,7 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // Deliberately not derived from anything Nintendo-secret and not the
 // captured value itself (that value belongs to one specific real Nintendo
 // Account and is not this project's to redistribute, even reshaped): just
-// naID, which is SwitchNet's own data, hashed once into the 24 bytes the
+// naID, which is GRID0+'s own data, hashed once into the 24 bytes the
 // head needs. Stable per account, so it does not change on every login, but
 // it is a placeholder shape, never a claim about what the real bytes
 // encode.
@@ -915,7 +915,7 @@ func nxAccountBlob(naID string) string {
 	copy(out, header)
 
 	// Bytes 6-21 -- payload 0-15 -- the varying head. A real console renders
-	// these from its own cached profile record; SwitchNet has no such record,
+	// these from its own cached profile record; GRID0+ has no such record,
 	// so this stands in for it, derived from naID alone. It is also the only
 	// range a console insists on: FUN_71000f0960 requires these 16 payload
 	// bytes not to be all zero.
@@ -966,7 +966,7 @@ func nxAccountBlob(naID string) string {
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#get-100usersid
 //
 // Nintendo answers insufficient_scope if the token does not belong to the user
-// in the path, and so does SwitchNet: this endpoint is for reading yourself.
+// in the path, and so does GRID0+: this endpoint is for reading yourself.
 func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 	if !s.requireSelf(w, r, c) {
 		return
@@ -1132,7 +1132,7 @@ func (s *Server) deleteDeviceAccount(w http.ResponseWriter, r *http.Request, c *
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100usersidlink
 //
-// As with /1.0.0/federation, the id token cannot be verified by SwitchNet and is
+// As with /1.0.0/federation, the id token cannot be verified by GRID0+ and is
 // treated as a label. Linking grants nothing.
 func (s *Server) linkAccount(w http.ResponseWriter, r *http.Request, c *caller) {
 	if !s.requireSelf(w, r, c) {

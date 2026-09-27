@@ -11,10 +11,10 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	"github.com/n-popescu/switchnet/proto/errdetails"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	"github.com/n-popescu/grid0plus/proto/errdetails"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 func intV(n int64) *commonpb.Value {

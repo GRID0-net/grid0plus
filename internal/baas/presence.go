@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presence"
-	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
 // The TTL rules themselves live in internal/presence, shared with NPLN's

@@ -3,7 +3,7 @@ package scsi
 import (
 	"encoding/json"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // archiveView is the JSON shape of a save data archive.

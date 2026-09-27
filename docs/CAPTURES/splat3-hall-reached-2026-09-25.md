@@ -1,6 +1,6 @@
-# Splatoon 3 reaches the hall on SwitchNet (2026-09-25)
+# Splatoon 3 reaches the hall on GRID0+ (2026-09-25)
 
-Real console, Splatoon 3 v11.3.0, SwitchNet emuMMC, live GDB attached
+Real console, Splatoon 3 v11.3.0, GRID0+ emuMMC, live GDB attached
 (`~/switchnet-re/gdb/grstart.py`). Four server changes, each tested on
 hardware in turn; each moved the failure one step later.
 

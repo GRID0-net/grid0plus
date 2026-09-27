@@ -8,7 +8,7 @@
 -- Rankings are computed from the list in Go: this is a server for a
 -- private group of consoles, not Nintendo's leaderboard.
 --
--- owner is the SwitchNet user id the record belongs to ('' for none). Not a
+-- owner is the GRID0+ user id the record belongs to ('' for none). Not a
 -- foreign key: a record outliving its user (a deleted account's old fest
 -- vote) is harmless, and cascading would make deleting a user rewrite
 -- someone else's ranking.

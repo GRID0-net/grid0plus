@@ -9,9 +9,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/proto/common"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/proto/common"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // A player's cloud save is kept as one row of the Ugcstore document table,

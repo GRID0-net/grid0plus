@@ -7,8 +7,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
 )
 
 // watchFriend opens watcherID's SubscribePresences on friendID and drains the

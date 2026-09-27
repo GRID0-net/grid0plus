@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // CreateFestEntry records the team a player picked.
@@ -128,11 +128,11 @@ func (s *Service) GetFestEntry(
 // # What is measured, and what is not
 //
 // The VOTE is real: every entry is a player who picked a side, and the ratio of
-// entries per team is a number SwitchNet actually has. That fills the Yobisai
+// entries per team is a number GRID0+ actually has. That fills the Yobisai
 // result, which is the pre-fest vote.
 //
 // The BATTLE RATIOS are not. A real fest result carries per-category ratios
-// derived from battles played, and nothing in SwitchNet records a battle yet —
+// derived from battles played, and nothing in GRID0+ records a battle yet —
 // GameRecord is unimplemented. Those are reported with is_valid false, which is
 // the protocol's own way of saying a section is not available, rather than
 // filled with a plausible number. A fabricated ratio would be indistinguishable
@@ -141,7 +141,7 @@ func (s *Service) GetFestEntry(
 //
 // So the overall verdict is decided on the vote. **That is an editorial choice,
 // not a stand-in**: this is one operator's server, a fest here is a fest
-// SwitchNet built, and "the side more people picked wins" is a rule that can be
+// GRID0+ built, and "the side more people picked wins" is a rule that can be
 // stated to the players. When GameRecord lands, overallResult is the single
 // function that changes.
 func (s *Service) GetFestResult(
@@ -235,7 +235,7 @@ func voteRatios(entries []db.FestEntry) []*toyohrpb.FestTeamRatio {
 // overallResult is the verdict: points per team, most first.
 //
 // One point per vote, so the side more people picked wins. **This is the single
-// function that changes when SwitchNet starts recording battles** — see
+// function that changes when GRID0+ starts recording battles** — see
 // GetFestResult's doc comment for why it is a stated rule rather than a
 // placeholder.
 func overallResult(entries []db.FestEntry) *toyohrpb.OverallResult {

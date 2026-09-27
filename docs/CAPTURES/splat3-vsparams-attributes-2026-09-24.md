@@ -21,7 +21,7 @@ CoopUsedRewardGears: [array of real gear id/kind pairs, 11 entries]
 
 These read as fixed server configuration, not anything account- or
 session-specific -- identical across two independently captured sessions,
-weeks apart in the same server's lifetime, for different accounts. SwitchNet
+weeks apart in the same server's lifetime, for different accounts. GRID0+
 previously sent `attributes: {}` (empty) on every `SelectVsParams` response.
 
 `internal/toyohr/schedule.go`'s `vsParamsAttributes()` now sends the ten

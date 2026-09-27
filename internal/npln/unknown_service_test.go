@@ -8,8 +8,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // TestAnUnregisteredServiceAnswersInTwoFrames pins the answer to a service this

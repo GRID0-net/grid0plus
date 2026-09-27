@@ -7,7 +7,7 @@
 package ugcstorev1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -1282,7 +1282,7 @@ const file_proto_ugcstore_v1_ugcstore_proto_rawDesc = "" +
 	"\x18CreateDocumentShortAlias\x124.nn.npln.ugcstore.v1.CreateDocumentShortAliasRequest\x1a'.nn.npln.ugcstore.v1.DocumentShortAlias\x12s\n" +
 	"\x15GetDocumentShortAlias\x121.nn.npln.ugcstore.v1.GetDocumentShortAliasRequest\x1a'.nn.npln.ugcstore.v1.DocumentShortAlias\x12\x90\x01\n" +
 	"\x1bBulkGetDocumentShortAliases\x127.nn.npln.ugcstore.v1.BulkGetDocumentShortAliasesRequest\x1a8.nn.npln.ugcstore.v1.BulkGetDocumentShortAliasesResponseB\xd4\x01\n" +
-	"\x17com.nn.npln.ugcstore.v1B\rUgcstoreProtoP\x01Z;github.com/n-popescu/switchnet/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
+	"\x17com.nn.npln.ugcstore.v1B\rUgcstoreProtoP\x01Z;github.com/n-popescu/grid0plus/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
 
 var (
 	file_proto_ugcstore_v1_ugcstore_proto_rawDescOnce sync.Once

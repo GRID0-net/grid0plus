@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // ---- PUT /1.0.0/push_channels/{uid}/{daid} -------------------------------
@@ -31,7 +31,7 @@ type pushChannelRequest struct {
 // reasoning that fixed naUsersMe's own partial-response bug -- an assumed-
 // harmless placeholder is not the same as a verified one.
 //
-// This does not persist the push channel anywhere: nothing in SwitchNet
+// This does not persist the push channel anywhere: nothing in GRID0+
 // sends push notifications, so there is nothing yet to deliver to. The
 // response is real-shaped so a client that reads it back does not choke on
 // a shape it has never seen from a working server; it is not, on its own,

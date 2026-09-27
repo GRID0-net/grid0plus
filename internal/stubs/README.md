@@ -1,6 +1,6 @@
 # internal/stubs
 
-A catch-all for the Nintendo endpoints SwitchNet redirects but does not
+A catch-all for the Nintendo endpoints GRID0+ redirects but does not
 implement.
 
 | | |
@@ -106,13 +106,13 @@ A real capture against Nextendo (facts only, not its code — see
 exchange in full: the console's request carries no conditional-GET header
 at all, and the real server answers `304` with an empty body regardless —
 its own permanent "nothing new" answer, not ordinary cache validation.
-Reproduced on SwitchNet's own hardware on 2026-09-24: `bcat-topics-lp1` was
+Reproduced on GRID0+'s own hardware on 2026-09-24: `bcat-topics-lp1` was
 null-routed, the console's very first boot request failed outright, and "a
 communication error has occurred" appeared instantly on opening the hall,
 before `IssuePrearrangedUserToken` even fires.
 
 `bcat-list-lp1` and `bcat-data-lp1` used to be null-routed too, reasoned as
-the safe choice while SwitchNet cannot answer BCAT usefully. That reasoning
+the safe choice while GRID0+ cannot answer BCAT usefully. That reasoning
 turned out to be wrong: NextendoNetwork/Prelude's own commit history (facts
 only, not its code) documents a real, hard failure from exactly this
 choice — Splatoon 3 raised `2122-2403` (module 122 = bcat) when
@@ -130,11 +130,11 @@ the player.
 operator reaches for on purpose, not what these hosts answer with day to
 day since the 304 fix above shipped.
 
-SwitchNet cannot serve real BCAT delivery-cache content. The `list`
+GRID0+ cannot serve real BCAT delivery-cache content. The `list`
 response body is undocumented, and whether the console verifies the
 delivery container's RSA-2048 signature has never been established —
 switchbrew documents the *field* and says nothing about a verification
-step. A console running SwitchNet already has sigpatches, so the check may
+step. A console running GRID0+ already has sigpatches, so the check may
 well be bypassed; nobody has looked.
 
 The probe settles the cheap half of that. Reached, it logs each request —
@@ -157,5 +157,5 @@ switchnetctl hosts > /path/to/sd/atmosphere/hosts/sysmmc.txt   # and emummc.txt
 
 Write up whatever the console did under `docs/CAPTURES/`; either answer is
 worth having. See `TODO.md` §2.4 for the open question the probe still
-serves — whether SwitchNet could serve real delivery-cache content, not
+serves — whether GRID0+ could serve real delivery-cache content, not
 just "nothing changed."

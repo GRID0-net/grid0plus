@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install SwitchNet's Go services as systemd units, for the always-on box
+# Install GRID0+'s Go services as systemd units, for the always-on box
 # serving your consoles: creates a dedicated switchnet user, builds every
 # service, installs deploy/systemd/*.service, and enables switchnet.target.
 # Only the steps that need root (creating the user, changing ownership,

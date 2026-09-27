@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet scsi (OLSC cloud save)
+Description=GRID0+ scsi (OLSC cloud save)
 PartOf=switchnet.target
 After=network-online.target docker.service switchnet-baas.service
 Wants=network-online.target

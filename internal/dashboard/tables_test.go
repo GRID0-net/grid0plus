@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // The live table browser (tables.go) is Postgres-only by design -- see its

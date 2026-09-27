@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 var deviceAccountIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -22,7 +22,7 @@ var deviceAccountIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 // party that will ever need to recognise them again. This function exists for
 // the one case where that is backwards: a console whose local user already
 // has a device account from somewhere else (real Nintendo, or a previous
-// SwitchNet instance). That credential is cached in the console's own save
+// GRID0+ instance). That credential is cached in the console's own save
 // data and it has no way to be told to ask for a new one short of unlinking
 // the account. The only way to make that local user work here is for this
 // server to recognise the credential it already has.

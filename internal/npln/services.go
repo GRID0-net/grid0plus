@@ -8,15 +8,15 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/n-popescu/switchnet/internal/toyohr"
-	"github.com/n-popescu/switchnet/internal/ugcstore"
-	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
-	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
-	globalcounterpb "github.com/n-popescu/switchnet/proto/globalcounter/v1"
-	leaderboardpb "github.com/n-popescu/switchnet/proto/leaderboard/v1"
-	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
-	messagingpb "github.com/n-popescu/switchnet/proto/messaging/v1"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
+	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
+	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
+	globalcounterpb "github.com/n-popescu/grid0plus/proto/globalcounter/v1"
+	leaderboardpb "github.com/n-popescu/grid0plus/proto/leaderboard/v1"
+	maintpb "github.com/n-popescu/grid0plus/proto/maintenance/v1"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
+	messagingpb "github.com/n-popescu/grid0plus/proto/messaging/v1"
 )
 
 // register attaches the implemented services to the gRPC server.
@@ -86,7 +86,7 @@ type authService struct {
 // IssueToken exchanges a BAAS id token for an NPLN session.
 //
 // This is the phase-1 → phase-2 seam. The game sends the id token BAAS gave it
-// in ExternalIdToken.nsa_id_token; SwitchNet verifies it against the same key
+// in ExternalIdToken.nsa_id_token; GRID0+ verifies it against the same key
 // it publishes at /1.0.0/certificates and issues an ES256 access token.
 //
 // The request's own `user` field is ignored for identity. It is the client
@@ -246,7 +246,7 @@ const maintenanceKeepAlive = 20 * time.Second
 // SubscribeMaintenanceSchedules reports that there is no maintenance, and keeps
 // saying so.
 //
-// SwitchNet has no maintenance windows: it is one operator's server, and when
+// GRID0+ has no maintenance windows: it is one operator's server, and when
 // it is down it is down rather than scheduled. So this never sends a schedule.
 // It cannot simply return, though — the RPC is a stream, and returning closes
 // it, which the client reads as the connection failing rather than as "nothing

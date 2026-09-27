@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
+	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
 )
 
 func TestGetUserResolvesAnExistingUserByName(t *testing.T) {

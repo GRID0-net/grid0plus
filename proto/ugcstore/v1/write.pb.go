@@ -7,7 +7,7 @@
 package ugcstorev1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -1001,7 +1001,7 @@ const file_proto_ugcstore_v1_write_proto_rawDesc = "" +
 	"\x1dSERVER_VALUE_TYPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fREQUEST_TIME\x10\x01B\xd1\x01\n" +
 	"\x17com.nn.npln.ugcstore.v1B\n" +
-	"WriteProtoP\x01Z;github.com/n-popescu/switchnet/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
+	"WriteProtoP\x01Z;github.com/n-popescu/grid0plus/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
 
 var (
 	file_proto_ugcstore_v1_write_proto_rawDescOnce sync.Once

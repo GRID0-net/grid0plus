@@ -1,5 +1,5 @@
-// Package nintendo holds the list of Nintendo hostnames that SwitchNet
-// replaces, together with which SwitchNet service serves each one.
+// Package nintendo holds the list of Nintendo hostnames that GRID0+
+// replaces, together with which GRID0+ service serves each one.
 //
 // This is the single source of truth for the domain list. Three artefacts are
 // generated from it, so they cannot drift apart:
@@ -13,7 +13,7 @@ package nintendo
 
 import "strings"
 
-// Service identifies which SwitchNet backend serves a host.
+// Service identifies which GRID0+ backend serves a host.
 type Service string
 
 const (
@@ -68,7 +68,7 @@ const (
 )
 
 // Host is one Nintendo hostname (or DNS-MITM wildcard pattern) and the
-// SwitchNet service that answers it.
+// GRID0+ service that answers it.
 type Host struct {
 	// Pattern is the hostname, or an Atmosphère DNS-MITM wildcard pattern.
 	// In Atmosphère's hosts file, '*' matches zero or more characters and '%'
@@ -76,7 +76,7 @@ type Host struct {
 	// console-side hosts file, never in a TLS SAN or an nginx server_name.
 	Pattern string
 
-	// Service is the SwitchNet backend that answers this host.
+	// Service is the GRID0+ backend that answers this host.
 	Service Service
 
 	// Comment explains what the host is for. It is emitted into the generated
@@ -652,7 +652,7 @@ var Hosts = []Host{
 	// emuMMC-never-talks-to-real-Nintendo rule).
 	//
 	// These three used to be null-routed, reasoned as the safe choice while
-	// SwitchNet cannot answer BCAT usefully. That reasoning turned out to be
+	// GRID0+ cannot answer BCAT usefully. That reasoning turned out to be
 	// wrong: NextendoNetwork/Prelude's own commit history (facts only, not
 	// its code) documents a real, hard failure from exactly this choice --
 	// Splatoon 3 raised 2122-2403 (module 122 = bcat) when bcat-list-lp1 was
@@ -661,7 +661,7 @@ var Hosts = []Host{
 	// cache is current" and falls back to whatever it already has locally.
 	// This sends no data -- a player with nothing in their BCAT cache still
 	// gets nothing -- it only stops that absence from being a hard error.
-	// Reproduced independently on SwitchNet's own hardware on 2026-09-24 for
+	// Reproduced independently on GRID0+'s own hardware on 2026-09-24 for
 	// bcat-topics-lp1 specifically (see internal/stubs.newsTopics): a real
 	// capture against Nextendo showed the identical 304-always shape, and
 	// null-routing it made the console's very first boot request fail
@@ -669,7 +669,7 @@ var Hosts = []Host{
 	// because their own failure mode has been separately reproduced here.
 	//
 	// internal/bcat.Probe (TODO.md §2.4's actual open question -- whether
-	// SwitchNet could serve real delivery-cache content, not just "nothing
+	// GRID0+ could serve real delivery-cache content, not just "nothing
 	// changed") is unaffected: it is a diagnostic tool for an operator to
 	// reach for deliberately, not what these hosts answer with day to day.
 	// The 2026-09-24 Ethernet capture proved the topics host was reached but
@@ -694,7 +694,7 @@ var Hosts = []Host{
 	// ---- eShop (phase 3) ------------------------------------------------
 	// Null-routed on purpose. Nothing exists behind these yet, and Phase 1 has
 	// no use for them at all, so there is no reason for a console pointed at
-	// SwitchNet to ever reach real Nintendo through them. Phase 3 flips these to
+	// GRID0+ to ever reach real Nintendo through them. Phase 3 flips these to
 	// ServiceEShop once the servers behind them exist. Having them here means
 	// the next person to work on phase 3 finds the list, and does not add
 	// `atumn` or `aqua` to it by mistake -- see the d4c note below, which is the
@@ -706,7 +706,7 @@ var Hosts = []Host{
 	// Nintendo while only Phase 1 is in use, switch these back to
 	// ServicePassthrough -- but that means this console's traffic for these
 	// hosts, including the Nintendo Account sign-in flow, goes to real Nintendo,
-	// not SwitchNet.
+	// not GRID0+.
 	//
 	// The storefront is a WEBSITE: the applet loads bugyo/ashigaru and renders
 	// it, exposing system functions through a `window.nx` bridge. So phase 3 is
@@ -756,21 +756,21 @@ var Hosts = []Host{
 
 	// ---- System updates: null-routed on this deployment -----------------
 	// The d4c hosts serve SYSTEM UPDATES: sun, atumn and aqua. The general
-	// advice for a console that moves back and forth between SwitchNet and
+	// advice for a console that moves back and forth between GRID0+ and
 	// real Nintendo is to leave these passthrough: the nim sysmodule stores a
 	// persistent flag when the update check fails, and that flag survives
 	// switching DNS back to Nintendo's servers, which is a genuinely
 	// expensive mistake on that kind of setup.
 	//
 	// It does not apply here. This host list is generated for an emuMMC that
-	// is permanently and exclusively SwitchNet's — it never points at real
+	// is permanently and exclusively GRID0+'s — it never points at real
 	// Nintendo again, so there is no "switching back" for the flag to
 	// survive into. Given that, passthrough only means one thing: real
 	// Nintendo traffic leaving this console for no benefit. Null-routed
 	// instead, consistent with every other host nothing is built for.
 	//
 	// If you ever reuse this host list for a console that DOES move back and
-	// forth between SwitchNet and real Nintendo, put these back to
+	// forth between GRID0+ and real Nintendo, put these back to
 	// ServicePassthrough first — check TestSystemUpdateHostsAreNullRouted for
 	// the reasoning captured at the time this was changed.
 	//
@@ -906,7 +906,7 @@ func Resolve(name string) (Resolution, Host, bool) {
 	}
 
 	if !found {
-		// Not something SwitchNet explicitly handles. The default is to forward
+		// Not something GRID0+ explicitly handles. The default is to forward
 		// it — this is not a Nintendo host, so it is not ours to have an opinion
 		// about — with one exception: a Nintendo-owned domain nobody has added to
 		// Hosts yet. On a deployment where the console must never reach real

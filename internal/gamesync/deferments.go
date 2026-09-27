@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	syncpb "github.com/n-popescu/switchnet/proto/gamesync/v1"
+	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
 
 // A deferment is a named batch the console asks Gamesync to run if its user

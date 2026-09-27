@@ -7,8 +7,8 @@
 package toyohrv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
-	v1 "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	common "github.com/n-popescu/grid0plus/proto/common"
+	v1 "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -221,7 +221,7 @@ const file_proto_toyohr_v1_common_proto_rawDesc = "" +
 	"\x06params\x18\x03 \x01(\v2\x18.nn.npln.common.MapValueR\x06params\"V\n" +
 	"\x17SelectDocumentsResponse\x12;\n" +
 	"\tdocuments\x18\x01 \x03(\v2\x1d.nn.npln.ugcstore.v1.DocumentR\tdocumentsB\xc4\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\vCommonProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\vCommonProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_common_proto_rawDescOnce sync.Once

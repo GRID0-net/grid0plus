@@ -74,10 +74,10 @@ func TestNATCheckHasTwoHosts(t *testing.T) {
 // for the d4c hosts.
 //
 // The general-purpose advice — keep these ServicePassthrough — is for a
-// console that moves back and forth between SwitchNet and real Nintendo: a
+// console that moves back and forth between GRID0+ and real Nintendo: a
 // failed update check sets a persistent flag on the console that survives
 // switching back, which is expensive to hit by accident. This host list is
-// generated for an emuMMC that is permanently and exclusively SwitchNet's, so
+// generated for an emuMMC that is permanently and exclusively GRID0+'s, so
 // that cost never applies: there is no "switching back" for the flag to
 // survive into, and passthrough would only mean real Nintendo traffic leaving
 // the console for no benefit. Null-routed instead, consistent with every
@@ -135,15 +135,15 @@ func TestNSOAppBackendIsNullRouted(t *testing.T) {
 	t.Errorf("%s is not listed at all, so real DNS can still answer it", host)
 }
 
-// TestPhase3HostsAreNotYetRedirected keeps a console pointed at SwitchNet from
+// TestPhase3HostsAreNotYetRedirected keeps a console pointed at GRID0+ from
 // ever reaching real Nintendo through a host nothing is built for yet.
 //
 // The hosts are listed so that whoever implements phase 3 finds the list
 // rather than assembling their own. They are null-routed rather than
 // forwarded: nothing exists behind them, and Phase 1 has no use for them, so
-// there is no reason for a console pointed at SwitchNet to ever complete a
+// there is no reason for a console pointed at GRID0+ to ever complete a
 // connection to real Nintendo through one of these. A host redirected to a
-// SwitchNet service that does not exist would be worse — it breaks the
+// GRID0+ service that does not exist would be worse — it breaks the
 // console's eShop for no gain — which is why these are ServiceBlackhole,
 // not ServiceRedirect: null-routing answers 0.0.0.0 and the console gives up
 // immediately, rather than reaching either a broken local endpoint or real
@@ -172,7 +172,7 @@ func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 		if h.Service != ServiceBlackhole {
 			t.Errorf("%s is %s. If phase 3 now serves it, update this test and "+
 				"switch it to ServiceEShop; if not, it must stay ServiceBlackhole, "+
-				"so a console pointed at SwitchNet never reaches real Nintendo "+
+				"so a console pointed at GRID0+ never reaches real Nintendo "+
 				"through it.", pattern, h.Service)
 		}
 	}
@@ -486,10 +486,10 @@ func TestNPLNRestHostsAreNotRoutedToTheGRPCGateway(t *testing.T) {
 
 func TestTheFrontlineHostFamilyIsCoveredNotJustFroOne(t *testing.T) {
 	// penne tells the console which fro-N to open its persistent connection
-	// to. SwitchNet writes that response, so it can name fro-1 -- but a console
+	// to. GRID0+ writes that response, so it can name fro-1 -- but a console
 	// holding a cached FQDN from real Nintendo may ask for another, and a
 	// console pointed at real Nintendo for its frontline is a console partly
-	// off SwitchNet. The wildcard covers the family.
+	// off GRID0+. The wildcard covers the family.
 	for _, name := range []string{
 		"fro-1.hac.lp1.penne.srv.nintendo.net",
 		"fro-3.hac.lp1.penne.srv.nintendo.net",

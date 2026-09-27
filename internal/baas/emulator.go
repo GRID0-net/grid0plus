@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
 // The emulator API is what an emulator's friend service reads its friends and

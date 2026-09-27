@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 const testApplicationID = "0100abcd00010000"

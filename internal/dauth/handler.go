@@ -6,7 +6,7 @@
 // Nintendo's dauth server requires a valid client certificate, signed by
 // Nintendo and unique to each console, and requires the client to answer a
 // cryptographic challenge using a key derived from the console's master key.
-// SwitchNet does neither, on purpose:
+// GRID0+ does neither, on purpose:
 //
 //   - It cannot verify a Nintendo-signed certificate without Nintendo's CA, and
 //     it will not reproduce Nintendo's signing keys.
@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // Config is what the handler needs to run.
@@ -71,7 +71,7 @@ type Handler struct {
 	// challengeKey is the 16-byte 'data' value returned with every challenge.
 	//
 	// On Nintendo's server this is the AES key the console needs to compute the
-	// challenge MAC, and it is constant per key generation. SwitchNet never
+	// challenge MAC, and it is constant per key generation. GRID0+ never
 	// checks the MAC, so the value only has to be a stable 16 bytes; it is
 	// derived from the device id secret so it is stable across restarts without
 	// being a hardcoded constant.
@@ -128,7 +128,7 @@ type challengeResponse struct {
 // challenge issues a challenge.
 //
 // The challenge Nintendo issues carries a version byte, a timestamp and 29
-// unknown bytes. SwitchNet builds the same 35-byte shape with the same first
+// unknown bytes. GRID0+ builds the same 35-byte shape with the same first
 // six bytes so a capture diff is readable, and fills the rest with random
 // bytes. The console treats the whole thing as opaque and echoes it back.
 func (h *Handler) challenge(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +236,7 @@ type edgeTokenResponse struct {
 // edgeToken issues an Akamai-style edge token.
 //
 // Edge tokens are not JWTs. They authorise a CDN download, in the shape
-// "exp=…~acl=…~data=…~hmac=…". SwitchNet does not host a CDN, so the token it
+// "exp=…~acl=…~data=…~hmac=…". GRID0+ does not host a CDN, so the token it
 // issues is well-formed and signed with its own key but points at nothing; the
 // consoles that ask for one are trying to reach Nintendo's content delivery
 // network, which is not part of this stack.
@@ -323,7 +323,7 @@ func (h *Handler) device(r *http.Request, params params) sjwt.DeviceInfo {
 // through, because that is the only thing in a dauth request that differs
 // between two consoles. Without it, every console shares one device id.
 //
-// That is deliberately harmless: nothing in SwitchNet authorises anything on
+// That is deliberately harmless: nothing in GRID0+ authorises anything on
 // the device id. Account identity is resolved from the BAAS device account, and
 // only from there. A shared device id costs the operator a useful device list on
 // the dashboard, nothing else. Conflating the two is how a friends system ends

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // Splatoon 2's Ranking methods (16-26): Splatfest, league battles, X Power

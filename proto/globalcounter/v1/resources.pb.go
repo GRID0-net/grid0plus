@@ -7,7 +7,7 @@
 package globalcounterv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -432,7 +432,7 @@ const file_proto_globalcounter_v1_resources_proto_rawDesc = "" +
 	"\x16write_final_permission\x18\a \x01(\bR\x14writeFinalPermission\x12R\n" +
 	"\x17read_setting_permission\x18\b \x01(\v2\x1a.google.protobuf.BoolValueR\x15readSettingPermission\x12T\n" +
 	"\x18write_setting_permission\x18\t \x01(\v2\x1a.google.protobuf.BoolValueR\x16writeSettingPermissionB\xf8\x01\n" +
-	"\x1ccom.nn.npln.globalcounter.v1B\x0eResourcesProtoP\x01ZEgithub.com/n-popescu/switchnet/proto/globalcounter/v1;globalcounterv1\xa2\x02\x03NNG\xaa\x02\x18Nn.Npln.Globalcounter.V1\xca\x02\x18Nn\\Npln\\Globalcounter\\V1\xe2\x02$Nn\\Npln\\Globalcounter\\V1\\GPBMetadata\xea\x02\x1bNn::Npln::Globalcounter::V1b\x06proto3"
+	"\x1ccom.nn.npln.globalcounter.v1B\x0eResourcesProtoP\x01ZEgithub.com/n-popescu/grid0plus/proto/globalcounter/v1;globalcounterv1\xa2\x02\x03NNG\xaa\x02\x18Nn.Npln.Globalcounter.V1\xca\x02\x18Nn\\Npln\\Globalcounter\\V1\xe2\x02$Nn\\Npln\\Globalcounter\\V1\\GPBMetadata\xea\x02\x1bNn::Npln::Globalcounter::V1b\x06proto3"
 
 var (
 	file_proto_globalcounter_v1_resources_proto_rawDescOnce sync.Once

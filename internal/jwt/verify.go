@@ -15,10 +15,10 @@ import (
 // signing key.
 var ErrInvalidToken = errors.New("jwt: invalid token")
 
-// Verifier checks tokens that SwitchNet itself issued.
+// Verifier checks tokens that GRID0+ itself issued.
 //
-// It only ever accepts SwitchNet's own signature. A token from real Nintendo
-// will not verify here, and SwitchNet makes no attempt to verify one: device
+// It only ever accepts GRID0+'s own signature. A token from real Nintendo
+// will not verify here, and GRID0+ makes no attempt to verify one: device
 // tokens, tickets and licences from a console are accepted as opaque strings
 // on the operator's private network, not validated against Nintendo.
 type Verifier struct {
@@ -52,9 +52,9 @@ func (v *Verifier) Verify(token string, claims gojwt.Claims) error {
 // ParseUnverified reads a token's claims WITHOUT checking the signature.
 //
 // This exists for exactly one case: a credential that was issued by somebody
-// else and that SwitchNet is not in a position to verify, such as the Nintendo
+// else and that GRID0+ is not in a position to verify, such as the Nintendo
 // Account id token in a /1.0.0/federation request. Never use it for a token
-// SwitchNet issued, and never let its output decide an authorisation.
+// GRID0+ issued, and never let its output decide an authorisation.
 func ParseUnverified(token string, claims gojwt.Claims) error {
 	parser := gojwt.NewParser()
 	if _, _, err := parser.ParseUnverified(token, claims); err != nil {
@@ -95,7 +95,7 @@ type JWKSet struct {
 // JWKSetFor builds a JWK set containing the given keys.
 //
 // Nintendo keeps the two previous keys in the set so that tokens issued before
-// a rotation still verify. SwitchNet does not rotate its keys, so the set holds
+// a rotation still verify. GRID0+ does not rotate its keys, so the set holds
 // exactly the key that is signing today. Rotation would mean handing consoles
 // tokens they cannot use until they re-authenticate, which on a private network
 // buys nothing.

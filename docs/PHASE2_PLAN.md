@@ -298,7 +298,7 @@ Four regions — `JP`, `US`, `EU`, `AP` — each with a publication window openi
 The schedule response carries **no artwork at all**: resource names, region
 codes, a target, the pack id and its 40-hex fingerprint, five timestamps, the
 publication window, and two tricolour stage numbers. That is editorial choice
-only, which is why SwitchNet can generate one wholesale without reproducing
+only, which is why GRID0+ can generate one wholesale without reproducing
 anything of Nintendo's.
 
 ---
@@ -367,7 +367,7 @@ whose shapes nobody knows.
    art is not something this repository can generate. *Answered by
    construction: `bcat.converter` is a command the operator points at their own
    tool, and a source asset with no converter configured is a build error rather
-   than a PNG packed into the archive. SwitchNet deliberately does not convert
+   than a PNG packed into the archive. GRID0+ deliberately does not convert
    textures — see `internal/bcat`'s README.*
 4. **Dashboard authentication.** Nothing in Phase 1 authenticates a human — every
    credential so far belongs to a console. The dashboard needs its own answer.

@@ -92,7 +92,7 @@ type Server struct {
 const DefaultIdleTimeout = 60 * time.Second
 
 // Loopback trusts X-Real-IP only from the local machine, which is where
-// SwitchNet's nginx runs.
+// GRID0+'s nginx runs.
 func Loopback(peer net.IP) bool { return peer != nil && peer.IsLoopback() }
 
 // ServeHTTP upgrades the request and serves the socket until it closes.

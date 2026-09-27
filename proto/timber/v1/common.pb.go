@@ -73,7 +73,7 @@ const file_proto_timber_v1_common_proto_rawDesc = "" +
 	"\x1cproto/timber/v1/common.proto\x12\x11nn.npln.timber.v1\x1a\x1egoogle/protobuf/duration.proto\"B\n" +
 	"\tKeepAlive\x125\n" +
 	"\bduration\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\bdurationB\xc4\x01\n" +
-	"\x15com.nn.npln.timber.v1B\vCommonProtoP\x01Z7github.com/n-popescu/switchnet/proto/timber/v1;timberv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Timber.V1\xca\x02\x11Nn\\Npln\\Timber\\V1\xe2\x02\x1dNn\\Npln\\Timber\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Timber::V1b\x06proto3"
+	"\x15com.nn.npln.timber.v1B\vCommonProtoP\x01Z7github.com/n-popescu/grid0plus/proto/timber/v1;timberv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Timber.V1\xca\x02\x11Nn\\Npln\\Timber\\V1\xe2\x02\x1dNn\\Npln\\Timber\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Timber::V1b\x06proto3"
 
 var (
 	file_proto_timber_v1_common_proto_rawDescOnce sync.Once

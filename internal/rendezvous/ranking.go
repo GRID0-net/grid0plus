@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // Ranking (protocol 112): leaderboards. Scores are kept as records and

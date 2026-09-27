@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet npln
+Description=GRID0+ npln
 PartOf=switchnet.target
 After=network-online.target docker.service
 Wants=network-online.target

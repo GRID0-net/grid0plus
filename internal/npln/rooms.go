@@ -16,9 +16,9 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/matchmaking"
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	"github.com/n-popescu/grid0plus/internal/matchmaking"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // Private rooms: a private battle, a Salmon Run room, or a squad a host opens
@@ -30,7 +30,7 @@ import (
 // The shapes below come from a real Nintendo capture of this exact flow that
 // NextendoNetwork/splatoon-3 records in its own comments (facts only,
 // PolyForm Shield -- none of its code is used here). They are second-hand:
-// their capture, not ours, so docs/CAPTURES/README.md lists what a SwitchNet
+// their capture, not ours, so docs/CAPTURES/README.md lists what a GRID0+
 // capture of a room being opened and joined would confirm.
 //
 // A room is a matchmaking.Session with its host as the only player, so every

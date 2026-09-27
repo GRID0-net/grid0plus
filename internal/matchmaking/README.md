@@ -90,7 +90,7 @@ logged once — that log line is how the names get discovered.
 
 ## Gameplay is peer-to-peer
 
-The session names a host, and that is all SwitchNet does. Once a match starts
+The session names a host, and that is all GRID0+ does. Once a match starts
 the consoles talk directly to each other and this server is not in the path —
 which is why the addresses handed over have to be reachable *from the console*,
 and why NAT traversal matters out of proportion to its size.
@@ -123,7 +123,7 @@ membership check lives.
 
 A console reads a session id off its ticket stream and only *then* calls
 `GetGameSession` and `JoinGameSession`, so `Session` has to answer after the
-match is formed. But gameplay is peer-to-peer, so nothing ever tells SwitchNet a
+match is formed. But gameplay is peer-to-peer, so nothing ever tells GRID0+ a
 match ended — the only honest signal is age. `Sweep` drops sessions and finished
 tickets older than `SessionTTL`, and skips any ticket that still has a watcher
 attached, because deleting one out from under an open stream strands the console

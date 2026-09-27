@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
 const (
@@ -290,7 +290,7 @@ func requireError(t *testing.T, resp *http.Response, status int, code string) {
 
 // ---- the auth chain ------------------------------------------------------
 
-// deviceToken mints the device token SwitchNet's dauth server would issue.
+// deviceToken mints the device token GRID0+'s dauth server would issue.
 func (h *harness) deviceToken() string {
 	h.t.Helper()
 	now := h.clock()
@@ -332,7 +332,7 @@ func (h *harness) expiredDeviceToken() string {
 	return token
 }
 
-// appToken mints the application token SwitchNet's aauth server would issue.
+// appToken mints the application token GRID0+'s aauth server would issue.
 func (h *harness) appToken(titleID, policy, handler string) string {
 	h.t.Helper()
 	now := h.clock()

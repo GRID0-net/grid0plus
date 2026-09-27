@@ -1,7 +1,7 @@
 // Package wirelog records the HTTP requests a console makes, so that an
 // undocumented protocol becomes a transcript instead of a guess.
 //
-// Several parts of SwitchNet answer hosts whose request and response shapes are
+// Several parts of GRID0+ answer hosts whose request and response shapes are
 // not documented anywhere: NPLN's JSON front end (internal/nplnrest) and the
 // BCAT probe (internal/bcat). CLAUDE.md rule 6 says to implement the most
 // defensible reading and say what a capture would settle — and the cheapest way

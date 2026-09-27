@@ -7,7 +7,7 @@
 package timberv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -2301,7 +2301,7 @@ const file_proto_timber_v1_resources_proto_rawDesc = "" +
 	"\x05BASIC\x10\x01\x12\b\n" +
 	"\x04FULL\x10\x02\x12\t\n" +
 	"\x05SMALL\x10\x03B\xc7\x01\n" +
-	"\x15com.nn.npln.timber.v1B\x0eResourcesProtoP\x01Z7github.com/n-popescu/switchnet/proto/timber/v1;timberv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Timber.V1\xca\x02\x11Nn\\Npln\\Timber\\V1\xe2\x02\x1dNn\\Npln\\Timber\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Timber::V1b\x06proto3"
+	"\x15com.nn.npln.timber.v1B\x0eResourcesProtoP\x01Z7github.com/n-popescu/grid0plus/proto/timber/v1;timberv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Timber.V1\xca\x02\x11Nn\\Npln\\Timber\\V1\xe2\x02\x1dNn\\Npln\\Timber\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Timber::V1b\x06proto3"
 
 var (
 	file_proto_timber_v1_resources_proto_rawDescOnce sync.Once

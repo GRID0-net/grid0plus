@@ -4,7 +4,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // registerFestService attaches FestService with SelectFestBreakingNews added.

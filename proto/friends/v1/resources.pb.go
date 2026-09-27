@@ -7,8 +7,8 @@
 package friendsv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
-	_ "github.com/n-popescu/switchnet/proto/validate"
+	common "github.com/n-popescu/grid0plus/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -666,7 +666,7 @@ const file_proto_friends_v1_resources_proto_rawDesc = "" +
 	"\aPRIVATE\x10\x01\x12\x14\n" +
 	"\x10FAVORITE_FRIENDS\x10\x02\x12\v\n" +
 	"\aFRIENDS\x10\x03B\xd1\x01\n" +
-	"\x16com.nn.npln.friends.v1B\x0eResourcesProtoP\x01Z9github.com/n-popescu/switchnet/proto/friends/v1;friendsv1\xf8\x01\x01\xa2\x02\x03NNF\xaa\x02\x12Nn.Npln.Friends.V1\xca\x02\x12Nn\\Npln\\Friends\\V1\xe2\x02\x1eNn\\Npln\\Friends\\V1\\GPBMetadata\xea\x02\x15Nn::Npln::Friends::V1b\x06proto3"
+	"\x16com.nn.npln.friends.v1B\x0eResourcesProtoP\x01Z9github.com/n-popescu/grid0plus/proto/friends/v1;friendsv1\xf8\x01\x01\xa2\x02\x03NNF\xaa\x02\x12Nn.Npln.Friends.V1\xca\x02\x12Nn\\Npln\\Friends\\V1\xe2\x02\x1eNn\\Npln\\Friends\\V1\\GPBMetadata\xea\x02\x15Nn::Npln::Friends::V1b\x06proto3"
 
 var (
 	file_proto_friends_v1_resources_proto_rawDescOnce sync.Once

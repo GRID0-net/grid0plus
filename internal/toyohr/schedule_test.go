@@ -16,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 func scheduleServiceFor(t *testing.T, at time.Time, rot Rotation) *scheduleService {
@@ -329,7 +329,7 @@ func TestLeagueAndVsParamsAnswerRatherThanUnimplemented(t *testing.T) {
 // that its two timestamps must ride the current rotation rather than
 // whatever fixed values a capture happened to record -- stale ones leave the
 // client unable to tie the current rotation to its parameters. Reproduced on
-// SwitchNet's own hardware on 2026-09-24: the console called this RPC and
+// GRID0+'s own hardware on 2026-09-24: the console called this RPC and
 // then went silent before ever calling PresenceService/SubscribePresences.
 func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
@@ -453,7 +453,7 @@ func TestSelectVsParamsNameCarriesTheRequestsOwnTarget(t *testing.T) {
 // TestSelectVsParamsAttributesMatchBothWorkingCaptures is the regression
 // test for the ten VsParams.Attributes keys both preserved working
 // Nextendo hall captures agree on byte-for-byte (see vsParamsAttributes'
-// own doc comment) -- SwitchNet used to send an empty Attributes map.
+// own doc comment) -- GRID0+ used to send an empty Attributes map.
 func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
 	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})
@@ -535,7 +535,7 @@ func TestSeasonScheduleCarriesTheCapturedLeaderboardFixTime(t *testing.T) {
 // gap: both preserved working hall captures carry an eighth field on every
 // SeasonSchedule entry -- decoding to "default" -- entirely absent from
 // upstream's own reconstructed proto (which stops at field 7) as well as
-// from what SwitchNet was sending. See README.md's own section on this.
+// from what GRID0+ was sending. See README.md's own section on this.
 func TestSeasonScheduleCarriesTheTargetField(t *testing.T) {
 	at := time.Date(2026, 9, 24, 18, 0, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})

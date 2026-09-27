@@ -11,7 +11,7 @@ not carry.
 
 ## This does not serve BCAT yet — and the blocker is now known exactly
 
-SwitchNet builds the delivery cache directly rather than speaking BCAT's
+GRID0+ builds the delivery cache directly rather than speaking BCAT's
 delivery protocol. As of 2026-09-26 the reason is no longer "nobody has
 documented how"; both unknowns have been settled, one from a public client
 of the live servers and one from disassembling the `bcat` sysmodule itself.
@@ -26,13 +26,13 @@ longer inventing a shape.
 against a public key baked into the module, and on failure wipes the buffer
 and returns result 2002-4106 — read directly from the disassembly, not
 guessed from switchbrew's note that the field exists. So a
-SwitchNet-produced container is refused unless `bcat.nso` is patched to
+GRID0+-produced container is refused unless `bcat.nso` is patched to
 force the verify to pass. That is the same class of patch this project
 already ships for Splatoon 3's TLS (an ExeFS/IPS patch, built with
 borntohonk's pattern tooling against the exact firmware build), and it is
 *not* forging Nintendo's signature — rule 2 stays intact. `sys-patch`
 covers `fs`, `es`, `ldr` and `nifm`, not `bcat`, so this needs its own
-patch shipped alongside SwitchNet's others.
+patch shipped alongside GRID0+'s others.
 
 **Encryption is not a blocker.** The header validator accepts crypto type 0
 (plaintext), so a served container needs no passphrase and none of the
@@ -92,7 +92,7 @@ console reads it, and then cannot decode the texture slot. The result is a fest
 that loads with missing or garbled art, on a console, with nothing on the server
 to look at. Failing at build time costs one message.
 
-## SwitchNet does not convert textures, on purpose
+## GRID0+ does not convert textures, on purpose
 
 A Splatfest's art is BC1/BC3/BC7-compressed textures in the Tegra GPU's
 block-linear layout, wrapped in BFRES. Getting any of that subtly wrong produces

@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
 )
 
 // TestSubscribePresencesOnlyServesSelfAndFriends is the privacy boundary this

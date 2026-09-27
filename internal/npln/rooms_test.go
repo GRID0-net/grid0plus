@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // openRoom runs the host's side of opening a room -- Create, then Track --

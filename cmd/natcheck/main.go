@@ -1,4 +1,4 @@
-// Command natcheck is SwitchNet's NAT-check (NCS) UDP responder.
+// Command natcheck is GRID0+'s NAT-check (NCS) UDP responder.
 //
 // It answers the nncs1 and nncs2 hosts, which the console uses to learn its
 // external address and classify its router's NAT before attempting
@@ -17,11 +17,11 @@ import (
 	"net"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/natcheck"
-	"github.com/n-popescu/switchnet/internal/natobs"
-	"github.com/n-popescu/switchnet/internal/service"
-	"github.com/n-popescu/switchnet/internal/stunresponder"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/natcheck"
+	"github.com/n-popescu/grid0plus/internal/natobs"
+	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/stunresponder"
 )
 
 func main() {

@@ -14,10 +14,10 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/matchmaking"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/matchmaking"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // ---- nn.npln.matchmaking.v1.Matchmaker ------------------------------------
@@ -38,7 +38,7 @@ type matchmakerService struct {
 // TODO(capture-needed): whether Splatoon 3 ever sends more than one
 // UserDefinition here. NPLN supports delegation -- one console queuing on
 // behalf of a party, carrying UserDelegationTokens -- and if the game uses it
-// for a squad, everyone but the leader is currently dropped. SwitchNet now
+// for a squad, everyone but the leader is currently dropped. GRID0+ now
 // issues delegation tokens (delegation.go) but does not yet read them here:
 // nothing shows how a squad's ticket carries its members, and placing players
 // on one team from a guess is how a squad ends up split or stuck. A capture
@@ -213,7 +213,7 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 			if t.State == matchmaking.StateSucceeded {
 				// Do NOT return here. A real-hardware finding (Nextendo,
 				// 2026-08-13, cited in this project's own Nextendo-vs-
-				// SwitchNet comparison pass) found that closing this stream
+				// GRID0+ comparison pass) found that closing this stream
 				// server-side the instant SUCCEEDED is sent races the
 				// console's own gRPC transport: its poll loop had nothing
 				// queued to send yet (still read-only) when the server hung
@@ -358,7 +358,7 @@ func (g *gameSessionService) BatchGetGameSessions(
 // for what -- a private-battle room browser is the plausible candidate, since
 // ticket-based matchmaking never needs one. A capture of that flow would
 // settle it. Change: this function, and sessionProto's IsPublic if the answer
-// is that some SwitchNet-formed sessions should be browsable after all.
+// is that some GRID0+-formed sessions should be browsable after all.
 func (g *gameSessionService) QueryGameSessions(
 	ctx context.Context, _ *mmpb.QueryGameSessionsRequest,
 ) (*mmpb.QueryGameSessionsResponse, error) {
@@ -564,7 +564,7 @@ func (g *gameSessionService) AllocateIceServerSet(
 // would need a real answer here too -- change this function.
 //
 // Corroborating (not resolving) evidence: this project's own Nextendo-vs-
-// SwitchNet comparison pass found Nextendo's own handler comment states a
+// GRID0+ comparison pass found Nextendo's own handler comment states a
 // non-empty list is what lets the console proceed, and that the pings
 // themselves timing out does not stop it -- only an empty list aborts
 // early. That is Nextendo's own testing note, not a decoded wire capture of
@@ -683,7 +683,7 @@ func latencyProtocol(name string) mmpb.LatencyMeasurementServer_Protocol {
 //
 // Confirmed real and linked by the same Splatoon 3 v11.3.0 decompile as
 // BatchGetGameSessions above. Pagination is not implemented: a game session
-// here is exactly as large as its match size (SwitchNet's own
+// here is exactly as large as its match size (GRID0+'s own
 // matchmaking.Session), which is small enough that a second page never
 // exists to ask for. PageSize/PageToken are accepted and ignored rather than
 // answered with an error, the same reasoning ListFriendUsers gives for
@@ -740,7 +740,7 @@ func (g *gameSessionService) GetUserSession(
 
 // iceServerSetTTL is how long an allocated ICE server set is good for.
 //
-// SwitchNet's set does not actually expire -- it is read straight from a
+// GRID0+'s set does not actually expire -- it is read straight from a
 // configuration file and changes only when the operator edits one -- but the
 // field is not optional and a zero would read as "already stale". An hour is
 // long enough not to churn and short enough that an edit takes effect within
@@ -853,7 +853,7 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		Name:                    s.tenantPath() + "/gameSessions/" + sess.ID,
 		MaxParticipantCount:     capacity,
 		CurrentParticipantCount: capacity,
-		// This project's own Nextendo-vs-SwitchNet comparison pass found
+		// This project's own Nextendo-vs-GRID0+ comparison pass found
 		// Nextendo sets CanParticipate true on every GameSession it builds,
 		// with no exception for an already-full ticket match -- this used to
 		// be false here with no capture or comment backing that choice, an
@@ -919,7 +919,7 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 // session token that player's console opens its gamesync channel with.
 //
 // The token was left empty here until 2026-09-23, on the reasoning that
-// SwitchNet verified no such token, so issuing one would only look like a
+// GRID0+ verified no such token, so issuing one would only look like a
 // safeguard. That reasoning was wrong about who the reader is, and a real
 // console paid for it: the console reads gsid, usid, uid and tid out of the
 // token's 'gamesync' object to build Gamesync/IssueToken and then

@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 const testBotToken = "0123456789abcdef0123456789abcdef"

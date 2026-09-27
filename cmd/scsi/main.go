@@ -1,4 +1,4 @@
-// Command scsi is SwitchNet's OLSC (Online Save Cloud) server -- phase 4,
+// Command scsi is GRID0+'s OLSC (Online Save Cloud) server -- phase 4,
 // per-game cloud save backup.
 //
 // It reimplements storage.lp1.scsi.srv.nintendo.net and
@@ -11,12 +11,12 @@ import (
 	"flag"
 	"net/http"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/health"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/scsi"
-	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/health"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/scsi"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 func main() {

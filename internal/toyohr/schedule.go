@@ -15,8 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/proto/common"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/proto/common"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // scheduleService is nn.npln.toyohr.v1.Schedule: the stage and mode rotation.
@@ -27,7 +27,7 @@ type scheduleService struct {
 
 // Rotation is the stage and rule rotation an operator configured.
 //
-// **The mechanics here are SwitchNet's; the numbers are not.** Slot alignment,
+// **The mechanics here are GRID0+'s; the numbers are not.** Slot alignment,
 // windowing, ordering and the etag are all this package's to decide and are
 // implemented below. The stage and rule identifiers are Splatoon 3's own
 // internal numbering, which nothing public documents — so they are operator
@@ -297,7 +297,7 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // found that the payload's own two timestamps must be shifted onto the
 // current rotation along with everything else -- a real server never sends
 // stale ones, and a client that gets them "cannot tie the current rotation
-// to its parameters" and stops advancing. Reproduced on SwitchNet's own
+// to its parameters" and stops advancing. Reproduced on GRID0+'s own
 // hardware on 2026-09-24: the console called this RPC successfully and then
 // went silent before ever calling PresenceService/SubscribePresences, the
 // next call in the confirmed reference sequence -- the same crash family as
@@ -352,7 +352,7 @@ func (sc *scheduleService) SelectVsParams(
 	target := lastSegment(req.GetTarget())
 	if target == "" {
 		// Unexpected: every real request this project has seen names a
-		// target. A stable SwitchNet placeholder rather than an empty path
+		// target. A stable GRID0+ placeholder rather than an empty path
 		// segment, which the client's parser treats as no segment at all.
 		sc.s.log.Warn("toyohr: SelectVsParams request carried no target")
 		target = "vs"

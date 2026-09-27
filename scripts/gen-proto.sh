@@ -4,7 +4,7 @@
 #   scripts/fetch-proto.sh && scripts/gen-proto.sh
 #
 # Regenerates proto/ from scratch. The generated files ARE committed, so that
-# building SwitchNet needs neither the network nor a protobuf toolchain — only
+# building GRID0+ needs neither the network nor a protobuf toolchain — only
 # changing the definitions does.
 #
 # Do not hand-edit anything under proto/. Every file there carries a

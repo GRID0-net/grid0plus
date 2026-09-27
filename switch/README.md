@@ -1,4 +1,4 @@
-# Pointing a real Switch at SwitchNet
+# Pointing a real Switch at GRID0+
 
 There are two separate problems here, and they have very different answers:
 
@@ -11,15 +11,15 @@ There are two separate problems here, and they have very different answers:
 Most guides conflate the two and solve both with Atmosphère — a hosts file plus a
 firmware-gated exefs patch. Only the second half actually needs the console.
 
-> **What this deployment actually runs.** The SwitchNet Toolbox homebrew
+> **What this deployment actually runs.** The GRID0+ Toolbox homebrew
 > ([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro),
-> private) on an emuMMC that only ever talks to SwitchNet: Atmosphère's hosts
+> private) on an emuMMC that only ever talks to GRID0+: Atmosphère's hosts
 > file for redirection, the public `disable_ca_verification` /
 > `disable_browser_ca_verification` patches for trust, and its own Splatoon 3
 > patches for part 3. The DNS and CA-store routes below are the alternatives,
 > and the reasoning for preferring them where you can.
 
-> Use this on hardware you own, with games you own. SwitchNet ships none of
+> Use this on hardware you own, with games you own. GRID0+ ships none of
 > Nintendo's code, keys or data, and produces nothing Nintendo's own servers would
 > accept.
 
@@ -40,7 +40,7 @@ that is true in stock firmware with nothing modified. So redirection needs no
 hosts file, no `enable_dns_mitm`, no homebrew, and nothing that a firmware update
 or a tool rewriting your SD card can break.
 
-SwitchNet does not run its own DNS server. Instead it generates configuration for
+GRID0+ does not run its own DNS server. Instead it generates configuration for
 a resolver you already run (a router doing dnsmasq, Pi-hole, OpenWrt or Unbound):
 
 ```sh
@@ -85,7 +85,7 @@ resolver is briefly slow, and reach real Nintendo instead.
 - **AAAA queries for redirected names get NODATA**, not a forwarded answer. This
   matters more than it looks: if AAAA were forwarded while A was answered
   locally, a console on a network with IPv6 would get Nintendo's real address and
-  talk straight past SwitchNet, intermittently. All three options above handle
+  talk straight past GRID0+, intermittently. All three options above handle
   this; a hand-written hosts file in a resolver often does not.
 
 ### Does the console use DNS-over-HTTPS?
@@ -217,7 +217,7 @@ Copy `out/ssl_TrustedCerts.bdf` to
 `/atmosphere/contents/0100000000000800/romfs/ssl_TrustedCerts.bdf` and reboot.
 
 **Never build that file from scratch.** It has to be your console's own store with
-one entry appended. A file containing only SwitchNet's CA would break every other
+one entry appended. A file containing only GRID0+'s CA would break every other
 TLS connection on the console: the browser, the eShop, Nintendo Account. The tool
 refuses to run without `--input` for this reason, and verifies the round trip
 before writing.
@@ -234,7 +234,7 @@ Two caveats, stated plainly:
 
 If step 4 showed the override is not being read, the next-best option is a small
 Atmosphère MITM sysmodule that intercepts `ssl` and `ssl:s` and calls
-`ImportServerPki` with SwitchNet's CA on every context that gets created.
+`ImportServerPki` with GRID0+'s CA on every context that gets created.
 
 This keeps the two properties that matter — **not gated on a firmware build id**,
 and **adds trust rather than disabling verification** — at the cost of being code
@@ -317,7 +317,7 @@ in the hall — see `TODO.md` §4.2.
 Each step rules out everything before it, which is what makes debugging on
 hardware tractable.
 
-**1. SwitchNet answers on its own machine.**
+**1. GRID0+ answers on its own machine.**
 
 ```sh
 curl -fsS localhost:8081/keys | head -c 80
@@ -325,7 +325,7 @@ curl -fsS localhost:8081/keys | head -c 80
 
 **2. DNS redirects.** From any machine on the console's network, against your
 resolver (the router, Pi-hole or Unbound you added the generated configuration
-to — not SwitchNet, which does not answer DNS itself):
+to — not GRID0+, which does not answer DNS itself):
 
 ```sh
 dig @<RESOLVER_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <SWITCHNET_IP>
@@ -344,7 +344,7 @@ deliberate departure from the general advice for these hosts: normally they
 stay passthrough, because a failed system update check makes `nim` store a
 persistent flag that survives switching DNS back to real Nintendo. That cost
 only matters for a console that moves back and forth. This deployment's
-emuMMC never does — it is permanently and exclusively SwitchNet's — so
+emuMMC never does — it is permanently and exclusively GRID0+'s — so
 there's nothing to gain from letting it reach real Nintendo for these, and
 null-routing them keeps this emuMMC from ever contacting real Nintendo at
 all. See `internal/nintendo/hosts.go` and `TestSystemUpdateHostsAreNullRouted`.
@@ -481,13 +481,13 @@ the seed on the console came from somewhere else.
 | The lobby fills and the match never starts | `npln.ice_servers` — the addresses must be reachable *from the console*, not from the server. |
 | A Splatfest is announced and the game reports a communication error | The announced id, resource and revision do not match the seed on the console. `switchnetctl fest build` makes them match by construction. |
 | Another game says it cannot connect | Expected: only Splatoon 3 has a game server here. |
-| Non-Nintendo sites stop resolving on the console | Your resolver's own upstream is misconfigured or unreachable — check its settings, not SwitchNet's. |
+| Non-Nintendo sites stop resolving on the console | Your resolver's own upstream is misconfigured or unreachable — check its settings, not GRID0+'s. |
 
 ---
 
 ## Going back to Nintendo
 
-**This deployment never does.** Its emuMMC is SwitchNet's permanently; nothing
+**This deployment never does.** Its emuMMC is GRID0+'s permanently; nothing
 on it talks to Nintendo, which is also why `hosts.go` null-routes the system
 update hosts. The steps below are for a console that moves between the two.
 
@@ -515,4 +515,4 @@ off, so anybody on the network can intercept it.
 | --- | --- |
 | `hosts.txt` | Generated by `make gen-hosts`. Only needed if you cannot control DNS on the network. Gitignored: it contains your addresses. |
 | `ca/rootCA.pem` | Generated by `make gen-certs`. Gitignored. |
-| `bcat-installer/` | A homebrew that fetches a Splatfest's delivery cache from SwitchNet and writes it into Splatoon 3's BCAT save data. **Not compiled or tested** — read its README before running it. |
+| `bcat-installer/` | A homebrew that fetches a Splatfest's delivery cache from GRID0+ and writes it into Splatoon 3's BCAT save data. **Not compiled or tested** — read its README before running it. |

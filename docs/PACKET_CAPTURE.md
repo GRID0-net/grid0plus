@@ -109,7 +109,7 @@ afterwards.
 
 The console resolves Nintendo hostnames through Atmosphère's DNS-MITM, so you
 already control where its traffic goes. Capturing is a matter of pointing it at
-something that records and forwards, rather than at SwitchNet directly.
+something that records and forwards, rather than at GRID0+ directly.
 
 The certificate does not have to be trusted, because the
 `disable_ca_verification` patch is already in place — see
@@ -163,7 +163,7 @@ consequences:
 
 ### If real Nintendo is not an option
 
-Point mitmproxy at SwitchNet instead:
+Point mitmproxy at GRID0+ instead:
 
 ```sh
 mitmweb --mode reverse:http://192.168.1.50:8083 --listen-port 443
@@ -174,7 +174,7 @@ is harder to guess. The request shape for `POST /2.0.0/friend_requests` is
 capturable this way without touching Nintendo at all, and it is the most valuable
 open question in the list.
 
-That one-line command only intercepts a single host, though — SwitchNet is
+That one-line command only intercepts a single host, though — GRID0+ is
 several services on several ports (dauth, aauth, baas, stubs). To decrypt all
 of them in one capture instead of redirecting hosts one at a time,
 `scripts/mitm-sni-router.py` is a mitmdump addon that reads the SNI and routes

@@ -1,4 +1,4 @@
-module github.com/n-popescu/switchnet
+module github.com/n-popescu/grid0plus
 
 go 1.24.0
 

@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 )
 
 // presenceAttributes holds the game-defined presence attributes each player

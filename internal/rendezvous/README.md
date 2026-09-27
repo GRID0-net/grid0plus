@@ -88,7 +88,7 @@ evening in Splatoon 2 stays online on its friends' lists (`presence.go`).
 
 ## Identity
 
-A player's NEX PID **is** their SwitchNet user id, read as a 64-bit number.
+A player's NEX PID **is** their GRID0+ user id, read as a 64-bit number.
 The console logs in with that id in decimal as its username (as Kinnay's
 Switch examples do), and the id token in its AuthenticationInfo must name the
 same user — `internal/identity` decides that, the same check `internal/npln`

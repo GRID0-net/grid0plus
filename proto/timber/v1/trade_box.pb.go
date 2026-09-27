@@ -337,7 +337,7 @@ const file_proto_timber_v1_trade_box_proto_rawDesc = "" +
 	"\x0eDeleteTradeBox\x12(.nn.npln.timber.v1.DeleteTradeBoxRequest\x1a\x16.google.protobuf.Empty\x12e\n" +
 	"\x0eCancelTradeBox\x12(.nn.npln.timber.v1.CancelTradeBoxRequest\x1a).nn.npln.timber.v1.CancelTradeBoxResponse\x12d\n" +
 	"\rTrackTradeBox\x12'.nn.npln.timber.v1.TrackTradeBoxRequest\x1a(.nn.npln.timber.v1.TrackTradeBoxResponse0\x01B\xc6\x01\n" +
-	"\x15com.nn.npln.timber.v1B\rTradeBoxProtoP\x01Z7github.com/n-popescu/switchnet/proto/timber/v1;timberv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Timber.V1\xca\x02\x11Nn\\Npln\\Timber\\V1\xe2\x02\x1dNn\\Npln\\Timber\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Timber::V1b\x06proto3"
+	"\x15com.nn.npln.timber.v1B\rTradeBoxProtoP\x01Z7github.com/n-popescu/grid0plus/proto/timber/v1;timberv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Timber.V1\xca\x02\x11Nn\\Npln\\Timber\\V1\xe2\x02\x1dNn\\Npln\\Timber\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Timber::V1b\x06proto3"
 
 var (
 	file_proto_timber_v1_trade_box_proto_rawDescOnce sync.Once

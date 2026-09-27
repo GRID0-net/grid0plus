@@ -4,7 +4,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // SecureConnection (protocol 11): where a console registers the addresses

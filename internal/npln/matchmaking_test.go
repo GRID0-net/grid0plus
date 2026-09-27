@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/n-popescu/switchnet/config"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	"github.com/n-popescu/grid0plus/config"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // TestTwoPlayersQueueAndBothReceiveTheSameSession is the matchmaking item's own
@@ -633,7 +633,7 @@ func TestRegionalLatencyServersMatchReferenceResourceNames(t *testing.T) {
 // against a different NPLN title: a client that calls this RPC at all reads
 // Unimplemented as a hard failure of whatever screen triggered the call, where
 // an empty page reads as "nothing to show" and lets the console carry on.
-// SwitchNet forms every session through matchmaking tickets and never has a
+// GRID0+ forms every session through matchmaking tickets and never has a
 // public one to list, so the empty answer is also simply true here.
 func TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented(t *testing.T) {
 	h := newHarness(t)
@@ -688,7 +688,7 @@ func ticketFor(mode string) *mmpb.CreateMatchmakingTicketRequest {
 // never delivers is exactly the bug this is here to catch, and a hung test
 // reports it far less clearly than a failed one.
 // TestTrackMatchmakingTicketStaysOpenAfterSucceeded is the regression test
-// for a real-hardware finding this project's own Nextendo-vs-SwitchNet
+// for a real-hardware finding this project's own Nextendo-vs-GRID0+
 // comparison pass surfaced: closing this stream server-side the instant a
 // SUCCEEDED ticket is sent was found (Nextendo, 2026-08-13) to race the
 // console's own gRPC transport, dropping whatever it was about to send next

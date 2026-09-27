@@ -7,7 +7,7 @@
 | Evidence | a hardware capture of a **working** server, published by [Nextendo Network](https://nextendo.network) in [NextendoNetwork/splatoon-3](https://github.com/NextendoNetwork/splatoon-3) (`token_jwt.go`, `matchmaking.go`) |
 | Captured by | **not this project** — second-hand, and recorded here as second-hand |
 
-Not a packet capture in this directory's usual sense. SwitchNet holds no capture
+Not a packet capture in this directory's usual sense. GRID0+ holds no capture
 of its own here and none of the bytes below came from a console under this
 project's control. What earns it a file is that it answers a question the source
 was carrying as `TODO(capture-needed)`, and the answer was measured on hardware
@@ -17,7 +17,7 @@ controls.
 ## What it settles
 
 The token in `MatchedUserSession.matchmaking_id_token` — the field a match hands
-each player — is **required, and the console is its reader**. SwitchNet left it
+each player — is **required, and the console is its reader**. GRID0+ left it
 empty on the reasoning that nothing verified it. That was true of the server, and
 irrelevant to the client, which reads it before sending it anywhere.
 
@@ -38,15 +38,15 @@ empty field was.
 
 ## What it does not settle
 
-- **Whether a console accepts the token SwitchNet signs.** Nothing here was
-  produced by SwitchNet's key: the *shape* is what was measured, not this
+- **Whether a console accepts the token GRID0+ signs.** Nothing here was
+  produced by GRID0+'s key: the *shape* is what was measured, not this
   server's instance of it. Only a run on a real console can show that.
-- **`team`** — a Splatfest team. SwitchNet announces fests but assigns no team,
+- **`team`** — a Splatfest team. GRID0+ announces fests but assigns no team,
   so the field goes out empty rather than carrying an invented placement.
 - **`attr` and `ltcy`** — the client's own attribute and latency JSON, which the
   capture shows as `{}` and `{"latencies":{}}` on a session that has gathered
   neither. Whether real values change anything is unconfirmed.
-- **The two-member header.** Whether any client checks it is unknown; SwitchNet
+- **The two-member header.** Whether any client checks it is unknown; GRID0+
   emits the measured shape rather than assuming the check does not exist.
 
 ## Where it is implemented

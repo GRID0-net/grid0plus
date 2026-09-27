@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Start the whole SwitchNet stack: Postgres, Redis and the nginx edge in
+# Start the whole GRID0+ stack: Postgres, Redis and the nginx edge in
 # Docker (the off-the-shelf pieces this repo never rebuilds), the eight Go
 # services as systemd units. Run scripts/install-systemd.sh once first, from
 # /opt/switchnet, to install those units -- this script only starts them.

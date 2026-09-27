@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/identity"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/natobs"
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/nex/nextest"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/natobs"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex/nextest"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // Env is one running server.

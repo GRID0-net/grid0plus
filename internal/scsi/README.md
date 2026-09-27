@@ -51,7 +51,7 @@ capture of real OLSC traffic exists yet:
    time-limited, cryptographically signed URL on separate infrastructure in
    real Nintendo's deployment (the CloudFront/`X-Amz-Cf-*` headers in BAAS's
    own example responses are the evidence real infrastructure is in play
-   here) — SwitchNet has no separate infrastructure to sign a URL for, so it
+   here) — GRID0+ has no separate infrastructure to sign a URL for, so it
    hands back a same-server URL under its own invented `/data` path instead.
 2. **`start_download`/`finish_download`.** Answered as, respectively, the
    same shape as `GET .../{id}` and a bare acknowledgement. No basis beyond
@@ -70,7 +70,7 @@ capture of real OLSC traffic exists yet:
    the literal endpoint string exists. Both are answered with freshly
    random, correctly-sized opaque bytes. **If a real console
    cryptographically validates either value — plausibly by wrapping it
-   around the console's own SSL device key via an HSM SwitchNet has no
+   around the console's own SSL device key via an HSM GRID0+ has no
    equivalent of — no shape guessed here will pass that check, and no amount
    of code review will tell you that in advance.** This is the same
    category of unknown `internal/baas/accounts.go`'s `nxAccountBlob` header

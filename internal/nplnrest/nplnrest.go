@@ -66,8 +66,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nintendo"
-	"github.com/n-popescu/switchnet/internal/wirelog"
+	"github.com/n-popescu/grid0plus/internal/nintendo"
+	"github.com/n-popescu/grid0plus/internal/wirelog"
 )
 
 // Options configures the front end.
@@ -80,7 +80,7 @@ type Options struct {
 	// fro-N is a family, and which member is named is the server's choice. It
 	// must be one internal/nintendo/hosts.go redirects, or the console opens
 	// its persistent connection to real Nintendo — which succeeds, and then
-	// fails in a way that looks like SwitchNet being at fault.
+	// fails in a way that looks like GRID0+ being at fault.
 	FrontlineHost string
 
 	// RecordDir, when set, is a directory every request and response is written
@@ -120,11 +120,11 @@ func New(opts Options) (*Server, error) {
 		return nil, errors.New("nplnrest: no frontline host configured")
 	}
 	// Fail-closed, and this is the check worth having in this package. The
-	// frontline FQDN is the one value SwitchNet hands the console that tells it
+	// frontline FQDN is the one value GRID0+ hands the console that tells it
 	// where to connect next; if that name is not redirected, the console opens
 	// its persistent connection to real Nintendo. That SUCCEEDS, so nothing
 	// here fails — and then the game misbehaves in a way that looks like
-	// SwitchNet's fault while its traffic is going somewhere this deployment
+	// GRID0+'s fault while its traffic is going somewhere this deployment
 	// promises it will not.
 	switch resolution, _, _ := nintendo.Resolve(opts.FrontlineHost); resolution {
 	case nintendo.ResolveRedirect:

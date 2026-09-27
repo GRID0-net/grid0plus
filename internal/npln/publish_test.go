@@ -6,7 +6,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // TestPublishingADrawingOrALockerIsAcknowledged: RegisterDocument is the

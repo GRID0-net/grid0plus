@@ -7,7 +7,7 @@
 package gamesyncv1
 
 import (
-	_ "github.com/n-popescu/switchnet/proto/validate"
+	_ "github.com/n-popescu/grid0plus/proto/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1505,7 +1505,7 @@ const file_proto_gamesync_v1_gamesync_proto_rawDesc = "" +
 	"\x13RollbackTransaction\x12/.nn.npln.gamesync.v1.RollbackTransactionRequest\x1a\x16.google.protobuf.Empty\x12p\n" +
 	"\x0fKeepUserSession\x12+.nn.npln.gamesync.v1.KeepUserSessionRequest\x1a,.nn.npln.gamesync.v1.KeepUserSessionResponse(\x010\x01\x12R\n" +
 	"\vCreateRound\x12'.nn.npln.gamesync.v1.CreateRoundRequest\x1a\x1a.nn.npln.gamesync.v1.RoundB\xd7\x01\n" +
-	"\x17com.nn.npln.gamesync.v1B\rGamesyncProtoP\x01Z;github.com/n-popescu/switchnet/proto/gamesync/v1;gamesyncv1\xf8\x01\x01\xa2\x02\x03NNG\xaa\x02\x13Nn.Npln.Gamesync.V1\xca\x02\x13Nn\\Npln\\Gamesync\\V1\xe2\x02\x1fNn\\Npln\\Gamesync\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Gamesync::V1b\x06proto3"
+	"\x17com.nn.npln.gamesync.v1B\rGamesyncProtoP\x01Z;github.com/n-popescu/grid0plus/proto/gamesync/v1;gamesyncv1\xf8\x01\x01\xa2\x02\x03NNG\xaa\x02\x13Nn.Npln.Gamesync.V1\xca\x02\x13Nn\\Npln\\Gamesync\\V1\xe2\x02\x1fNn\\Npln\\Gamesync\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Gamesync::V1b\x06proto3"
 
 var (
 	file_proto_gamesync_v1_gamesync_proto_rawDescOnce sync.Once

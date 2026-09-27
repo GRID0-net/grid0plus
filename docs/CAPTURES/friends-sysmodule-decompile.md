@@ -44,7 +44,7 @@ and the outbox parser (`0x1cfe20`) read identical field sets: `id`,
 `extras.receiver.read`, and the two `extras.sender`/`extras.senderAndReceiver`
 `route:*` blocks. Neither reads `from` or `to`.
 
-SwitchNet sent `from` and `to`, which is why this stayed a guess for so long:
+GRID0+ sent `from` and `to`, which is why this stayed a guess for so long:
 the two captures that would have shown the shape (04, 05) both came back with
 empty item lists, so nothing ever exercised the field names. Fixed in `2456156`.
 
@@ -64,7 +64,7 @@ sets its vtable to `&PTR_FUN_00258558`. Two references into that table land at
 `$.sentFriendRequestIds[0]` and reducing it to a third boolean, never reading
 the id itself. The client's entire model of a relationship is three booleans.
 
-SwitchNet sent `type`, `user`, `isFavorite` and `becameFriendAt`, none of which
+GRID0+ sent `type`, `user`, `isFavorite` and `becameFriendAt`, none of which
 appears in that table, so the client saw the all-false default: **an existing
 friend and a total stranger were indistinguishable**, as were an outstanding
 friend request and none. Fixed in `333c292`.
@@ -73,7 +73,7 @@ That fix needed a directional block lookup (`IsBlocking`, added to the Store
 contract with both implementations and a contract-test case) rather than the
 either-way check suppression uses: `isBlocking` describes what the *caller* did,
 and a blocked user must keep seeing false/false — the same state an ordinary
-stranger produces. The old `type` field, which SwitchNet *did* send and the
+stranger produces. The old `type` field, which GRID0+ *did* send and the
 client ignores, announced `BLOCKED` to anyone who asked.
 
 **`GET /1.0.0/users/<id>/blocks`.** The request builder at `0x1b4c60` formats
@@ -81,29 +81,29 @@ that exact endpoint, and the parser it feeds (`0x1b50e0`, via `0x1b4fe0`) reads
 `$.items[*]`, `$.items[*].targetUserId`, `.targetUser.nickname`,
 `.targetUser.thumbnailUrl`, `.extras.self.reason`, `.extras.self.route:*` and
 `.createdAt`. It never reads a `user` key, and the envelope is not optional.
-SwitchNet sent `[{"user": ...}]`. Fixed in `2e77714`.
+GRID0+ sent `[{"user": ...}]`. Fixed in `2e77714`.
 
 `targetUserId` is parsed as a **string of hex digits** (the callback guards the
 field with a type check that its `nickname`/`appId`/`reason` fields share, and
 then runs a hex accumulator over the text, tolerating a `0x` prefix and bailing
-at 60 bits). SwitchNet's 16-hex-digit ids fit with room to spare — the same
+at 60 bits). GRID0+'s 16-hex-digit ids fit with room to spare — the same
 format the mirror image of this runs into in URL paths, `%016llx`.
 
 **`GET /1.0.0/users`.** The id-lookup builder (`0x1d40b0`, and its twin at
 `0x1d57d0`) de-duplicates its id list and then formats
 `https://%s/1.0.0/users?filter.id.$in=` followed by `%016llx` per id with a `,`
-between them. SwitchNet understood only the friend-code filter, so an id lookup
+between them. GRID0+ understood only the friend-code filter, so an id lookup
 hit the "refuse an unfiltered query" guard and came back **400**. The response
 parsers beside that builder (`0x1d4880`, `0x1d4d20`) read `$.items[*].id`,
 `.nickname`, `.thumbnailUrl`, `.extras.*.playLog` — an envelope again, where
-SwitchNet sent a bare array. Both fixed in `369011a`.
+GRID0+ sent a bare array. Both fixed in `369011a`.
 
 ## What it confirms is already right
 
 Worth recording, because each of these was a guess that has now been checked
 against the client that consumes it:
 
-| SwitchNet | Client evidence |
+| GRID0+ | Client evidence |
 | --- | --- |
 | `{count, etag, itemsPerPage, items}` on every list endpoint | `$.items[*]` / `$.items[]` markers in each list parser |
 | `friendId`, `friend.nickname`, `friend.thumbnailUrl`, `friendNote`, `createdAt` | read verbatim by `0x1ac660`, the friend-list entry parser |
@@ -135,15 +135,15 @@ $.items[*].extras.self.route:appInfo:appId     $.items[*].extras.self.route:cand
 $.items[*].extras.self.route:nnid:miiName      $.items[*].extras.self.route:nnid:miiImageUrlParam
 ```
 
-SwitchNet has no `route:` key at all. Because absence is tolerated, this is not
+GRID0+ has no `route:` key at all. Because absence is tolerated, this is not
 a proven break — it is a proven *unread* field, and the one place in this
-sysmodule where the client has data SwitchNet never supplies. Inventing values
+sysmodule where the client has data GRID0+ never supplies. Inventing values
 for it would be exactly what `CLAUDE.md` rule 6 forbids, so it stays a finding:
 a capture of a real friend list would show what a populated `route` contains, and
 until then nothing should be written into it.
 
 **`extras.self.reason` on a block entry.** The block parser reads it and routes
-it through the same string-to-enum helper its other enums use. SwitchNet sends
+it through the same string-to-enum helper its other enums use. GRID0+ sends
 none. What the values are needs a capture.
 
 **The friend-request POST body.** `POST /2.0.0/friend_requests` is confirmed to
@@ -154,7 +154,7 @@ not isolate. `docs/CAPTURES/README.md`'s item 2 is unchanged by this.
 **`$.permissions.*` on a friend.** `0x1bec20` reads `permissions.presence` and
 `permissions.friendRequestReception` from the user record. Whether the applet
 reads the *friend's* permissions out of `FriendUserResponse` for its own
-visibility display (which SwitchNet does send, via `scopedExtras`) was not
+visibility display (which GRID0+ does send, via `scopedExtras`) was not
 traced.
 
 **The presence state enum is three values, and `INACTIVE` is not one of them.**
@@ -164,7 +164,7 @@ notification parser for `$.value.state`, and `0x1b8420` for the entry a PATCH
 returns. It is a character-by-character chain with exactly three matches:
 `OFFLINE` → 0, `ONLINE` → 1, `PLAYING` → 2, and **anything else → 0**.
 
-SwitchNet's three spellings are therefore right, and `INACTIVE` — which
+GRID0+'s three spellings are therefore right, and `INACTIVE` — which
 `internal/baas/presence.go` accepts in a console's own report and
 `internal/presence` passes through untouched, per its "a fresh report is used
 exactly" rule — reaches a friend list as unrecognised text that the client reads
@@ -177,7 +177,7 @@ capture question, not a decompile one.
 ## Endpoint inventory
 
 30 URL formats are constructible by this sysmodule, across three hosts, and
-**they are not all served by the same SwitchNet process** — worth writing down
+**they are not all served by the same GRID0+ process** — worth writing down
 because it is the kind of thing a reader of `internal/baas` alone would get
 wrong:
 
@@ -189,7 +189,7 @@ wrong:
 | `c-%.accounts.nintendo.com` (`/v1/apps/<id>/catalog.json`, `/v1/apps/<id>/<name>.jpg`) | nothing — null-routed by `Resolve`'s Nintendo-domain fallback. See the note above about what that costs the friend list's game name and icon |
 
 The list is reproducible — it is every `https://%s/...`-shaped literal
-referenced by code in the module — and its value is that adding a SwitchNet
+referenced by code in the module — and its value is that adding a GRID0+
 route or renaming a query parameter can be checked against it directly.
 
 One shape warning for whoever implements the stubs for real: the `five`

@@ -1,4 +1,4 @@
-// Package presence resolves a user's presence through SwitchNet's TTL rules.
+// Package presence resolves a user's presence through GRID0+'s TTL rules.
 //
 // It exists so that BAAS's HTTP presence endpoints (internal/baas/presence.go)
 // and NPLN's PresenceService (internal/npln) apply exactly the same rules,
@@ -26,7 +26,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // Presence extras keys, as the console writes them.

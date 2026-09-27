@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // leagueDiagnosticPath is a temporary, disposable experiment: if set, replay

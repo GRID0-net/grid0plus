@@ -1,4 +1,4 @@
-// Command aauth is SwitchNet's application authentication server.
+// Command aauth is GRID0+'s application authentication server.
 //
 // It reimplements https://aauth-lp1.ndas.srv.nintendo.net and serves the
 // application token JWK set that the acert host publishes. It does not check
@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/aauth"
-	"github.com/n-popescu/switchnet/internal/health"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/aauth"
+	"github.com/n-popescu/grid0plus/internal/health"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 func main() {

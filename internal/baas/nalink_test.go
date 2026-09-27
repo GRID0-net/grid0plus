@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 

@@ -7,7 +7,7 @@
 | Evidence | a decompile of the operator's own dump (nx2elf + capstone), cross-checked against what [NextendoNetwork/splatoon-3](https://github.com/NextendoNetwork/splatoon-3)'s code states as measured |
 | Captured by | nobody — no packet capture exists; Nextendo's captures are not redistributed and are not used |
 
-Not a capture. It settles *shapes* SwitchNet needs before it can answer
+Not a capture. It settles *shapes* GRID0+ needs before it can answer
 `nn.npln.toyohr.v1.GameRecord/InitializeAttributes` and serve the Ugcstore
 documents it creates. No Nintendo data was copied: Nextendo's repository ships
 no capture files, and only facts from its code comments are taken
@@ -68,7 +68,7 @@ Groups in parser order: Versus (`season_id` … `token_expires_in`, ending at
 ## What this means for the answer
 
 **No key is mandatory to this parser.** A key that is absent leaves the
-field at the game's own default, so SwitchNet does not need to invent a rank,
+field at the game's own default, so GRID0+ does not need to invent a rank,
 a rating or an X Power for a new player: it can put in `attributes` only what
 the request itself carries (the season id, the Salmon Run shift id, a grade
 total) and let the game's defaults stand for the rest.

@@ -18,12 +18,12 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // The bot API is how the Discord bot (n-popescu/switchnet-discord) manages
 // accounts: registration, password resets, friends, avatars, and read-only
-// views of who is online and whether SwitchNet is up. It is the only way to
+// views of who is online and whether GRID0+ is up. It is the only way to
 // create a person's account.
 //
 // It listens on its own address, never the console-facing one, and every
@@ -96,7 +96,7 @@ func (b *botAPI) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-// withUser resolves the caller's Discord id to their SwitchNet user.
+// withUser resolves the caller's Discord id to their GRID0+ user.
 func (b *botAPI) withUser(h func(http.ResponseWriter, *http.Request, db.User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		discordID := r.Header.Get("X-Discord-User-ID")
@@ -107,7 +107,7 @@ func (b *botAPI) withUser(h func(http.ResponseWriter, *http.Request, db.User)) h
 		user, err := b.s.store.GetUserByDiscordID(r.Context(), discordID)
 		switch {
 		case errors.Is(err, db.ErrNotFound) || (err == nil && user.Deleted):
-			writeBotError(w, http.StatusNotFound, "not_registered", "this Discord account has no SwitchNet account")
+			writeBotError(w, http.StatusNotFound, "not_registered", "this Discord account has no GRID0+ account")
 			return
 		case err != nil:
 			b.internal(w, "load user by discord id", err)
@@ -158,7 +158,7 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := b.s.store.GetUserByDiscordID(r.Context(), req.DiscordUserID); err == nil {
-		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a SwitchNet account")
+		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a GRID0+ account")
 		return
 	}
 
@@ -171,7 +171,7 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 	user, err := b.s.createLoginUser(r.Context(), req.Username, nickname, password, req.DiscordUserID)
 	switch {
 	case errors.Is(err, db.ErrConflict):
-		writeBotError(w, http.StatusConflict, "username_taken", "that username is already a SwitchNet login")
+		writeBotError(w, http.StatusConflict, "username_taken", "that username is already a GRID0+ login")
 		return
 	case err != nil:
 		b.internal(w, "create user", err)
@@ -208,7 +208,7 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := b.s.store.GetUserByDiscordID(r.Context(), req.DiscordUserID); err == nil {
-		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a SwitchNet account")
+		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a GRID0+ account")
 		return
 	}
 
@@ -222,7 +222,7 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 		id := req.DiscordUserID
 		if _, err := b.s.store.UpdateUser(r.Context(), user.ID, db.UserPatch{DiscordUserID: &id}); err != nil {
 			if errors.Is(err, db.ErrConflict) {
-				writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a SwitchNet account")
+				writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a GRID0+ account")
 				return
 			}
 			b.internal(w, "link discord", err)
@@ -363,12 +363,12 @@ func (b *botAPI) me(w http.ResponseWriter, r *http.Request, user db.User) {
 }
 
 // lookupDiscordUser tells the bot whether a mentioned Discord account is
-// registered, and under which SwitchNet user. Public details only.
+// registered, and under which GRID0+ user. Public details only.
 func (b *botAPI) lookupDiscordUser(w http.ResponseWriter, r *http.Request) {
 	u, err := b.s.store.GetUserByDiscordID(r.Context(), r.PathValue("discordId"))
 	switch {
 	case errors.Is(err, db.ErrNotFound) || (err == nil && u.Deleted):
-		writeBotError(w, http.StatusNotFound, "not_registered", "that Discord account has no SwitchNet account")
+		writeBotError(w, http.StatusNotFound, "not_registered", "that Discord account has no GRID0+ account")
 		return
 	case err != nil:
 		b.internal(w, "load user by discord id", err)
@@ -532,7 +532,7 @@ func (b *botAPI) sendFriendRequest(w http.ResponseWriter, r *http.Request, user 
 		return
 	}
 	if errors.Is(err, db.ErrNotFound) || (err == nil && target.Deleted) {
-		writeBotError(w, http.StatusNotFound, "no_such_user", "nobody on SwitchNet matches that")
+		writeBotError(w, http.StatusNotFound, "no_such_user", "nobody on GRID0+ matches that")
 		return
 	}
 	if err != nil {

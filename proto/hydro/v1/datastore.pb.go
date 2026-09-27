@@ -7,7 +7,7 @@
 package hydrov1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	status "google.golang.org/genproto/googleapis/rpc/status"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1163,7 +1163,7 @@ const file_proto_hydro_v1_datastore_proto_rawDesc = "" +
 	"\x11BulkDeleteContent\x12*.nn.npln.hydro.v1.BulkDeleteContentRequest\x1a+.nn.npln.hydro.v1.BulkDeleteContentResponse\x12x\n" +
 	"\x15BatchTransformContent\x12..nn.npln.hydro.v1.BatchTransformContentRequest\x1a/.nn.npln.hydro.v1.BatchTransformContentResponse\x12u\n" +
 	"\x14BulkTransformContent\x12-.nn.npln.hydro.v1.BulkTransformContentRequest\x1a..nn.npln.hydro.v1.BulkTransformContentResponseB\xc0\x01\n" +
-	"\x14com.nn.npln.hydro.v1B\x0eDatastoreProtoP\x01Z5github.com/n-popescu/switchnet/proto/hydro/v1;hydrov1\xa2\x02\x03NNH\xaa\x02\x10Nn.Npln.Hydro.V1\xca\x02\x10Nn\\Npln\\Hydro\\V1\xe2\x02\x1cNn\\Npln\\Hydro\\V1\\GPBMetadata\xea\x02\x13Nn::Npln::Hydro::V1b\x06proto3"
+	"\x14com.nn.npln.hydro.v1B\x0eDatastoreProtoP\x01Z5github.com/n-popescu/grid0plus/proto/hydro/v1;hydrov1\xa2\x02\x03NNH\xaa\x02\x10Nn.Npln.Hydro.V1\xca\x02\x10Nn\\Npln\\Hydro\\V1\xe2\x02\x1cNn\\Npln\\Hydro\\V1\\GPBMetadata\xea\x02\x13Nn::Npln::Hydro::V1b\x06proto3"
 
 var (
 	file_proto_hydro_v1_datastore_proto_rawDescOnce sync.Once

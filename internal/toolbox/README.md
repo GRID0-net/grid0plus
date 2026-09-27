@@ -1,8 +1,8 @@
 # internal/toolbox
 
-The public API for the SwitchNet Toolbox homebrew app
+The public API for the GRID0+ Toolbox homebrew app
 ([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro)):
-whether a newer build exists, and a coarse status of the other SwitchNet
+whether a newer build exists, and a coarse status of the other GRID0+
 services.
 
 | | |
@@ -40,7 +40,7 @@ It is a separate service (`cmd/toolbox`) rather than a route added to
   here answers only `ok` / `degraded` / `down` / `unknown`, on purpose, with
   no token at all: an unauthenticated caller earns no more than that.
 - **It is the one place the GitHub token needs to exist.** Nothing else in
-  SwitchNet talks to GitHub. Giving that credential its own service, rather
+  GRID0+ talks to GitHub. Giving that credential its own service, rather
   than folding it into one that already does several other things, keeps the
   one thing that must never reach a console physically separate from
   everything that already does.
@@ -96,12 +96,12 @@ per console.
 
 - **No authentication on the console's side, anywhere.** The whole point is
   that a homebrew binary distributed to consoles can reach this safely with
-  no credential to protect. If SwitchNet ever needs to restrict *which*
+  no credential to protect. If GRID0+ ever needs to restrict *which*
   consoles can check for updates, that has to be a different mechanism —
   this package is not it.
 - **No error detail in `/status`.** See "why this exists" above.
 - **No mirroring or caching of the `.nro` itself.** `/updates/download`
-  proxies GitHub live, per request. At the traffic level one SwitchNet
+  proxies GitHub live, per request. At the traffic level one GRID0+
   deployment sees, holding a second copy of the binary on disk (and keeping
   it in sync with whatever GitHub currently has tagged latest) is
   complexity this does not need yet.

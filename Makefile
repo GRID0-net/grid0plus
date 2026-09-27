@@ -1,4 +1,4 @@
-# SwitchNet
+# GRID0+
 #
 # Run `make help` for the target list.
 
@@ -20,7 +20,7 @@ TEST_REDIS_URL    ?=
 ## help: list the targets
 .PHONY: help
 help:
-	@echo "SwitchNet"
+	@echo "GRID0+"
 	@echo
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed -E 's/^## ([a-z0-9-]+): (.*)/  \1|\2/' | awk -F'|' '{printf "  %-16s %s\n", $$1, $$2}'
 	@echo
@@ -147,14 +147,14 @@ gen-dns:
 	@echo "wrote deploy/switchnet.dnsmasq.conf and deploy/switchnet.unbound.conf"
 	@echo
 	@echo "Add this to a resolver you already run (router, Pi-hole, Unbound)."
-	@echo "SwitchNet does not run its own DNS server; nothing goes on the console"
+	@echo "GRID0+ does not run its own DNS server; nothing goes on the console"
 	@echo "for redirection either way."
 
 ## gen-switch: gen-nginx, gen-dns and gen-hosts together
 .PHONY: gen-switch
 gen-switch: gen-nginx gen-dns gen-hosts
 
-## switchnet-mode: point a console's SD card back at SwitchNet after Nextendo (or any other) mode. SD=/path/to/sd/card
+## switchnet-mode: point a console's SD card back at GRID0+ after Nextendo (or any other) mode. SD=/path/to/sd/card
 .PHONY: switchnet-mode
 switchnet-mode:
 	scripts/switchnet-mode.sh $(SD)

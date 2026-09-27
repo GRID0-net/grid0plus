@@ -48,7 +48,7 @@ prepared) and `GET /datastore/coconut/<id>` (a plaza post's data).
 
 ## What it does with them
 
-- **Match history.** A lobby that becomes a match is filed in SwitchNet's
+- **Match history.** A lobby that becomes a match is filed in GRID0+'s
   match history (tenant `splatoon2`), so the dashboard's Matches tab shows
   Splatoon 2 beside Splatoon 3. Each uploaded result is kept with its mode,
   rule and stage.

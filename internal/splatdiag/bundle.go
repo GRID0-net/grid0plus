@@ -12,9 +12,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // Bundle is disabled unless all four SWITCHNET_NPLN_DIAGNOSTIC_* variables

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // Splatoon 2's additions to Utility and MatchmakeExtension, and what it
@@ -72,7 +72,7 @@ type currentUser struct {
 // (facts only).
 //
 // The unique id comes from the game's save data, so it may be one this
-// server never handed out -- a save from before SwitchNet. Such an id is
+// server never handed out -- a save from before GRID0+. Such an id is
 // adopted for the caller. One that belongs to someone else is not, and is
 // logged; the call still succeeds, because failing it would only stop the
 // player going online, and nothing is filed under an id nobody owns.
@@ -133,7 +133,7 @@ func (s *Server) customGetSimplePlayingSession(c *nex.Conn, req *nex.Request) *n
 	return req.Success(w.Bytes())
 }
 
-// recordMatch files a lobby that became a match in SwitchNet's match
+// recordMatch files a lobby that became a match in GRID0+'s match
 // history, beside Splatoon 3's: the dashboard shows both.
 func (s *Server) recordMatch(g rendezvous.GatheringInfo) {
 	if s.store == nil {

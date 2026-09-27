@@ -1,7 +1,7 @@
-// Package dashboard is the operator's window into SwitchNet: who is online,
+// Package dashboard is the operator's window into GRID0+: who is online,
 // what they are playing, and the Splatfest controls.
 //
-// It is the one part of SwitchNet a person looks at rather than a console, so
+// It is the one part of GRID0+ a person looks at rather than a console, so
 // it is the one part where the interface matters. Everything else in this
 // repository answers a Switch; this answers the operator.
 //
@@ -25,10 +25,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presence"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 //go:embed assets/*
@@ -394,7 +394,7 @@ type Player struct {
 	Activity   string `json:"activity,omitempty"`
 	AppID      string `json:"appId,omitempty"`
 	LastSeenAt string `json:"lastSeenAt,omitempty"`
-	// Login is the person's SwitchNet login, set by the Discord bot. Empty
+	// Login is the person's GRID0+ login, set by the Discord bot. Empty
 	// for a console that has not linked to a person's account yet
 	// (Unlinked).
 	Login    string `json:"login,omitempty"`
@@ -451,7 +451,7 @@ func (s *Server) players(ctx context.Context) ([]Player, error) {
 	return out, nil
 }
 
-// titleName maps the title ids SwitchNet is likely to see onto something a
+// titleName maps the title ids GRID0+ is likely to see onto something a
 // person can read. Unknown ids are shown as themselves rather than guessed at.
 func titleName(appID string) string {
 	switch strings.ToLower(appID) {

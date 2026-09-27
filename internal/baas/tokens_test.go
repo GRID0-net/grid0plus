@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // Helpers for inspecting the tokens the server issues.

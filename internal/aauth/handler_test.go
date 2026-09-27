@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 const splatoon3TitleID = "0100c2500fc20000"
@@ -283,7 +283,7 @@ func TestApplicationTokenForADigitalTitle(t *testing.T) {
 		"application_version": {"00070000"},
 		"device_auth_token":   {h.deviceToken()},
 		"media_type":          {"DIGITAL"},
-		// Accepted without being looked at: SwitchNet does not check ownership.
+		// Accepted without being looked at: GRID0+ does not check ownership.
 		"cert":     {"not-a-real-ticket"},
 		"cert_key": {"not-a-real-key"},
 	})

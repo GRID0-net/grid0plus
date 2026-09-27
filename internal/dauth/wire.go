@@ -61,8 +61,8 @@ func parseParams(r *http.Request) (params, error) {
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/DAuth-Server#known-errors
 //
-// Only the codes SwitchNet can actually produce are listed. The rest describe
-// checks SwitchNet does not perform — banned devices, invalid certificates,
+// Only the codes GRID0+ can actually produce are listed. The rest describe
+// checks GRID0+ does not perform — banned devices, invalid certificates,
 // expired challenges — and inventing responses for them would be misleading.
 var (
 	errInternal         = apiError{Code: "0009", Message: "Internal Server Error."}

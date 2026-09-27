@@ -8,12 +8,12 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // Both preserved working hall sessions set field 1 in every nonempty Versus,
 // Coop, Season, and VsParams response. A false proto3 bool disappears from
-// the wire entirely, which is what SwitchNet used to send.
+// the wire entirely, which is what GRID0+ used to send.
 func TestPopulatedSchedulesCarryTheCapturedUpdateFlagOnWire(t *testing.T) {
 	at := time.Date(2026, 9, 5, 1, 0, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{RegularStages: []int32{1, 2}})

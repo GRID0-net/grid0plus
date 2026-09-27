@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/health"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/health"
 )
 
 // The service health view.
 //
-// Every SwitchNet service is its own process, and the usual way to find out one
+// Every GRID0+ service is its own process, and the usual way to find out one
 // of them is down is that a console stops working in a way that names none of
 // them. This asks each one directly.
 //

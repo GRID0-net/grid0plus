@@ -23,15 +23,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/gamesync"
-	"github.com/n-popescu/switchnet/internal/health"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/npln"
-	"github.com/n-popescu/switchnet/internal/nplnrest"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/gamesync"
+	"github.com/n-popescu/grid0plus/internal/health"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/npln"
+	"github.com/n-popescu/grid0plus/internal/nplnrest"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 func main() {

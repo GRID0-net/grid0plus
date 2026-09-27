@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presence"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
 )
 
 // defaultFriendCount is the page size the console asks for, and the cap applied
@@ -844,7 +844,7 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 		CreatedAt:  req.CreatedAt.Unix(),
 		// Channels is read as channels[0] by the decompiled parser (this
 		// type's own doc comment) but no capture has ever shown a
-		// non-empty one, and SwitchNet tracks no per-request channel
+		// non-empty one, and GRID0+ tracks no per-request channel
 		// provenance to report -- so this is a real, present, empty array,
 		// not an invented entry. The field being entirely ABSENT (its
 		// state before this fix) is the more likely crash: many JSON

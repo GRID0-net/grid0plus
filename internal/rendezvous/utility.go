@@ -6,7 +6,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // Utility (protocol 110): NEX unique ids and server settings.

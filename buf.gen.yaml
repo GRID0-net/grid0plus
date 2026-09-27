@@ -16,9 +16,9 @@ managed:
   override:
     # The prefix is the MODULE ROOT, not the module root plus "proto": each
     # file's own path already begins with `proto/`, so a prefix ending in
-    # /proto produces github.com/n-popescu/switchnet/proto/proto/common.
+    # /proto produces github.com/n-popescu/grid0plus/proto/proto/common.
     - file_option: go_package_prefix
-      value: github.com/n-popescu/switchnet
+      value: github.com/n-popescu/grid0plus
 
     # The annotation protos are a different case: they are not Nintendo's, they
     # already have canonical Go packages in the module graph, and generating a
@@ -46,7 +46,7 @@ managed:
     # `module=` output mode below, the file follows its Go package.
     - file_option: go_package
       path: validate/validate.proto
-      value: github.com/n-popescu/switchnet/proto/validate
+      value: github.com/n-popescu/grid0plus/proto/validate
 
 plugins:
   - local: protoc-gen-go
@@ -55,12 +55,12 @@ plugins:
     # each file's Go package rather than from where it happens to sit upstream.
     # That is what lets validate/ — which lives outside the proto/ tree there —
     # be generated into proto/validate here, alongside everything else.
-    opt: module=github.com/n-popescu/switchnet
+    opt: module=github.com/n-popescu/grid0plus
   - local: protoc-gen-go-grpc
     out: .
     opt:
-      - module=github.com/n-popescu/switchnet
-      # Generate the unimplemented-server embeds. SwitchNet implements these
+      - module=github.com/n-popescu/grid0plus
+      # Generate the unimplemented-server embeds. GRID0+ implements these
       # services a few RPCs at a time, and an unimplemented RPC must answer
       # codes.Unimplemented rather than fail to compile — that log line is the
       # to-do list (ROADMAP §2.4).

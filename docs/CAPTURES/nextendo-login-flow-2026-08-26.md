@@ -56,7 +56,7 @@ GET  m-lp1.baas.nintendo.com/2.0.0/users/<user>/friends?count=300         200
   authorization** — it is a separate step the console takes once it has a
   session, not part of the redirect handshake.
 - **Every endpoint above is already routed** by `internal/baas/router.go`, at
-  the same paths and methods. Nothing in this flow is a 404 from SwitchNet.
+  the same paths and methods. Nothing in this flow is a 404 from GRID0+.
 
 ## The `nxAccount` field, from a second account
 
@@ -88,8 +88,8 @@ working server does not itself keep stable.
 
 ## Which responses carry the field, measured 2026-09-22
 
-Replayed against SwitchNet's own handler in the test harness, because "the
-capture has it" does not by itself say when SwitchNet does:
+Replayed against GRID0+'s own handler in the test harness, because "the
+capture has it" does not by itself say when GRID0+ does:
 
 | Response | `extras.self.nxAccount` | `links.nintendoAccount` |
 | --- | --- | --- |

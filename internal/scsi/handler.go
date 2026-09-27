@@ -1,6 +1,6 @@
 // Package scsi reimplements the two Nintendo servers behind OLSC (Online
 // Save Cloud), the OS-level per-game save-data backup tied to a Nintendo
-// Switch Online subscription. Phase 4 of SwitchNet — see docs/ROADMAP.md.
+// Switch Online subscription. Phase 4 of GRID0+ — see docs/ROADMAP.md.
 //
 // Endpoints:
 //
@@ -34,8 +34,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // Store is the subset of db.Store this server needs.
@@ -126,7 +126,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	//
 	// A 2026-09-24 hardware capture (both preserved working Nextendo hall
 	// captures agree) confirms a third /api/console/v3/ path: start_upload,
-	// same two forms as the v2 route above. Two consecutive SwitchNet
+	// same two forms as the v2 route above. Two consecutive GRID0+
 	// hardware attempts on 2026-09-24 both reached this exact request and
 	// got logUnimplemented's 404 -- the same retry-loop-causing shape this
 	// comment already found once for the two routes above, on the RPC
@@ -356,7 +356,7 @@ func (s *Server) extendUploadTimeout(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.loadOwnedArchive(w, r, c); err != nil {
 		return
 	}
-	// SwitchNet enforces no upload timeout to extend -- this only needs to
+	// GRID0+ enforces no upload timeout to extend -- this only needs to
 	// answer the shape the wiki confirms.
 	writeJSON(w, http.StatusOK, map[string]any{"code": 2000})
 }
@@ -381,7 +381,7 @@ func (s *Server) generateKeySeedPackage(w http.ResponseWriter, r *http.Request) 
 	// TODO(capture-needed): the wiki confirms the response's field name and
 	// exact encoded length (512 base64url characters) but not the byte
 	// content's meaning. Real Nintendo hardware likely wraps this around the
-	// console's own SSL device key via an HSM SwitchNet has no equivalent
+	// console's own SSL device key via an HSM GRID0+ has no equivalent
 	// of. This is this project's most defensible placeholder -- opaque,
 	// correctly sized, freshly random per request -- not a guess at the
 	// real wrapping format. If a console cryptographically validates this
@@ -493,7 +493,7 @@ func (s *Server) createComponentFile(w http.ResponseWriter, r *http.Request) {
 // time-limited, cryptographically-signed URL to a separate storage backend
 // (S3-style — see the CloudFront/X-Amz-Cf-* headers in BAAS's own example
 // HTTP responses on the wiki, evidence the same underlying infrastructure is
-// in play here). SwitchNet controls both ends of this exchange, so it
+// in play here). GRID0+ controls both ends of this exchange, so it
 // answers with a same-server URL under its own /data path instead of
 // implementing real request signing — there is nothing to sign against, and
 // no third party the URL needs to be safe to hand to. If a capture shows the
@@ -649,7 +649,7 @@ func (s *Server) registerNotificationToken(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid_params", "Invalid Params")
 		return
 	}
-	// Real delivery ("your backup finished") needs npns:s, which SwitchNet
+	// Real delivery ("your backup finished") needs npns:s, which GRID0+
 	// does not implement (see docs/ROADMAP.md and switchnet-re's own
 	// FIRMWARE_IMPACT_AND_NPNS findings) -- acknowledged and otherwise
 	// dropped rather than stored, so this never silently promises a push

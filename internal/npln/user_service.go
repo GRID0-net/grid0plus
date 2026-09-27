@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
 )
 
 // ---- nn.npln.auth.v1.UserService -------------------------------------------
@@ -26,7 +26,7 @@ type userService struct {
 // about it.
 //
 // Only Name is answered. auth.v1.User also carries Account, CreateTime,
-// LastLoginTime and ShortId, but SwitchNet models none of the four: there is
+// LastLoginTime and ShortId, but GRID0+ models none of the four: there is
 // no cross-tenant "account" resource here (every user is already scoped to
 // this server's one tenant), and NPLN users are created implicitly on first
 // IssueToken rather than through a tracked CreateUser call, so there is no
@@ -61,7 +61,7 @@ func (u *userService) GetUser(
 // Both map an NPLN user onto a different id space -- the external identity
 // provider's own id, or a compact numeric "short id" -- that only matters if
 // something on this server or another NPLN service needs to look a user up
-// by one. Nothing here does: SwitchNet's own code always addresses a user by
+// by one. Nothing here does: GRID0+'s own code always addresses a user by
 // its resource name. Answering either convincingly would mean inventing an
 // id scheme with no consumer to check it against.
 //

@@ -81,7 +81,7 @@ operator supplies out of band (`fest_align.go`'s `festalias`). That only
 works if the console resolves fest resources by the *announced* id against
 the cache's own top-level metadata, not by names baked into the pack's
 internal files — the same "names are inert" assumption `substitute_fest_id`
-defaults to. SwitchNet does not need the same rewrite mechanism
+defaults to. GRID0+ does not need the same rewrite mechanism
 (`SelectFestSchedule` builds its response from a database row rather than
 replaying a captured one, so an operator can already set any
 `resource`/`revision` directly via `switchnetctl fest build`/the dashboard's
@@ -105,7 +105,7 @@ every request the `bcat-*` hosts receive and writes a hexdumped transcript when
 `stubs.bcat_record_dir` is set. Running the experiment is three lines in
 `internal/nintendo/hosts.go` plus a config value — see TODO §2.4.
 
-**Proceeding on:** it is not covered, so SwitchNet builds the delivery cache and
+**Proceeding on:** it is not covered, so GRID0+ builds the delivery cache and
 does not serve BCAT. Note that this is only *half* the blocker — the `list`
 response body is undocumented regardless, and stage 1's transcript is what would
 start to settle it.
@@ -145,7 +145,7 @@ This would close it completely rather than fix anything.
 
 `GetFestResult` now answers rather than returning `Unimplemented`, but every
 sub-result (`Yobisai`, `HonsaiMidterm`, `HonsaiFinal`, `Overall`) reports
-`IsValid: false` -- SwitchNet has no real battle-outcome data to compute a
+`IsValid: false` -- GRID0+ has no real battle-outcome data to compute a
 ratio or point total from (`npln_fest_entries` records team *choice*, not who
 won, and `GameRecord` is unimplemented), and deriving one from entry counts
 alone would be actively misleading rather than merely incomplete.
@@ -254,7 +254,7 @@ response fields a capture would reveal.
 
 `internal/nplnrest`'s `POST /v1/login_tickets` accepts whatever `id` and
 `password` a console presents, without verifying them (CLAUDE.md's second
-ground rule — this is not a credential SwitchNet issued). What is missing
+ground rule — this is not a credential GRID0+ issued). What is missing
 is how a fresh console gets one to present in the first place: the wiki
 names two `god`-server endpoints that plausibly create one
 (`POST /v1/immigrate`, `POST /v1/penne_ids`) but marks their HTTP method
@@ -266,7 +266,7 @@ Penne-shaped.
 **Proceeding on:** nothing needs to, yet — accepting any presented id
 without a provisioning step means a console can always obtain a login
 ticket even though nothing ever formally issued it a Penne identity. This
-is honest about what is unknown rather than a gap in behaviour: SwitchNet
+is honest about what is unknown rather than a gap in behaviour: GRID0+
 does not need to recognise a *returning* Penne id, only to answer the
 request in front of it.
 
@@ -360,7 +360,7 @@ real human login.
 ## Does a first-time Nintendo Account link actually request any of the eight unserved `accounts.nintendo.com` paths?
 
 Decompiling the console's own `account` sysmodule (fw 22.5.0) shows it can
-construct eight `accounts.nintendo.com` URLs that SwitchNet does not route:
+construct eight `accounts.nintendo.com` URLs that GRID0+ does not route:
 `/profile`, `connect/1.0.0/api/term_agreement_token`,
 `connect/1.0.0/term_confirm`, `connect/1.0.0/api/transfer_na_tokens` (plus its
 `/%lld` and `_inherit` forms), and `analytics/device/opt_in` with its `app/`

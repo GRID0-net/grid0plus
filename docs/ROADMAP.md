@@ -49,7 +49,7 @@ The remaining BAAS `2.0.0` guesses are listed in
 [`CAPTURES/README.md`](CAPTURES/README.md); the friend list shape is now
 confirmed by the applet rendering it.
 
-**Console-side setup.** What this deployment actually runs is the SwitchNet
+**Console-side setup.** What this deployment actually runs is the GRID0+
 Toolbox homebrew: Atmosphère's hosts file plus the public
 `disable_ca_verification` patches, on an emuMMC that never talks to Nintendo
 (see [`../switch/README.md`](../switch/README.md)). The routes below are the
@@ -67,7 +67,7 @@ so it depends on how `ssl` reads the archive.
 has a five-minute test that settles it.
 
 **If that test says no**, the work item is a small Atmosphère MITM sysmodule that
-intercepts `ssl`/`ssl:s` and calls `ImportServerPki` with SwitchNet's CA on each
+intercepts `ssl`/`ssl:s` and calls `ImportServerPki` with GRID0+'s CA on each
 context created. That keeps both properties that matter — not gated on a firmware
 build id, and adding trust rather than disabling verification — at the cost of
 being code rather than a data file. Prelude shipped something similar
@@ -77,7 +77,7 @@ which is a reason to write it carefully rather than a reason the approach is wro
 **The cost of the Toolbox route**, which this section originally ruled out:
 the patch silently does nothing when the firmware build id does not match, and
 it turns off certificate verification system-wide. On an emuMMC that only ever
-talks to SwitchNet the second cost does not reach Nintendo traffic; the first
+talks to GRID0+ the second cost does not reach Nintendo traffic; the first
 means a firmware update needs a new patch before anything works.
 
 ---
@@ -214,7 +214,7 @@ indistinguishable from a matchmaking bug. `switchnetctl check` warns when the li
 is empty; consoles on one LAN work without it.
 
 Note that gameplay is **peer-to-peer**: once a match starts the consoles talk
-directly and SwitchNet is out of the path, so the session names a *host player*,
+directly and GRID0+ is out of the path, so the session names a *host player*,
 not a station address. `AllocateIceServerSet` reads `npln.ice_servers`, which is
 empty by default — consoles on one LAN connect directly, which is the common
 case for a private server.
@@ -344,7 +344,7 @@ real answers, which is why a stub did not satisfy it. And `fro-N` is a **family*
 not one host — a console handed a frontline FQDN it cannot reach fails after the
 handshake looks fine.
 
-**Every body on all three is undocumented.** SwitchNet answers as little as
+**Every body on all three is undocumented.** GRID0+ answers as little as
 possible rather than inventing a Nintendo internal, and `npln.rest_record_dir`
 writes a hexdumped transcript of one boot — which is the cheapest capture in the
 project and settles all three at once.
@@ -367,12 +367,12 @@ GetFestDecryptionKey hands over keys that must actually open those packs
 derives all four values from one build so they cannot drift; `switch/bcat-installer`
 puts the cache on a console.
 
-**SwitchNet does not serve BCAT**, and the reason is narrower than it looks: the
+**GRID0+ does not serve BCAT**, and the reason is narrower than it looks: the
 `list` response body is undocumented, not that the container's signature could not
 be produced. `internal/bcat.Probe` is the server for the experiment that would
 settle it — see [`../TODO.md`](../TODO.md) §2.4.
 
-**SwitchNet does not convert textures either**, deliberately: a BFRES texture in
+**GRID0+ does not convert textures either**, deliberately: a BFRES texture in
 the wrong compression or swizzle *loads and renders as garbage*, on a console,
 with nothing on the server to look at. `bcat.converter` is a command the operator
 points at their own tool, and a source asset with no converter configured is a
@@ -417,7 +417,7 @@ What exists (`internal/nex`, `internal/rendezvous`, `internal/splatoon2`,
 `cmd/nex`):
 
 - the transport and login, with the BAAS id token as the credential and the
-  SwitchNet user id as the PID, fail-closed like everything else;
+  GRID0+ user id as the PID, fail-closed like everything else;
 - every protocol Splatoon 2 is known to call: secure connection, NAT
   traversal, notifications, matchmaking (three protocols), Utility, Ranking
   with Splatoon 2's league/Splatfest/X Power methods, DataStore with match
@@ -446,7 +446,7 @@ Against [NextendoNetwork's Splatoon 2 server](https://github.com/NextendoNetwork
 (PolyForm Shield; read for facts, none of its code used), feature by
 feature:
 
-| Nextendo | SwitchNet |
+| Nextendo | GRID0+ |
 | --- | --- |
 | login, secure connection, matchmaking, notifications (its `nextendo-nex` core) | `internal/nex`, `internal/rendezvous` |
 | Utility 9/10, Ranking 18/19/25 (empty lists), MatchmakeExtension 60 (empty list) | all of these, with 18 and 60 answered from real state; plus Ranking 16–24 and the standard 1–15 |
@@ -455,7 +455,7 @@ feature:
 | NAT classes, same-household stations, NAT-check port bridge | the same, `nattraversal.go`, `internal/natobs` |
 | per-pair relay with an allow list, `!` to force, "all" | `nex.relay` (`allow`, `!`, `allow_all`) |
 | relay settings in flag files re-read every two seconds, and an automatically maintained allow section | config only; a change is a restart — **not carried over** |
-| online check: an account that is disabled, unverified or already online elsewhere is refused | disabled (`Deleted`) accounts are refused by `internal/identity`; a second connection replaces the first. "Unverified" has no SwitchNet equivalent |
+| online check: an account that is disabled, unverified or already online elsewhere is refused | disabled (`Deleted`) accounts are refused by `internal/identity`; a second connection replaces the first. "Unverified" has no GRID0+ equivalent |
 | dashboard API: stats, relay, kick | the admin API and the dashboard's Splatoon 2 side, which also shows Splatfests, leagues, plaza posts and orders |
 | GeoIP lookup of each player | **not carried over**: it sends player addresses off the network |
 | anonymous PID for an unverifiable login, fail-open account check | **deliberately not carried over** (CLAUDE.md: identity is fail-closed) |
@@ -470,12 +470,12 @@ so balance is whatever they say it is.
 on the account layer for identity, and it additionally needs a Nintendo Account
 server that Phase 1 does not provide (see [3.1](#31-nintendo-account-prerequisite)).
 
-### This phase lives outside the SwitchNet repository
+### This phase lives outside the GRID0+ repository
 
 Everything below describes what Phase 3 needs, not code that belongs in
 `internal/` here. The decision, made 2026-09-20: the eShop is developed as a
 separate, optional module — its own repository/package, addable to a
-deployment later rather than bundled into core SwitchNet.
+deployment later rather than bundled into core GRID0+.
 
 Why it's a separate module and not another `internal/` package:
 
@@ -579,7 +579,7 @@ precise.
 
 A title installs only if the console accepts its ticket. On a stock console the
 ticket must be signed by Nintendo's RSA key. Two paths, and both need
-**sigpatches** (ES/FS patches) on the console — which a console running SwitchNet
+**sigpatches** (ES/FS patches) on the console — which a console running GRID0+
 already needs:
 
 | NSP kind | Contains | Works because |
@@ -648,7 +648,7 @@ and switchbrew on [NCA](https://switchbrew.org/wiki/NCA) and
 | `hac.lp1.savanna.srv.nintendo.net` | the newer eShop applet | check which one the operator's firmware uses **before** building against `bugyo` |
 
 **`bugyo` requires the "SwitchShop" client certificate.** Like every client cert
-in this stack, SwitchNet will not verify it — but nginx must be configured
+in this stack, GRID0+ will not verify it — but nginx must be configured
 `optional_no_ca` and not `on`, or the connection is refused before it becomes a
 request.
 
@@ -657,9 +657,9 @@ system updates — not to be confused with `atum` (no `n`), which is game
 content and a different host. `nim` writes a persistent flag when a system
 update check fails, and that flag survives switching DNS back to real
 Nintendo — expensive to hit on a console that moves back and forth between
-SwitchNet and real Nintendo. `internal/nintendo/hosts.go` currently
+GRID0+ and real Nintendo. `internal/nintendo/hosts.go` currently
 null-routes them instead of leaving them passthrough, because this operator's
-emuMMC is permanently and exclusively SwitchNet's and never switches back —
+emuMMC is permanently and exclusively GRID0+'s and never switches back —
 see the comment there and `TestSystemUpdateHostsAreNullRouted` for the
 reasoning. If you are building this for a console that *does* move back and
 forth, put these back to `ServicePassthrough` first, or you will hit that
@@ -755,12 +755,12 @@ Phase 4 is different in kind: a working implementation means **storing
 arbitrary player save data**, indefinitely, for every console in the group —
 real storage cost that grows with usage, not a one-time dump.
 
-Decided: **local disk on the box already running SwitchNet.** No new
+Decided: **local disk on the box already running GRID0+.** No new
 recurring cost — the operator already pays for this machine regardless.
 Configured via `scsi.storage_dir`; `scsi.per_user_quota_bytes` (default
 1 GiB) is the hard per-user cap this section originally called for, enforced
 in `internal/scsi.LocalDisk.Put` so one console's save data cannot fill the
-disk and take the rest of SwitchNet down with it. If disk space specifically
+disk and take the rest of GRID0+ down with it. If disk space specifically
 becomes a real constraint, `internal/scsi.BlobStore` is the seam an
 object-storage implementation (Azure Blob, Backblaze B2, Cloudflare R2) would
 plug into without touching anything else in the package — see
@@ -783,14 +783,14 @@ blocking each is in
    `nxAccountBlob`'s header prefix turned out to be for phase 1's account
    linking, and a capture is what actually settled that one.
 2. **`component_files/create` and `signed_uri`.** Listed on the wiki with no
-   method or field shape at all; SwitchNet answers with its own invented
+   method or field shape at all; GRID0+ answers with its own invented
    same-server upload/download endpoint rather than real request signing,
    since it controls both ends of the exchange anyway.
 3. **`start_download`/`finish_download`.** No documented shape at all;
    answered as "the same as reading the archive" and "a bare
    acknowledgement" respectively.
 4. **Where `application_id` comes from.** `start_upload`'s documented
-   request body has no title-id field. Read from a SwitchNet-invented
+   request body has no title-id field. Read from a GRID0+-invented
    `X-SwitchNet-Application-Id` header for now.
 
 ### 4.4 Scope note
@@ -860,7 +860,7 @@ reading the code rather than assumed:
    before anyone has said who the real person is (see nalink.go's own
    package comment, "the disposable identity registerUser had to invent
    before any id token existed"). When that person then links through the
-   Nintendo Account page with their real SwitchNet login, `completeLogin`
+   Nintendo Account page with their real GRID0+ login, `completeLogin`
    ([`accounts.go:414`](../internal/baas/accounts.go)) calls
    `ReassignDeviceAccount` to move the *device account* onto their real,
    persistent `User` — but the disposable `User` row `registerUser` created
@@ -870,7 +870,7 @@ reading the code rather than assumed:
    is not a bug in the sense of broken behavior (login still works
    correctly), it is a bookkeeping leak in a process meant to run once per
    *console*, not stay invisible once per *person*.
-2. **There is no operator-facing way to create a person's SwitchNet
+2. **There is no operator-facing way to create a person's GRID0+
    identity that isn't "wait for a console to invent one."** The self-
    registration website (`website.go`'s `CreateUserWithLogin`) already
    creates a `User` with `LoginUsername`/`LoginPasswordHash` and *no* device
@@ -885,7 +885,7 @@ reading the code rather than assumed:
 `/register` (Discord slash command, one per Discord account):
 
 - Takes the caller's Discord **username** (not display name/nickname — the
-  stable, unique one) as the SwitchNet `LoginUsername`.
+  stable, unique one) as the GRID0+ `LoginUsername`.
 - Generates an 8-character password from `[a-z0-9A-Z]` server-side (the
   same kind of random-credential generation `newDevicePassword` already does
   for device accounts, just a human-typeable alphabet instead of that
@@ -900,11 +900,11 @@ reading the code rather than assumed:
 - Records the Discord user ID against the new `User` row (a new
   `DiscordUserID` column, unique, nullable for accounts that never went
   through the bot) so every other command below can resolve "the caller" to
-  a SwitchNet user without asking them to re-authenticate per command.
+  a GRID0+ user without asking them to re-authenticate per command.
 
 The password the bot hands out is typed into the Switch's own "link a
 Nintendo Account" flow exactly the way a website-registered person already
-would — `nalink.go`'s login page already checks a SwitchNet
+would — `nalink.go`'s login page already checks a GRID0+
 username/password, not a device-account id/password, so nothing about the
 console-facing protocol changes; only the source of the credentials does.
 
@@ -970,7 +970,7 @@ dimensions to resize to (Discord avatars come in several sizes; the
 an implementation detail to pin down against `images.go`'s own handling when
 this is actually built, not decided here.
 
-### 5.5 Other bot commands, grounded in what SwitchNet already stores
+### 5.5 Other bot commands, grounded in what GRID0+ already stores
 
 Every command below reads or writes data that already exists in `internal/db`
 and `internal/baas` — nothing here proposes tracking anything new besides
@@ -981,7 +981,7 @@ and `internal/baas` — nothing here proposes tracking anything new besides
 - **`/fc-add <user>`** — send a friend request, accepting either a mention
   of another Discord account that has itself run `/register` (resolved
   through `DiscordUserID`) or a raw friend code
-  (`XXXX-XXXX-XXXX-XXXX`) for a SwitchNet account that never touched the
+  (`XXXX-XXXX-XXXX-XXXX`) for a GRID0+ account that never touched the
   bot at all — friend codes are already how the stock friends applet adds
   someone, so this is the same lookup, just from a slash command
   (`internal/baas/friends.go`, `FriendRequest`).
@@ -990,7 +990,7 @@ and `internal/baas` — nothing here proposes tracking anything new besides
 - **`/fc-remove <user>`** — end a friendship or cancel/deny a pending
   request — the same operations the stock applet already exposes, via the
   bot instead.
-- **`/whoami`** — the caller's own SwitchNet nickname, friend code, and
+- **`/whoami`** — the caller's own GRID0+ nickname, friend code, and
   linked-console count (`len(ListDeviceAccounts)`), so a person can check
   what the bot has for them without opening the dashboard.
 - **`/online`** — who in the group is currently online/playing
@@ -1002,7 +1002,7 @@ and `internal/baas` — nothing here proposes tracking anything new besides
 - **`/status`** — service health, reusing exactly what the dashboard's
   `/api/health` already reports (`internal/dashboard/servicehealth.go`) —
   which services are up, plus a current online-player count — so an
-  operator (or anyone in the Discord) can check "is SwitchNet up" without
+  operator (or anyone in the Discord) can check "is GRID0+ up" without
   opening the dashboard.
 - **`/matches`** *(maybe)* — the caller's own recent match history
   (`db.Match`, already recorded by `internal/npln`'s `recordMatch`) once
@@ -1057,5 +1057,5 @@ what is still guessed, in priority order; [`PACKET_CAPTURE.md`](PACKET_CAPTURE.m
 covers how to capture it — including a method that needs no console MITM and
 carries no ban risk. This deployment's console never runs Atmosphère against
 Nintendo, so a capture of Nintendo from it is tcpdump only; request and response
-shapes come from RE, GDB on the emuMMC, captures against SwitchNet, and facts
+shapes come from RE, GDB on the emuMMC, captures against GRID0+, and facts
 other projects have published.

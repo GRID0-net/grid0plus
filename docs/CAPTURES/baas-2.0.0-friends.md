@@ -127,7 +127,7 @@ yet clear; see the TODO(capture-needed) in `models.go`.
 
 **Relationship `extras`** have `self.route:sender = "me"` and
 `self.isConfirmed = true`. These appear to be metadata about the relationship
-from the caller's perspective. SwitchNet does not track these; they are returned
+from the caller's perspective. GRID0+ does not track these; they are returned
 as empty scoped extras.
 
 ## What this changes
@@ -145,7 +145,7 @@ as empty scoped extras.
 
 ## Notes
 
-`nicknameUpdatedAt` is not tracked as a separate field in `db.User`. SwitchNet
+`nicknameUpdatedAt` is not tracked as a separate field in `db.User`. GRID0+
 uses `UpdatedAt` as a conservative approximation until the column is added.
 
 The `channels` entry appears on every friendship. Whether it is created at

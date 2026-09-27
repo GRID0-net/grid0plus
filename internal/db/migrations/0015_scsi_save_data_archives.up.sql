@@ -32,7 +32,7 @@ CREATE TABLE scsi_save_data_archives (
     num_of_partitions               INTEGER     NOT NULL DEFAULT 0,
     launch_required_version         INTEGER     NOT NULL DEFAULT 0,
     previous_save_data_archive_id   TEXT        NOT NULL DEFAULT '',
-    -- Base64url, whatever the console sent. SwitchNet stores this opaquely --
+    -- Base64url, whatever the console sent. GRID0+ stores this opaquely --
     -- it never has the console's own encryption key, so it cannot recompute
     -- or verify it. See internal/scsi/README.md's key-seed-package note.
     encoded_digest                  TEXT        NOT NULL DEFAULT '',
@@ -55,7 +55,7 @@ CREATE INDEX scsi_save_data_archives_lookup_idx
 
 -- One uploaded part of an archive -- Nintendo splits an archive into a
 -- "meta" component and one or more "save" components so a large save can be
--- uploaded/resumed in pieces. SwitchNet does not need to resume mid-file
+-- uploaded/resumed in pieces. GRID0+ does not need to resume mid-file
 -- (see internal/scsi/README.md), but keeps the same one-row-per-component
 -- shape so GetSaveDataArchive's component_files list matches the documented
 -- response shape without a second mapping layer.

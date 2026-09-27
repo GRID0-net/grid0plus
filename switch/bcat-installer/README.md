@@ -1,6 +1,6 @@
 # switchnet-bcat-installer
 
-A homebrew that fetches a Splatfest's BCAT delivery cache from SwitchNet and
+A homebrew that fetches a Splatfest's BCAT delivery cache from GRID0+ and
 writes it into Splatoon 3's BCAT save data — what JKSV does by hand,
 automatically.
 
@@ -13,7 +13,7 @@ automatically.
 
 ## Why it exists
 
-SwitchNet builds the delivery cache rather than speaking BCAT's delivery
+GRID0+ builds the delivery cache rather than speaking BCAT's delivery
 protocol, because that protocol's `list` response body is undocumented and no
 public implementation exists — see [`internal/bcat`'s
 README](../../internal/bcat/README.md), and `TODO.md` §2.4 for the experiment
@@ -67,7 +67,7 @@ lobby, with nothing connecting the two events.
 **The digest is checked before the write, not after.** A truncated pack is
 indistinguishable from a valid one to the filesystem.
 
-**TLS verification is off, explicitly and in one place.** SwitchNet's certificate
+**TLS verification is off, explicitly and in one place.** GRID0+'s certificate
 is signed by the operator's own CA, which the console has no reason to trust and
 no way to be told about from inside a homebrew. The connection is to the
 operator's own server on the operator's own network, so verification buys

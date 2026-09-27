@@ -20,7 +20,7 @@ const coopLiveHorizonShifts = 5
 // the same real moment always produces the same shift regardless of when or
 // how many times it is computed: "random deterministic maps", the same
 // property Vs's schedule already has by construction. This exists so a
-// fresh SwitchNet install has a working Salmon Run rotation with zero
+// fresh GRID0+ install has a working Salmon Run rotation with zero
 // operator setup, the same way Vs does -- switchnetctl's own
 // `coop generate`/SaveCoopShift remain how an operator overrides a specific
 // slot; SelectCoopSchedules only falls back to a live shift for a Normal
@@ -46,7 +46,7 @@ func liveNormalCoopShifts(now time.Time, count int) []CoopShift {
 }
 
 // coopShiftAtSlot deterministically generates the one Normal shift starting
-// at start and lasting duration, applying the same SwitchNet-own
+// at start and lasting duration, applying the same GRID0+-own
 // weapon/boss policy GenerateCoopShifts uses (coopWeaponsFor, coopBossFor).
 func coopShiftAtSlot(start time.Time, duration time.Duration) CoopShift {
 	rng := coopSlotRNG(start)

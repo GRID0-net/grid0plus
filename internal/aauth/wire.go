@@ -35,7 +35,7 @@ func parseForm(r *http.Request) (form, error) {
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/AAuth-Server#known-errors
 //
-// Only the codes SwitchNet can produce are listed. It never bans a ROM id or
+// Only the codes GRID0+ can produce are listed. It never bans a ROM id or
 // refuses an unauthorised application, because it does not check ownership.
 var (
 	errDeviceTokenExpired = apiError{Code: "0103", Message: "Device token expired."}

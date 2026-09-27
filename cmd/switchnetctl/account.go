@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/baas"
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/baas"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // accountCreate implements `switchnetctl account create`.
@@ -369,7 +369,7 @@ Creates a user whose device account id and password are exactly what you
 give it, rather than server-generated ones.
 
 Use this for a console whose local user already has a Nintendo Account
-linked from before you pointed it at SwitchNet. That local user has a device
+linked from before you pointed it at GRID0+. That local user has a device
 account id and password cached in its own save data —
 su/baas/<guid>.dat, inside save folder 8000000000000010 — and it has no way
 to be told to ask for a new one short of unlinking the account on the

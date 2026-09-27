@@ -243,7 +243,7 @@ func TestElicenseMigrationStateAndArchivePublishAnswerWithTheirOwnFields(t *test
 }
 
 // TestOtherDragonsPathsStillGetAnEmptyObject covers the paths dragons
-// deliberately leaves alone -- SwitchNet's aauth does not look at their
+// deliberately leaves alone -- GRID0+'s aauth does not look at their
 // content either way.
 func TestOtherDragonsPathsStillGetAnEmptyObject(t *testing.T) {
 	h := newTestHandler(t)

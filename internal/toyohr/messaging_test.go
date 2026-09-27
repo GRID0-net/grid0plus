@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // recvStream is a minimal ServerStreamingServer that collects what is sent.
@@ -120,7 +120,7 @@ func TestTheSenderIsTakenFromTheTokenNotFromTheRequest(t *testing.T) {
 // hard client-side gate found by decompiling the client: "S3's ink loading
 // screen only advances when a 'type':'NplnLogin' message comes BACK on
 // RecvMessage" (replay.go). sendTo (unlike sendToLobby) never excludes the
-// sender, so this is SwitchNet's ordinary delivery path, not a special case
+// sender, so this is GRID0+'s ordinary delivery path, not a special case
 // -- this test exists to prove that stays true, not to add behavior.
 func TestSelfAddressedNplnLoginIsEchoedBack(t *testing.T) {
 	l := messagingFor(t)

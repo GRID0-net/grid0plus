@@ -56,7 +56,7 @@ The reference captures are preserved at
 `docs/CAPTURES/raw/nextendo-second-20260923T210513Z`. Their decoded analysis
 and raw `.flow` files must remain intact. Compare wire behavior and Nextendo's
 Splatoon 3 server source at `/home/nico/Documents/splatfest chat dump/splatoon-3`
-before changing SwitchNet. Take protocol facts, not their source code or private
+before changing GRID0+. Take protocol facts, not their source code or private
 payloads. Previous schedule response field-shape comparisons and unsuccessful
 server-side probes are summarized in the existing capture notes and commits
 `798993e`, `37b8225`, and `b590e65`.
@@ -113,16 +113,16 @@ written; the game was not left suspended.
 2. Distinguish whether this manager is legitimately idle until the user has
    some other prerequisite. The working Nextendo capture issues early
    GameRecord reads immediately after its second schedule batch; identify the
-   equivalent client transition and what gate the fresh SwitchNet account
+   equivalent client transition and what gate the fresh GRID0+ account
    fails. Do not assume GameRecord manager state alone explains the hall error
    until that relationship is demonstrated.
 3. If the gate points to a server response, compare the *specific* response
    against both Nextendo captures and its server implementation before making
-   a small, testable SwitchNet change. `GetSaveRecord`, `SelectVsParams`, and
+   a small, testable GRID0+ change. `GetSaveRecord`, `SelectVsParams`, and
    schedule timing have already been probed without a fix.
 
 Keep all pre-existing uncommitted files (`internal/toyohr/backlog.go`,
-`internal/toyohr/game_record.go`, `AGENTS.md`, `dev/`) untouched. SwitchNet
+`internal/toyohr/game_record.go`, `AGENTS.md`, `dev/`) untouched. GRID0+
 `main`, origin, and the VM were at `b590e65` during this test. The VM was left
 running. Do not commit any decoded private capture material.
 
@@ -162,7 +162,7 @@ IsInitialized (`+8 != 0`), `+0x40` IsBusy (`+0x70 == 1`), `+0x50` GetState
   `BankaraChallenges/%s`, matching the working capture's boot reads.
 
 Ruled out on the server side while checking this: the working VsUserAttribute
-carries `season_id = 16`, which is `SeasonSchedule.unk2/unk3` (SwitchNet
+carries `season_id = 16`, which is `SeasonSchedule.unk2/unk3` (GRID0+
 already sends 16), not `schedule_set_id` ("10" in the capture). The working
 `InitializeAttributes` carries `coop_shift.shift_id = "20260923100000"`, a
 `%d%02d%02d%02d0000` stamp of the current Coop shift start.

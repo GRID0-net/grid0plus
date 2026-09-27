@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/rendezvous/rvtest"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/rendezvous/rvtest"
 )
 
 func template(mode uint32, maxP uint16, flags uint32, password string) *rendezvous.MatchmakeSession {

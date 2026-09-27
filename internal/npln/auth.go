@@ -10,20 +10,20 @@ import (
 
 	gojwt "github.com/golang-jwt/jwt/v5"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/gamesync"
-	"github.com/n-popescu/switchnet/internal/identity"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/gamesync"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // Caller is the resolved identity behind one request.
 //
-// It is produced only by authenticate, only from a token SwitchNet signed, and
+// It is produced only by authenticate, only from a token GRID0+ signed, and
 // only after the user has been confirmed to still exist. There is no way to
 // construct one from anything the client said about itself.
 type Caller struct {
-	// UserID is the SwitchNet user. It comes from the token's subject, never
+	// UserID is the GRID0+ user. It comes from the token's subject, never
 	// from the 'uid' metadata field.
 	UserID string
 	// DeviceAccountID is the console the token was issued to.
@@ -81,7 +81,7 @@ type nplnClaims struct {
 //
 // Field for field the shape a hardware capture of a working server shows
 // (NextendoNetwork/splatoon-3's capture of TrackGameSessionCreationTicket,
-// MatchedUserSession field 3). The two fields SwitchNet has no source for are
+// MatchedUserSession field 3). The two fields GRID0+ has no source for are
 // present and empty rather than absent or invented: 'team' is a Splatfest team,
 // which this server announces but does not assign, and 'attr'/'ltcy' are the
 // client's own attribute and latency JSON, which the capture shows as "{}" and
@@ -102,11 +102,11 @@ type nplnClaims struct {
 // class of symptom that motivated writing this down: authentication that
 // reports success, calls that return OK, and the client still behaving as
 // though it were offline. An access token that never carried this object at
-// all (SwitchNet's own case until this was found) is the same failure by
+// all (GRID0+'s own case until this was found) is the same failure by
 // construction, not merely a risk of it.
 //
 // Authorization is the one field this project cannot get wrong by omission:
-// SwitchNet has no notion of a title-scoped rights system to report honestly,
+// GRID0+ has no notion of a title-scoped rights system to report honestly,
 // so it grants the token every right (allow: ["**"]) rather than reporting
 // none -- the same shape the capture itself shows for an ordinary session,
 // and the opposite of what an absent claim leaves the client concluding on
@@ -264,7 +264,7 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 // BAAS issued it — carried in the protobuf as ExternalIdToken.nsa_id_token —
 // and gets back an NPLN access token signed with a different key entirely.
 //
-// The id token is verified against SwitchNet's own BAAS id key, not accepted on
+// The id token is verified against GRID0+'s own BAAS id key, not accepted on
 // its face. That key is the one published at /1.0.0/certificates, which is
 // exactly the seam docs/ARCHITECTURE.md describes: a game server learns which
 // player is connecting without trusting anything the game told it.
@@ -295,7 +295,7 @@ func (s *Server) resolveCaller(ctx context.Context, userID, deviceAccountID stri
 // hardware crash right after IssuePrearrangedUserToken -- with no further
 // call ever logged, so the client never even got as far as asking for
 // anything else -- surfaced this as a real gap rather than a cosmetic one:
-// see docs/CAPTURES/README.md. Their server never expires it; SwitchNet gives
+// see docs/CAPTURES/README.md. Their server never expires it; GRID0+ gives
 // it a TTL instead, consistent with every other token this server issues.
 const refreshTokenTTL = 30 * 24 * time.Hour
 
@@ -388,7 +388,7 @@ const sessionTokenIssuer = "gss"
 // IssueGamesyncProbeToken tests whether Splatoon expects the access token
 // returned by Gamesync/IssueToken to be a signed JWT. Nextendo's working
 // server emits one with an NPLN rights block and a gss session binding;
-// SwitchNet has historically returned an opaque handle. This method is wired
+// GRID0+ has historically returned an opaque handle. This method is wired
 // in only by the VM diagnostic environment flag until a hardware test settles
 // whether the client actually reads it. The gamesync server still tracks the
 // exact returned token in its own session map.
@@ -468,7 +468,7 @@ func (s *Server) issueSessionTokenForDefinition(userID, sessionID string, def *m
 			Attr: attr,
 			GSID: sessionID,
 			LTCY: ltcy,
-			// A Splatfest team. SwitchNet announces fests but does not place a
+			// A Splatfest team. GRID0+ announces fests but does not place a
 			// player on a team, so this is empty rather than guessed.
 			Team: "",
 			TID:  s.tenant,

@@ -11,9 +11,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/proto/common"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/proto/common"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // CoopShiftKind is which of Salmon Run's three modes a shift belongs to.
@@ -185,7 +185,7 @@ func (c CoopShift) Validate() error {
 		_, normal := CoopWeaponByID(id)
 		_, grizzco := CoopKumaWeaponByID(id)
 		if !normal && !grizzco {
-			// A main weapon slot being a Grizzco weapon is SwitchNet's own
+			// A main weapon slot being a Grizzco weapon is GRID0+'s own
 			// generation policy (grizzcoWeaponChance, coop_generate.go), not
 			// a claim about Nintendo's own rotation -- so it must validate
 			// as real, exactly like an ordinary CoopWeapons id.
@@ -322,7 +322,7 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 // A shift with no operator-selected reward uses one real gear pair from
 // CoopRewardGears, picked at random but stable per slot. Every Normal entry
 // in both working captures includes reward_type (Head, Clothes, or Shoes)
-// and a nonzero reward_gear_id. This is SwitchNet's own reward rotation,
+// and a nonzero reward_gear_id. This is GRID0+'s own reward rotation,
 // not a reconstruction of Nintendo's selection policy.
 //
 // Name is NOT just a cosmetic mismatch if it is wrong, unlike the claim this
@@ -404,7 +404,7 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 //     dropped here entirely rather than sent alongside the attribute.
 //     One captured entry carried eight IDs while the others carried one.
 //     The captures establish that variation, but not the selection rule, so
-//     SwitchNet advertises the one weapon already selected for each generated
+//     GRID0+ advertises the one weapon already selected for each generated
 //     shift rather than inventing a wildcard policy.
 //
 //   - "CoopUsedRewardGears": the capture-derived gear pairs from

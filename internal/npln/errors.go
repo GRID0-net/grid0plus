@@ -13,7 +13,7 @@ import (
 // and it is deliberate on their side — a client probing the API learns only
 // that it got nothing.
 //
-// SwitchNet reproduces it because the game reacts to the status code, and a
+// GRID0+ reproduces it because the game reacts to the status code, and a
 // helpful InvalidArgument where the game expects Unimplemented is a difference
 // in behaviour for no gain. The log line on this side still says exactly what
 // was wrong.
@@ -46,7 +46,7 @@ func errMalformed(env Environment) error {
 // Errors returned to a caller that authenticated but may not do what it asked.
 //
 // These are ordinary gRPC statuses rather than NPLN's own error details,
-// because SwitchNet only produces the ones it can actually justify. Adding
+// because GRID0+ only produces the ones it can actually justify. Adding
 // codes for checks that are not performed is how a client ends up handling an
 // error the server never sends — the same rule internal/baas/errors.go follows.
 var (

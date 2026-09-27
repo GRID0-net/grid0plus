@@ -1,14 +1,14 @@
-// Command stubs answers the Nintendo endpoints SwitchNet redirects but does not
+// Command stubs answers the Nintendo endpoints GRID0+ redirects but does not
 // implement. See internal/stubs for why answering them at all matters.
 package main
 
 import (
 	"flag"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/health"
-	"github.com/n-popescu/switchnet/internal/service"
-	"github.com/n-popescu/switchnet/internal/stubs"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/health"
+	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/stubs"
 )
 
 func main() {

@@ -1,7 +1,7 @@
 package rendezvous
 
 import (
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // The matchmaking structures, NEX 4.0 layout.

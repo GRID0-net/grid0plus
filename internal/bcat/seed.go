@@ -8,7 +8,7 @@
 // tempting to conclude that producing one would mean forging a Nintendo
 // signature. switchbrew documents only that the FIELD exists: nothing about a
 // verification step, nothing about what happens on failure. And a console
-// running SwitchNet already has sigpatches — bypassing Nintendo signature checks
+// running GRID0+ already has sigpatches — bypassing Nintendo signature checks
 // is the normal state of a CFW console, which ROADMAP.md §3.3 already depends on.
 // Whether they reach the bcat sysmodule is untested, and untested is not
 // impossible.
@@ -20,7 +20,7 @@
 // unparseable and fails with nothing in any log — which is CLAUDE.md rule 6, not
 // rule 2.
 //
-// So SwitchNet builds the delivery cache directly instead: the same files a real
+// So GRID0+ builds the delivery cache directly instead: the same files a real
 // BCAT download would have left behind, installed onto the console by other
 // means. TODO.md §2.4 has the experiment that would change this, and Probe in
 // this package is its server.

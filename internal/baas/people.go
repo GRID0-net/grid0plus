@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// A person's account, independent of any console: one persistent SwitchNet
+// A person's account, independent of any console: one persistent GRID0+
 // identity per person, which they link onto a local user profile through the
 // Nintendo Account link stub (nalink.go). The Discord bot is the only way to
 // create one (botapi.go); the self-registration web page it replaced is gone.

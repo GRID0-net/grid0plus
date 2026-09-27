@@ -1414,7 +1414,7 @@ const file_proto_globalcounter_v1_global_counter_proto_rawDesc = "" +
 	"\bAddCount\x12).nn.npln.globalcounter.v1.AddCountRequest\x1a\x1f.nn.npln.globalcounter.v1.Count\x12X\n" +
 	"\tMoveCount\x12*.nn.npln.globalcounter.v1.MoveCountRequest\x1a\x1f.nn.npln.globalcounter.v1.Count\x12|\n" +
 	"\x11PurgeCountHolders\x122.nn.npln.globalcounter.v1.PurgeCountHoldersRequest\x1a3.nn.npln.globalcounter.v1.PurgeCountHoldersResponseB\xfc\x01\n" +
-	"\x1ccom.nn.npln.globalcounter.v1B\x12GlobalCounterProtoP\x01ZEgithub.com/n-popescu/switchnet/proto/globalcounter/v1;globalcounterv1\xa2\x02\x03NNG\xaa\x02\x18Nn.Npln.Globalcounter.V1\xca\x02\x18Nn\\Npln\\Globalcounter\\V1\xe2\x02$Nn\\Npln\\Globalcounter\\V1\\GPBMetadata\xea\x02\x1bNn::Npln::Globalcounter::V1b\x06proto3"
+	"\x1ccom.nn.npln.globalcounter.v1B\x12GlobalCounterProtoP\x01ZEgithub.com/n-popescu/grid0plus/proto/globalcounter/v1;globalcounterv1\xa2\x02\x03NNG\xaa\x02\x18Nn.Npln.Globalcounter.V1\xca\x02\x18Nn\\Npln\\Globalcounter\\V1\xe2\x02$Nn\\Npln\\Globalcounter\\V1\\GPBMetadata\xea\x02\x1bNn::Npln::Globalcounter::V1b\x06proto3"
 
 var (
 	file_proto_globalcounter_v1_global_counter_proto_rawDescOnce sync.Once

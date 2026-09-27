@@ -634,7 +634,7 @@ const file_proto_auth_v1_user_proto_rawDesc = "" +
 	"\x14QueryUserExternalIds\x12,.nn.npln.auth.v1.QueryUserExternalIdsRequest\x1a-.nn.npln.auth.v1.QueryUserExternalIdsResponse\x12A\n" +
 	"\aGetUser\x12\x1f.nn.npln.auth.v1.GetUserRequest\x1a\x15.nn.npln.auth.v1.User\x12j\n" +
 	"\x11QueryUserShortIds\x12).nn.npln.auth.v1.QueryUserShortIdsRequest\x1a*.nn.npln.auth.v1.QueryUserShortIdsResponseB\xb4\x01\n" +
-	"\x13com.nn.npln.auth.v1B\tUserProtoP\x01Z3github.com/n-popescu/switchnet/proto/auth/v1;authv1\xa2\x02\x03NNA\xaa\x02\x0fNn.Npln.Auth.V1\xca\x02\x0fNn\\Npln\\Auth\\V1\xe2\x02\x1bNn\\Npln\\Auth\\V1\\GPBMetadata\xea\x02\x12Nn::Npln::Auth::V1b\x06proto3"
+	"\x13com.nn.npln.auth.v1B\tUserProtoP\x01Z3github.com/n-popescu/grid0plus/proto/auth/v1;authv1\xa2\x02\x03NNA\xaa\x02\x0fNn.Npln.Auth.V1\xca\x02\x0fNn\\Npln\\Auth\\V1\xe2\x02\x1bNn\\Npln\\Auth\\V1\\GPBMetadata\xea\x02\x12Nn::Npln::Auth::V1b\x06proto3"
 
 var (
 	file_proto_auth_v1_user_proto_rawDescOnce sync.Once

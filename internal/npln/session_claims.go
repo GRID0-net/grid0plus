@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // sessionDefinitionClaims encodes the player's submitted matchmaking data for

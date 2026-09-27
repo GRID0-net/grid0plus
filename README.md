@@ -1,4 +1,4 @@
-<h1 align="center">SwitchNet</h1>
+<h1 align="center">GRID0+</h1>
 
 <p align="center">
   <b>A self-hosted replacement for Nintendo's online infrastructure, for a private group of modded Switch consoles.</b>
@@ -108,7 +108,7 @@ what that boundary means in practice.
 This is for a private group of consenting friends running consoles they own and
 games they own.
 
-**SwitchNet ships no Nintendo code, keys or data, and reproduces none.** It signs
+**GRID0+ ships no Nintendo code, keys or data, and reproduces none.** It signs
 its own tokens with its own keys. It cannot and does not produce anything real
 Nintendo servers would accept.
 
@@ -223,9 +223,9 @@ the guesses are. Read it before changing anything under `internal/baas`.
 Three separate problems, and most guides conflate them. Full detail, and the
 alternatives, in [`switch/README.md`](switch/README.md).
 
-**What this deployment actually runs:** the SwitchNet Toolbox homebrew
+**What this deployment actually runs:** the GRID0+ Toolbox homebrew
 ([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro),
-private), on an emuMMC that only ever talks to SwitchNet. One menu entry
+private), on an emuMMC that only ever talks to GRID0+. One menu entry
 writes Atmosphère's `hosts/{sysmmc,emummc}.txt` (generated from
 `internal/nintendo/hosts.go`), installs the certificate-verification IPS
 patches and Splatoon 3's own patches, and reboots. "Default" mode restores
@@ -324,7 +324,7 @@ for the shapes that are still readings.
 | Feature | Where |
 | --- | --- |
 | PRUDP-Lite over WebSocket, RMC, NEX types, Kerberos tickets | `internal/nex` |
-| Login with a SwitchNet id token, fail-closed (the PID *is* the user id) | `internal/rendezvous/auth.go`, `internal/identity` |
+| Login with a GRID0+ id token, fail-closed (the PID *is* the user id) | `internal/rendezvous/auth.go`, `internal/identity` |
 | Matchmaking: auto-matchmake, browse, create/join, friend-join, host and owner migration, notifications | `internal/rendezvous` |
 | NAT traversal: probes, NAT-aware matching, the NAT-check bridge, an optional per-pair relay | `internal/rendezvous`, `internal/natobs` |
 | Ranking (standard and Splatoon 2's league, Splatfest, X Power, event methods) | `internal/rendezvous/ranking.go`, `internal/splatoon2/ranking.go` |
@@ -393,7 +393,7 @@ internal/
                  ships in
   wirelog/       request transcripts, for the protocols nobody has documented
   health/        /healthz for every service, read by the dashboard
-  toolbox/       the public API the SwitchNet Toolbox .nro asks for updates
+  toolbox/       the public API the GRID0+ Toolbox .nro asks for updates
                  and server status
   dashboard/     the operator's web UI: players, matchmaking, Splatfests,
                  match history, Splatoon 2, a Debug tab
@@ -512,7 +512,7 @@ Nothing here is captured from Nintendo *through the console*: this
 deployment's console never runs Atmosphère against Nintendo's servers, so a
 capture of Nintendo from it is a tcpdump at most. Shapes are settled by
 reverse engineering, live GDB on the emuMMC, captures of the console talking
-to SwitchNet, and facts other projects have published.
+to GRID0+, and facts other projects have published.
 
 For BAAS specifically, `scripts/capture-baas.py` answers most of them in one command. It talks to
 Nintendo's real BAAS from a PC using your console's credentials, so **the console
@@ -546,7 +546,7 @@ Both the identity design and the presence design in this repository are shaped b
 a write-up of two real failures on real hardware — every console acting as one
 account, and friends who were never online — documented in
 [`n-popescu/splatoon-3`](https://github.com/n-popescu/splatoon-3)'s
-`docs/FRIENDS.md`. SwitchNet is the component that write-up was asking for, and
+`docs/FRIENDS.md`. GRID0+ is the component that write-up was asking for, and
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#identity-and-the-bug-this-design-exists-to-avoid)
 explains what was done differently.
 

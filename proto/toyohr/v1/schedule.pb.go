@@ -683,7 +683,7 @@ const file_proto_toyohr_v1_schedule_proto_rawDesc = "" +
 	"\x13SelectCoopSchedules\x12-.nn.npln.toyohr.v1.SelectCoopSchedulesRequest\x1a..nn.npln.toyohr.v1.SelectCoopSchedulesResponse\x12z\n" +
 	"\x15SelectSeasonSchedules\x12/.nn.npln.toyohr.v1.SelectSeasonSchedulesRequest\x1a0.nn.npln.toyohr.v1.SelectSeasonSchedulesResponse\x12z\n" +
 	"\x15SelectLeagueSchedules\x12/.nn.npln.toyohr.v1.SelectLeagueSchedulesRequest\x1a0.nn.npln.toyohr.v1.SelectLeagueSchedulesResponseB\xc6\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\rScheduleProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\rScheduleProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_schedule_proto_rawDescOnce sync.Once

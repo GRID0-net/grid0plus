@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add SwitchNet's CA to the Switch's built-in certificate store.
+"""Add GRID0+'s CA to the Switch's built-in certificate store.
 
 This is the alternative to the `disable_ca_verification` exefs patch, and it is
 better in three ways:
@@ -72,7 +72,7 @@ USAGE
   #    /atmosphere/contents/0100000000000800/romfs/ssl_TrustedCerts.bdf
 
 NEVER build this file from scratch. It must be the console's own store with one
-entry appended -- a file containing only SwitchNet's CA would break every other
+entry appended -- a file containing only GRID0+'s CA would break every other
 TLS connection on the console: the browser, the eShop, Nintendo Account.
 """
 
@@ -115,7 +115,7 @@ KNOWN_IDS = {
     1012: "DigiCertGlobalRootG2",
 }
 
-# The id given to SwitchNet's CA.
+# The id given to GRID0+'s CA.
 #
 # Nintendo's own ids are 1-3, and public roots start at 1000. 9000 is clear of
 # both, and clear of any plausible future addition.
@@ -265,12 +265,12 @@ def inspect(path: Path) -> None:
 
     if any(e.id == SWITCHNET_CA_ID for e in entries):
         print(f"Entry {SWITCHNET_CA_ID} is already present: this file already has "
-              "SwitchNet's CA in it.")
+              "GRID0+'s CA in it.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Add SwitchNet's CA to the Switch's built-in certificate store.",
+        description="Add GRID0+'s CA to the Switch's built-in certificate store.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

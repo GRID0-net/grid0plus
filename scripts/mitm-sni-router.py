@@ -1,4 +1,4 @@
-"""Routes each connection to the right SwitchNet backend by SNI, mirroring
+"""Routes each connection to the right GRID0+ backend by SNI, mirroring
 deploy/nginx.generated.conf's server blocks, so mitmdump can stand in for
 nginx entirely for one debug capture instead of only intercepting a single
 host.

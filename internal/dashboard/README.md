@@ -1,11 +1,11 @@
 # internal/dashboard
 
-The operator's view of SwitchNet: who is online, what they are playing, and the
+The operator's view of GRID0+: who is online, what they are playing, and the
 Splatfest and Salmon Run controls.
 
 | | |
 | --- | --- |
-| Reimplements | nothing — this is SwitchNet's own interface, not a Nintendo one |
+| Reimplements | nothing — this is GRID0+'s own interface, not a Nintendo one |
 | Needs a database | yes |
 | Needs Redis | yes, to be live. See below. |
 
@@ -129,7 +129,7 @@ be used to reach an admin route it does not know about.
 
 **Splatoon 2's Schedule tab shows no schedule, deliberately.** The game
 reads its map and Salmon Run rotations from BCAT, not from its game server,
-and SwitchNet answers BCAT with 304 for every title. An editor here would
+and GRID0+ answers BCAT with 304 for every title. An editor here would
 look like a control and change nothing a console reads; the tab says so
 instead. Its Splatfests tab has no scheduling form for the same reason:
 a Splatfest reaches Splatoon 2 through BCAT too.
@@ -154,7 +154,7 @@ state **and** the console's own last reported state **and** both timestamps.
 them is what makes a friend list permanently offline — and only showing all
 three lets an operator see which case they are in without reading the
 database. There is no stored presence *history* beyond that, deliberately:
-SwitchNet keeps one current presence row per user (see "Presence is resolved
+GRID0+ keeps one current presence row per user (see "Presence is resolved
 here, not read", above), so what the panel shows for "last seen" is that same
 row, not a log. Matches are filtered client-side from the match history the
 Matchmaking tab already fetches, rather than a second server-side query.

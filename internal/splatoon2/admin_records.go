@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // What the dashboard's Splatoon 2 tabs read beyond the live status: what the

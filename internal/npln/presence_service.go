@@ -13,10 +13,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presence"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
 )
 
 // presenceKeepAlive is how often SubscribePresences sends a heartbeat when
@@ -97,7 +97,7 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 // rests on.
 
 // presenceKeepAliveAckMinInterval paces replies without dropping any ping.
-// A 2026-09-24 SwitchNet capture saw 101 ping/ack round trips in two seconds
+// A 2026-09-24 GRID0+ capture saw 101 ping/ack round trips in two seconds
 // (~50Hz), followed by a hall communication error. Dropping pings during a
 // one-second throttle was also wrong: the client waits for the reply before
 // sending its next ping, so it got only the opening response and abandoned
@@ -424,7 +424,7 @@ func (s *Server) presenceProto(userID string, p db.Presence) *friendspb.Presence
 	}
 }
 
-// presenceState maps SwitchNet's four presence states onto NPLN's own State
+// presenceState maps GRID0+'s four presence states onto NPLN's own State
 // enum, which has no PLAYING equivalent -- resources.proto only defines
 // ONLINE, OFFLINE and INACTIVE. PLAYING is treated as ONLINE: a player in a
 // game is, at minimum, online, and BAAS's own richer detail (title id, app

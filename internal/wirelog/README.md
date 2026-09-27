@@ -13,7 +13,7 @@ undocumented exchange becomes a transcript instead of a guess.
 
 This deployment never decrypts the console's traffic with Nintendo (see
 `CLAUDE.md`, "Where to ask the operator"), so the only full transcripts of a
-console's requests are the ones SwitchNet writes while answering them. Point
+console's requests are the ones GRID0+ writes while answering them. Point
 a `Recorder` at a directory, put the console through one boot, and write the
 result up under `docs/CAPTURES/`.
 

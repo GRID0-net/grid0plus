@@ -3,9 +3,9 @@
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens
 //
-// SwitchNet signs its own tokens with its own keys. It never reproduces
+// GRID0+ signs its own tokens with its own keys. It never reproduces
 // Nintendo's signing keys and never validates a Nintendo-issued credential:
-// tokens presented by a console are only checked against keys SwitchNet itself
+// tokens presented by a console are only checked against keys GRID0+ itself
 // generated.
 package jwt
 
@@ -95,7 +95,7 @@ func (r *Keyring) Key(name string) (Key, error) {
 	return k, nil
 }
 
-// The five issuers SwitchNet signs for. A key must never be shared between
+// The five issuers GRID0+ signs for. A key must never be shared between
 // two of them, even when two of them publish at the same JWK set URL (as
 // IssuerBAASID and IssuerNAID do): the console links a token's 'kid' to its
 // 'iss' and rejects the whole Nintendo Account import if it ever sees one
@@ -118,7 +118,7 @@ const (
 	// real, working private server's own operational notes (Nextendo
 	// Network's baas-jwks, 2026-08-26): reusing one kid across the accounts.
 	// and BAAS issuers makes the console reject the import silently, with no
-	// further network call, which matches SwitchNet's own error 2124-0292
+	// further network call, which matches GRID0+'s own error 2124-0292
 	// exactly. Before this key existed, nalink.go signed with IssuerBAASID's
 	// key by mistake.
 	IssuerNAID = "na_id"

@@ -7,7 +7,7 @@
 package authv1
 
 import (
-	_ "github.com/n-popescu/switchnet/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/common"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -929,7 +929,7 @@ const file_proto_auth_v1_auth_proto_rawDesc = "" +
 	"\tListUsers\x12!.nn.npln.auth.v1.ListUsersRequest\x1a\".nn.npln.auth.v1.ListUsersResponse\x12H\n" +
 	"\n" +
 	"DeleteUser\x12\".nn.npln.auth.v1.DeleteUserRequest\x1a\x16.google.protobuf.EmptyB\xb7\x01\n" +
-	"\x13com.nn.npln.auth.v1B\tAuthProtoP\x01Z3github.com/n-popescu/switchnet/proto/auth/v1;authv1\xf8\x01\x01\xa2\x02\x03NNA\xaa\x02\x0fNn.Npln.Auth.V1\xca\x02\x0fNn\\Npln\\Auth\\V1\xe2\x02\x1bNn\\Npln\\Auth\\V1\\GPBMetadata\xea\x02\x12Nn::Npln::Auth::V1b\x06proto3"
+	"\x13com.nn.npln.auth.v1B\tAuthProtoP\x01Z3github.com/n-popescu/grid0plus/proto/auth/v1;authv1\xf8\x01\x01\xa2\x02\x03NNA\xaa\x02\x0fNn.Npln.Auth.V1\xca\x02\x0fNn\\Npln\\Auth\\V1\xe2\x02\x1bNn\\Npln\\Auth\\V1\\GPBMetadata\xea\x02\x12Nn::Npln::Auth::V1b\x06proto3"
 
 var (
 	file_proto_auth_v1_auth_proto_rawDescOnce sync.Once

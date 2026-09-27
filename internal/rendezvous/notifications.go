@@ -1,7 +1,7 @@
 package rendezvous
 
 import (
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // Notifications (protocol 14): the server calling the console. The console

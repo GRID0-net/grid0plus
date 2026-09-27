@@ -14,13 +14,13 @@
 Everything below was captured with the console pointed at [Nextendo
 Network](https://nextendo.network) (via their own homebrew, Prelude), not real
 Nintendo's servers. `accounts.nintendo.com` was redirected to Nextendo's real
-IP, decrypted with mitmproxy in reverse-proxy mode using SwitchNet's own CA
+IP, decrypted with mitmproxy in reverse-proxy mode using GRID0+'s own CA
 (already trusted by the console via the CertStore install — no additional
 cert-bypass was needed or used).
 
 This matters for how to read the rest of this document: it shows what a
 **working, real, community-run private server** does for this flow, not what
-real Nintendo's does. SwitchNet's own implementation (`internal/baas/nalink.go`)
+real Nintendo's does. GRID0+'s own implementation (`internal/baas/nalink.go`)
 deliberately does not try to replicate either one byte-for-byte — see the
 package comment there for why, and why that turns out to be fine.
 
@@ -120,7 +120,7 @@ specifically for the `lhub` (linking hub) redirect flow.
 
 ## What this changes
 
-- [x] Confirmed the redirect mechanism SwitchNet's own stub needed to get
+- [x] Confirmed the redirect mechanism GRID0+'s own stub needed to get
       right: a custom URI scheme with the token in the fragment, not an HTTP
       callback. Implemented in `internal/baas/nalink.go`.
 - [x] Confirmed the `federation`-compatible id_token shape (`sub` is what
@@ -201,13 +201,13 @@ cdn-image-e0d67c...baas.nintendo.com        0.5 KB   (final)
 ### What this settles
 
 - **`m-lp1.baas.nintendo.com` and the main `e0d67c...baas.nintendo.com` host
-  are both used**, not just `m-lp1`. SwitchNet's `nalink.go`/`federation`
+  are both used**, not just `m-lp1`. GRID0+'s `nalink.go`/`federation`
   handling was built entirely around `m-lp1`. Nothing observed here proves
   the main host is required for the flow to *succeed* (it could be routine
   presence/friends-adjacent traffic that happens to fall in this window), but
   it's worth keeping in mind if `m-lp1`-only ever needs revisiting.
 - **`aauth` gets contacted mid-flow**, not only during the initial device-auth
-  chain at boot. SwitchNet's `aauth` service already exists and answers any
+  chain at boot. GRID0+'s `aauth` service already exists and answers any
   well-formed application-token request regardless of when it's called, so
   this is very likely already handled correctly — noted here because it was a
   genuine surprise, not because anything needs to change.
@@ -259,7 +259,7 @@ capture:
 
 Per `naUsersMe`'s own doc comment, the final local commit step (writing
 `isNnLinked` and this profile data to System Save Data
-`8000000000000010`) is one SwitchNet's server side can influence but never
+`8000000000000010`) is one GRID0+'s server side can influence but never
 observe failing — nothing here rules out a capture eventually being needed.
 The cheaper first step is nginx's own access log (`docker compose logs
 nginx`, already running, no MITM needed) around the failed attempt: the
@@ -269,7 +269,7 @@ and where that sequence stops in the log names what the console rejected.
 
 ---
 
-`2124-0292` has persisted through every fix found by comparing SwitchNet's
+`2124-0292` has persisted through every fix found by comparing GRID0+'s
 live traffic against the working Nextendo capture, including: the
 `vermillion` gap above, a `response_type` regression that wrongly omitted
 `id_token`/`session_state`, `access_token`/`refresh_token` being signed with
@@ -283,7 +283,7 @@ already has.
 
 The most recent lead, not yet tested on hardware: the working Nextendo
 capture's device token carries two fields undocumented anywhere and absent
-from SwitchNet — `nintendo.x5t#S256` and `nintendo.esv`. See item 9 in
+from GRID0+ — `nintendo.x5t#S256` and `nintendo.esv`. See item 9 in
 [`README.md`](README.md) for the full writeup. `x5t#S256` (a real SHA-256
 thumbprint of the console's own TLS client certificate) is now implemented
 and verified end-to-end against the live stack. `esv` is now implemented
@@ -294,7 +294,7 @@ from anything, so it never actually implicated CLAUDE.md's first ground
 rule. Whether the console validates either field locally — as opposed to
 their being server-side-only bookkeeping the console never reads — is still
 unconfirmed; that question doesn't depend on `esv`'s derivation, only on
-whether the *key being present* mattered, which SwitchNet's tokens were
+whether the *key being present* mattered, which GRID0+'s tokens were
 previously failing to do at all. Only a hardware retest of the NA-link flow
 settles it.
 
@@ -339,7 +339,7 @@ cloning [kinnay/NintendoClients' wiki](https://github.com/kinnay/NintendoClients
 than quoting) and reading it in full, then cross-checking every claim against
 `internal/baas` and `internal/jwt`.
 
-**Confirmed against SwitchNet, not just plausible:**
+**Confirmed against GRID0+, not just plausible:**
 
 - `/1.0.0/federation`'s and `POST /1.0.0/users/{id}/link`'s parameter shapes
   match the wiki exactly, including the two being genuinely separate
@@ -406,14 +406,14 @@ with a guess dressed up by this pass's research.
 Following the `nxAccount` fix above (same capture,
 `53eb8af0-nextendoworkingnalink20260827.flow`, read with the real `mitmproxy`
 library), every one of the 61 HTTP exchanges in that flow was walked
-individually and compared against SwitchNet's implementation — not just the
+individually and compared against GRID0+'s implementation — not just the
 `federation` call already covered.
 
 **57 of 61 already matched.** 36 of those 61 are `GET
 /connect/1.0.0/qr/etat?s=...` polls with `User-Agent: NintendoBrowser` — the
 same UA as the login page itself, i.e. the page's own JavaScript polling for
 a QR-login-on-another-device state change, not a call the `nnAccount`/`libcurl`
-system module makes. SwitchNet's own login page never triggers this family of
+system module makes. GRID0+'s own login page never triggers this family of
 call, so it is not a gap. The rest (`/connect/1.0.0/authorize` classic
 submit, `/connect/1.0.0/api/token` both grant types across 7 repeated calls,
 `/2.0.0/users/me`, `/1.0.0/application/token`, `/1.0.0/users`, `/1.0.0/login`,
@@ -431,7 +431,7 @@ and already matched the existing implementation.
    with the authenticated user's own access token (`bs:grt:2`, confirmed by
    decoding the JWT), matching `s.authenticated()`. Implemented in
    `internal/baas/devices.go`'s `updatePushChannel` — no persistence added,
-   since nothing in SwitchNet sends push notifications yet; only the
+   since nothing in GRID0+ sends push notifications yet; only the
    response shape changed.
 
 2. **`POST /1.0.0/devices/snapshot`.** Same issue: previously a bare 204.
@@ -451,7 +451,7 @@ and already matched the existing implementation.
    seconds (7 days) in the capture. Implemented in
    `internal/baas/nalink.go`'s `naQRCodeParam`, matching that shape and
    duration; `sig` is an honest random placeholder rather than a forged
-   signature — SwitchNet does not hold Nextendo's (or Nintendo's) private
+   signature — GRID0+ does not hold Nextendo's (or Nintendo's) private
    signing key and per CLAUDE.md's ground rule 2 does not pretend to.
    Whether anything ever calls `qr_verify` back is unconfirmed — see the
    `TODO(capture-needed)` on `naQRCodeParam`.
@@ -464,7 +464,7 @@ and already matched the existing implementation.
    (`48d6d1f020427ad7`, `redirect_uri=nintendo://e-license.nx.sys` —
    e-license/eShop related) than the `lhub` linking flow documented above.
    It silently re-authorizes the existing NA session for a new client
-   rather than starting a new login. SwitchNet's `naAuthorizeSubmit` had no
+   rather than starting a new login. GRID0+'s `naAuthorizeSubmit` had no
    handling for this shape at all: a request with neither field would have
    fallen through to "Wrong username or password", which is wrong for a
    request that was never trying to supply either. Implemented as a branch
@@ -552,7 +552,7 @@ Put together, the blob looks like: a ~6-byte fixed header, ~24 bytes of
 opaque content that changes with request context rather than time, a fixed
 `01 00 01 01`-anchored structural region, a login-only ~10-byte suffix, and a
 96-byte zero pad — not a hash of anything, and not the near-uniform noise
-SwitchNet's current placeholder produces (see below).
+GRID0+'s current placeholder produces (see below).
 
 **This also explains, rather than merely extends, the earlier negative
 result.** The prior pass tried every scalar value visible anywhere in the
@@ -588,8 +588,8 @@ encoding, fixed header, `01 00 01 01` marker, and 96-byte zero tail are now
 confirmed structure, not guesses, across two independent samples of the same
 account. The two varying regions (client-context-independent but
 call-context-dependent, and login-only) are not reproducible from anything
-SwitchNet has available when building this field — there is no
-"per-issuance nonce" SwitchNet is tracking, and inventing one would be
+GRID0+ has available when building this field — there is no
+"per-issuance nonce" GRID0+ is tracking, and inventing one would be
 exactly the "plausible-looking Nintendo internal" CLAUDE.md's ground rule 6
 says not to do. Whether to update the placeholder to reproduce the *now-known*
 fixed structure (header/marker/zero-tail) while still leaving the varying
@@ -696,9 +696,9 @@ the earlier 2026-09-13 writeup already established: `profile`'s last
 non-zero byte is at offset 49; `login`'s is at offset 77. Only 29 of 174
 bytes differ between the two values for the same account. The real blob is
 overwhelmingly zero padding around a small structured region — the opposite
-shape from SwitchNet's placeholder, which fills the *entire* remainder with
+shape from GRID0+'s placeholder, which fills the *entire* remainder with
 dense SHA-256 output. This was already implied by the old "96-byte zero
-tail" finding but is worth stating plainly: SwitchNet's placeholder isn't
+tail" finding but is worth stating plainly: GRID0+'s placeholder isn't
 just missing a few confirmed fields, its general shape (dense pseudorandom
 bytes vs. mostly-empty structured record) doesn't resemble the real thing
 at all past the header and length.
@@ -719,7 +719,7 @@ a plain field name — sitting inside one large table of many distinct,
 NUL-separated path strings in `.rodata` (confirmed by reading raw context
 around the hits: dozens of unrelated JSONPath/JSON-Pointer expressions for
 other fields sit immediately before and after it in memory, back to back).
-**SwitchNet never sends a field called `isNnLinked` anywhere** (checked:
+**GRID0+ never sends a field called `isNnLinked` anywhere** (checked:
 zero occurrences of `isNnLinked`/`IsNnLinked` in the whole Go codebase
 outside of this one doc-comment mention).
 
@@ -742,7 +742,7 @@ this table, rather than one direct reference per string) would be a more
 tractable next angle than more xref-hunting on individual string addresses.
 
 **What this means practically**: don't add an `isNnLinked` field to any
-SwitchNet response speculatively based on this alone — the causality isn't
+GRID0+ response speculatively based on this alone — the causality isn't
 established, and CLAUDE.md's rule against inventing plausible-looking
 Nintendo internals applies exactly as much to "add a field because its name
 sounds relevant" as to guessing byte values. This is a lead worth a capture

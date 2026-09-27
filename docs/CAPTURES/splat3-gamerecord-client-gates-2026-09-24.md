@@ -26,9 +26,9 @@ after the second schedule batch and before `Canola`/`Locker`:
 - `PointCardRegular`
 
 They also call `GameRecord/InitializeAttributes` on the fresh-profile path. The
-SwitchNet hall runs discussed in the investigation do not issue this early
+GRID0+ hall runs discussed in the investigation do not issue this early
 batch; they proceed to later calls. The absent call is therefore currently a
-client-side boundary, not an RPC that SwitchNet logged and rejected.
+client-side boundary, not an RPC that GRID0+ logged and rejected.
 
 ## Client code recovered
 
@@ -171,10 +171,10 @@ Still unresolved:
    component, and how that component schedules its child acquisitions.
 3. What exact operations own the two prerequisite status values, especially
    the producer for `+0x110 >= 8` before the VS/Coop marker is written.
-4. Whether one of those operations is a response to a SwitchNet endpoint,
+4. Whether one of those operations is a response to a GRID0+ endpoint,
    local save initialization, or another client subsystem.
 5. Which capture/log event corresponds to those client transitions. Existing
-   SwitchNet logs show no early GameRecord reads, but cannot reveal a skipped
+   GRID0+ logs show no early GameRecord reads, but cannot reveal a skipped
    local callback by themselves.
 
 Next RE step: match the receiver vtable used by `FUN_71032869c0` and sibling
@@ -183,7 +183,7 @@ and each readiness-field writer back to its entry callback and any network or
 save operation. Only after that should a server-side response mismatch be
 inferred or changed.
 
-**Net assessment for SwitchNet's purposes, given everything gathered so far**:
+**Net assessment for GRID0+'s purposes, given everything gathered so far**:
 nothing found in this pass points at a specific NPLN response field as the
 producer of the `+0x110 >= 8` gate. The gate machinery (readiness fields,
 "already done" bit checks, per-child acquisition objects) looks purely local
@@ -192,7 +192,7 @@ async state producer (`FUN_710327f70c`) sets its field from polling an
 internal async operation's *result*, not from parsing a specific wire value.
 This is circumstantial, not conclusive — the async operation being polled
 could still originate from a network call — but there is no evidence in hand
-that ties the gate to a specific SwitchNet response shape. Until the
+that ties the gate to a specific GRID0+ response shape. Until the
 `0x7105d91670` constructor/caller is found, this should not be treated as
 either confirmed-local or confirmed-network; it remains open.
 
@@ -380,7 +380,7 @@ supported: the missing early `GameRecord` batch — and, per the new hardware
 context, also the missing `SelectFestSchedule` call and the missing
 `CreateSaveRecord` call — is consistent with a client-side call gate the
 console fails to pass, not a server-side wire-shape problem. Nothing found in
-this pass or the previous one identifies a SwitchNet response field as a
+this pass or the previous one identifies a GRID0+ response field as a
 producer of that gate.
 
 Updated status of the original open items:
@@ -419,13 +419,13 @@ Updated status of the original open items:
    3 above (what ticks the update, what sets the readiness fields) are now
    the more consequential open questions than finding 1, since they are
    closer to whatever the client is actually blocked on.
-5. Unchanged: still open. SwitchNet logs show no early reads and no calls
+5. Unchanged: still open. GRID0+ logs show no early reads and no calls
    to the three newly-confirmed-missing RPCs, but a skipped local callback
    still cannot be observed server-side by construction.
 
-**Net assessment for SwitchNet's purposes, updated with the new hardware
+**Net assessment for GRID0+'s purposes, updated with the new hardware
 context**: this pass makes it *more*, not less, likely that the root cause is
-a client-local state machine SwitchNet has not yet found the right trigger
+a client-local state machine GRID0+ has not yet found the right trigger
 for, rather than something fixable by changing a response shape. The
 strongest new evidence is the hardware retest itself, not this RE pass: the
 symptom is now confirmed deterministic across a completely fresh account
@@ -434,15 +434,15 @@ returning OK (ruling out a server-side error response), and consistent with
 the two known-working reference captures only up to the exact point where
 those captures still proceed into schedule/fest/GameRecord calls that this
 console's client never makes — i.e., a real, working NPLN server received the
-*same class* of responses and the client proceeded, while SwitchNet's client
+*same class* of responses and the client proceeded, while GRID0+'s client
 does not, for a still-unidentified reason. Combined with this pass's finding
 that the client-side gate is not even reached through an ordinary vtable
 install this binary's disassembly exposes, the picture is of a client-side
 readiness condition — plausibly timing, an earlier response's exact field
 value, or a completion signal from a different subsystem entirely — that has
-not yet been identified, rather than a shape SwitchNet is getting wrong on
+not yet been identified, rather than a shape GRID0+ is getting wrong on
 these three RPCs specifically. Nothing in this pass points at which field.
-This should not be treated as ruling out a fixable SwitchNet-side cause
+This should not be treated as ruling out a fixable GRID0+-side cause
 entirely — three RPC groups sharing one symptom is also consistent with one
 upstream response (schedules, or an earlier `GetSaveRecord`) silently failing
 a check the client makes before continuing — but the specific field or

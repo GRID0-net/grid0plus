@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 func newStoreWithFriendship(t *testing.T, favorite bool) (*db.Memory, db.User) {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // TestFullAuthChain is the phase 1.1 definition of done: a client walks the whole
@@ -23,10 +23,10 @@ import (
 func TestFullAuthChain(t *testing.T) {
 	h := newHarness(t)
 
-	// ---- step 1: a device token, from SwitchNet's dauth server ----
+	// ---- step 1: a device token, from GRID0+'s dauth server ----
 	deviceToken := h.deviceToken()
 
-	// ---- step 2: an application token, from SwitchNet's aauth server ----
+	// ---- step 2: an application token, from GRID0+'s aauth server ----
 	// Splatoon 3 on retail is MEMBERSHIP_REQUIRED with a GAME_SERVER handler,
 	// which is the case that makes the id token carry 'hm'.
 	appToken := h.appToken(splatoon3TitleID, "MEMBERSHIP_REQUIRED", "GAME_SERVER")
@@ -315,7 +315,7 @@ func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 	var body loginResponse
 	decode(t, resp, &body)
 	// A 2026-08-27 capture of a real working federation response has no
-	// 'presence' key in its own embedded user object at all -- SwitchNet used
+	// 'presence' key in its own embedded user object at all -- GRID0+ used
 	// to always include one. Sending it anyway is an extra key the console's
 	// reader has not been confirmed to tolerate.
 	if body.User.Presence != nil {
@@ -629,7 +629,7 @@ func TestFederationDoesNotStompTheConsolesOwnNxAccountPatch(t *testing.T) {
 // 2026-08-26 after real hardware showed the gap: signing in on the Nintendo
 // Account link page is signing in as an existing person (here: someone who
 // registered on the website), not minting a new one. Before this, the
-// console's "Transfer" flow registered a brand new, empty SwitchNet user for
+// console's "Transfer" flow registered a brand new, empty GRID0+ user for
 // every console it ran on and merely labelled it with the real person's id —
 // no friend code, no history, nothing carried over. This asserts the device
 // account /1.0.0/users just created ends up truly owned by the person who
@@ -1149,7 +1149,7 @@ func TestAnAnonymousTokenCannotReachUserEndpoints(t *testing.T) {
 	a := h.newAccount()
 
 	// The token is valid; it is simply not enough. Nintendo distinguishes this
-	// from an invalid token, and so does SwitchNet.
+	// from an invalid token, and so does GRID0+.
 	resp := h.do(request{
 		method: "GET", path: "/1.0.0/users/" + a.UserID, token: h.anonymousToken(),
 	})
@@ -1536,7 +1536,7 @@ func TestFederationNxAccountHasTheRealShapeNotTheOldPlaceholder(t *testing.T) {
 	}
 }
 
-// Linking a console to a real person's SwitchNet account used to leave the
+// Linking a console to a real person's GRID0+ account used to leave the
 // user registerUser invented behind forever, counted as a player with no
 // console (ROADMAP 5.1). The placeholder is deleted when its only device
 // account moves to the person.

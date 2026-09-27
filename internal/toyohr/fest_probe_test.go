@@ -7,8 +7,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 func TestNoFestResponseIsEmptyForEveryPlayer(t *testing.T) {

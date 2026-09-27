@@ -7,8 +7,8 @@
 package gamesyncv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
-	_ "github.com/n-popescu/switchnet/proto/validate"
+	common "github.com/n-popescu/grid0plus/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	status "google.golang.org/genproto/googleapis/rpc/status"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -1989,7 +1989,7 @@ const file_proto_gamesync_v1_resources_proto_rawDesc = "" +
 	"\x04unk3\x18\x03 \x01(\tR\x04unk3\x12\x12\n" +
 	"\x04unk4\x18\x04 \x03(\tR\x04unk4\x120\n" +
 	"\x06fields\x18\x05 \x01(\v2\x18.nn.npln.common.MapValueR\x06fieldsB\xd8\x01\n" +
-	"\x17com.nn.npln.gamesync.v1B\x0eResourcesProtoP\x01Z;github.com/n-popescu/switchnet/proto/gamesync/v1;gamesyncv1\xf8\x01\x01\xa2\x02\x03NNG\xaa\x02\x13Nn.Npln.Gamesync.V1\xca\x02\x13Nn\\Npln\\Gamesync\\V1\xe2\x02\x1fNn\\Npln\\Gamesync\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Gamesync::V1b\x06proto3"
+	"\x17com.nn.npln.gamesync.v1B\x0eResourcesProtoP\x01Z;github.com/n-popescu/grid0plus/proto/gamesync/v1;gamesyncv1\xf8\x01\x01\xa2\x02\x03NNG\xaa\x02\x13Nn.Npln.Gamesync.V1\xca\x02\x13Nn\\Npln\\Gamesync\\V1\xe2\x02\x1fNn\\Npln\\Gamesync\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Gamesync::V1b\x06proto3"
 
 var (
 	file_proto_gamesync_v1_resources_proto_rawDescOnce sync.Once

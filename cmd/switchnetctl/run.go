@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/health"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/health"
 )
 
 // run.go implements `switchnetctl run [service...]`: build and start the Go

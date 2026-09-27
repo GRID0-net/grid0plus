@@ -7,7 +7,7 @@
 package leaderboardv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -714,7 +714,7 @@ const file_proto_leaderboard_v1_resources_proto_rawDesc = "" +
 	"\tSHRINKING\x10\x02\x12\n" +
 	"\n" +
 	"\x06SHRUNK\x10\x03B\xea\x01\n" +
-	"\x1acom.nn.npln.leaderboard.v1B\x0eResourcesProtoP\x01ZAgithub.com/n-popescu/switchnet/proto/leaderboard/v1;leaderboardv1\xa2\x02\x03NNL\xaa\x02\x16Nn.Npln.Leaderboard.V1\xca\x02\x16Nn\\Npln\\Leaderboard\\V1\xe2\x02\"Nn\\Npln\\Leaderboard\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Leaderboard::V1b\x06proto3"
+	"\x1acom.nn.npln.leaderboard.v1B\x0eResourcesProtoP\x01ZAgithub.com/n-popescu/grid0plus/proto/leaderboard/v1;leaderboardv1\xa2\x02\x03NNL\xaa\x02\x16Nn.Npln.Leaderboard.V1\xca\x02\x16Nn\\Npln\\Leaderboard\\V1\xe2\x02\"Nn\\Npln\\Leaderboard\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Leaderboard::V1b\x06proto3"
 
 var (
 	file_proto_leaderboard_v1_resources_proto_rawDescOnce sync.Once

@@ -10,8 +10,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	syncpb "github.com/n-popescu/switchnet/proto/gamesync/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
 
 // store is the document tree.

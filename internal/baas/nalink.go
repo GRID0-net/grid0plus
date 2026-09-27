@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -44,7 +44,7 @@ func oidcHash(value string) string {
 // whichever host the token's own `jku` claim names, and every Nintendo
 // hostname is already ours, so that resolves back to us regardless.
 //
-// The login itself checks a person's own SwitchNet login credentials
+// The login itself checks a person's own GRID0+ login credentials
 // (website.go), not a shared passphrase — this is meant to attach the link
 // to one persistent identity, not mint an anonymous one per attempt.
 //
@@ -553,7 +553,7 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 // rest of BAAS (Authorization: Bearer <access_token>) by the 2026-08-26
 // mitmproxy capture.
 //
-// A first version of this handler returned only the 6 fields SwitchNet
+// A first version of this handler returned only the 6 fields GRID0+
 // actually tracks, on the theory that nothing had been observed to need the
 // rest. On real hardware that produced a 200 nginx logged as successful, but
 // the console still errored (2124-3122) and never made the further calls
@@ -787,7 +787,7 @@ func naAuthorizeHTML(clientID, redirectURI, state, responseType, nonce, problem 
 		`<input type="hidden" name="state" value="%s">`+
 		`<input type="hidden" name="response_type" value="%s">`+
 		`<input type="hidden" name="nonce" value="%s">`+
-		`<input name="username" placeholder="SwitchNet username" autocomplete="username" required>`+
+		`<input name="username" placeholder="GRID0+ username" autocomplete="username" required>`+
 		`<input name="password" type="password" placeholder="Password" `+
 		`autocomplete="current-password" required>`+
 		`<button type="submit">Sign in</button>`+

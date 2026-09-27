@@ -8,9 +8,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
 )
 
 // TestListFriendUsersSetsPresenceDeliverableAndReceivable is ROADMAP §2.5's

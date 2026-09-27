@@ -3,9 +3,9 @@
 **Status:** not started. This is a plan for the next agent, not an
 implementation. Read it top to bottom before touching code.
 
-**Goal:** a console pointed at SwitchNet downloads BCAT delivery-cache
+**Goal:** a console pointed at GRID0+ downloads BCAT delivery-cache
 content — Splatoon 3 Splatfest packs, Splatoon 2 schedule seeds, and
-anything else a title fetches through `nn::bcat` — from SwitchNet's own
+anything else a title fetches through `nn::bcat` — from GRID0+'s own
 `bcat-list` / `bcat-data` hosts, the same way it downloads them from
 Nintendo. No homebrew installer, no files handed to the player, no save
 editing. This replaces `docs/TODO.md` §2.4a's `.nro` installer as the
@@ -31,7 +31,7 @@ extracted with `switchnet_bcat_extract.py`, read in Ghidra):
      `bcat-data-lp1` host is **open** — see §7.
    - The request carries `User-Agent: libcurl (nnBcat; <uuid>; SDK
      <a.b.c.d>)`, `Accept: */*`, and `X-Nintendo-Serial-Number`. No BAAS/
-     dauth token. **BCAT needs no SwitchNet auth.**
+     dauth token. **BCAT needs no GRID0+ auth.**
 2. **The list body is itself a `bcat` container**; its decrypted payload is
    MessagePack (matches the on-disk cache name `list.msgpack`). Field names
    are in `internal/bcat/probe.go`'s comment and §2.4. Top level:
@@ -52,12 +52,12 @@ extracted with `switchnet_bcat_extract.py`, read in Ghidra):
    by anything on the server (see §4).
 5. **Plaintext containers are accepted.** The header validator accepts
    crypto type 0; the cipher setup treats 0 as "no encryption" (1/2/3 are
-   AES-128/192/256-CTR). So a SwitchNet container can be **crypto type 0**
+   AES-128/192/256-CTR). So a GRID0+ container can be **crypto type 0**
    and skip PBKDF2, the passphrase, and the module's secret strings
    entirely. Only the signature stands between a plaintext container and the
    game.
 
-**Consequence for the design:** SwitchNet serves *plaintext, unsigned*
+**Consequence for the design:** GRID0+ serves *plaintext, unsigned*
 containers (crypto 0), and a `bcat.nso` ExeFS patch makes the console accept
 them. No Nintendo key is ever needed, held, or forged — same posture as the
 Splatoon 3 TLS patch this repo already ships (rule 2 intact).
@@ -146,7 +146,7 @@ hard error, and null-routing these hosts is explicitly forbidden).
 
 Change the behaviour to:
 
-- `GET /api/nx/v1/list/nx_data_<tid>`: if SwitchNet has a seed for `<tid>`,
+- `GET /api/nx/v1/list/nx_data_<tid>`: if GRID0+ has a seed for `<tid>`,
   answer `200` with the `list` container (§3.1/§3.2). If not, keep the
   **304** — that is the correct "your cache is current / nothing new" answer
   and must remain the default, or consoles with no fest configured regress
@@ -246,7 +246,7 @@ module.
    as the no-seed default and preserving the probe + TLS properties. (A,
    §3.3) Add the seed-dir config key + `switchnetctl check`. (A, §3.4)
 4. Verify end to end on the **emulator** (§6.1) — this is the first point
-   where a game reads a SwitchNet-served fest with no homebrew.
+   where a game reads a GRID0+-served fest with no homebrew.
 5. Produce the `bcat.nso` patch (B, §4) and verify on **hardware** (§6.2).
 6. Write up both under `docs/CAPTURES/`; delete the stale
    `TODO(capture-needed)` markers that this resolves, in the same commit;
@@ -261,9 +261,9 @@ Steps 1–4 are fully doable in this environment. Steps 5–6 need the operator.
 ### 6.1 Emulator (no console, no patch)
 
 Citron/Ryujinx HLE `bcat` does **not** verify the container signature (it is
-a reimplementation of the sysmodule that just reads files). So a SwitchNet
+a reimplementation of the sysmodule that just reads files). So a GRID0+
 `list`/`data` server can be proven end to end against the emulator with no
-patch at all: point the emulator's DNS/redirect at SwitchNet (already
+patch at all: point the emulator's DNS/redirect at GRID0+ (already
 supported in our Citron fork), configure a fest seed, and confirm Splatoon 3
 loads the Splatfest content over the network. This is the cheapest real
 proof that the server is correct, and it should gate step 4.
@@ -275,9 +275,9 @@ claims separate.
 ### 6.2 Hardware (the patch)
 
 With the patch applied: confirm Splatoon 3 downloads and renders a
-SwitchNet-built Splatfest with nothing in the BCAT save beforehand and no
-installer run. Capture the `list`/`data` exchange (SwitchNet's own logs +
-the `internal/bcat.Probe` transcript — this is a capture *against SwitchNet*,
+GRID0+-built Splatfest with nothing in the BCAT save beforehand and no
+installer run. Capture the `list`/`data` exchange (GRID0+'s own logs +
+the `internal/bcat.Probe` transcript — this is a capture *against GRID0+*,
 allowed; not a capture of Nintendo's traffic). Record result codes: success,
 or 2002-4106 (signature still rejected → patch missed a site), or a parse
 error (list shape wrong).
@@ -296,7 +296,7 @@ Each is small and local; none blocks starting.
 2. **Data `url` host.** Does `bcat.nso` accept a `url` pointing at
    `bcat-data-lp1` only, or any host? If restricted, the `url` in the list
    must name `bcat-data-lp1` and that host serves the data; if not, it can
-   point straight at a SwitchNet path. Read the `url` handling in the module
+   point straight at a GRID0+ path. Read the `url` handling in the module
    or test both on the emulator.
 3. **Data payload encryption.** Whether the container wraps the
    nisasyst-`.enc` pack bytes (most likely) or a plaintext pack (§3.1).

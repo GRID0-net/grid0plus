@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/nex/nextest"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/rendezvous/rvtest"
-	"github.com/n-popescu/switchnet/internal/splatoon2"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex/nextest"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/rendezvous/rvtest"
+	"github.com/n-popescu/grid0plus/internal/splatoon2"
 )
 
 type env struct {

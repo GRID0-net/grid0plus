@@ -80,7 +80,7 @@ func (r *Redis) Subscribe(ctx context.Context) (<-chan Event, error) {
 
 // statsKey is where the snapshot lives.
 //
-// Derived from the channel name so that two SwitchNet deployments sharing one
+// Derived from the channel name so that two GRID0+ deployments sharing one
 // Redis do not read each other's gauge -- which would be a very confusing way to
 // find out the channels were shared.
 func (r *Redis) statsKey() string { return r.channel + ":stats" }

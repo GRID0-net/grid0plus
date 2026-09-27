@@ -1,6 +1,6 @@
 -- Which team each player picked for a Splatfest, and where they picked it.
 --
--- The vote is the ONE piece of fest data SwitchNet genuinely measures. The
+-- The vote is the ONE piece of fest data GRID0+ genuinely measures. The
 -- battle ratios a real fest result also carries need battle records, which
 -- nothing here writes yet -- so internal/toyohr reports those as not valid
 -- (the protocol's own way of saying "not available") and decides the fest on

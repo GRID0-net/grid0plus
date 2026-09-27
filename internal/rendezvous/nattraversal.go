@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // NATTraversal (protocol 3): coordinating the hole-punch between two
@@ -313,7 +313,7 @@ func (s *Server) reportNATProperties(c *nex.Conn, req *nex.Request) *nex.Respons
 // The newer Pia's relay handshake; Splatoon 2's direct-mesh Pia is not
 // recorded calling it. Answered anyway, because a malformed answer is worse
 // than none: NextendoNetwork traced a title's black screen at match start to
-// exactly that (facts only). SwitchNet's own relay (relay.go) does not work
+// exactly that (facts only). GRID0+'s own relay (relay.go) does not work
 // through this: it substitutes stations, which Pia does not need to agree to.
 func (s *Server) getRelaySignatureKey(c *nex.Conn, req *nex.Request) *nex.Response {
 	w := nex.NewWriter()

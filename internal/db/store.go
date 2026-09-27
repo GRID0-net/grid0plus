@@ -1,4 +1,4 @@
-// Package db is SwitchNet's persistence layer.
+// Package db is GRID0+'s persistence layer.
 //
 // The Store interface is deliberately narrow and free of business logic: it
 // reads and writes rows, and the handlers in internal/baas decide what those
@@ -130,7 +130,7 @@ type ExtrasByScope map[string]map[string]any
 // EmptyExtras returns an extras block with all five scopes present, seeded
 // with the default keys a real working account's extras carry on every
 // scope, per a 2026-08-27 capture and reconfirmed 2026-09-21 via a live
-// mitmdump capture of SwitchNet's own federation response (which showed all
+// mitmdump capture of GRID0+'s own federation response (which showed all
 // five scopes as literal empty '{}', diverging from the reference).
 //
 // This exact seeding was implemented once before (commit d61d206), deployed,
@@ -371,7 +371,7 @@ type UserQuery struct {
 	Limit int
 }
 
-// Store is everything SwitchNet persists.
+// Store is everything GRID0+ persists.
 //
 // Implementations must be safe for concurrent use.
 // Fest is a Splatfest, as the operator scheduled it.
@@ -405,7 +405,7 @@ type Fest struct {
 
 // FestEntry is one player's team choice for one Splatfest.
 //
-// The vote is the only fest data SwitchNet measures. internal/toyohr decides
+// The vote is the only fest data GRID0+ measures. internal/toyohr decides
 // what a tally of these means; this type just carries one.
 type FestEntry struct {
 	// FestID is uppercase, matching Fest.ID.
@@ -464,7 +464,7 @@ type CoopShift struct {
 // for the dashboard's match history.
 //
 // The queue itself lives in memory (internal/matchmaking) and does not
-// survive a restart; this is the record that does. SwitchNet only ever knows
+// survive a restart; this is the record that does. GRID0+ only ever knows
 // a match was FORMED — gameplay is peer-to-peer, so there is no signal for
 // when, or whether, one actually starts or ends, and no EndedAt to carry.
 type Match struct {
@@ -545,7 +545,7 @@ type SaveDataArchive struct {
 	NumOfPartitions           int
 	LaunchRequiredVersion     int
 	PreviousSaveDataArchiveID string
-	// EncodedDigest is whatever the console sent, stored opaquely: SwitchNet
+	// EncodedDigest is whatever the console sent, stored opaquely: GRID0+
 	// never has the console's own encryption key, so it can neither compute
 	// nor verify this value.
 	EncodedDigest string

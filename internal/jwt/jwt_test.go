@@ -595,7 +595,7 @@ func assertString(t *testing.T, m map[string]any, key, want string) {
 // TestConcurrentKeyringsConvergeOnOneKey is the regression test for a race that
 // broke a real first run.
 //
-// Every SwitchNet service shares one key directory, and starting them all at
+// Every GRID0+ service shares one key directory, and starting them all at
 // once -- `switchnetctl run`, or `systemctl start switchnet.target` -- means
 // they all find the key missing on a fresh directory. If each generates its
 // own, the last writer wins on disk while every process keeps the one it made

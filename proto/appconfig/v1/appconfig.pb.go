@@ -26,7 +26,7 @@ const file_proto_appconfig_v1_appconfig_proto_rawDesc = "" +
 	"\n" +
 	"\"proto/appconfig/v1/appconfig.proto\x12\x14nn.npln.appconfig.v12\v\n" +
 	"\tAppconfigB\xdc\x01\n" +
-	"\x18com.nn.npln.appconfig.v1B\x0eAppconfigProtoP\x01Z=github.com/n-popescu/switchnet/proto/appconfig/v1;appconfigv1\xa2\x02\x03NNA\xaa\x02\x14Nn.Npln.Appconfig.V1\xca\x02\x14Nn\\Npln\\Appconfig\\V1\xe2\x02 Nn\\Npln\\Appconfig\\V1\\GPBMetadata\xea\x02\x17Nn::Npln::Appconfig::V1b\x06proto3"
+	"\x18com.nn.npln.appconfig.v1B\x0eAppconfigProtoP\x01Z=github.com/n-popescu/grid0plus/proto/appconfig/v1;appconfigv1\xa2\x02\x03NNA\xaa\x02\x14Nn.Npln.Appconfig.V1\xca\x02\x14Nn\\Npln\\Appconfig\\V1\xe2\x02 Nn\\Npln\\Appconfig\\V1\\GPBMetadata\xea\x02\x17Nn::Npln::Appconfig::V1b\x06proto3"
 
 var file_proto_appconfig_v1_appconfig_proto_goTypes = []any{}
 var file_proto_appconfig_v1_appconfig_proto_depIdxs = []int32{

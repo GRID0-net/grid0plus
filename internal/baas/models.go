@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // The BAAS user object.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#user-information
 //
-// Field names and shapes match a real capture. Where SwitchNet has nothing to
+// Field names and shapes match a real capture. Where GRID0+ has nothing to
 // put in a field it emits the empty value rather than omitting the key, because
 // the console's JSON reader has been seen to want the key present.
 
@@ -74,7 +74,7 @@ type DeviceAccountResponse struct {
 }
 
 // LinksResponse is the linked-accounts block. Only friendCode is ever populated
-// by SwitchNet: there is no Nintendo Account, Twitter or Facebook to link to.
+// by GRID0+: there is no Nintendo Account, Twitter or Facebook to link to.
 //
 // A 2026-09-20 decompile of the account sysmodule confirms a "google" entry
 // exists in this same block, shaped identically to AccountLink
@@ -177,7 +177,7 @@ type FriendResponse struct {
 	Friend     FriendUserResponse `json:"friend"`
 	IsFavorite bool               `json:"isFavorite"`
 	// Channels tracks per-channel authorization. In captures this contains
-	// {"FRIEND_CODE": {"authorizedAt": <unix>}}. SwitchNet does not track
+	// {"FRIEND_CODE": {"authorizedAt": <unix>}}. GRID0+ does not track
 	// channel authorization separately, so this is always an empty map.
 	//
 	// A 2026-09-20 decompile of the operator's own console's friends
@@ -236,7 +236,7 @@ type FriendResponse struct {
 //	$.items[*].extras.sender.route:*
 //	$.items[*].extras.senderAndReceiver.route:*
 //
-// SwitchNet sent `from` and `to`, so every field the client actually reads was
+// GRID0+ sent `from` and `to`, so every field the client actually reads was
 // missing: the friend-requests screen had rows with no name, no picture and no
 // ids to act on.
 //
@@ -295,14 +295,14 @@ type FriendRequestResponse struct {
 //     first element.
 //
 // So the client's entire model of a relationship is three booleans, and these
-// three keys are the ones that have to be right. SwitchNet used to send none of
+// three keys are the ones that have to be right. GRID0+ used to send none of
 // them, which read as the all-false default: **every user looked like a
 // stranger**, including an existing friend, and an outgoing request looked like
 // no request at all.
 //
 // Type, User, IsFavorite and BecameFriendAt are this server's own additions.
 // The client ignores keys it does not ask for, and Type in particular is worth
-// keeping for SwitchNet's own tooling and tests -- but none of the four is read
+// keeping for GRID0+'s own tooling and tests -- but none of the four is read
 // by the console, and "$.becameFriendAt" appears nowhere in the friends
 // sysmodule. Do not treat their presence as evidence about the real wire shape.
 type RelationshipResponse struct {
@@ -320,7 +320,7 @@ type RelationshipResponse struct {
 	SentFriendRequestIDs []string `json:"sentFriendRequestIds"`
 
 	// Type is NONE, FRIEND, FRIEND_REQUEST_SENT, FRIEND_REQUEST_RECEIVED or
-	// BLOCKED. SwitchNet's own, not the console's.
+	// BLOCKED. GRID0+'s own, not the console's.
 	Type string `json:"type"`
 	// User is the other party.
 	User *UserResponse `json:"user,omitempty"`
@@ -408,7 +408,7 @@ func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence,
 	thumbnail2URL := u.Thumbnail2URL
 	// A real capture (2026-08-27) of a working account always carries both
 	// sizes, even for the "no picture uploaded" case (".../1/default" and
-	// ".../2/default") -- SwitchNet has one default image, not two sizes of
+	// ".../2/default") -- GRID0+ has one default image, not two sizes of
 	// it, so both fields point at the same relative path under their own
 	// '/1/' and '/2/' prefixes rather than leaving the large one blank.
 	if thumbnailURL == "" {

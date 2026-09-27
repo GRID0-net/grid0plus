@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/identity"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // Splatoon 2's game server, from Kinnay's Game Server List: three servers

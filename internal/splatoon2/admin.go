@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // The operator API the dashboard's Splatoon 2 panel reads: who is connected,

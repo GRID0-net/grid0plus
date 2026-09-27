@@ -1,4 +1,4 @@
-# SwitchNet's off-the-shelf infrastructure: Postgres, Redis, and the nginx
+# GRID0+'s off-the-shelf infrastructure: Postgres, Redis, and the nginx
 # TLS edge. Nothing here is built from this repo's own code -- Docker was
 # never the slow part for these three -- so they stay containerized.
 #

@@ -7,7 +7,7 @@
 package ikarosv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
@@ -1171,7 +1171,7 @@ const file_proto_ikaros_v1_competition_proto_rawDesc = "" +
 	"\x1dUpdateCompetitionNotification\x127.nn.npln.ikaros.v1.UpdateCompetitionNotificationRequest\x1a*.nn.npln.ikaros.v1.CompetitionNotification\x12f\n" +
 	"\x12GetCompetitionUser\x12,.nn.npln.ikaros.v1.GetCompetitionUserRequest\x1a\".nn.npln.ikaros.v1.CompetitionUser\x12l\n" +
 	"\x15UpdateCompetitionUser\x12/.nn.npln.ikaros.v1.UpdateCompetitionUserRequest\x1a\".nn.npln.ikaros.v1.CompetitionUserB\xc9\x01\n" +
-	"\x15com.nn.npln.ikaros.v1B\x10CompetitionProtoP\x01Z7github.com/n-popescu/switchnet/proto/ikaros/v1;ikarosv1\xa2\x02\x03NNI\xaa\x02\x11Nn.Npln.Ikaros.V1\xca\x02\x11Nn\\Npln\\Ikaros\\V1\xe2\x02\x1dNn\\Npln\\Ikaros\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Ikaros::V1b\x06proto3"
+	"\x15com.nn.npln.ikaros.v1B\x10CompetitionProtoP\x01Z7github.com/n-popescu/grid0plus/proto/ikaros/v1;ikarosv1\xa2\x02\x03NNI\xaa\x02\x11Nn.Npln.Ikaros.V1\xca\x02\x11Nn\\Npln\\Ikaros\\V1\xe2\x02\x1dNn\\Npln\\Ikaros\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Ikaros::V1b\x06proto3"
 
 var (
 	file_proto_ikaros_v1_competition_proto_rawDescOnce sync.Once

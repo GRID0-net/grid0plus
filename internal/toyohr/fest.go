@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// A Splatfest, as SwitchNet stores it.
+// A Splatfest, as GRID0+ stores it.
 //
 // This is the *mechanics* of a fest and nothing else: when it runs, which
 // regions see it, and which BCAT pack carries its content. The team names, the
@@ -202,7 +202,7 @@ func (f Fest) PhaseAt(now time.Time) Phase {
 // festIDPattern is what a fest identifier has to look like.
 //
 // Four uppercase letters, a hyphen, five digits — the shape Nintendo's own ids
-// use ("JUEA-00201"). SwitchNet's use the prefix NXTD so that a fest of ours is
+// use ("JUEA-00201"). GRID0+'s use the prefix NXTD so that a fest of ours is
 // never mistaken for one of theirs in a save file or a log.
 var festIDPattern = regexp.MustCompile(`^[A-Z]{4}-[0-9]{5}$`)
 
@@ -228,7 +228,7 @@ func NewResource(festID string) string {
 
 // NewRevision derives a pack revision from the fest id and resource.
 //
-// Nintendo puts a 40-hex-character digest here. When SwitchNet serves a real
+// Nintendo puts a 40-hex-character digest here. When GRID0+ serves a real
 // pack, the revision must be the one that pack's own metadata carries, so this
 // is only the default for a fest whose pack has not been built yet: stable for
 // a given fest, distinct between fests, and — by construction — never equal to

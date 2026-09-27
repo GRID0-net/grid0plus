@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/nex/nextest"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex/nextest"
 )
 
 const accessKey = "0123abcd"

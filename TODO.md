@@ -30,9 +30,9 @@ gap it leaves is kept rather than closed. §2.4 is §2.4 for as long as
 Nintendo's real servers, so a capture of Nintendo is a tcpdump at most:
 hosts, timing, sizes, never decrypted content. A `TODO(capture-needed)`
 shape is settled some other way — static RE of the game or sysmodule that
-reads it, live GDB on SwitchNet's emuMMC (see
+reads it, live GDB on GRID0+'s emuMMC (see
 [`docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md`](docs/CAPTURES/splat3-live-gamerecord-gate-2026-09-25.md)),
-a decrypted capture of the console talking to SwitchNet, or a fact
+a decrypted capture of the console talking to GRID0+, or a fact
 NextendoNetwork has recorded from its own captures. Do not write "needs a
 capture from Nintendo" as a plan; it will not happen.
 
@@ -57,12 +57,12 @@ What each open item is waiting on:
 | --- | --- |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
 | §4.5 | **the friend's console** — it stalls before any game call |
-| §4.3 | **RE, GDB on the emuMMC, or tests against SwitchNet** — never a Nintendo capture |
+| §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §2.4 | **reverse engineering** of the module that verifies BCAT content, then a console test |
 | §3.2 | **§2.1** |
 
-Splatoon 3 reached the hall on SwitchNet on 2026-09-25 (see
+Splatoon 3 reached the hall on GRID0+ on 2026-09-25 (see
 `docs/CAPTURES/splat3-hall-reached-2026-09-25.md`); what is left is behind
 it — matches, Splatfests, BCAT.
 
@@ -105,7 +105,7 @@ Where each stands:
   one shared `schedule_set_id`, quoted 24-character ETags, VsParams tuning
   attributes). Salmon Run is operator-scheduled or auto-filled by
   `coop_generate.go`. League answers empty unless the disposable
-  `league_diagnostic.go` blob is enabled — SwitchNet has no authored League
+  `league_diagnostic.go` blob is enabled — GRID0+ has no authored League
   events.
 - **`FestService`**: schedule, keys and results are real. An empty message is
   the answer when no fest is running, as in both working captures.
@@ -233,7 +233,7 @@ That pack's `summary.yml` announces `JUEA-00210` / `juea-lovefes2`. So the
 *container* is named for the custom fest while its *contents* are named for
 Nintendo's `JUEA-DUMPLING` — because it was made by editing that fest.
 
-**Nobody has established what the game actually keys on, against SwitchNet's
+**Nobody has established what the game actually keys on, against GRID0+'s
 own hardware.** If it resolves assets by the announced fest id, a genuinely
 from-scratch fest needs every internal path renamed consistently *and* the
 RSDB/rstbl tables that reference them rebuilt. If it only reads the pack it
@@ -250,14 +250,14 @@ encrypted packs either, it announces whatever fest identity a console's
 rewrite over its served schedule) rather than ever renaming a pack's
 internal files to match. See
 [`docs/QUESTIONS.md`](docs/QUESTIONS.md) for the full citation. Build §2.1
-so that changing the assumption later, if SwitchNet's own hardware disagrees,
+so that changing the assumption later, if GRID0+'s own hardware disagrees,
 is a contained change rather than a rewrite — keep the naming decision in one
 place.
 
 ### 2.4 Serving BCAT natively — **P1, needs reverse engineering first**
 
 **The goal is a vanilla path:** the console downloads fest packs and other
-delivery-cache content from SwitchNet's own `bcat-list`/`bcat-data` hosts,
+delivery-cache content from GRID0+'s own `bcat-list`/`bcat-data` hosts,
 the same way it downloads them from Nintendo, with no files handed to the
 player and no homebrew installer. §2.4a is the fallback, not the plan.
 
@@ -295,13 +295,13 @@ container; only the signature stands in the way.
 3. **The game itself** (Splatoon 3 `main`) is the least likely: it reads the
    delivery cache through `nn::bcat` IPC and gets plaintext. It is still
    where the fest pack's *own* encryption (nisasyst, key from
-   `GetFestDecryptionKey`) is handled, which SwitchNet already controls.
+   `GetFestDecryptionKey`) is handled, which GRID0+ already controls.
 
 **What the answer decides:**
 
 - *No verification, or verification a patch can skip:* build the list and
   data responses (the list JSON field names are already known, see below)
-  and serve SwitchNet's own containers. A one-instruction IPS patch against
+  and serve GRID0+'s own containers. A one-instruction IPS patch against
   `bcat.nso`, shipped the same way as the Splatoon 3 TLS patch, is
   acceptable; forging Nintendo's signature is not (CLAUDE.md, rule 2).
 - *Verification that cannot be skipped:* §2.4a.
@@ -394,7 +394,7 @@ recorded here or committed anywhere.
    a development key, chosen by the `bcat!production_mode` setting). On a
    failed verify it wipes the decrypted buffer and returns `0x2A07A`
    (result 2002-4106). Both the whole-file path and the streaming path do
-   this; no input value skips it. So serving a container SwitchNet produced
+   this; no input value skips it. So serving a container GRID0+ produced
    needs **either** Nintendo's private key (impossible, and forging it is
    forbidden by rule 2) **or** a patch to `bcat.nso` that forces the verify
    result to pass — the same class of patch this repo already ships for
@@ -406,7 +406,7 @@ recorded here or committed anywhere.
    cipher setup treats 0 as "no encryption" (1/2/3 are AES-128/192/256-CTR).
    The `crypto > 3` guard means BCAT-Manager's "type 4 = plaintext" reading
    is really "type 0 = plaintext, written by a tool that stored index+1".
-   SwitchNet can therefore serve type-0 containers and skip the whole
+   GRID0+ can therefore serve type-0 containers and skip the whole
    PBKDF2/secret-string layer; only the signature stands in the way.
 
 Still open, and less important than the two above:
@@ -420,8 +420,8 @@ The verify patch is tied to one build of `bcat.nso`, so it must be made
 against the firmware the consoles run. This one is 22.5.0; a firmware
 update needs the patch regenerated.
 
-**Done when** SwitchNet answers the `list` and `data` requests and a patched
-console downloads and reads a SwitchNet-built container, with a written
+**Done when** GRID0+ answers the `list` and `data` requests and a patched
+console downloads and reads a GRID0+-built container, with a written
 record under `docs/CAPTURES/`. The signature question that blocked this is
 now settled; what remains is building the patch and the list/data responses.
 
@@ -436,7 +436,7 @@ the small open questions. Nothing there is built yet.
 
 ### 2.4a The `.nro` installer — **P2, the path that works today**
 
-A homebrew that fetches a seed from SwitchNet and writes it into Splatoon 3's
+A homebrew that fetches a seed from GRID0+ and writes it into Splatoon 3's
 BCAT save data — what JKSV does by hand, automatically.
 
 This exists because §2.4 is unresolved, **not** because serving BCAT is
@@ -525,7 +525,7 @@ shape:
    `ca55503`, reverted (`9dbcb49`) only while bisecting. Re-apply with
    `git revert 9dbcb49`.
 
-Also noted, not urgent: SwitchNet's Salmon Run shifts are 40-hour slots from
+Also noted, not urgent: GRID0+'s Salmon Run shifts are 40-hour slots from
 the Unix epoch (boundaries 00:00/16:00/08:00 UTC); Nintendo's in the captures
 fall 14 hours later (10:00/02:00/18:00 UTC). Only the timing differs.
 
@@ -552,7 +552,7 @@ included) to see whether its STUN packets arrive and are answered.
 `docs/CAPTURES/README.md` keeps the same list with what each would settle
 and is the one to trust when they disagree. The tag name is historical: see
 "What capture means here" at the top — each one is settled by RE, GDB on
-the emuMMC, or a decrypted capture against SwitchNet, not a Nintendo
+the emuMMC, or a decrypted capture against GRID0+, not a Nintendo
 capture.
 
 The ones that change behaviour rather than cosmetics:
@@ -560,22 +560,22 @@ The ones that change behaviour rather than cosmetics:
 - **Squads.** Whether the game sends more than one `UserDefinition` when a
   squad queues together (a squad currently has everyone but the leader
   dropped). Settle it from the game: the matchmaking request builder in
-  Splatoon 3 `main`, or a squad queue against SwitchNet with the request
+  Splatoon 3 `main`, or a squad queue against GRID0+ with the request
   logged.
 - **`Messaging.RecvMessage` with an empty resume token.** Get it backwards
   and an invite mailbox either loses invites silently or replays stale ones
-  on every reconnect. A console reconnecting to SwitchNet shows which it
+  on every reconnect. A console reconnecting to GRID0+ shows which it
   expects.
 - **`GameSession.Port`.** Whether a real client dials it at all now that
-  `SyncGameSession` publishes it: a match on SwitchNet with tcpdump on the
+  `SyncGameSession` publishes it: a match on GRID0+ with tcpdump on the
   VM answers it.
 - **Eight `accounts.nintendo.com` paths** the `account` sysmodule can build
-  and SwitchNet does not serve (`/profile`,
+  and GRID0+ does not serve (`/profile`,
   `connect/1.0.0/api/term_agreement_token`, `connect/1.0.0/term_confirm`,
   three `connect/1.0.0/api/transfer_na_tokens*`, both
   `analytics/device/opt_in` forms; see
   [account-sysmodule-decompile.md](docs/CAPTURES/account-sysmodule-decompile.md)).
-  The nginx access log during one link attempt against SwitchNet says
+  The nginx access log during one link attempt against GRID0+ says
   whether any is requested.
 
 Write findings up under `docs/CAPTURES/` using the template, redacted,

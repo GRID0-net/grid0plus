@@ -39,7 +39,7 @@ the four-byte size prefix; these are field/layout facts, not a replay fixture.
 | 60 | empty payload vtable, size 4 and object size 4 |
 | 64 | backward vtable distance 4 |
 
-SwitchNet previously flushed headers but sent no frame and returned on body
+GRID0+ previously flushed headers but sent no frame and returned on body
 EOF. It now constructs this frame using its current clock, flushes immediately,
 and holds the response until disconnect. Full duplex also permits an opening
 response before an optional upload finishes. Real HTTP tests cover empty and
@@ -51,7 +51,7 @@ later server cadence remain open. No speculative keepalive frames are added.
 ## Authenticated current-user alias
 
 Both `Friends/ActivateUser` and `GameRecord/InitializeAttributes` send
-`tenants/current/users/current`. SwitchNet formerly compared the last segment
+`tenants/current/users/current`. GRID0+ formerly compared the last segment
 with the authenticated ID and refused the request. Both now resolve this exact
 alias to the authenticated caller. Tests reject unauthenticated requests,
 explicit other-user requests and foreign-tenant aliases, and verify two users'
@@ -89,10 +89,10 @@ Ugcstore/RunQuery
 
 The OLSC/SCSI calls (`/api/console/v3/save_data_archives`, `.../start_upload`)
 happen much later, around 40 seconds after hall entry -- not immediately, contrary
-to what earlier SwitchNet hardware attempts assumed when investigating that path.
+to what earlier GRID0+ hardware attempts assumed when investigating that path.
 
 Every one of these RPCs fires in the first ~1.5 seconds after
-`IssuePrearrangedUserToken` succeeds. SwitchNet's own hardware attempts have never
+`IssuePrearrangedUserToken` succeeds. GRID0+'s own hardware attempts have never
 observed the client attempt a single one of them -- not `LobbyMessaging`, not
 `Friends`, not `Schedule`, nothing -- despite `IssuePrearrangedUserToken` and
 `ListLatencyMeasurementServers` both returning OK first. Checked and ruled out as
@@ -110,7 +110,7 @@ matter after a call is attempted, and none ever are.
   28800 seconds apart. `npln.access_token_ttl` in both `config.go`'s default
   and `config.example.yaml` changed to match.
 - **`ListLatencyMeasurementServers`'s seven-region response matches what
-  SwitchNet already ships** (`0fd5a26`'s opt-in experiment): same seven
+  GRID0+ already ships** (`0fd5a26`'s opt-in experiment): same seven
   `<region>-01-udp` style ids, same region labels, host/port/protocol per
   entry. Already hardware-tested and already ruled out as the hall-stall
   cause (see `splat3-auth-client-trace-2026-09-23.md`); this capture just
@@ -123,7 +123,7 @@ uses a `u-` prefix followed by 20 lowercase base32-ish characters, e.g.
 `u-4owtixhogqpp3jqpglva`. This is not just Nextendo's own convention: a
 decrypted real-Nintendo capture cited elsewhere in this project (see
 `internal/npln/auth.go`'s `token_jwt`-derived comments) independently shows the
-same `"sub":"u-…"` shape from an actual Nintendo server. SwitchNet's own user
+same `"sub":"u-…"` shape from an actual Nintendo server. GRID0+'s own user
 ids are unprefixed hex (`ea4b6873f0397ab3`), with no `u-`.
 
 This is flagged, not fixed: changing the id format touches user creation,
@@ -144,5 +144,5 @@ that a successful validation must be followed by another validation.
 
 Other observed differences include token claims, STUN attributes and game-data
 responses. This change does not establish those as causes or reproduce captured
-player values. A new SwitchNet hardware attempt is needed to establish whether
+player values. A new GRID0+ hardware attempt is needed to establish whether
 these fixes remove the hall loop and identify the next request, if any, that fails.

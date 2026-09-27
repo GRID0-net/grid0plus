@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 // coopSchedule implements `switchnetctl coop schedule`.
@@ -104,7 +104,7 @@ func coopSchedule(cfg config.Config, args []string) {
 // Fills a stretch of the normal rotation automatically rather than typing
 // every shift by hand -- see toyohr.GenerateCoopShifts's doc comment for
 // what the generator does and, just as importantly, what it is not: a
-// discovered Nintendo algorithm, only SwitchNet's own way of picking real
+// discovered Nintendo algorithm, only GRID0+'s own way of picking real
 // ids nobody has hand-picked yet. Never touches a slot that already has a
 // shift, hand-scheduled or previously generated, so running `coop schedule`
 // on any slot afterward always wins.
@@ -311,7 +311,7 @@ Requires a reachable database -- see 'switchnetctl account create -h'.
 const coopGenerateUsage = `switchnetctl coop generate -from <RFC3339> -count <N> [-duration 40h] [-seed <N>]
 
 Fills count back-to-back normal-rotation slots starting at -from with real,
-randomly-picked stage/weapon/boss ids -- SwitchNet's own generator, not a
+randomly-picked stage/weapon/boss ids -- GRID0+'s own generator, not a
 recovered Nintendo algorithm (see toyohr.GenerateCoopShifts). Never
 overwrites a slot that already has a shift, whether it was hand-scheduled
 with 'coop schedule' or produced by an earlier 'coop generate' -- run

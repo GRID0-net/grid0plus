@@ -50,6 +50,6 @@ landing the console in the plaza instead of the hall. A real capture
 facts only, no code taken) shows a real server answering a query with no
 matches as exactly one streamed `RunQueryResponse` carrying only
 `read_time`, `document` and `skipped_results` both left unset — which is
-what SwitchNet has no honest alternative to anyway: it keeps no document
+what GRID0+ has no honest alternative to anyway: it keeps no document
 collections a `StructuredQuery` could match against (`GetDocument`/
 `CommitDocuments` address one document by name, never a collection).

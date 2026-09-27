@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet aauth
+Description=GRID0+ aauth
 PartOf=switchnet.target
 After=network-online.target switchnet-dauth.service
 Wants=network-online.target

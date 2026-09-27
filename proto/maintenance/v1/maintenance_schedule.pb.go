@@ -257,7 +257,7 @@ const file_proto_maintenance_v1_maintenance_schedule_proto_rawDesc = "" +
 	"\bschedule\x18\x02 \x01(\v2+.nn.npln.maintenance.v1.MaintenanceScheduleR\bschedule2\xbd\x01\n" +
 	"\x1aMaintenanceScheduleService\x12\x9e\x01\n" +
 	"\x1dSubscribeMaintenanceSchedules\x12<.nn.npln.maintenance.v1.SubscribeMaintenanceSchedulesRequest\x1a=.nn.npln.maintenance.v1.SubscribeMaintenanceSchedulesResponse0\x01B\xf4\x01\n" +
-	"\x1acom.nn.npln.maintenance.v1B\x18MaintenanceScheduleProtoP\x01ZAgithub.com/n-popescu/switchnet/proto/maintenance/v1;maintenancev1\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Maintenance.V1\xca\x02\x16Nn\\Npln\\Maintenance\\V1\xe2\x02\"Nn\\Npln\\Maintenance\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Maintenance::V1b\x06proto3"
+	"\x1acom.nn.npln.maintenance.v1B\x18MaintenanceScheduleProtoP\x01ZAgithub.com/n-popescu/grid0plus/proto/maintenance/v1;maintenancev1\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Maintenance.V1\xca\x02\x16Nn\\Npln\\Maintenance\\V1\xe2\x02\"Nn\\Npln\\Maintenance\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Maintenance::V1b\x06proto3"
 
 var (
 	file_proto_maintenance_v1_maintenance_schedule_proto_rawDescOnce sync.Once

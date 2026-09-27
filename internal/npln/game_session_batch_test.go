@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // matchTwoPlayers queues both, returning the formed session's name and each

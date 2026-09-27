@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Capture the real BAAS friends API from a PC, without touching the console.
 
-This is the recommended way to get the captures SwitchNet still needs. It talks
+This is the recommended way to get the captures GRID0+ still needs. It talks
 to Nintendo's real BAAS server from your computer, using your console's
 credentials, and writes the responses to disk.
 
@@ -108,7 +108,7 @@ def require_nintendoclients():
     return anyio, http, switch, baas, dauth
 
 
-# Fields that are credentials rather than shapes. The shape is what SwitchNet
+# Fields that are credentials rather than shapes. The shape is what GRID0+
 # needs; the value is a live credential for your account until it expires.
 REDACT_KEYS = {
     "password",
@@ -202,7 +202,7 @@ class Capture:
         print(f"capture-baas: wrote {len(self.index)} responses to {self.out_dir}")
         print()
         print("The single most important line above is the shape of")
-        print("GET /2.0.0/users/<id>/friends. SwitchNet assumes a bare array;")
+        print("GET /2.0.0/users/<id>/friends. GRID0+ assumes a bare array;")
         print("if it says 'object with keys [...]' then internal/baas/friends.go")
         print("listFriends needs to wrap its result in that envelope.")
 
@@ -245,12 +245,12 @@ async def run(args, http, switch, baas, dauth) -> None:
     baas_client.set_system_version(args.system_version)
 
     if args.against_switchnet:
-        # Point the client at SwitchNet instead of Nintendo. The requests are
+        # Point the client at GRID0+ instead of Nintendo. The requests are
         # byte-for-byte what the console would send, so the server's own log
         # gives you the request shapes with no Nintendo traffic at all.
         host = args.against_switchnet.replace("https://", "").replace("http://", "")
         baas_client.set_host(host)
-        print(f"capture-baas: talking to SwitchNet at {host}, not Nintendo")
+        print(f"capture-baas: talking to GRID0+ at {host}, not Nintendo")
 
     print("capture-baas: requesting a device token")
     if args.system_version >= 2000:
@@ -294,7 +294,7 @@ async def run(args, http, switch, baas, dauth) -> None:
 
     print()
     print("capture-baas: the friends endpoints")
-    print("  (this is the part SwitchNet is guessing at)")
+    print("  (this is the part GRID0+ is guessing at)")
 
     # 1. THE most important one. Array or envelope?
     await get("03-friends", f"/2.0.0/users/{user_id:016x}/friends",
@@ -306,7 +306,7 @@ async def run(args, http, switch, baas, dauth) -> None:
     await get("05-friend-requests-outbox",
               f"/2.0.0/users/{user_id:016x}/friend_requests/outbox")
 
-    # 4. The self record, for comparison against what SwitchNet returns.
+    # 4. The self record, for comparison against what GRID0+ returns.
     await get("06-user-self", f"/1.0.0/users/{user_id:016x}")
 
     # 5. Blocks.
@@ -371,7 +371,7 @@ def main() -> None:
     parser.add_argument("--out", default="docs/CAPTURES/raw",
                         help="output directory (default: docs/CAPTURES/raw)")
     parser.add_argument("--against-switchnet", metavar="URL",
-                        help="talk to your own SwitchNet instead of Nintendo. "
+                        help="talk to your own GRID0+ instead of Nintendo. "
                              "Captures request shapes only, with no Nintendo traffic")
     parser.add_argument("--no-redact", action="store_true",
                         help="keep credentials in the output. Do not commit the result")

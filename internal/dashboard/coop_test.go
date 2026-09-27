@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 // TestCoopShiftsCanBeGeneratedAndNeverOverwriteAManualOne exercises the

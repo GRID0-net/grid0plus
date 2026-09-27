@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // PreviewVsSchedule returns the same Vs rotation SelectVsSchedules would
@@ -41,7 +41,7 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 // attributes.KumaWeapons (an array), which both always do -- is now fixed
 // (coopKumaWeaponsAttribute, coop_schedule.go). Real Nintendo servers
 // always answer a Salmon Run schedule alongside Turf War/Anarchy/League --
-// an operator running SwitchNet with none is not the real-server shape
+// an operator running GRID0+ with none is not the real-server shape
 // this project is reproducing -- so this is back on rather than left off
 // indefinitely.
 //

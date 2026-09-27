@@ -8,7 +8,7 @@
 //
 // This is the server the stock Nintendo friends applet talks to. It owns
 // accounts, friend codes, friendships, friend requests, blocks and presence, and
-// it is the only place identity is decided: every other server in SwitchNet
+// it is the only place identity is decided: every other server in GRID0+
 // resolves a player by verifying an id token this server issued.
 //
 // # Identity is fail-closed
@@ -37,9 +37,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
 // Config is what the server needs to run.
@@ -105,21 +105,21 @@ type Server struct {
 	accessVerifier *sjwt.Verifier
 	// idVerifier wraps naIDIssuer's key for verification. Two uses:
 	//   - the id_token presented to /1.0.0/federation. A REAL Nintendo
-	//     Account id_token can never verify here — SwitchNet does not have
+	//     Account id_token can never verify here — GRID0+ does not have
 	//     Nintendo's key — so this only ever succeeds for a token nalink.go
 	//     minted itself. That is exactly what makes it safe to treat a
 	//     successful verification as proof the subject names a real,
-	//     existing SwitchNet person: see completeLogin's use of it.
+	//     existing GRID0+ person: see completeLogin's use of it.
 	//   - the refresh_token presented to naToken's "refresh_token" grant,
 	//     which nalink.go also signs with naIDIssuer's key (see
 	//     NAIDTokenJWKSURL's doc comment for why every token minted at
 	//     accounts.nintendo.com shares one key).
 	idVerifier *sjwt.Verifier
 	// deviceVerifier checks the device token a console presents to
-	// /1.0.0/application/token. SwitchNet's own dauth server issued it.
+	// /1.0.0/application/token. GRID0+'s own dauth server issued it.
 	deviceVerifier *sjwt.Verifier
 	// appVerifier checks the application token a console may present to
-	// /1.0.0/login. SwitchNet's own aauth server issued it.
+	// /1.0.0/login. GRID0+'s own aauth server issued it.
 	appVerifier *sjwt.Verifier
 
 	// now is time.Now, overridable in tests so presence TTL behaviour can be
@@ -282,7 +282,7 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	writeError(w, r, errResourceNotFound)
 }
 
-// acknowledge answers an endpoint SwitchNet does not implement.
+// acknowledge answers an endpoint GRID0+ does not implement.
 func (s *Server) acknowledge(w http.ResponseWriter, r *http.Request, _ *caller) {
 	s.log.Info("baas: acknowledged unimplemented endpoint",
 		"method", r.Method, "path", r.URL.Path)
@@ -456,7 +456,7 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*caller, 
 
 // requireSelf checks that the caller is the user named in the path.
 //
-// Nintendo answers a mismatch with insufficient_scope, and so does SwitchNet.
+// Nintendo answers a mismatch with insufficient_scope, and so does GRID0+.
 // Every user-scoped endpoint goes through this: an authenticated console must
 // not be able to read or change somebody else's account by editing the URL.
 func (s *Server) requireSelf(w http.ResponseWriter, r *http.Request, c *caller) bool {

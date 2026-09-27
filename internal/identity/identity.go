@@ -1,5 +1,5 @@
 // Package identity decides who a game server is talking to, from a BAAS id
-// token, for every game server SwitchNet runs (NPLN for Splatoon 3, NEX for
+// token, for every game server GRID0+ runs (NPLN for Splatoon 3, NEX for
 // Splatoon 2).
 //
 // It exists as its own package so that there is exactly one copy of the rule
@@ -16,8 +16,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // ErrUnauthenticated is every refusal. Deliberately one error: the caller
@@ -25,10 +25,10 @@ import (
 var ErrUnauthenticated = errors.New("identity: unauthenticated")
 
 // Caller is a resolved identity. It is produced only by this package, only
-// from a token SwitchNet signed, and only after the user was confirmed to
+// from a token GRID0+ signed, and only after the user was confirmed to
 // still exist.
 type Caller struct {
-	// UserID is the SwitchNet (BAAS) user: 16 lowercase hex digits.
+	// UserID is the GRID0+ (BAAS) user: 16 lowercase hex digits.
 	UserID string
 	// DeviceAccountID is the console the token was issued to, when it names one.
 	DeviceAccountID string

@@ -122,7 +122,7 @@ const file_proto_toyohr_v1_canola_proto_rawDesc = "" +
 	"\rIkasuDocument\x12'.nn.npln.toyohr.v1.IkasuDocumentRequest\x1a(.nn.npln.toyohr.v1.IkasuDocumentResponse\x12h\n" +
 	"\x0fSelectDocuments\x12).nn.npln.toyohr.v1.SelectDocumentsRequest\x1a*.nn.npln.toyohr.v1.SelectDocumentsResponse\x12w\n" +
 	"\x10RegisterDocument\x120.nn.npln.toyohr.v1.CanolaRegisterDocumentRequest\x1a1.nn.npln.toyohr.v1.CanolaRegisterDocumentResponseB\xc4\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\vCanolaProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\vCanolaProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_canola_proto_rawDescOnce sync.Once

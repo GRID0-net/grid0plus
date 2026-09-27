@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet stubs
+Description=GRID0+ stubs
 PartOf=switchnet.target
 After=network-online.target
 Wants=network-online.target

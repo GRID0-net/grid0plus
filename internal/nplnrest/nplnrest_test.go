@@ -36,7 +36,7 @@ func newServer(t *testing.T, recordDir string) *Server {
 
 func TestAFrontlineHostThatIsNotRedirectedIsRefusedAtStartup(t *testing.T) {
 	// The console opens its persistent connection to whatever this names. A
-	// host SwitchNet does not redirect sends that connection to real Nintendo,
+	// host GRID0+ does not redirect sends that connection to real Nintendo,
 	// where it SUCCEEDS -- so nothing fails here and the game misbehaves later
 	// while its traffic goes somewhere this deployment promises it will not.
 	_, err := New(Options{

@@ -9,10 +9,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presence"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	friendspb "github.com/n-popescu/switchnet/proto/friends/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
 )
 
 // One friend graph, not two: this file reads internal/db's friendship store
@@ -46,7 +46,7 @@ type friendsService struct {
 // implementation's boot order (internal/npln/README.md).
 //
 // TODO(capture-needed): what "activating" a user actually changes server-side.
-// SwitchNet has no separate activation state to flip -- presence is already
+// GRID0+ has no separate activation state to flip -- presence is already
 // resolved fresh on every read (internal/presence), and there is nothing else
 // here that is "off" until this is called. The defensible reading is that
 // this exists for titles or platforms where friends data is not always
@@ -258,7 +258,7 @@ func (s *Server) friendsSnapshot(ctx context.Context, userID string) (*friendspb
 			return nil, nil, err
 		}
 		friendIDs[fr.FriendID] = true
-		// One user per NSA account: SwitchNet has no notion of more than one
+		// One user per NSA account: GRID0+ has no notion of more than one
 		// friends-visible profile behind a single account, unlike the
 		// collection this message's shape allows for.
 		friendAccounts = append(friendAccounts, &friendspb.SubscribeFriendUsersResponse_FriendAccount{

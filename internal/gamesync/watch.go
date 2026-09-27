@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	syncpb "github.com/n-popescu/switchnet/proto/gamesync/v1"
+	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
 
 // watchers routes document changes to the consoles watching for them.

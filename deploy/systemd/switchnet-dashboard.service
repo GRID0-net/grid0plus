@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet dashboard
+Description=GRID0+ dashboard
 PartOf=switchnet.target
 After=network-online.target docker.service switchnet-npln.service
 Wants=network-online.target

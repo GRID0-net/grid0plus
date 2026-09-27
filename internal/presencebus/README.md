@@ -56,6 +56,6 @@ republishes, so a running server with an idle queue keeps saying "still nobody"
 and a server that stopped is noticed within one TTL.
 
 The Redis implementation uses `SET` with an expiry on a key derived from the
-channel name — derived, so two SwitchNet deployments sharing one Redis do not
+channel name — derived, so two GRID0+ deployments sharing one Redis do not
 read each other's gauge, which would be a confusing way to find out the channels
 were shared.

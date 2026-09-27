@@ -7,7 +7,7 @@
 package friendsv1
 
 import (
-	_ "github.com/n-popescu/switchnet/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/common"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -591,7 +591,7 @@ const file_proto_friends_v1_presence_proto_rawDesc = "" +
 	"\x0fPresenceService\x12\\\n" +
 	"\tKeepAlive\x12$.nn.npln.friends.v1.KeepAliveRequest\x1a%.nn.npln.friends.v1.KeepAliveResponse(\x010\x01\x12u\n" +
 	"\x12SubscribePresences\x12-.nn.npln.friends.v1.SubscribePresencesRequest\x1a..nn.npln.friends.v1.SubscribePresencesResponse0\x01B\xd0\x01\n" +
-	"\x16com.nn.npln.friends.v1B\rPresenceProtoP\x01Z9github.com/n-popescu/switchnet/proto/friends/v1;friendsv1\xf8\x01\x01\xa2\x02\x03NNF\xaa\x02\x12Nn.Npln.Friends.V1\xca\x02\x12Nn\\Npln\\Friends\\V1\xe2\x02\x1eNn\\Npln\\Friends\\V1\\GPBMetadata\xea\x02\x15Nn::Npln::Friends::V1b\x06proto3"
+	"\x16com.nn.npln.friends.v1B\rPresenceProtoP\x01Z9github.com/n-popescu/grid0plus/proto/friends/v1;friendsv1\xf8\x01\x01\xa2\x02\x03NNF\xaa\x02\x12Nn.Npln.Friends.V1\xca\x02\x12Nn\\Npln\\Friends\\V1\xe2\x02\x1eNn\\Npln\\Friends\\V1\\GPBMetadata\xea\x02\x15Nn::Npln::Friends::V1b\x06proto3"
 
 var (
 	file_proto_friends_v1_presence_proto_rawDescOnce sync.Once

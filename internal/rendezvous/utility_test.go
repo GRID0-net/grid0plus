@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/rendezvous/rvtest"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/rendezvous/rvtest"
 )
 
 func uniqueIDInfo(id, password uint64) []byte {

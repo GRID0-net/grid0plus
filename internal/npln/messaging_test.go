@@ -3,7 +3,7 @@ package npln
 import (
 	"testing"
 
-	messagingpb "github.com/n-popescu/switchnet/proto/messaging/v1"
+	messagingpb "github.com/n-popescu/grid0plus/proto/messaging/v1"
 )
 
 // TestSendMessageIsDeliveredOnAFreshRecvMessageCall is the invite-mailbox

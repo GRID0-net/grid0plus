@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
 // TestTwoUsersBecomeFriendsAndSeePresence is the phase 1.2 definition of done.
@@ -783,7 +783,7 @@ func TestFriendListDoesNotLeakPrivateFields(t *testing.T) {
 // The friends sysmodule's response object for GET .../relationships/<id> is
 // built at FUN_001d5d60 with the vtable at 0x258558, which registers exactly two
 // field callbacks: one reading $.isFriend and $.isBlocking, one reading
-// $.sentFriendRequestIds[0]. SwitchNet used to send none of those three keys,
+// $.sentFriendRequestIds[0]. GRID0+ used to send none of those three keys,
 // which the client reads as the all-false default -- a friend and a total
 // stranger were indistinguishable on screen. Decoding into RelationshipResponse
 // would not catch a wrong json tag here, so this decodes into a map.

@@ -1,4 +1,4 @@
-# SwitchNet configuration
+# GRID0+ configuration
 #
 # Copy this to config/config.yaml and edit it. Every value can also be set from
 # the environment as SWITCHNET_<SECTION>_<KEY> -- useful for a one-off override
@@ -41,16 +41,16 @@ network:
   edge_tls_port: 443
 
 # ---------------------------------------------------------------------------
-# dns: how a console finds SwitchNet
+# dns: how a console finds GRID0+
 # ---------------------------------------------------------------------------
-# SwitchNet does not run its own DNS server. Redirect a console with a
+# GRID0+ does not run its own DNS server. Redirect a console with a
 # resolver you already have (a router running dnsmasq, Pi-hole, Unbound): run
 # 'make gen-dns' and add the generated configuration there. Either the router
 # hands that resolver out over DHCP -- in which case the console needs no
 # configuration at all -- or set the console's DNS manually under System
 # Settings -> Internet. Nothing goes on the SD card either way.
 dns:
-  # TTL of the answers SwitchNet synthesises, in seconds. Short on purpose:
+  # TTL of the answers GRID0+ synthesises, in seconds. Short on purpose:
   # switching a console back to Nintendo should take effect in a minute, not
   # after an hour of cached records.
   ttl: 60
@@ -240,7 +240,7 @@ scsi:
 
   # Caps one BAAS user's total stored save data across every title. 0 means
   # unlimited -- do not leave this at 0 in a real deployment: nothing else
-  # stops one console from filling the disk and taking the rest of SwitchNet
+  # stops one console from filling the disk and taking the rest of GRID0+
   # down with it. 1 GiB is generous for save data (real Switch saves are
   # almost always well under 100 MiB).
   per_user_quota_bytes: 1073741824
@@ -465,7 +465,7 @@ npln:
   # fro-N is a family and the server picks a member. It MUST be one the host
   # list redirects -- naming one it does not sends that connection to real
   # Nintendo, where it succeeds, and the game then misbehaves in a way that
-  # looks like SwitchNet's fault. The server refuses to start rather than allow
+  # looks like GRID0+'s fault. The server refuses to start rather than allow
   # it, so a typo here is caught immediately.
   frontline_host: "fro-3.hac.lp1.penne.srv.nintendo.net"
 
@@ -502,7 +502,7 @@ npln:
   # are 1-4 on the wire (both working hall captures use exactly that range
   # for Bankara, X and League); which number is which mode is not yet pinned
   # down, so check the in-game schedule screen after setting bankara_rules.
-  # What SwitchNet supplies either way is everything around
+  # What GRID0+ supplies either way is everything around
   # the numbers: two-hour slot alignment, the rotation order, the window a
   # client asked for, and the etag its conditional request compares.
   #
@@ -590,7 +590,7 @@ nex:
     allow_all: false
 
 # ---------------------------------------------------------------------------
-# toolbox: the public API for the SwitchNet Toolbox homebrew app
+# toolbox: the public API for the GRID0+ Toolbox homebrew app
 # ---------------------------------------------------------------------------
 toolbox:
   # Loopback only, same reasoning as dauth.listen: nginx is the only thing
@@ -612,7 +612,7 @@ toolbox:
   # repository, and this one exists specifically so the scope stays that
   # narrow.
   #
-  # This is the one credential in all of SwitchNet that exists so a *client*
+  # This is the one credential in all of GRID0+ that exists so a *client*
   # binary never has to hold one: the console asks this service, never
   # GitHub directly, and the token never leaves this box.
   github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-switchnet-nro-contents-read-only"

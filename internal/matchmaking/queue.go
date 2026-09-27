@@ -101,7 +101,7 @@ type Session struct {
 	// Host is the player whose console the others connect to.
 	//
 	// Splatoon 3's gameplay is peer-to-peer: once a match starts, the consoles
-	// talk to each other and SwitchNet is not in the path. All this does is
+	// talk to each other and GRID0+ is not in the path. All this does is
 	// tell them who to reach.
 	Host string
 	// HostPort is the port the host published via SyncGameSession, once it has
@@ -173,7 +173,7 @@ type Config struct {
 	// Sessions have to outlive the ticket that produced it -- the console gets
 	// a session on its ticket stream and only then calls GetGameSession and
 	// JoinGameSession -- but not forever. Gameplay is peer-to-peer once a match
-	// starts, so SwitchNet is out of the path and has no way to learn the match
+	// starts, so GRID0+ is out of the path and has no way to learn the match
 	// ended; without a TTL the map only grows. Long enough to cover joining
 	// plus a full match, short enough that a day's play does not accumulate.
 	SessionTTL time.Duration
@@ -786,7 +786,7 @@ func (q *Queue) Waiting() map[string]int {
 
 // pruneLocked drops sessions and finished tickets older than SessionTTL.
 //
-// Gameplay is peer-to-peer, so nothing tells SwitchNet a match ended and the
+// Gameplay is peer-to-peer, so nothing tells GRID0+ a match ended and the
 // only honest signal is age. Tickets are pruned on the same clock rather than a
 // shorter one: a ticket outlives its own TTL once it succeeds, because it is
 // what the console reads its session id off, and dropping it while the session

@@ -1,17 +1,17 @@
-// Command dashboard serves the operator's view of SwitchNet.
+// Command dashboard serves the operator's view of GRID0+.
 package main
 
 import (
 	"flag"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/dashboard"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/health"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	"github.com/n-popescu/switchnet/internal/service"
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/dashboard"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/health"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 func main() {

@@ -101,7 +101,7 @@ func TestUpdatesLatestBuildsTheDownloadURLFromConfig(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name": "v0.4.0",
 			"assets": []map[string]any{
-				{"id": 12345, "name": "SwitchNet-Toolbox-v0.4.0.nro", "size": 400000},
+				{"id": 12345, "name": "GRID0+-Toolbox-v0.4.0.nro", "size": 400000},
 			},
 		})
 	}))
@@ -169,8 +169,8 @@ func TestNroAssetRejectsMultipleCandidates(t *testing.T) {
 			Name string `json:"name"`
 			Size int64  `json:"size"`
 		}{
-			{ID: 1, Name: "SwitchNet-Toolbox-v0.5.0.nro", Size: 1},
-			{ID: 2, Name: "SwitchNet-Toolbox-v0.5.0-debug.nro", Size: 2},
+			{ID: 1, Name: "GRID0+-Toolbox-v0.5.0.nro", Size: 1},
+			{ID: 2, Name: "GRID0+-Toolbox-v0.5.0-debug.nro", Size: 2},
 		},
 	}
 	if _, _, err := rel.nroAsset(); err == nil {
@@ -215,7 +215,7 @@ func TestUpdatesLatestDownloadSuccess(t *testing.T) {
 	latest := map[string]any{
 		"tag_name": "v0.9.0",
 		"assets": []map[string]any{
-			{"id": 999, "name": "SwitchNet-Toolbox-v0.9.0.nro", "size": int64(len(nroBytes))},
+			{"id": 999, "name": "GRID0+-Toolbox-v0.9.0.nro", "size": int64(len(nroBytes))},
 			{"id": 1000, "name": "README.txt", "size": 10},
 		},
 	}
@@ -284,7 +284,7 @@ func TestUpdatesLatestDownloadSelectsSingleNro(t *testing.T) {
 				"tag_name": "v0.9.1",
 				"assets": []map[string]any{
 					{"id": 111, "name": "notes.txt", "size": 5},
-					{"id": 222, "name": "SwitchNet-Toolbox-v0.9.1.nro", "size": 3},
+					{"id": 222, "name": "GRID0+-Toolbox-v0.9.1.nro", "size": 3},
 					{"id": 333, "name": "other.zip", "size": 10},
 				},
 			})
@@ -453,7 +453,7 @@ func TestUpdatesLatestBehaviorUnchanged(t *testing.T) {
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name": "v0.4.0",
-			"assets":   []map[string]any{{"id": 12345, "name": "SwitchNet-Toolbox-v0.4.0.nro", "size": 400000}},
+			"assets":   []map[string]any{{"id": 12345, "name": "GRID0+-Toolbox-v0.4.0.nro", "size": 400000}},
 		})
 	}))
 	defer gh.Close()

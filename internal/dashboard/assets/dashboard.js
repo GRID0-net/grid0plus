@@ -1,4 +1,4 @@
-// SwitchNet dashboard.
+// GRID0+ dashboard.
 //
 // No framework and no build step, on purpose: this repository ships Go and
 // generated protobuf, and adding an npm toolchain to it would mean a second

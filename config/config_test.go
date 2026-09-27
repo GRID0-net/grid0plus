@@ -170,7 +170,7 @@ network:
 // (here, an IPv4-mapped IPv6 form) passed validation -- the exact
 // misconfiguration TestNATCheckSecondaryIPMustDiffer exists to catch. There is
 // no second line of defense once this passes: redirection now happens off the
-// console, in a resolver SwitchNet does not run, so this check is the only
+// console, in a resolver GRID0+ does not run, so this check is the only
 // place the mistake gets caught.
 func TestNATCheckSecondaryIPMustDifferByAddressNotByText(t *testing.T) {
 	clearEnv(t)

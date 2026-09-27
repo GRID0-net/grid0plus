@@ -2431,7 +2431,7 @@ const file_proto_leaderboard_v1_leaderboard_proto_rawDesc = "" +
 	"\x16RetrieveQuantileScores\x125.nn.npln.leaderboard.v1.RetrieveQuantileScoresRequest\x1a6.nn.npln.leaderboard.v1.RetrieveQuantileScoresResponse\x12U\n" +
 	"\tGetSeason\x12(.nn.npln.leaderboard.v1.GetSeasonRequest\x1a\x1e.nn.npln.leaderboard.v1.Season\x12x\n" +
 	"\x11EstimateScoreRank\x120.nn.npln.leaderboard.v1.EstimateScoreRankRequest\x1a1.nn.npln.leaderboard.v1.EstimateScoreRankResponseB\xec\x01\n" +
-	"\x1acom.nn.npln.leaderboard.v1B\x10LeaderboardProtoP\x01ZAgithub.com/n-popescu/switchnet/proto/leaderboard/v1;leaderboardv1\xa2\x02\x03NNL\xaa\x02\x16Nn.Npln.Leaderboard.V1\xca\x02\x16Nn\\Npln\\Leaderboard\\V1\xe2\x02\"Nn\\Npln\\Leaderboard\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Leaderboard::V1b\x06proto3"
+	"\x1acom.nn.npln.leaderboard.v1B\x10LeaderboardProtoP\x01ZAgithub.com/n-popescu/grid0plus/proto/leaderboard/v1;leaderboardv1\xa2\x02\x03NNL\xaa\x02\x16Nn.Npln.Leaderboard.V1\xca\x02\x16Nn\\Npln\\Leaderboard\\V1\xe2\x02\"Nn\\Npln\\Leaderboard\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Leaderboard::V1b\x06proto3"
 
 var (
 	file_proto_leaderboard_v1_leaderboard_proto_rawDescOnce sync.Once

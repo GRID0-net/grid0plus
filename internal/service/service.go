@@ -1,4 +1,4 @@
-// Package service is shared startup code for every SwitchNet service.
+// Package service is shared startup code for every GRID0+ service.
 //
 // It keeps the cmd/* entrypoints down to "load config, build one thing, serve",
 // so that behaviour that must be identical everywhere — logging setup, graceful
@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/health"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/health"
 )
 
 // ConfigFlag registers the -config flag and returns a pointer to its value.

@@ -7,7 +7,7 @@
 package toyohrv1
 
 import (
-	v1 "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	v1 "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -214,7 +214,7 @@ const file_proto_toyohr_v1_coop_scenario_proto_rawDesc = "" +
 	"\fCoopScenario\x12\x83\x01\n" +
 	"\x10RegisterDocument\x126.nn.npln.toyohr.v1.CoopScenarioRegisterDocumentRequest\x1a7.nn.npln.toyohr.v1.CoopScenarioRegisterDocumentResponse\x12\x80\x01\n" +
 	"\x17ResolveCoopScenarioCode\x121.nn.npln.toyohr.v1.ResolveCoopScenarioCodeRequest\x1a2.nn.npln.toyohr.v1.ResolveCoopScenarioCodeResponseB\xca\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\x11CoopScenarioProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\x11CoopScenarioProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_coop_scenario_proto_rawDescOnce sync.Once

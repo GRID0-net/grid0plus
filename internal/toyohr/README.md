@@ -116,8 +116,8 @@ console would try to use.
 
 ## The keys are ours
 
-Nothing here decrypts anything of Nintendo's. A fest SwitchNet serves is a fest
-SwitchNet built: its pack was encrypted with keys stored alongside it, and
+Nothing here decrypts anything of Nintendo's. A fest GRID0+ serves is a fest
+GRID0+ built: its pack was encrypted with keys stored alongside it, and
 `GetFestDecryptionKey` hands back those same keys. That is what makes a genuinely
 custom Splatfest possible rather than a rename of one of Nintendo's — both
 inputs to the pack encryption, the key and the resource name, are the server's
@@ -185,7 +185,7 @@ see a communication error. Logging rather than storing because this is a private
 network of consoles one person owns: there is no moderation queue, and the useful
 outcome of a report is that the operator hears about it.
 
-`GetViolation` always reports none. SwitchNet issues no penalties — there is
+`GetViolation` always reports none. GRID0+ issues no penalties — there is
 nobody to issue them, and a private server that silently banned one of the
 operator's own consoles would be a bug with no way to see it.
 
@@ -193,9 +193,9 @@ operator's own consoles would be a bug with no way to see it.
 status trailers.** A named successful response means a violation exists and
 can block a fresh player from the hall. A successful response without a
 message decodes to an empty resource name and can crash Splatoon 3's
-resource-path parser, as observed on SwitchNet hardware. The working
+resource-path parser, as observed on GRID0+ hardware. The working
 Nextendo implementation uses a two-frame NotFound for a player without a
-violation. SwitchNet now does the same, and a gRPC test checks both the
+violation. GRID0+ now does the same, and a gRPC test checks both the
 status and the opening `npln-grpc-type` header. The upstream proto retains
 the `name` field for a real violation if this server ever supports one.
 
@@ -208,7 +208,7 @@ player who picked a side, and the ratio of entries per team is a number this
 server actually has.
 
 **The Honsai midterm and final ratios are not.** A real fest result carries
-per-category ratios derived from battles played, and nothing in SwitchNet
+per-category ratios derived from battles played, and nothing in GRID0+
 records a battle's result yet. Those are returned with
 `is_valid` false, which is the protocol's own way of saying a section is
 unavailable.
@@ -219,7 +219,7 @@ next, including a later version of this code.
 
 **So the verdict is decided on the vote.** One point per entry, most points
 wins. That is an *editorial choice*, not a stand-in — this is one operator's
-server, a fest here is a fest SwitchNet built, and "the side more people picked
+server, a fest here is a fest GRID0+ built, and "the side more people picked
 wins" is a rule that can be stated to the players. `overallResult` is the single
 function that changes when battles start being recorded.
 
@@ -269,7 +269,7 @@ each slot, and quoted 24-character ETags — all as in both working Nextendo
 hall captures. `SelectSeasonSchedules` carries season id 16 and the
 `LastSeasonLeaderboardFixTime` attribute those captures show.
 `SelectLeagueSchedules` answers empty: League events are authored content
-and SwitchNet has none (`league_diagnostic.go` can serve a disposable real
+and GRID0+ has none (`league_diagnostic.go` can serve a disposable real
 one for testing).
 
 **`SelectVsParams` used to be the fourth empty one, and that was wrong.**
@@ -278,7 +278,7 @@ sends: NextendoNetwork/splatoon-3 measured (facts only, not its code) that it
 replays a real captured `VsParams` payload rather than answering empty, and
 separately that the payload's own two timestamps must ride the same clock
 shift as everything else, or the client "cannot tie the current rotation to
-its parameters" and stops advancing. Reproduced on SwitchNet's own hardware
+its parameters" and stops advancing. Reproduced on GRID0+'s own hardware
 on 2026-09-24: the console called this RPC successfully and then went silent
 before ever calling `PresenceService/SubscribePresences`, the next call in
 the confirmed reference sequence — the same crash family as
@@ -288,9 +288,9 @@ the confirmed reference sequence — the same crash family as
 current clock so it is never stale, with the eleven tuning attributes the
 working captures carry (`vsParamsAttributes` in `schedule.go`). Both working
 captures return a nonempty, quoted ETag even when the request has none;
-SwitchNet derives one from its own target and parameter-set id instead of
+GRID0+ derives one from its own target and parameter-set id instead of
 echoing the request. The captured timestamps also enclose the client's
-current time; SwitchNet used to set both to the same instant, an empty
+current time; GRID0+ used to set both to the same instant, an empty
 window. It now spans the generated rotation horizon. See
 `docs/CAPTURES/npln-vsparams-etag-2026-09-24.md` and
 `docs/CAPTURES/npln-vsparams-window-2026-09-24.md`.
@@ -303,7 +303,7 @@ resource-name parser for a `VsParams` requires the same literal shape
 `CoopSchedule.Name` does, below: `tenants/<t>/targets/<target>/vsParams/<rest>`.
 The fix's own first answer, `tenants/<t>/vsParams/<id>`, omitted the
 `targets/<target>` segment and reproduced the crash on real hardware.
-Unlike `CoopSchedule`, `<target>` here is not a SwitchNet placeholder:
+Unlike `CoopSchedule`, `<target>` here is not a GRID0+ placeholder:
 `SelectVsParamsRequest` already carries a `Target` field the client itself
 sends.
 
@@ -332,7 +332,7 @@ shifts seeded — the doc comment there used to claim a wrong Name only "costs
 a cosmetic mismatch, not a broken RPC", which this decompile disproves.
 `<target>` is opaque to the parser — extracted and stored, never compared
 against a literal — so it now carries the shift's own `Kind`
-(`"normal"`/`"big_run"`/`"team_contest"`), a stable SwitchNet placeholder,
+(`"normal"`/`"big_run"`/`"team_contest"`), a stable GRID0+ placeholder,
 not reconstructed Nintendo data (`TODO(capture-needed)`, in
 `coop_schedule.go`).
 
@@ -412,7 +412,7 @@ message are an operator-local assumption rather than a confirmed shape —
 Both preserved working hall captures carry an eighth field on every
 `SeasonSchedule` entry that decodes to the raw string `"default"` -- absent
 from kinnay/NPLN-Protocols' own `resources.proto` (it stops at field 7,
-`schedule_set_id`) as well as from what SwitchNet had been sending. This is
+`schedule_set_id`) as well as from what GRID0+ had been sending. This is
 the same target concept `VsSchedule`/`LeagueSchedule` already embed in their
 own resource names' `targets/default` segment, just carried as a dedicated
 field here instead. Patched locally into `.proto-upstream` (see
@@ -445,7 +445,7 @@ Ugcstore never serves it):
 - `CreateSaveRecord` stores a new console's full record;
 - `ValidateSaveRecord` acknowledges.
 
-Every value comes from the player's own console; SwitchNet never seeds one.
+Every value comes from the player's own console; GRID0+ never seeds one.
 `ChangeUserName` and `DeleteSaveRecord` stay `Unimplemented`.
 
 `GameRecord/InitializeAttributes` accepts `tenants/current/users/current` as
@@ -455,7 +455,7 @@ actual user ID. It does not use the literal alias as a shared document owner.
 ## `SelectFestSchedule` without an active fest
 
 Both preserved successful hall captures answer with an empty protobuf when no
-fest is active. SwitchNet previously returned a synthetic expired fest instead.
+fest is active. GRID0+ previously returned a synthetic expired fest instead.
 A one-account hardware probe of the empty answer removed a BCAT 2122-1058
 error on boot, although the hall still returned Splatoon's communication error.
 The earlier empty-response crash occurred with an older set of responses; it

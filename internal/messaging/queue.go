@@ -26,7 +26,7 @@ import (
 // connects to drain its mailbox must not grow this process without bound.
 const maxMailboxDepth = 200
 
-// Body is the payload SwitchNet relays without reading. MessageType and
+// Body is the payload GRID0+ relays without reading. MessageType and
 // Fields are the game's own vocabulary -- passed through untouched, the same
 // way internal/baas's presence AppField is never parsed, because guessing at
 // a game-private format is exactly what CLAUDE.md warns against for an

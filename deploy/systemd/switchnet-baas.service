@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet baas
+Description=GRID0+ baas
 PartOf=switchnet.target
 After=network-online.target docker.service switchnet-dauth.service
 Wants=network-online.target

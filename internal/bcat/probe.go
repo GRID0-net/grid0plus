@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/wirelog"
+	"github.com/n-popescu/grid0plus/internal/wirelog"
 )
 
 // Probe answers the three bcat-* hosts, logging everything the console asks for.
@@ -13,7 +13,7 @@ import (
 // # What this is for
 //
 // Nobody has documented BCAT's `list` response body, and no public
-// implementation exists — so SwitchNet builds the delivery cache directly
+// implementation exists — so GRID0+ builds the delivery cache directly
 // instead of serving BCAT (see the package README). Whether it *could* serve
 // BCAT is an open question with a cheap experiment behind it, recorded in
 // TODO.md §2.4 and docs/QUESTIONS.md, and this handler is that experiment's
@@ -87,7 +87,7 @@ import (
 // The signature question that used to sit here is answered: a 2026-09-26
 // disassembly of bcat.nso (22.5.0) showed the module verifies an RSA-2048
 // signature over each decrypted container and refuses on failure, so serving
-// SwitchNet's own containers needs a bcat.nso patch (never a forged
+// GRID0+'s own containers needs a bcat.nso patch (never a forged
 // signature). The full design for native serving, including this, is in
 // docs/BCAT_NATIVE.md; TODO.md §2.4 has the RE findings.
 //

@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // This file is TODO.md §1.4's backlog: everything besides FestService,
@@ -18,7 +18,7 @@ import (
 // and CoopScenarioServer/ReplayServer cannot both be satisfied by one type.
 //
 // The rule applied throughout: a lookup or a query answers honestly with
-// what SwitchNet actually has, which for every one of these is nothing --
+// what GRID0+ actually has, which for every one of these is nothing --
 // no CoopScenario/Replay code was ever registered, and no violation or
 // screening snapshot was ever produced. A write with an unknown validation or
 // storage contract (RegisterDocument on CoopScenario and Replay,
@@ -33,7 +33,7 @@ import (
 // Both declare the identical IkasuDocumentRequest/SelectDocumentsRequest
 // shapes (proto/toyohr/v1/common.proto), backed by the same
 // nn.npln.ugcstore.v1.Document the wiki's Server-List places under a
-// separate Ugcstore/Screening pair of services SwitchNet does not
+// separate Ugcstore/Screening pair of services GRID0+ does not
 // implement. Without that store there is no document either service could
 // honestly return, so both get the same two answers: a select finds
 // nothing, and activating ("Ikasu") one specific document that was never

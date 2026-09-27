@@ -7,7 +7,7 @@
 package hydrov1
 
 import (
-	_ "github.com/n-popescu/switchnet/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -251,7 +251,7 @@ const file_proto_hydro_v1_resources_proto_rawDesc = "" +
 	"\x06UPDATE\x10\x02B\f\n" +
 	"\n" +
 	"expirationB\xc0\x01\n" +
-	"\x14com.nn.npln.hydro.v1B\x0eResourcesProtoP\x01Z5github.com/n-popescu/switchnet/proto/hydro/v1;hydrov1\xa2\x02\x03NNH\xaa\x02\x10Nn.Npln.Hydro.V1\xca\x02\x10Nn\\Npln\\Hydro\\V1\xe2\x02\x1cNn\\Npln\\Hydro\\V1\\GPBMetadata\xea\x02\x13Nn::Npln::Hydro::V1b\x06proto3"
+	"\x14com.nn.npln.hydro.v1B\x0eResourcesProtoP\x01Z5github.com/n-popescu/grid0plus/proto/hydro/v1;hydrov1\xa2\x02\x03NNH\xaa\x02\x10Nn.Npln.Hydro.V1\xca\x02\x10Nn\\Npln\\Hydro\\V1\xe2\x02\x1cNn\\Npln\\Hydro\\V1\\GPBMetadata\xea\x02\x13Nn::Npln::Hydro::V1b\x06proto3"
 
 var (
 	file_proto_hydro_v1_resources_proto_rawDescOnce sync.Once

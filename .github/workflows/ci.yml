@@ -108,7 +108,7 @@ jobs:
           grep -q '^192.168.1.51 *nncs2' /tmp/hosts.txt || {
             echo "::error::nncs2 is not pointed at the secondary address"; exit 1; }
           # The system-update and phase 3 hosts must be null-routed (0.0.0.0),
-          # not redirected to a SwitchNet endpoint that does not implement
+          # not redirected to a GRID0+ endpoint that does not implement
           # them: a redirected update host sets a persistent flag on a
           # console that ever switches back to real Nintendo (this
           # deployment's emuMMC never does, which is why these are
@@ -116,7 +116,7 @@ jobs:
           # TestSystemUpdateHostsAreNullRouted), and a redirected eShop host
           # breaks the eShop for no gain. accounts.nintendo.com is NOT in
           # this list: unlike these, it is deliberately redirected to
-          # SwitchNet's own Nintendo Account link stub (internal/baas/nalink.go).
+          # GRID0+'s own Nintendo Account link stub (internal/baas/nalink.go).
           for host in atumn.hac.lp1.d4c.nintendo.net \
                       aqua.hac.lp1.d4c.nintendo.net \
                       atum.hac.lp1.d4c.nintendo.net \
@@ -128,9 +128,9 @@ jobs:
           done
           test -s /tmp/nginx.conf
           test -s /tmp/sans.txt
-          # The generated resolver configs must redirect the hosts SwitchNet
+          # The generated resolver configs must redirect the hosts GRID0+
           # implements, and must null-route (not redirect to a live
-          # SwitchNet endpoint) the system update hosts -- same reasoning as
+          # GRID0+ endpoint) the system update hosts -- same reasoning as
           # the hosts.txt check above.
           grep -q 'address=/dauth-lp1.ndas.srv.nintendo.net/192.168.1.50' /tmp/switchnet.dnsmasq.conf
           grep -q 'address=/nncs2-lp1.n.n.srv.nintendo.net/192.168.1.51'  /tmp/switchnet.dnsmasq.conf

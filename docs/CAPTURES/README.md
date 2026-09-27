@@ -1,6 +1,6 @@
 # Captures
 
-Where to put packet captures from your own consoles, and what SwitchNet still
+Where to put packet captures from your own consoles, and what GRID0+ still
 needs one for.
 
 Every guess in the implementation is marked in the source with
@@ -15,7 +15,7 @@ probes began receiving replies; see
 [account-sysmodule-decompile.md](account-sysmodule-decompile.md) for the
 `account` sysmodule: the console's own validation of `nxAccount` and the error
 codes it raises, the response parsers behind each BAAS call, and the complete
-list of endpoints it can construct (eight of which SwitchNet does not serve).
+list of endpoints it can construct (eight of which GRID0+ does not serve).
 [friends-sysmodule-decompile.md](friends-sysmodule-decompile.md) does the same
 for the client of this file's own endpoints: it confirmed the friend list, the
 presence extras, the game-play log and the friend-request state spellings as
@@ -53,21 +53,21 @@ items}` envelope (not a bare array). Each item is a relationship object with
 `friend` sub-object omits `birthday`, `country` and `links` and adds
 `nicknameUpdatedAt`. `presence.pf` is always `1`.
 
-**What SwitchNet does now:** returns `CollectionEnvelope[FriendResponse]` with
+**What GRID0+ does now:** returns `CollectionEnvelope[FriendResponse]` with
 `FriendResponse` as the confirmed relationship object.
 
 **Confirmed field-by-field by the 2026-09-22 friends-sysmodule decompile**
 (see [friends-sysmodule-decompile.md](friends-sysmodule-decompile.md)): the
 entry parser reads `friendId`, `friend.nickname`, `friend.thumbnailUrl`,
 `friend.presence.state`, `friend.presence.extras.friends.appField` and
-`appInfo:*`, `friendNote`, `createdAt` — all of which SwitchNet already sends.
-The one thing in that family it reads and SwitchNet does not send is
+`appInfo:*`, `friendNote`, `createdAt` — all of which GRID0+ already sends.
+The one thing in that family it reads and GRID0+ does not send is
 `extras.self.route:*`; see that document's "What is still open".
 
 **Still open within this item:** `models.go`'s `Channels` field
 (`TODO(capture-needed)` at `internal/baas/models.go:175`) — the envelope shape
 is settled, but what triggers a `FRIEND_CODE` entry inside it and what its
-`authorizedAt` timestamp represents are not. SwitchNet always sends an empty
+`authorizedAt` timestamp represents are not. GRID0+ always sends an empty
 map, which is a defensible default rather than a confirmed one.
 
 ### 2. `POST /2.0.0/friend_requests` — the request body
@@ -75,7 +75,7 @@ map, which is a defensible default rather than a confirmed one.
 **What is known:** nothing documented. The applet can add a friend two ways —
 typing a friend code, and picking somebody the console already knows about.
 
-**What SwitchNet does:** accepts form encoding and JSON, keyed on `friendCode`,
+**What GRID0+ does:** accepts form encoding and JSON, keyed on `friendCode`,
 `userId` or `nsaId`. Accepting all of them is cheaper than guessing wrong: a
 refused request during bring-up is a dead end with nothing to go on.
 
@@ -109,20 +109,20 @@ inbox parser (`0x1cf640`) and outbox parser (`0x1cfe20`) read `id`, `senderId`,
 blocks. `from`/`to` are read by nothing. Fixed in `2456156`.
 
 **Still open within it:** `extras.receiver.read` is the recipient's unread flag,
-and SwitchNet keeps no read state for a request, so it sends none. Whether the
+and GRID0+ keeps no read state for a request, so it sends none. Whether the
 client reads an absent key as unread or as read needs the same capture this item
 always needed — a real pending request sitting in an inbox — and it is now the
 only thing that capture would still settle for this endpoint.
 
 ### 3. `PATCH /2.0.0/friend_requests/<id>` — the body
 
-**What SwitchNet does:** accepts a JSON patch on `/state`, a plain
+**What GRID0+ does:** accepts a JSON patch on `/state`, a plain
 `{"state":"..."}`, and `{"accept":true}`.
 
 **Partially settled by decompile, not a capture:** a 2026-09-20 decompile of
 the operator's own console's friends sysmodule found the real state enum --
 `PENDING`, `AUTHORIZED`, `REJECTED`, `CANCELED`, `EXPIRED` -- and this was a
-real, shipped bug until fixed the same day: SwitchNet's own pre-capture guess
+real, shipped bug until fixed the same day: GRID0+'s own pre-capture guess
 used `ACCEPTED`/`DENIED`/`CANCELLED`, which a real console's PATCH would
 never have matched, and accepting or declining a friend request would have
 failed outright. `requestStateFromWire`/`requestStateToWire` in
@@ -141,7 +141,7 @@ nor response.
 **Settled, not a capture:** a 2026-09-20 decompile of the friends sysmodule
 found the exact request it builds for a friend-code lookup: a MongoDB-style
 filter, `?filter.links.friendCode.id.$in=<code>`, not the plain `friendCode=`
-SwitchNet originally guessed -- and the response's JSONPath constants
+GRID0+ originally guessed -- and the response's JSONPath constants
 (`$.links.friendCode.id`, `$.links.friendCode.regenerableAt`) confirm the
 response shape needed no correction. Fixed in `internal/baas/accounts.go`;
 `?friendCode=` is kept as a working alias.
@@ -154,11 +154,11 @@ found evidence for the friend-code case.
 convention, and the response is an envelope. `filter.id.$in=` carries
 comma-separated 16-hex-digit ids (the builder de-duplicates its list before
 formatting it), and the parsers either side of that builder read `$.items[*]`,
-`$.items[*].id`, `.nickname`, `.thumbnailUrl` and `.extras.*.playLog`. SwitchNet
+`$.items[*].id`, `.nickname`, `.thumbnailUrl` and `.extras.*.playLog`. GRID0+
 answered the id form with 400 and the response with a bare array, so neither
 half of that call worked. Fixed in `369011a`.
 
-**What SwitchNet does:** accepts `?filter.links.friendCode.id.$in=` (real),
+**What GRID0+ does:** accepts `?filter.links.friendCode.id.$in=` (real),
 `?filter.id.$in=` (real), plus `?friendCode=` and `?ids=` as this server's own
 aliases, and `?nickname=` (still guessed as a plain key). Returns an envelope of
 stranger-visibility user objects. An unfiltered query is refused, because it
@@ -166,7 +166,7 @@ would otherwise enumerate every account on the server to any authenticated
 console.
 
 It is possible the code is resolved inside `POST /2.0.0/friend_requests` instead,
-which SwitchNet also supports; in that case this endpoint stays as a convenience
+which GRID0+ also supports; in that case this endpoint stays as a convenience
 for tooling.
 
 ### 5. `GET /2.0.0/users/<id>/relationships/<id>`
@@ -175,12 +175,12 @@ for tooling.
 response object for this endpoint with a vtable (`0x258558`) that registers
 exactly two callbacks: one reading `$.isFriend` and `$.isBlocking` as booleans,
 and one reading `$.sentFriendRequestIds[0]` as a third. There is no `type` field
-on the wire. SwitchNet sent only its own invented fields, so every relationship
+on the wire. GRID0+ sent only its own invented fields, so every relationship
 read as the all-false default -- a friend looked like a stranger. The three real
 keys are now sent; see
 [friends-sysmodule-decompile.md](friends-sysmodule-decompile.md).
 
-**What SwitchNet does:** returns the three flags above, plus `{"type": …}` with
+**What GRID0+ does:** returns the three flags above, plus `{"type": …}` with
 `NONE`, `FRIEND`,
 
 `FRIEND_REQUEST_SENT`, `FRIEND_REQUEST_RECEIVED` or `BLOCKED`, modelled on the
@@ -189,7 +189,7 @@ console's own `nn::friends` relationship enum.
 ### 6. `bs:sts` — the opaque status array in BAAS tokens
 
 Nintendo sends `[385]` in an access token and a seven-element array in a user
-token. Nothing on the console appears to read them and SwitchNet reproduces the
+token. Nothing on the console appears to read them and GRID0+ reproduces the
 observed values verbatim.
 
 **What a capture would settle:** whether they encode account state. A user token
@@ -238,7 +238,7 @@ including `gw.hac.lp1.vermillion.srv.nintendo.net` mid-flow, previously
 null-routed on an unverified assumption and now stubbed instead.
 
 **What is still open:** whether real Nintendo's response *content* for this
-flow differs from what SwitchNet (modeled on the Nextendo capture) currently
+flow differs from what GRID0+ (modeled on the Nextendo capture) currently
 sends — undecryptable without either a working private server that redirects
 real Nintendo Account holders, or CFW-level cert trust on a console signed in
 with a real account, neither of which was available for the 2026-08-27
@@ -259,15 +259,15 @@ cross-checked this whole flow against a full clone of the
 kinnay/NintendoClients wiki (not just search-engine summaries of it) and
 against `NextendoNetwork/Prelude-Nro`'s bundled write-up — see
 [nintendo-account-link.md](nintendo-account-link.md)'s "External research
-pass" section: it independently confirms most of SwitchNet's existing
+pass" section: it independently confirms most of GRID0+'s existing
 choices, confirms `CalculateNintendoAccountAuthenticationFingerprint` is
 undocumented anywhere public (not merely unfound), and flags that
 Prelude-Nro's write-up is an AI-generated secondary summary with at least
 one fabricated detail — not a source to trust on its own.
 
-**What SwitchNet does now:** `internal/baas/nalink.go` implements
+**What GRID0+ does now:** `internal/baas/nalink.go` implements
 `GET/POST /connect/1.0.0/authorize` and `POST /connect/1.0.0/api/token` as a
-custom login page (checking a person's own SwitchNet login credentials, from
+custom login page (checking a person's own GRID0+ login credentials, from
 `internal/baas/website.go`'s self-registration), not a copy of anyone's real
 OAuth flow. See [nintendo-account-link.md](nintendo-account-link.md) for the
 full writeup of both captures.
@@ -281,7 +281,7 @@ post-federation failure are **not called at all** by a link that succeeds:
 `analytics/device/opt_in` and `%s/profile` appear nowhere in it. Second, every
 endpoint the flow does visit — `application/token`, `users`, `federation`,
 `login`, `push_channels`, `GET users/{id}`, `qrcode_param`, `devices/snapshot`,
-`friends` — is already routed, at the same paths and methods SwitchNet already
+`friends` — is already routed, at the same paths and methods GRID0+ already
 serves.
 
 ### 9. `nintendo.x5t#S256` and `nintendo.esv` — undocumented device-token fields
@@ -291,7 +291,7 @@ page](https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#device-inform
 The 2026-08-27 working Nextendo capture's device token (issued by dauth,
 carried as `assertion`/`device_authentication_token` into both
 `/1.0.0/application/token` and `accounts.nintendo.com/connect/1.0.0/api/token`)
-has a `nintendo` block with two fields SwitchNet did not emit:
+has a `nintendo` block with two fields GRID0+ did not emit:
 
 - `x5t#S256` — a 43-character unpadded base64url string, the shape of a
   SHA-256 digest. RFC 7517 §4.9 names this exact key for an X.509 certificate
@@ -303,7 +303,7 @@ has a `nintendo` block with two fields SwitchNet did not emit:
   and the app token (aauth)'s `nintendo` blocks. Meaning originally unknown —
   **settled 2026-09-04, see below.**
 
-**What SwitchNet does now:** `x5t#S256` is implemented — see
+**What GRID0+ does now:** `x5t#S256` is implemented — see
 `jwt.DeviceInfo.X5tS256` and `dauth.Handler.x5tS256` in
 `internal/dauth/handler.go`. nginx forwards the console's already-untrusted
 TLS client certificate (`$ssl_client_escaped_cert`, a new
@@ -323,7 +323,7 @@ every single token and never derived from the certificate, serial, device
 id, or anything else. It never touched CLAUDE.md's first ground rule to
 begin with — it is opaque padding a real server invents per call, not a hash
 or MAC of Nintendo key material. The "echoed unchanged" observation above was
-SwitchNet's own `/1.0.0/application/token` copying a device token's
+GRID0+'s own `/1.0.0/application/token` copying a device token's
 `nintendo` block forward (which it still correctly does), not evidence that
 `esv` is cached or device-static at the minting layer. Implemented as
 `jwt.NewESV`, called once per token minted (see its own comment for why not
@@ -342,7 +342,7 @@ fields the console never reads. This was investigated because `2124-0292`
 network activity after `federation` returns a fully-correct 200, which is
 consistent with — but not proof of — a client-side check on data the console
 already has by that point. What was a real, actionable gap regardless of
-that open question: SwitchNet's tokens omitted the `esv` key entirely rather
+that open question: GRID0+'s tokens omitted the `esv` key entirely rather
 than sending a (harmless) present value, and a console checking only for the
 key's presence would have read that omission as malformed. Only a real
 hardware retest of the NA-link flow settles whether that omission was
@@ -362,13 +362,13 @@ publishes its implementation.
 
 ### 10. `dragons.*` — the eLicense/online-eligibility flow — ~~answered blindly~~ **one path settled, two more informed**
 
-`internal/stubs`, the catch-all for hosts SwitchNet redirects but does not
+`internal/stubs`, the catch-all for hosts GRID0+ redirects but does not
 implement for real, answered every path under
 `dragons.hac.lp1.dragons.nintendo.net` with the same bare `{}`. Reading the
 whole of `NextendoNetwork/nx-dauth`'s `main.go` (single file, 353 lines;
 PolyForm Shield 1.0.0, so only the facts below are taken, never its code —
 same rule already applied to it in item 9) rather than only the two claims
-it had already settled there turned up a service SwitchNet had never looked
+it had already settled there turned up a service GRID0+ had never looked
 at closely: `dragons` is not just an eLicense token endpoint, it is where a
 console checks whether it has the *right* to play online at all.
 
@@ -410,7 +410,7 @@ this repository does not yet reach at all than for one it already answers
 badly.
 
 **Also observed, recorded rather than acted on:** the same file's
-`application_auth_token` minting includes two more fields SwitchNet's own
+`application_auth_token` minting includes two more fields GRID0+'s own
 `aauth` does not emit — `tbn` (16 random bytes) and `tbh` (32 random
 bytes) — with no comment anywhere in nx-dauth explaining what they mean;
 even its own author appears to be filling an observed-but-not-understood
@@ -438,7 +438,7 @@ and the length of the one real value on record (a working server's
 `push_channels` body: `"deviceToken":"0009c95be1ac9b2c1e9d9d9fc8bf3302c7f5"`).
 
 **Still open:** whether the leading bytes (`0009…`) are structure npns
-checks. SwitchNet's token is a hash, so it has no such prefix. A capture of
+checks. GRID0+'s token is a hash, so it has no such prefix. A capture of
 this exact response from a working server would settle it; if npns rejects
 ours, the push_channels PUT will still be missing and this is the first
 place to look.
@@ -481,7 +481,7 @@ this version deliberately names no number to keep stale).
   it.
 - **Matchmaking/session resource-name shapes**
   (`internal/npln/matchmaking.go:320`, `ticketProto`, and `:448`,
-  `lastSegment`): every NPLN resource name is a path, and SwitchNet follows
+  `lastSegment`): every NPLN resource name is a path, and GRID0+ follows
   the same AIP-style convention the rest of the definitions do, but nothing
   confirms what Splatoon 3 actually receives or how strictly it parses it.
   `lastSegment` deliberately parses leniently so a wrong prefix costs a
@@ -491,14 +491,14 @@ this version deliberately names no number to keep stale).
   The console reads `gsid`/`usid`/`uid`/`tid` out of the token's `gamesync`
   object to open its session, so a match that hands out none leaves the console
   opening TCP+TLS+h2 and never sending a request — `2321-4992` on
-  `KeepUserSession`, with nothing in the server's log. SwitchNet mints the
+  `KeepUserSession`, with nothing in the server's log. GRID0+ mints the
   measured shape now (`internal/npln/auth.go`, `issueSessionToken`). Still open,
   and only a console of our own can settle it: whether one accepts a token
-  SwitchNet signed. Two fields also go out on defaults rather than evidence —
+  GRID0+ signed. Two fields also go out on defaults rather than evidence —
   `team` (Splatfest teams are announced but not assigned) and `attr`/`ltcy`.
 - **`Auth.RefreshToken`**
   (`internal/npln/services.go:72`, `IssueToken`): whether Splatoon 3 ever
-  calls it at all, and what it expects back. SwitchNet issues no refresh
+  calls it at all, and what it expects back. GRID0+ issues no refresh
   token and relies on the game re-authenticating from its BAAS id token on
   reconnect instead -- a path already served, so this is a defensible
   default rather than a fabricated response, but unconfirmed.
@@ -507,7 +507,7 @@ this version deliberately names no number to keep stale).
   `tenants/<t>/users/<u>`-shaped convention every other NPLN name uses, but
   no capture confirms Splatoon 3 receives or parses this specific one.
 - **What `Friends.ActivateUser` actually changes server-side**
-  (`internal/npln/friends.go:51`): SwitchNet has no separate activation state
+  (`internal/npln/friends.go:51`): GRID0+ has no separate activation state
   to flip -- presence already resolves fresh on every read -- so this
   acknowledges the call and does nothing else. If a capture shows the console
   waiting on some effect this does not produce, that effect is what is
@@ -527,7 +527,7 @@ this version deliberately names no number to keep stale).
   (`internal/toyohr/schedule.go`, `SelectVsParams`/`SelectVsSchedules`/
   `SelectSeasonSchedules`/`SelectLeagueSchedules`): answered as "nothing
   scheduled" rather than invented. This is Nintendo's own game design data
-  (which stages, which mode), not a shape SwitchNet can reason its way to the
+  (which stages, which mode), not a shape GRID0+ can reason its way to the
   way a resource-name convention can -- there is genuinely no source for it
   short of a capture or a dump. A capture of a real server's response for
   each of the four RPCs would settle what a populated one looks like.
@@ -601,7 +601,7 @@ this version deliberately names no number to keep stale).
   the console parses this field at all rather than only checking the RPC
   succeeded.
 - **Whether an all-`is_valid: false` `FestResult` reads as "not concluded"**
-  (`internal/toyohr/entries.go`, `GetFestResult`): SwitchNet has no real
+  (`internal/toyohr/entries.go`, `GetFestResult`): GRID0+ has no real
   battle-outcome data (`npln_fest_entries` records who picked which team,
   not who won, and `GameRecord` is unimplemented), so every sub-result
   reports `IsValid: false` rather than a fabricated ratio. Whether the
@@ -655,14 +655,14 @@ items above and elsewhere in this repository:
   see `docs/QUESTIONS.md`'s "Does the game key Splatfest assets on the
   announced fest id" entry.
 - **Never echo `tenants/current/users/current` (or any `current` alias) back
-  in a response** -- checked against SwitchNet, not an issue found: their
+  in a response** -- checked against GRID0+, not an issue found: their
   matchmaking notes measured a real client failing to find its own session
   when a response echoed the unresolved `current` alias instead of a
   concrete `tenants/<t>/users/<uid>`. `grep -rn 'tenants/current\|users/
   current' internal/` finds nothing in this repository; every resource name
-  SwitchNet returns is already built from a resolved caller/user id.
+  GRID0+ returns is already built from a resolved caller/user id.
 - **A `Document`-shaped response must never carry an empty `name` field --
-  checked against SwitchNet, not an issue found**: their measurement (twice,
+  checked against GRID0+, not an issue found**: their measurement (twice,
   on two different documents) is that a client SDK receiving a message-less
   success constructs a default object whose name is empty, and the
   resource-name parser then aborts the game. `internal/gamesync.Service`'s
@@ -721,7 +721,7 @@ above):
   Their commit message documents a real console error (`2321-4224`) from a
   different NPLN title (Nintendo Classics, "Nintendo 64") whose online lobby
   would not open while this RPC answered `Unimplemented`; returning an empty
-  `QueryGameSessionsResponse{}` instead fixed it. SwitchNet's own
+  `QueryGameSessionsResponse{}` instead fixed it. GRID0+'s own
   `GameSessionService` embedded `UnimplementedGameSessionServiceServer` and
   never overrode this method, so any caller — regardless of title — got the
   same hard failure. Whether Splatoon 3 itself ever calls this RPC is still
@@ -731,12 +731,12 @@ above):
   already answering badly, not a confirmed Splatoon 3 shape. See the
   `TODO(capture-needed)` this leaves behind.
 - **A strict full-nominal-count matchmaking threshold can leave a real queue
-  permanently unfilled — checked against SwitchNet, not an issue found.**
+  permanently unfilled — checked against GRID0+, not an issue found.**
   Their commit measured this directly: requiring the full nominal player
   count (8, for Turf War) produced 28 tickets, 12 cancellations and zero
   matches formed over a night of real testing, fixed by relaxing the
   threshold down to no less than half the nominal count as tickets wait.
-  SwitchNet was never exposed to this failure mode in the first place:
+  GRID0+ was never exposed to this failure mode in the first place:
   `matchmaking.DefaultConfig.PlayersPerMatch` is 2, not a title's real mode
   size, specifically because "a number that lets two friends actually start
   a match is more useful than one that is faithful and idle" (see
@@ -745,7 +745,7 @@ above):
   `Queue.ForceMatch`, a manual escape hatch that forms a match from
   whoever is waiting rather than an automatic time-based relaxation. Recorded
   here because the empirical failure mode is worth knowing, not because it
-  changed anything: SwitchNet's design choice already avoids it by a
+  changed anything: GRID0+'s design choice already avoids it by a
   different route.
 
 ### Presence attributes, settled from NextendoNetwork's capture notes
@@ -773,7 +773,7 @@ Implemented in `internal/npln/presence_attributes.go`: attributes are merged
 per player, passed through untouched in `presenceProto`, pushed to open
 `SubscribePresences` streams on change, and cleared when the player's last
 `KeepAlive` stream closes. They are kept out of `db.Presence`, which stays
-BAAS's alone. Second-hand -- their capture, not ours -- so a SwitchNet capture
+BAAS's alone. Second-hand -- their capture, not ours -- so a GRID0+ capture
 of a friend opening a room is still worth taking to confirm.
 
 ### Private rooms (`2321-4224`), from NextendoNetwork's capture notes
@@ -808,14 +808,14 @@ Still open, each a `TODO(capture-needed)` in `rooms.go`:
   the first time it is seen.
 - The room code's format. Their short-alias capture is a different title's
   (Mario Party Jamboree), and on Splatoon 3 their displayed code relies on a
-  console-side patch SwitchNet does not ship. Friends joining from the friend
+  console-side patch GRID0+ does not ship. Friends joining from the friend
   list use the room's session id, not a code, so this is not on that path.
 - The status a real server answers when a room is full.
 - The room's password lock indicator: NextendoNetwork injects an undocumented
   `GameSession` field for it, number unconfirmed. Not ported. The password
   itself is checked on join.
 
-A SwitchNet capture of a friend opening a room and another joining it from
+A GRID0+ capture of a friend opening a room and another joining it from
 the friend list would confirm all of it, and settle the presence attributes
 above at the same time.
 
@@ -847,7 +847,7 @@ version and stops applying silently.
 Splatoon 2 is a NEX title (`internal/rendezvous`, `internal/splatoon2`). Its
 wire shapes come from Kinnay's wiki, which documents most of the protocols
 method by method; what the wiki leaves open is below. A "capture" here means a
-decrypted capture of a console talking to SwitchNet (the WebSocket is TLS, so
+decrypted capture of a console talking to GRID0+ (the WebSocket is TLS, so
 nginx's side is where to look), or static RE of Splatoon 2 — never of the
 console talking to Nintendo, whose Splatoon 2 servers no longer answer.
 
@@ -926,7 +926,7 @@ see [`../PACKET_CAPTURE.md`](../PACKET_CAPTURE.md).
 
 ### What real hardware and `NextendoNetwork/splatoon-3`'s source settled, 2026-09-24
 
-A full hall bootstrap finally succeeded on SwitchNet's own hardware after this
+A full hall bootstrap finally succeeded on GRID0+'s own hardware after this
 session's earlier fixes (STUN, SCSI auth, the Frontline opening frame, the
 `tenants/current/users/current` alias). Two more real gaps surfaced right in
 the resulting call sequence, both fixed the same session:
@@ -948,12 +948,12 @@ the resulting call sequence, both fixed the same session:
   the last one, never nothing), and an empty one crashes Splatoon 3 about
   two seconds later (`2162-0001` in `nn.npln.Worker`), right after the game
   loads `FestRegion`/`Fest`/`FestRecord` from its own save and asks for the
-  matching schedule. SwitchNet's own handler answered a genuinely empty
+  matching schedule. GRID0+'s own handler answered a genuinely empty
   `SelectFestScheduleResponse{}` whenever no operator fest was configured —
   exactly the shape their measurement says crashes the game — and this
-  reproduced on SwitchNet's own hardware the same day: the Splatfest region
+  reproduced on GRID0+'s own hardware the same day: the Splatfest region
   prompt appeared (reading those same save keys) and the game crashed under
-  a second later. Fixed with `noFestSentinel`, a fest of SwitchNet's own
+  a second later. Fixed with `noFestSentinel`, a fest of GRID0+'s own
   (no team names, no banners, no real BCAT content, started at the Unix
   epoch so it can never be "announced" in the sense that would trigger a
   decryption-key fetch) sent in place of an empty response.
@@ -969,10 +969,10 @@ exchange without console-side setup:
   save record: `NotFound` makes the game create nothing and loop on a
   communication error; a genuinely empty success makes it stop dead — no
   `CreateSaveRecord`, no `FestSchedule`, no documents; only a real,
-  structurally-complete record made everything resume. SwitchNet answered
+  structurally-complete record made everything resume. GRID0+ answered
   `NotFound`, reasoned as correct rather than a stub. A VM-side loopback
   capture confirmed the console went silent immediately after this RPC on
-  SwitchNet's own hardware. Fixed by answering a real `SaveRecord` for the
+  GRID0+'s own hardware. Fixed by answering a real `SaveRecord` for the
   caller with an empty-but-present `SaveData` `MapValue`, never seeded with
   Nextendo's own captured save content since that belongs to a real
   stranger's account.
@@ -999,14 +999,14 @@ in the client's resource-path parser rather than three unrelated bugs:
 
 - **`UserScreening.GetViolation` answering a genuinely empty message —
   settled, and now fixed.** Upstream's own proto marks
-  `GetViolationResponse`'s fields `[UNKNOWN]`; SwitchNet answered a truly
+  `GetViolationResponse`'s fields `[UNKNOWN]`; GRID0+ answered a truly
   empty message, reasoned as unambiguous since "no violation" and "here is
   your violation" are the same bytes with no fields to tell them apart.
   `NextendoNetwork/splatoon-3` measured (facts only, not its code) that
   Splatoon 3's own client parses this response's own resource name and
   hard-aborts in its resource-path parser when it is empty — the crash
   return address they name for this sits a few hundred bytes from the one
-  reproduced on SwitchNet's own hardware, inside the same client module.
+  reproduced on GRID0+'s own hardware, inside the same client module.
   The upstream `.proto` now carries the confirmed `name` field (field 1,
   string) and was regenerated via `scripts/gen-proto.sh`; the handler
   always resolves it to `tenants/<t>/users/<uid>/violations/current`.
@@ -1016,7 +1016,7 @@ prevents the empty-name crash but tells the game the player is sanctioned.
 The current working Nextendo server handles "no violation" as a two-frame
 NotFound: it sends response headers before the status trailers. Its source
 records a fresh player being blocked from the hall by the named form.
-SwitchNet now uses the absent-resource form, covered by a gRPC framing test.
+GRID0+ now uses the absent-resource form, covered by a gRPC framing test.
 The exact Nintendo trailer status was not visible in the capture format, so
 this is a reference-implementation behavior, not a direct Nintendo-wire claim.
 
@@ -1045,7 +1045,7 @@ crash address alone:
   reaches this code path at all, which is why earlier attempts with no
   shifts configured never hit it). `<target>` is opaque to the parser — it
   is extracted and stored, never compared against a literal — so it now
-  carries the shift's own `Kind` as a stable SwitchNet placeholder, not
+  carries the shift's own `Kind` as a stable GRID0+ placeholder, not
   reconstructed Nintendo data.
 
 A fifth VM-side loopback capture -- and, once those pcaps had aged out of the
@@ -1122,7 +1122,7 @@ ever taken), pinned it down:
   capture and a real Nextendo capture of a live account (`docs/CAPTURES/raw`'s
   second session) show what a real server answers when a query matches
   nothing: exactly one streamed `RunQueryResponse` carrying only
-  `read_time`. SwitchNet keeps no document collections a `StructuredQuery`
+  `read_time`. GRID0+ keeps no document collections a `StructuredQuery`
   could actually match against, so "zero matches" is this server's honest
   answer, not a placeholder -- `Unimplemented` (grpc-status 12) was the
   actual bug, confirmed independently by Nextendo's own comment
@@ -1136,12 +1136,12 @@ in the same instant across every one of the console's long-lived NPLN
 streams (`RecvMessage`, `KeepAlive`, `SubscribeMaintenanceSchedules`,
 `SubscribeFriendUsers`, `SubscribePresences`), immediately followed by one
 raw HTTP 400 on a reopened stream — a proxy-layer rejection, not a gRPC
-error, happening before the request ever reached SwitchNet's own Go
+error, happening before the request ever reached GRID0+'s own Go
 backend.
 
-A dedicated mitmproxy capture against SwitchNet itself (the operator's own
+A dedicated mitmproxy capture against GRID0+ itself (the operator's own
 console, redirected the same way the two Nextendo captures were, but at
-the SwitchNet VM's own IP instead — `docs/CAPTURES/raw/switchnet-hall-20260924T071622Z`)
+the GRID0+ VM's own IP instead — `docs/CAPTURES/raw/switchnet-hall-20260924T071622Z`)
 settled the mechanism directly, at the console's own TLS layer rather than
 nginx's summarized logs:
 
@@ -1159,7 +1159,7 @@ nginx's summarized logs:
   underlying mechanism (facts only, not its code): their own comment ties a
   worsened version of this exact loop directly to a faster transport, not a
   fixed client-side interval, matching a real Nintendo server's distance
-  self-limiting a behavior SwitchNet cannot assume away.
+  self-limiting a behavior GRID0+ cannot assume away.
 
 With the `KeepAlive` throttle deployed, the reset burst stopped: a full wire
 trace of the next attempt (07:26:05–07:28:07) showed every request
@@ -1177,13 +1177,13 @@ confirmed already decoded in this same second Nextendo capture:
   separate, already-decoded exchange in `nextendo-second`'s own
   `stream-events.jsonl`: the console's request carries no conditional-GET
   header at all, and the real server answers `304 Not Modified` with an
-  empty body regardless, its own permanent "nothing new" answer. SwitchNet
+  empty body regardless, its own permanent "nothing new" answer. GRID0+
   had this host `ServiceBlackhole`d, so the console's very first request of
   its own boot sequence failed outright. Flipped to `ServiceStubs` with a
   dedicated handler (`internal/stubs.newsTopics`) that always answers `304`
   — checked ahead of the generic `bcat-` prefix case, which would otherwise
   have answered a blanket `200` instead. This is also, independently, why
-  the operator never once saw the in-game news screen on SwitchNet.
+  the operator never once saw the in-game news screen on GRID0+.
 
 That fix alone did not clear the error: the missing `TLS: true` flag on the
 new host entry silently excluded it from the certificate's SAN list and
@@ -1193,7 +1193,7 @@ to the VM never touches what is already written to a console's SD card.
 Both were fixed and a new switchnet-nro release shipped (v0.5.1), but the
 operator still hit the identical error afterward. Asked to check how
 NextendoNetwork/Prelude routes the same hosts (facts only, not its code)
-rather than keep guessing from SwitchNet's own side alone, this turned up
+rather than keep guessing from GRID0+'s own side alone, this turned up
 the real remaining gap:
 
 - **`bcat-list-lp1` and `bcat-data-lp1` were also null-routed, and that is
@@ -1211,14 +1211,14 @@ the real remaining gap:
   which only ever affected `ServiceBlackhole` hosts, was removed rather
   than left silently doing nothing.
 
-Asked directly to check whether SwitchNet's own hosts file is right by
+Asked directly to check whether GRID0+'s own hosts file is right by
 diffing against Prelude's *entire* current hosts generator, not just the
-sections already touched tonight, rather than trust SwitchNet's own
+sections already touched tonight, rather than trust GRID0+'s own
 internal cross-checks alone. Two more findings, one real bug and one
 scope note:
 
 - **`receive-*.dg/er.srv.nintendo.net` (telemetry) were null-routed on a
-  wrong assumption — settled, and now fixed.** SwitchNet's own comment
+  wrong assumption — settled, and now fixed.** GRID0+'s own comment
   claimed "null-routing them is what Prelude-Nro does too" -- checked
   against Prelude's actual current source rather than trusted, and it does
   not. NextendoNetwork/Prelude's own commit history documents a real
@@ -1230,12 +1230,12 @@ scope note:
   `internal/stubs.telemetrySink`: read the body, discard it, answer `200`
   immediately. Telemetry still never reaches real Nintendo.
 - **Prelude's `d4c` (system update) hosts are deliberately *not*
-  null-routed, unlike SwitchNet's** -- checked, and this is not a bug to
+  null-routed, unlike GRID0+'s** -- checked, and this is not a bug to
   copy: Prelude's own comment says why ("`nim` stocke un flag persistant"),
   the identical reasoning `internal/nintendo/hosts.go` already gives for
   the opposite choice on this deployment. Prelude's console moves between
   Nintendo mode and Nextendo mode; this deployment's emuMMC is permanently
-  and exclusively SwitchNet's (see CLAUDE.md), so the "switch back that
+  and exclusively GRID0+'s (see CLAUDE.md), so the "switch back that
   will never happen" the persistent flag would otherwise corrupt cannot
   occur here. Confirmed intentional, not copied.
 
@@ -1243,10 +1243,10 @@ scope note:
 
 A later comparison of both working hall captures found one more response
 mismatch: `SelectVsParams` carried a stable, quoted server ETag while every
-request omitted one. SwitchNet had echoed the empty request ETag. See
+request omitted one. GRID0+ had echoed the empty request ETag. See
 [`npln-vsparams-etag-2026-09-24.md`](npln-vsparams-etag-2026-09-24.md).
 Both captures also show the client's current time strictly inside the
-returned `VsParams` timestamp window, while SwitchNet had returned equal
+returned `VsParams` timestamp window, while GRID0+ had returned equal
 endpoints; see [`npln-vsparams-window-2026-09-24.md`](npln-vsparams-window-2026-09-24.md).
 
 ## Documenting a capture
@@ -1352,11 +1352,11 @@ returns false. That parser requires the literal `tenants` / `targets` /
 CoopSchedule parser at `main+0x7d2a70`; proximity alone had misleadingly
 implicated Salmon Run.
 
-SwitchNet sent `tenants/<t>/vsSchedules/<id>`, omitting the target segment.
+GRID0+ sent `tenants/<t>/vsSchedules/<id>`, omitting the target segment.
 Both preserved, successful Nextendo captures show a request for
 `tenants/current/targets/default` and responses named
 `tenants/<t>/targets/default/vsSchedules/<id>`. They also show
-`targets/default/coopSchedules/<id>`, while SwitchNet used the shift kind
+`targets/default/coopSchedules/<id>`, while GRID0+ used the shift kind
 in the target position. Both response builders now use the last segment of
 the requested Target; a wire-serialization regression test checks the names.
 No captured schedule content or player identifiers were copied into source.

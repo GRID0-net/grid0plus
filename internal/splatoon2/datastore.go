@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
 )
 
 // DataStore (protocol 115): Splatoon 2's match results, Annie's gear orders,
@@ -366,7 +366,7 @@ func writeKeyValues(w *nex.Writer, kv [][2]string) {
 // writeReqGetInfo: DataStoreReqGetInfo{String url, List<KeyValue> headers,
 // u32 size, Buffer rootCaCert, u64 dataId}. No root CA: the console's own
 // trust store already trusts this server, which is the same trust every
-// other SwitchNet host relies on.
+// other GRID0+ host relies on.
 func writeReqGetInfo(w *nex.Writer, url string, size uint32, dataID uint64) {
 	w.Struct(0, func(w *nex.Writer) {
 		w.String(url)

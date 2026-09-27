@@ -6,7 +6,7 @@
 -- persist. A FORMED match is different -- it already happened, and this table
 -- is the only place that survives the process that formed it.
 --
--- SwitchNet only ever knows a match was formed. Gameplay is peer-to-peer, so
+-- GRID0+ only ever knows a match was formed. Gameplay is peer-to-peer, so
 -- nothing tells this server when -- or whether -- a match actually started or
 -- ended; there is no end_at column because there is no signal to put in one.
 CREATE TABLE npln_matches (

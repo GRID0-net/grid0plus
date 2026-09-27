@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // TicketGranting (protocol 10): the only protocol on the authentication
@@ -120,7 +120,7 @@ func readAuthenticationInfo(r *nex.Reader) (string, bool) {
 		return "", false
 	}
 	if tokenType != authTokenTypeSwitch {
-		// 1 is a Wii U NEX token, 0 a 3DS one: neither is anything SwitchNet
+		// 1 is a Wii U NEX token, 0 a 3DS one: neither is anything GRID0+
 		// issued. Refused rather than tried.
 		return "", false
 	}

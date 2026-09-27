@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/matchmaking"
+	"github.com/n-popescu/grid0plus/internal/matchmaking"
 )
 
 // The matchmaking admin API.
@@ -77,7 +77,7 @@ func (h *AdminHandler) guard(next http.HandlerFunc) http.HandlerFunc {
 
 // ---- responses ------------------------------------------------------------
 
-// These are SwitchNet's own shapes, not NPLN's. Nothing Nintendo-facing reads
+// These are GRID0+'s own shapes, not NPLN's. Nothing Nintendo-facing reads
 // them, so they are written for the page that does: durations already in
 // seconds, and names rather than resource paths.
 

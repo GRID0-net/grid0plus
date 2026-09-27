@@ -2,7 +2,7 @@
 
 Notes for an agent working on this repository. Read this before changing code.
 
-`README.md` is for a person who wants to run SwitchNet.
+`README.md` is for a person who wants to run GRID0+.
 `docs/ARCHITECTURE.md` is for a person who wants to understand it.
 This file is for you: the things that are easy to get wrong, and the reasons
 behind decisions that look arbitrary.
@@ -34,7 +34,7 @@ and content-delivery layers do not.
 **Phase 4 does belong here**, unlike phase 3 — it needs no game dumps and
 carries none of phase 3's copyrighted-content exposure, just real storage
 cost that grows with usage. The storage backend decision is made: local disk
-on the box already running SwitchNet, under `scsi.storage_dir` and
+on the box already running GRID0+, under `scsi.storage_dir` and
 `scsi.per_user_quota_bytes` in `config.yaml` — see `internal/scsi/storage.go`.
 Most of `internal/scsi`'s request/response shapes are confirmed against
 Kinnay's public wiki page for OLSC; the two `generate_key_*package`
@@ -109,7 +109,7 @@ there is no separate dev-only key directory to keep in sync with it.
 
 ## The two bugs this codebase is shaped around
 
-Both were reported on real hardware, against the production server SwitchNet
+Both were reported on real hardware, against the production server GRID0+
 replaces. They are written up in
 [`n-popescu/splatoon-3`'s `docs/FRIENDS.md`](https://github.com/n-popescu/splatoon-3/blob/main/docs/FRIENDS.md).
 Most of the non-obvious code here exists because of one of them.
@@ -185,22 +185,22 @@ Same IP → the console de-duplicates the probe → NAT detection never complete
 matchmaking finds matches that will not start. The config validator refuses to
 let them be equal.
 
-**Do not redirect the `d4c` system-update hosts to a SwitchNet endpoint.** `nim`
+**Do not redirect the `d4c` system-update hosts to a GRID0+ endpoint.** `nim`
 writes a persistent flag when the update check fails, and it survives switching
 back to Nintendo's servers — the general-purpose reason to leave them
 `ServicePassthrough`. This deployment's own emuMMC is permanently and
-exclusively SwitchNet's, so that flag can never survive into a "switch back"
+exclusively GRID0+'s, so that flag can never survive into a "switch back"
 that will never happen, and passthrough would only mean real Nintendo traffic
 leaving the console for no benefit: `internal/nintendo/hosts.go` marks `sun`/
 `atumn`/`aqua` `ServiceBlackhole` (null-routed to `0.0.0.0`) instead, with
 `TestSystemUpdateHostsAreNullRouted` guarding that choice and its reasoning. If
 you ever reuse this host list for a console that *does* move back and forth
-between SwitchNet and real Nintendo, put these back to `ServicePassthrough`
+between GRID0+ and real Nintendo, put these back to `ServicePassthrough`
 first.
 
 **Redirection and certificate trust are separate problems.** Redirection is DNS
 and happens off the console, in a resolver the operator already runs — the
-generated dnsmasq/unbound configuration, never SwitchNet itself. Certificate
+generated dnsmasq/unbound configuration, never GRID0+ itself. Certificate
 trust has to happen on the console, because the cert for
 `dauth-lp1.ndas.srv.nintendo.net` is signed by a private Nintendo CA. Do not
 conflate them: a report of "nothing in the log at all" is almost always trust,
@@ -210,7 +210,7 @@ after DNS worked.
 
 **Do not forward AAAA for a redirected name.** The generated dnsmasq/unbound
 configuration answers NODATA. If it forwarded, a console on a network with
-IPv6 would resolve Nintendo's real address and bypass SwitchNet,
+IPv6 would resolve Nintendo's real address and bypass GRID0+,
 intermittently — close to undiagnosable from the console side. Same reason
 the generated unbound config uses `local-zone ... static` rather than
 `transparent`.
@@ -246,7 +246,7 @@ Priority order and what each would settle are in
 means decrypting Nintendo's traffic from the console (see
 [where to ask the operator](#where-to-ask-the-operator-rather-than-guess));
 a shape is settled by RE of the module that reads it, GDB on the emuMMC, or a
-capture of the console talking to SwitchNet.
+capture of the console talking to GRID0+.
 
 When one is settled:
 
@@ -294,7 +294,7 @@ it to the contract — that test has already caught a real bug where an empty id
 filter matched every user under one implementation and none under the other.
 
 **Errors the console reads.** It switches on `errorCode`, not the HTTP status, so
-the code matters more than the status. Only the errors SwitchNet can actually
+the code matters more than the status. Only the errors GRID0+ can actually
 produce are defined in `internal/baas/errors.go`; do not add ones for checks that
 are not performed.
 
@@ -338,8 +338,8 @@ git ls-files | grep -E '\.(pem|key|crt)$|^certs/|config/config\.yaml'   # must b
 - anything needing a packet capture. Against Nintendo's real servers that can
   only be a tcpdump (hosts, timing, sizes): the operator does not run
   Atmosphère there, so nothing is decrypted. For a request/response shape,
-  prefer static RE of the game or sysmodule, live GDB on SwitchNet's own
-  emuMMC, or a decrypted capture against SwitchNet itself;
+  prefer static RE of the game or sysmodule, live GDB on GRID0+'s own
+  emuMMC, or a decrypted capture against GRID0+ itself;
 - whether the CertStore LayeredFS override actually reaches the `ssl` sysmodule —
   there is a five-minute test in `switch/README.md` and only the operator can run
   it. `fs.mitm` does not MITM arbitrary system modules, so this is genuinely

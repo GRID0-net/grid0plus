@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // ---- POST /1.0.0/image_upload -------------------------------------------
@@ -26,7 +26,7 @@ type imageUploadRequest struct {
 	// RawContent is a base64-encoded JPEG.
 	RawContent string `json:"rawContent"`
 	OwnerID    string `json:"ownerId"`
-	// AllowTransform lets the server resize the image. SwitchNet stores what it
+	// AllowTransform lets the server resize the image. GRID0+ stores what it
 	// is given, so this is accepted and not acted on.
 	AllowTransform bool `json:"allowTransform"`
 }
@@ -202,7 +202,7 @@ func decodeImageContent(s string) ([]byte, error) {
 //
 // http.Dir refuses to escape its root, and only files this server wrote are in
 // there, so a request cannot reach outside the image directory. Registered at
-// both /1/{name} and /2/{name} (see router.go) -- SwitchNet stores one file
+// both /1/{name} and /2/{name} (see router.go) -- GRID0+ stores one file
 // per image, not two sizes of it, so both paths serve the same bytes.
 func (s *Server) imageFileServer() http.Handler {
 	fs := http.FileServer(http.Dir(s.cfg.ImageDir))
@@ -225,7 +225,7 @@ func (s *Server) GetImagePath(relPath string) string {
 // console's very next request after a successful federation, immediately
 // fetching its own profile picture -- showed the console asking for
 // '/1/<etag>' and '/2/<etag>' at the root of the cdn-image host, not
-// '/images/<name>'. SwitchNet's own request log had never shown that
+// '/images/<name>'. GRID0+'s own request log had never shown that
 // request at all, on any of the 17+ prior attempts at this same bug: the
 // shape mismatch meant the client's own URL validation rejected the field
 // before ever making the request, which is consistent with -- and the first

@@ -1,4 +1,4 @@
-// Command toolbox answers the public, unauthenticated API the SwitchNet
+// Command toolbox answers the public, unauthenticated API the GRID0+
 // Toolbox homebrew app (github.com/n-popescu/switchnet-nro) talks to. See
 // internal/toolbox for why this is its own service rather than a route on
 // stubs or dashboard.
@@ -8,10 +8,10 @@ import (
 	"flag"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/health"
-	"github.com/n-popescu/switchnet/internal/service"
-	"github.com/n-popescu/switchnet/internal/toolbox"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/health"
+	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/toolbox"
 )
 
 func main() {

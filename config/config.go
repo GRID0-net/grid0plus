@@ -1,4 +1,4 @@
-// Package config loads and validates SwitchNet's configuration.
+// Package config loads and validates GRID0+'s configuration.
 //
 // Configuration comes from a single YAML file, with environment variable
 // overrides for everything an operator is likely to want to change per
@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the whole SwitchNet configuration.
+// Config is the whole GRID0+ configuration.
 type Config struct {
 	// Network describes where the operator's servers live, from the console's
 	// point of view.
@@ -68,10 +68,10 @@ type Network struct {
 }
 
 // DNS configures the dnsmasq/unbound configuration generators
-// (`switchnetctl dnsmasq`/`unbound`). SwitchNet does not run its own DNS
+// (`switchnetctl dnsmasq`/`unbound`). GRID0+ does not run its own DNS
 // server; redirection is done by a resolver the operator already runs.
 type DNS struct {
-	// TTL of the answers SwitchNet synthesises, in seconds. Short on purpose:
+	// TTL of the answers GRID0+ synthesises, in seconds. Short on purpose:
 	// switching a console back to Nintendo should take effect in a minute, not
 	// after an hour of cached records.
 	TTL int `yaml:"ttl"`
@@ -267,7 +267,7 @@ type SCSI struct {
 	PublicURL string `yaml:"public_url"`
 
 	// StorageDir is where save data blobs are written, on the same box
-	// already running SwitchNet -- the default ROADMAP.md's phase 4 section
+	// already running GRID0+ -- the default ROADMAP.md's phase 4 section
 	// picks: no new recurring cost, bounded by whatever disk the box has.
 	StorageDir string `yaml:"storage_dir"`
 
@@ -277,7 +277,7 @@ type SCSI struct {
 	// the operator already trusts every console on may reasonably accept
 	// that risk -- but ROADMAP.md §4.2 is explicit that a hard cap should
 	// normally exist, so one console cannot fill the disk and take the rest
-	// of SwitchNet down with it. Set this in any real deployment.
+	// of GRID0+ down with it. Set this in any real deployment.
 	PerUserQuotaBytes int64 `yaml:"per_user_quota_bytes"`
 }
 
@@ -390,7 +390,7 @@ type NPLN struct {
 	//
 	// It MUST be a hostname internal/nintendo/hosts.go redirects. Naming one it
 	// does not sends the console's frontline connection to real Nintendo, where
-	// it succeeds — and then fails in a way that looks like SwitchNet's fault.
+	// it succeeds — and then fails in a way that looks like GRID0+'s fault.
 	// internal/nplnrest refuses to start rather than allow it.
 	FrontlineHost string `yaml:"frontline_host"`
 
@@ -529,7 +529,7 @@ type Splatoon2 struct {
 // one.
 //
 // The mechanics around them — two-hour slot alignment, windowing, ordering, the
-// etag — are SwitchNet's and live in internal/toyohr.
+// etag — are GRID0+'s and live in internal/toyohr.
 type Rotation struct {
 	// RegularStages are the stage ids Turf War rotates through, in order.
 	RegularStages []string `yaml:"regular_stages"`
@@ -560,7 +560,7 @@ type IceServer struct {
 type BCAT struct {
 	// Converter is a command that turns a source asset into a game format.
 	//
-	// SwitchNet does not convert textures itself, and that is deliberate: a
+	// GRID0+ does not convert textures itself, and that is deliberate: a
 	// BFRES texture in the wrong compression or the wrong Tegra swizzle LOADS
 	// and renders as garbage, on a console, with nothing on the server to look
 	// at. Switch Toolbox and the BinaryTextureLibrary family already do it
@@ -638,7 +638,7 @@ type Stubs struct {
 	BCATRecordDir string `yaml:"bcat_record_dir"`
 }
 
-// Toolbox configures the public API the SwitchNet Toolbox homebrew app
+// Toolbox configures the public API the GRID0+ Toolbox homebrew app
 // (github.com/n-popescu/switchnet-nro) talks to. See internal/toolbox's
 // package comment for why this exists as its own service rather than a
 // route on stubs or dashboard: it is the one service any console reaches
@@ -663,7 +663,7 @@ type Toolbox struct {
 	// else. Generate it at github.com/settings/personal-access-tokens --
 	// never a classic token, which cannot be scoped to one repository.
 	//
-	// This is the one credential in all of SwitchNet that exists specifically
+	// This is the one credential in all of GRID0+ that exists specifically
 	// so a *client* binary never has to hold one. Put the real value in
 	// config/config.yaml (gitignored) or SWITCHNET_TOOLBOX_GITHUB_TOKEN, never
 	// here.
@@ -716,7 +716,7 @@ type Log struct {
 	Format string `yaml:"format"`
 }
 
-// Default returns the configuration SwitchNet uses when nothing is set. The
+// Default returns the configuration GRID0+ uses when nothing is set. The
 // Nintendo-facing values (issuers, audiences, JWKS URLs) match what a real
 // console sees, because captures are compared against them.
 func Default() Config {
@@ -982,7 +982,7 @@ func (c Config) Validate() error {
 			// forms of the same address (an IPv4-mapped IPv6 form, non-canonical
 			// zero-padding, and so on) are the SAME mistake this check exists to
 			// catch. There is no second line of defense once this passes:
-			// redirection happens off the console, in a resolver SwitchNet does
+			// redirection happens off the console, in a resolver GRID0+ does
 			// not run, so a string-equality false pass here would not surface
 			// until a console tried peer-to-peer play and NAT detection quietly
 			// never completed.

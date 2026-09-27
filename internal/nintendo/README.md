@@ -1,6 +1,6 @@
 # internal/nintendo
 
-The list of Nintendo hostnames SwitchNet replaces, and which service answers
+The list of Nintendo hostnames GRID0+ replaces, and which service answers
 each. **This is the single source of truth**, and it exists because three
 artefacts have to agree exactly:
 
@@ -31,7 +31,7 @@ never go into a certificate SAN or an nginx `server_name`, which is what the
 
 ## Not everything is redirected
 
-Two service values mean "do not send this to SwitchNet":
+Two service values mean "do not send this to GRID0+":
 
 **`ServiceBlackhole`** — the telemetry hosts, the not-yet-built phase 3 hosts,
 and (on this deployment specifically) the `d4c` system-update hosts, all
@@ -39,11 +39,11 @@ null-routed to `0.0.0.0`. There is nothing useful to do with a console's crash
 and play reports, and answering them only fills the log; the phase 3 and
 system-update hosts are null-routed rather than left `ServicePassthrough`
 because nothing exists behind them yet, and — for the system-update hosts —
-because this deployment's emuMMC is permanently and exclusively SwitchNet's,
+because this deployment's emuMMC is permanently and exclusively GRID0+'s,
 so the general-purpose risk below never applies to it.
 
 **`ServicePassthrough`** — for a console that moves back and forth between
-SwitchNet and real Nintendo, the `d4c` system-update hosts must keep resolving
+GRID0+ and real Nintendo, the `d4c` system-update hosts must keep resolving
 to real Nintendo rather than being null-routed: the `nim` sysmodule stores a
 persistent flag when the update check fails, and that flag survives switching
 back to Nintendo's servers. Nothing in `Hosts` currently uses this value — see

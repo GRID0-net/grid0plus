@@ -2814,7 +2814,7 @@ const file_validate_validate_proto_rawDesc = "" +
 	"\bdisabled\x12\x1f.google.protobuf.MessageOptions\x18\x97\x8d8 \x01(\bR\bdisabled:;\n" +
 	"\brequired\x12\x1d.google.protobuf.OneofOptions\x18\x97\x8d8 \x01(\bR\brequired:K\n" +
 	"\x05rules\x12\x1d.google.protobuf.FieldOptions\x18\x97\x8d8 \x01(\v2\x14.validate.FieldRulesR\x05rulesB\x8f\x01\n" +
-	"\fcom.validateB\rValidateProtoP\x01Z-github.com/n-popescu/switchnet/proto/validate\xf8\x01\x01\xa2\x02\x03VXX\xaa\x02\bValidate\xca\x02\bValidate\xe2\x02\x14Validate\\GPBMetadata\xea\x02\bValidate"
+	"\fcom.validateB\rValidateProtoP\x01Z-github.com/n-popescu/grid0plus/proto/validate\xf8\x01\x01\xa2\x02\x03VXX\xaa\x02\bValidate\xca\x02\bValidate\xe2\x02\x14Validate\\GPBMetadata\xea\x02\bValidate"
 
 var (
 	file_validate_validate_proto_rawDescOnce sync.Once

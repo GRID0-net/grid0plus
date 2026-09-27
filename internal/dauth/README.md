@@ -30,7 +30,7 @@ firmware, not by the operator.
 
 Nintendo's dauth requires a client certificate unique to each console and signed
 by Nintendo, and requires the client to answer a challenge with a MAC keyed on the
-console's master key. SwitchNet does neither:
+console's master key. GRID0+ does neither:
 
 - the certificate cannot be validated without Nintendo's CA;
 - the MAC cannot be checked without the master key, and deriving one would mean
@@ -47,7 +47,7 @@ between two consoles, so when nginx passes its fingerprint through
 (`ssl_verify_client optional_no_ca`, header `X-SwitchNet-Client-Cert`) each
 console gets its own stable device id. Without it, they all share one.
 
-That is deliberately harmless: **nothing in SwitchNet authorises anything on the
+That is deliberately harmless: **nothing in GRID0+ authorises anything on the
 device id.** Account identity is resolved from the BAAS device account and only
 from there. A shared device id costs a useful device list on the dashboard and
 nothing else. Conflating the two is how a friends system ends up showing every

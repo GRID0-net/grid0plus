@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/nex/nextest"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/rendezvous/rvtest"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex/nextest"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/rendezvous/rvtest"
 )
 
 func login(t *testing.T, e *rvtest.Env, username, token string) rvtest.LoginResult {

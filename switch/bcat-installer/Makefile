@@ -24,8 +24,8 @@ SOURCES     := source
 DATA        := data
 INCLUDES    := include
 
-APP_TITLE   := SwitchNet BCAT installer
-APP_AUTHOR  := SwitchNet
+APP_TITLE   := GRID0+ BCAT installer
+APP_AUTHOR  := GRID0+
 APP_VERSION := 0.1.0
 
 #---------------------------------------------------------------------------------

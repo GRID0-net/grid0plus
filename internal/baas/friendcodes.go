@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // A Switch friend code is twelve decimal digits, shown to players as

@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/proto/common"
+	"github.com/n-popescu/grid0plus/proto/common"
 )
 
 func mapV(f map[string]*common.Value) *common.Value {

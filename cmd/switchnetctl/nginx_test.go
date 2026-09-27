@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/nintendo"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/nintendo"
 )
 
 func testConfig() config.Config {
@@ -126,7 +126,7 @@ func TestTheNPLNJSONHostsUseProxyPassAndTheTenantUsesGRPCPass(t *testing.T) {
 
 func TestTheFrontlineHostsAreInTheCertificateSANs(t *testing.T) {
 	// A DNS wildcard SAN matches one label, so fro-N has to be listed out. If
-	// it is not, DNS points the console at SwitchNet and TLS then fails.
+	// it is not, DNS points the console at GRID0+ and TLS then fails.
 	var found bool
 	for _, n := range nintendo.TLSHostnames() {
 		if strings.HasPrefix(n, "fro-") {

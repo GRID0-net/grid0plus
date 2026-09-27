@@ -3,9 +3,9 @@ package rendezvous_test
 import (
 	"testing"
 
-	"github.com/n-popescu/switchnet/internal/nex"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/rendezvous/rvtest"
+	"github.com/n-popescu/grid0plus/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/rendezvous/rvtest"
 )
 
 func uploadScore(t *testing.T, p *rvtest.Player, category, score uint32, updateMode uint8) {

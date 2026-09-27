@@ -26,9 +26,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/identity"
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // Virtual ports. See the package comment.
@@ -392,7 +392,7 @@ func (s *Server) serveSecure(c *nex.Conn, req *nex.Request) *nex.Response {
 	return resp
 }
 
-// UserIDForPID is the BAAS user id a PID stands for. On SwitchNet a player's
+// UserIDForPID is the BAAS user id a PID stands for. On GRID0+ a player's
 // NEX PID IS their user id: the console logs in with the user id as a
 // decimal username (NintendoClients' switch examples: str(int(user_id, 16))),
 // so using it unchanged means there is no mapping to store, lose, or get

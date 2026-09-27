@@ -1,4 +1,4 @@
-// Package stubs answers the Nintendo endpoints SwitchNet redirects but does not
+// Package stubs answers the Nintendo endpoints GRID0+ redirects but does not
 // implement.
 //
 // Many console services treat a failed request as a fault rather than as "that
@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/bcat"
+	"github.com/n-popescu/grid0plus/internal/bcat"
 )
 
 // Config is what the handler needs to run.
@@ -258,12 +258,12 @@ func (h *Handler) applicationPolicy(w http.ResponseWriter) {
 // BCAT cache still gets nothing -- it only stops that absence from being a
 // hard failure the game surfaces to the player.
 //
-// Reproduced on SwitchNet's own hardware on 2026-09-24 for bcat-topics-lp1
+// Reproduced on GRID0+'s own hardware on 2026-09-24 for bcat-topics-lp1
 // specifically: null-routed (ServiceBlackhole), the console's very first
 // request of its own boot sequence failed outright, and "a communication
 // error has occurred" appeared instantly on opening the hall -- before
 // IssuePrearrangedUserToken even fires. Answering 304 costs nothing to get
-// right: there is no body to invent, and SwitchNet has no real BCAT or news
+// right: there is no body to invent, and GRID0+ has no real BCAT or news
 // content of its own to serve regardless.
 func (h *Handler) newsTopics(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.BCATRecordDir != "" {
@@ -286,7 +286,7 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		// server answers 200 with a genuinely EMPTY body -- zero bytes, not an
 		// empty JSON object. nx-dauth's own operational note is explicit about
 		// what getting this wrong looks like: answered any other way (their
-		// prior behaviour, and SwitchNet's before this), the path 404s and the
+		// prior behaviour, and GRID0+'s before this), the path 404s and the
 		// console concludes it has no right to play online -- the actual
 		// blocker behind an "cannot use online features" message, not a
 		// cosmetic mismatch.
@@ -313,7 +313,7 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		// the "elicense_archives" key name is used elsewhere in the same
 		// binary for a real elicense-archive-shaped response, not just
 		// pattern-matched from nx-dauth. An empty list is still the right
-		// answer regardless -- SwitchNet has nothing to publish -- so nothing
+		// answer regardless -- GRID0+ has nothing to publish -- so nothing
 		// behavioral changes here.
 		//
 		// The same decompile also surfaced a much larger elicenses/rights
@@ -328,7 +328,7 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 
 	default:
 		// Includes contents_authorization_token_for_aauth/issue and the
-		// elicense_archives/<id>/report paths: SwitchNet's aauth accepts
+		// elicense_archives/<id>/report paths: GRID0+'s aauth accepts
 		// whatever is in that field without looking at it, so an empty
 		// success is enough to get past those specifically.
 		//

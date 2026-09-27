@@ -7,7 +7,7 @@
 package matchmakingv1
 
 import (
-	_ "github.com/n-popescu/switchnet/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/common"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -266,7 +266,7 @@ const file_proto_matchmaking_v1_matchmaker_proto_rawDesc = "" +
 	"\x16TrackMatchmakingTicket\x125.nn.npln.matchmaking.v1.TrackMatchmakingTicketRequest\x1a).nn.npln.matchmaking.v1.MatchmakingTicket0\x01\x12i\n" +
 	"\x17CancelMatchmakingTicket\x126.nn.npln.matchmaking.v1.CancelMatchmakingTicketRequest\x1a\x16.google.protobuf.Empty\x12g\n" +
 	"\x10CreateAcceptance\x12/.nn.npln.matchmaking.v1.CreateAcceptanceRequest\x1a\".nn.npln.matchmaking.v1.AcceptanceB\xee\x01\n" +
-	"\x1acom.nn.npln.matchmaking.v1B\x0fMatchmakerProtoP\x01ZAgithub.com/n-popescu/switchnet/proto/matchmaking/v1;matchmakingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Matchmaking.V1\xca\x02\x16Nn\\Npln\\Matchmaking\\V1\xe2\x02\"Nn\\Npln\\Matchmaking\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Matchmaking::V1b\x06proto3"
+	"\x1acom.nn.npln.matchmaking.v1B\x0fMatchmakerProtoP\x01ZAgithub.com/n-popescu/grid0plus/proto/matchmaking/v1;matchmakingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Matchmaking.V1\xca\x02\x16Nn\\Npln\\Matchmaking\\V1\xe2\x02\"Nn\\Npln\\Matchmaking\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Matchmaking::V1b\x06proto3"
 
 var (
 	file_proto_matchmaking_v1_matchmaker_proto_rawDescOnce sync.Once

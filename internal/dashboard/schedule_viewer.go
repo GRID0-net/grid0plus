@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 // ---- Schedule viewer -------------------------------------------------------

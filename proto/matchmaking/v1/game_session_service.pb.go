@@ -7,7 +7,7 @@
 package matchmakingv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1651,7 +1651,7 @@ const file_proto_matchmaking_v1_game_session_service_proto_rawDesc = "" +
 	"\x18GetGameSessionShortAlias\x127.nn.npln.matchmaking.v1.GetGameSessionShortAliasRequest\x1a-.nn.npln.matchmaking.v1.GameSessionShortAlias\x12q\n" +
 	"\x14AllocateIceServerSet\x123.nn.npln.matchmaking.v1.AllocateIceServerSetRequest\x1a$.nn.npln.matchmaking.v1.IceServerSet\x12\x9c\x01\n" +
 	"\x1dListLatencyMeasurementServers\x12<.nn.npln.matchmaking.v1.ListLatencyMeasurementServersRequest\x1a=.nn.npln.matchmaking.v1.ListLatencyMeasurementServersResponseB\xf6\x01\n" +
-	"\x1acom.nn.npln.matchmaking.v1B\x17GameSessionServiceProtoP\x01ZAgithub.com/n-popescu/switchnet/proto/matchmaking/v1;matchmakingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Matchmaking.V1\xca\x02\x16Nn\\Npln\\Matchmaking\\V1\xe2\x02\"Nn\\Npln\\Matchmaking\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Matchmaking::V1b\x06proto3"
+	"\x1acom.nn.npln.matchmaking.v1B\x17GameSessionServiceProtoP\x01ZAgithub.com/n-popescu/grid0plus/proto/matchmaking/v1;matchmakingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x16Nn.Npln.Matchmaking.V1\xca\x02\x16Nn\\Npln\\Matchmaking\\V1\xe2\x02\"Nn\\Npln\\Matchmaking\\V1\\GPBMetadata\xea\x02\x19Nn::Npln::Matchmaking::V1b\x06proto3"
 
 var (
 	file_proto_matchmaking_v1_game_session_service_proto_rawDescOnce sync.Once

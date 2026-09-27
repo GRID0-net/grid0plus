@@ -7,7 +7,7 @@
 package common
 
 import (
-	_ "github.com/n-popescu/switchnet/proto/validate"
+	_ "github.com/n-popescu/grid0plus/proto/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	structpb "google.golang.org/protobuf/types/known/structpb"
@@ -371,7 +371,7 @@ const file_proto_common_value_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
 	"\x05value\x18\x02 \x01(\v2\x15.nn.npln.common.ValueR\x05value:\x028\x01B\xaa\x01\n" +
 	"\x12com.nn.npln.commonB\n" +
-	"ValueProtoP\x01Z+github.com/n-popescu/switchnet/proto/common\xf8\x01\x01\xa2\x02\x03NNC\xaa\x02\x0eNn.Npln.Common\xca\x02\x0eNn\\Npln\\Common\xe2\x02\x1aNn\\Npln\\Common\\GPBMetadata\xea\x02\x10Nn::Npln::Commonb\x06proto3"
+	"ValueProtoP\x01Z+github.com/n-popescu/grid0plus/proto/common\xf8\x01\x01\xa2\x02\x03NNC\xaa\x02\x0eNn.Npln.Common\xca\x02\x0eNn\\Npln\\Common\xe2\x02\x1aNn\\Npln\\Common\\GPBMetadata\xea\x02\x10Nn::Npln::Commonb\x06proto3"
 
 var (
 	file_proto_common_value_proto_rawDescOnce sync.Once

@@ -1,5 +1,5 @@
 [Unit]
-Description=SwitchNet toolbox (public API for the SwitchNet Toolbox homebrew app)
+Description=GRID0+ toolbox (public API for the GRID0+ Toolbox homebrew app)
 PartOf=switchnet.target
 After=network-online.target
 Wants=network-online.target

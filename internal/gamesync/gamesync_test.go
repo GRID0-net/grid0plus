@@ -18,8 +18,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	syncpb "github.com/n-popescu/switchnet/proto/gamesync/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
 
 // harness runs the service over an in-process listener with a clock the test

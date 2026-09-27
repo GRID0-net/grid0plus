@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SwitchNet</title>
+<title>GRID0+</title>
 <link rel="stylesheet" href="/assets/dashboard.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23f5407e'/%3E%3Cstop offset='100%25' stop-color='%2338b6ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M24 2c9 0 16 8 16 18 0 6-3 10-3 14 0 5 4 6 4 10 0 3-3 3-5 1-2-2-4-5-7-5-3 0-4 4-8 4s-5-4-8-4c-3 0-5 3-7 5-2 2-5 2-5-1 0-4 4-5 4-10 0-4-3-8-3-14C2 10 9 2 18 2c2 0 4 1 6 1s4-1 6-1z'/%3E%3Ccircle cx='17' cy='19' r='3.4' fill='%230e0e12'/%3E%3Ccircle cx='31' cy='19' r='3.4' fill='%230e0e12'/%3E%3C/svg%3E">
 </head>
@@ -27,7 +27,7 @@
       <circle class="brand-eye" cx="31" cy="19" r="3.4"/>
     </svg>
     <div>
-      <h1>SwitchNet</h1>
+      <h1>GRID0+</h1>
       <p class="sub" id="game-sub-splatoon3">Splatoon&nbsp;3 · tenant <code id="tenant">dce9377b</code></p>
       <p class="sub" id="game-sub-splatoon2" hidden>Splatoon&nbsp;2 · NEX game server <code>2DF33D01</code></p>
     </div>
@@ -202,7 +202,7 @@
       <div class="panel">
         <div class="panel-head">
           <h2>Live matches</h2>
-          <span class="meta">Peer-to-peer once started — SwitchNet is out of the path.</span>
+          <span class="meta">Peer-to-peer once started — GRID0+ is out of the path.</span>
         </div>
         <div id="mm-sessions"></div>
         <p class="empty" id="mm-sessions-empty" hidden>No matches running.</p>
@@ -316,7 +316,7 @@
   <section data-game="splatoon2" id="view-s2-fests" class="view">
     <div class="panel panel-note">
       <p>Splatoon 2 learns about a Splatfest -- its teams, dates and
-        artwork -- through BCAT, which SwitchNet does not serve for it, so
+        artwork -- through BCAT, which GRID0+ does not serve for it, so
         there is nothing to schedule here. What is here is what consoles
         told this server: every vote and every score, per fest id.</p>
     </div>
@@ -418,7 +418,7 @@
         them from BCAT, the background delivery the console downloads on its
         own -- the game even has a debug scene for viewing the schedules BCAT
         delivered.</p>
-      <p>SwitchNet answers every BCAT request with <em>304 Not Modified</em>
+      <p>GRID0+ answers every BCAT request with <em>304 Not Modified</em>
         (<code>internal/nintendo/hosts.go</code>), so a console keeps
         whatever it last downloaded, and a console that never downloaded any
         has none. Serving Splatoon 2's BCAT is not done: it needs its data
@@ -534,7 +534,7 @@
         <code>bcat.converter</code> points at.
       </p>
       <p>
-        <strong>SwitchNet does not convert textures itself, on purpose.</strong>
+        <strong>GRID0+ does not convert textures itself, on purpose.</strong>
         A BFRES texture in the wrong compression or the wrong Tegra swizzle
         <em>loads and renders as garbage</em> &mdash; on the console, with
         nothing on the server to look at. Switch Toolbox and the
@@ -631,7 +631,7 @@
       </form>
       <p class="note">
         Picks real stages/weapons from <code>internal/toyohr/coop_ids.go</code>
-        at random -- SwitchNet's own generator, not a recovered Nintendo
+        at random -- GRID0+'s own generator, not a recovered Nintendo
         algorithm (nobody outside Nintendo has published how the real server
         actually chooses one). Never touches a slot that already has a
         shift, so schedule one by hand above first and generating around it

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 func TestPreviewVsScheduleMatchesSelectVsSchedules(t *testing.T) {

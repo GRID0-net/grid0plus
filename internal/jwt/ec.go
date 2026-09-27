@@ -172,7 +172,7 @@ func (i *ECIssuer) sign(header map[string]any, claims gojwt.Claims) (string, err
 	return tok.SignedString(i.key.Private)
 }
 
-// ECVerifier checks ES256 tokens that SwitchNet itself issued.
+// ECVerifier checks ES256 tokens that GRID0+ itself issued.
 //
 // Deliberately a separate type from Verifier rather than one verifier that
 // accepts either algorithm. A verifier that allowed both would let a token

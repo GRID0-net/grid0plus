@@ -1,6 +1,6 @@
 # Architecture
 
-SwitchNet replaces the Nintendo servers a Switch talks to before and during
+GRID0+ replaces the Nintendo servers a Switch talks to before and during
 online play, for a private group of consoles the operator owns.
 
 Phase 1 — this document's subject — is the account and friends layer: everything
@@ -36,7 +36,7 @@ to each other:
 | Store and content | catalogue, purchases, downloads | REST over HTTPS, plus a web storefront | 3 |
 
 **Gameplay is always peer-to-peer.** Once a match starts the consoles talk
-directly to each other and SwitchNet is not in the path. This is why the NAT
+directly to each other and GRID0+ is not in the path. This is why the NAT
 check server matters out of proportion to its size: it is what lets the consoles
 find each other at all, and it is also why a fast server does nothing for in-match
 latency.
@@ -120,7 +120,7 @@ dauth request — and because it keeps their dependencies honest.
 `nex` serves every NEX title from one listener; nginx passes the WebSocket
 upgrade through and the Host header picks the title. Its login is the same
 BAAS id token NPLN accepts, checked by the same code (`internal/identity`),
-and a player's NEX PID is their SwitchNet user id — there is no second
+and a player's NEX PID is their GRID0+ user id — there is no second
 identity to map. See [`internal/rendezvous`](../internal/rendezvous/README.md).
 
 `dauth` deliberately has no database connection. It is the first thing a console
@@ -161,20 +161,20 @@ has the detail, including which part of the better route is not yet confirmed.
 The generated `dnsmasq` and `unbound` configurations answer AAAA for a
 redirected name with NODATA rather than forwarding it. If they forwarded, a
 console on a network with IPv6 would resolve Nintendo's real address and
-bypass SwitchNet — intermittently, depending on the network, which is close
+bypass GRID0+ — intermittently, depending on the network, which is close
 to undiagnosable from the console side. For unbound that means
 `local-zone ... static`, because `transparent` and `redirect` both leak AAAA
 upstream.
 
 ## Identity, and the bug this design exists to avoid
 
-**A request is authorised by exactly one thing: an access token SwitchNet signed,
+**A request is authorised by exactly one thing: an access token GRID0+ signed,
 whose subject is a user that exists and whose device account still belongs to
 that user.** There is no default account, no "last console that logged in", and
 no lookup that falls back to a global.
 
 That constraint is not theoretical caution. A production deployment of this same
-stack — the Switch-facing account server that SwitchNet replaces — resolved a
+stack — the Switch-facing account server that GRID0+ replaces — resolved a
 console by its device account id and, when the lookup missed, fell back to a
 process-wide variable holding the last account that had authenticated. The
 consequences, from that project's own write-up:
@@ -189,7 +189,7 @@ A console caches its device account in system save `8000000000000010` and
 presents it forever, so a console whose credential the server does not recognise
 is a completely normal situation — and it is exactly when that fallback fired.
 
-What SwitchNet does instead:
+What GRID0+ does instead:
 
 - `POST /1.0.0/login` looks up the device account, compares the password in
   constant time, and returns `invalid_device_account` on any miss. There is no
@@ -208,7 +208,7 @@ important tests in the repository.
 ## Presence, and the other bug
 
 The same write-up reported that friends were "never online". Two causes, and
-SwitchNet's read path is shaped by both.
+GRID0+'s read path is shaped by both.
 
 **A reported state expires.** The console reports `PLAYING` when a game starts
 and does not report again on a timer. Without a TTL, a console switched off
@@ -296,10 +296,10 @@ an empty id filter matched every user.
 
 ## What is deliberately not verified
 
-SwitchNet does not reproduce any Nintendo secret and does not validate any
+GRID0+ does not reproduce any Nintendo secret and does not validate any
 Nintendo-issued credential. Specifically:
 
-| Thing | What Nintendo does | What SwitchNet does | Why |
+| Thing | What Nintendo does | What GRID0+ does | Why |
 | --- | --- | --- | --- |
 | Device certificate | requires a Nintendo-signed client certificate | reads its fingerprint if nginx passes one, ignores its validity | verifying it needs Nintendo's CA |
 | dauth challenge | MAC keyed on the console's master key | issues and echoes it, never checks the MAC | checking it needs Nintendo key material |
@@ -312,9 +312,9 @@ of it is a way to get an unowned game online anywhere but on the operator's own
 network. The bypasses exist because the operator trusts their own consoles, not
 because the server forges anything.
 
-The one thing SwitchNet *does* verify rigorously is its own signatures. A device
+The one thing GRID0+ *does* verify rigorously is its own signatures. A device
 token presented to aauth, or an access token presented to BAAS, must verify
-against the key SwitchNet generated, with the right key id, unexpired, and with
+against the key GRID0+ generated, with the right key id, unexpired, and with
 the right token type. `alg: none`, a token signed by a different issuer, and a
 token with an edited claim are all rejected, and there is a test for each.
 

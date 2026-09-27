@@ -8,9 +8,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/messaging"
-	common "github.com/n-popescu/switchnet/proto/common"
-	messagingpb "github.com/n-popescu/switchnet/proto/messaging/v1"
+	"github.com/n-popescu/grid0plus/internal/messaging"
+	common "github.com/n-popescu/grid0plus/proto/common"
+	messagingpb "github.com/n-popescu/grid0plus/proto/messaging/v1"
 )
 
 // maxMessageReceivers bounds how many receivers one SendMessage call may

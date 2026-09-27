@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 func withNEX(t *testing.T, nex http.Handler) *Server {

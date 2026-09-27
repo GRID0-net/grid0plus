@@ -1,6 +1,6 @@
 # Deployment
 
-Getting SwitchNet onto a machine your consoles can reach.
+Getting GRID0+ onto a machine your consoles can reach.
 
 - [Local, on one machine](#local-on-one-machine)
 - [The nginx TLS edge](#the-nginx-tls-edge)
@@ -19,7 +19,7 @@ systemd units on the box that actually serves your consoles, installed
 once with `scripts/install-systemd.sh`.
 
 ```sh
-git clone https://github.com/n-popescu/switchnet /opt/switchnet && cd /opt/switchnet
+git clone https://github.com/n-popescu/grid0plus /opt/switchnet && cd /opt/switchnet
 
 cp config/config.example.yaml config/config.yaml
 $EDITOR config/config.yaml            # network.public_ip and keys.device_id_secret
@@ -94,7 +94,7 @@ unmatched hosts to the stub server, which logs them. That log is the to-do list.
 
 ## Addresses and ports
 
-SwitchNet does not run its own DNS server or listen on port 53 anywhere; a
+GRID0+ does not run its own DNS server or listen on port 53 anywhere; a
 console finds it via a resolver you already run, configured with
 `make gen-dns` (see [`switch/README.md`](../switch/README.md#part-1-redirection-with-dns)).
 
@@ -102,7 +102,7 @@ console finds it via a resolver you already run, configured with
 | --- | --- | --- | --- |
 | 443 | TCP | **the consoles** | the nginx TLS edge |
 | **7575** | TCP | **the consoles** | the nginx edge again, for NPLN's `gamesync` |
-| **8443** | TCP | **consoles running SwitchNet Toolbox** | the nginx edge again, for `toolbox` — see below |
+| **8443** | TCP | **consoles running GRID0+ Toolbox** | the nginx edge again, for `toolbox` — see below |
 | 10025, 10125 | **UDP** | **the consoles** | NAT check (phase 1 titles; **not** Splatoon 3) |
 | 3478 | UDP and TCP | **the consoles** | STUN/TURN, if you run one — Splatoon 3 uses ICE |
 | 8081–8084 | TCP | localhost only | phase 1's services, behind nginx |
@@ -160,7 +160,7 @@ cannot connect: `switchnetctl check` warns when it is enabled for nobody.
 | `npln` | 8085, 8086, 8088, and 8089 if `admin_listen` is set | four listeners, one process. gamesync verifies tokens the gateway signs, so splitting it out would mean inventing a protocol between them; the admin API is served only when `npln.admin_token` is set |
 | `dashboard` | 8087 | bound to `0.0.0.0`, like `baas`: it is a page for a person's browser on the LAN. **Set `dashboard.token`**, or anybody who can reach it can schedule and cancel Splatfests |
 
-### `toolbox`: the SwitchNet Toolbox homebrew app's own API
+### `toolbox`: the GRID0+ Toolbox homebrew app's own API
 
 **Step-by-step deployment checklist: [`docs/TOOLBOX_SETUP.md`](TOOLBOX_SETUP.md).**
 
@@ -291,7 +291,7 @@ debugging on hardware tractable.
       The AAAA and `atumn` checks are the ones people skip, and both are
       misconfigurations that bite later rather than immediately. `atumn`
       resolves to `0.0.0.0` (null-routed), not real Nintendo: this
-      deployment's emuMMC is permanently and exclusively SwitchNet's, so
+      deployment's emuMMC is permanently and exclusively GRID0+'s, so
       there is no "switching back to real Nintendo" for the system-update
       hosts to stay passthrough for — see `docs/ROADMAP.md`'s note on this.
 

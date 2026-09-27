@@ -1,8 +1,8 @@
-// Package toolbox is the public, unauthenticated API the SwitchNet Toolbox
+// Package toolbox is the public, unauthenticated API the GRID0+ Toolbox
 // homebrew app (github.com/n-popescu/switchnet-nro) talks to: whether a
-// newer build exists, and a coarse status of the other SwitchNet services.
+// newer build exists, and a coarse status of the other GRID0+ services.
 //
-// This is deliberately the one SwitchNet service any console can reach with
+// This is deliberately the one GRID0+ service any console can reach with
 // no credential at all, so it is held to a stricter rule than the rest of
 // the stack: it never repeats a dependency's error text back to the caller.
 // internal/dashboard's operator-facing /api/health does that, behind its own

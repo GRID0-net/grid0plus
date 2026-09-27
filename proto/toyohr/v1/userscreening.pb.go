@@ -302,7 +302,7 @@ const file_proto_toyohr_v1_userscreening_proto_rawDesc = "" +
 	"\fCreateReport\x12&.nn.npln.toyohr.v1.CreateReportRequest\x1a\x19.nn.npln.toyohr.v1.Report\x12_\n" +
 	"\fGetViolation\x12&.nn.npln.toyohr.v1.GetViolationRequest\x1a'.nn.npln.toyohr.v1.GetViolationResponse\x12e\n" +
 	"\x0eSelectSnapshot\x12(.nn.npln.toyohr.v1.SelectSnapshotRequest\x1a).nn.npln.toyohr.v1.SelectSnapshotResponseB\xcb\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\x12UserscreeningProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\x12UserscreeningProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_userscreening_proto_rawDescOnce sync.Once

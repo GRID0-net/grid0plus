@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 func validNormalShift() CoopShift {
@@ -299,7 +299,7 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 // shape "tenants/<t>/targets/<target>/coopSchedules/<rest>" and hard-aborts
 // when a name does not parse that way. The old shape here,
 // "tenants/<t>/coopSchedules/<id>", omitted the "targets/<target>" segment
-// entirely and reproduced on SwitchNet's own hardware with four real coop
+// entirely and reproduced on GRID0+'s own hardware with four real coop
 // shifts seeded.
 func TestCoopScheduleNameCarriesATargetsSegment(t *testing.T) {
 	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)

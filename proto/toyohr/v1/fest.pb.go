@@ -345,7 +345,7 @@ const file_proto_toyohr_v1_fest_proto_rawDesc = "" +
 	"\rGetFestResult\x12'.nn.npln.toyohr.v1.GetFestResultRequest\x1a\x1d.nn.npln.toyohr.v1.FestResult\x12q\n" +
 	"\x12SelectFestSchedule\x12,.nn.npln.toyohr.v1.SelectFestScheduleRequest\x1a-.nn.npln.toyohr.v1.SelectFestScheduleResponse\x12l\n" +
 	"\x14GetFestDecryptionKey\x12..nn.npln.toyohr.v1.GetFestDecryptionKeyRequest\x1a$.nn.npln.toyohr.v1.FestDecryptionKeyB\xc2\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\tFestProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\tFestProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_fest_proto_rawDescOnce sync.Once

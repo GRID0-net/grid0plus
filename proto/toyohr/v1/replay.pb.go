@@ -7,7 +7,7 @@
 package toyohrv1
 
 import (
-	v1 "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	v1 "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -326,7 +326,7 @@ const file_proto_toyohr_v1_replay_proto_rawDesc = "" +
 	"\x10RegisterDocument\x120.nn.npln.toyohr.v1.ReplayRegisterDocumentRequest\x1a1.nn.npln.toyohr.v1.ReplayRegisterDocumentResponse\x12n\n" +
 	"\x11ResolveReplayCode\x12+.nn.npln.toyohr.v1.ResolveReplayCodeRequest\x1a,.nn.npln.toyohr.v1.ResolveReplayCodeResponse\x12t\n" +
 	"\x13FulfillReservations\x12-.nn.npln.toyohr.v1.FulfillReservationsRequest\x1a..nn.npln.toyohr.v1.FulfillReservationsResponseB\xc4\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\vReplayProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\vReplayProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_replay_proto_rawDescOnce sync.Once

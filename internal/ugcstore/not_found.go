@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/n-popescu/switchnet/proto/errdetails"
+	"github.com/n-popescu/grid0plus/proto/errdetails"
 )
 
 // A real missing-document response carries a relative-path message and an

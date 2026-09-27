@@ -34,10 +34,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/splatdiag"
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/splatdiag"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // Service is the Ugcstore implementation.
@@ -145,8 +145,8 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 // Shield-licensed source -- facts only, no code taken): a real server's
 // response to a query with no matches is exactly one streamed
 // RunQueryResponse carrying only read_time, with document and
-// skipped_results left unset. That is what SwitchNet answers here --
-// SwitchNet keeps no document collections a StructuredQuery could actually
+// skipped_results left unset. That is what GRID0+ answers here --
+// GRID0+ keeps no document collections a StructuredQuery could actually
 // match against (GetDocument/CommitDocuments address one document by name,
 // never a collection), so "zero matches, structurally correct" is not a
 // placeholder, it is this server's honest answer. Reproduced on real
@@ -421,7 +421,7 @@ const attributeSeason = 16
 // Nintendo sessions: a console whose GetSaveRecord returned a record reads
 // CoopUserAttribute/Data then VsUserAttribute/Data first and gets both --
 // it never calls InitializeAttributes; a console with no record gets both
-// empty and calls InitializeAttributes. SwitchNet always answers a record
+// empty and calls InitializeAttributes. GRID0+ always answers a record
 // (see internal/toyohr/cloud_save.go), so the console takes the first path,
 // and on 2026-09-25 a NotFound there was followed by 2321-0384. So the
 // documents are created on first read, with exactly what

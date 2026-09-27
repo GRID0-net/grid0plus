@@ -73,7 +73,7 @@ func Migrate(ctx context.Context, conn *pgx.Conn) (applied int, err error) {
 		return 0, err
 	}
 
-	// A fixed, arbitrary key. Any other SwitchNet process migrating at the same
+	// A fixed, arbitrary key. Any other GRID0+ process migrating at the same
 	// moment waits here instead of both trying to create the same table.
 	const lockKey = 0x5734c4e7
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", lockKey); err != nil {

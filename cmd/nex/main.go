@@ -1,4 +1,4 @@
-// Command nex serves SwitchNet's NEX game servers: Splatoon 2.
+// Command nex serves GRID0+'s NEX game servers: Splatoon 2.
 //
 // NEX is what Nintendo's games used before NPLN. A Switch reaches a NEX
 // title's game server as a WebSocket on g<game server id>-lp1.s.n.srv.nintendo.net;
@@ -17,15 +17,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/health"
-	"github.com/n-popescu/switchnet/internal/identity"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/natobs"
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/service"
-	"github.com/n-popescu/switchnet/internal/splatoon2"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/health"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/natobs"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/splatoon2"
 )
 
 func main() {

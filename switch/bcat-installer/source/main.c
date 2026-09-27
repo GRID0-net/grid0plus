@@ -1,12 +1,12 @@
 /*
  * switchnet-bcat-installer
  *
- * Fetches a Splatfest's BCAT delivery cache from SwitchNet and writes it into
+ * Fetches a Splatfest's BCAT delivery cache from GRID0+ and writes it into
  * Splatoon 3's BCAT save data — what JKSV does by hand, automatically.
  *
  * WHY THIS EXISTS
  *
- * SwitchNet builds the delivery cache rather than speaking BCAT's delivery
+ * GRID0+ builds the delivery cache rather than speaking BCAT's delivery
  * protocol, because that protocol's `list` response body is undocumented and no
  * public implementation exists (see internal/bcat's README, and TODO.md §2.4 for
  * the experiment that may change it). So the files have to reach the console
@@ -33,7 +33,7 @@
  * nothing to connect the two events.
  *
  * Build: make (devkitA64 + libnx + libcurl and mbedtls from portlibs)
- * Licence: AGPL-3.0, matching the rest of SwitchNet.
+ * Licence: AGPL-3.0, matching the rest of GRID0+.
  */
 
 #include <stdio.h>
@@ -175,7 +175,7 @@ static bool fetch(const Config *cfg, const char *path, Buffer *buf) {
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
     if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    /* SwitchNet's certificate is signed by the operator's own CA, which this
+    /* GRID0+'s certificate is signed by the operator's own CA, which this
      * console has no reason to trust and no way to be told about from here. The
      * connection is to the operator's own server on the operator's own network,
      * so verification buys nothing -- but it is turned off EXPLICITLY, in one

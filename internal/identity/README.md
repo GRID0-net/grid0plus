@@ -1,12 +1,12 @@
 # internal/identity
 
 Who a game server is talking to, decided from a BAAS id token. Shared by every
-game server SwitchNet runs:
+game server GRID0+ runs:
 
 - `internal/npln` (Splatoon 3) at `IssueToken` / `IssuePrearrangedUserToken`;
 - `internal/splatoon2` (Splatoon 2, NEX) at the ticket-granting login.
 
-No Nintendo endpoint lives here. The token is SwitchNet's own, signed by
+No Nintendo endpoint lives here. The token is GRID0+'s own, signed by
 `internal/baas` with the `baas_id` key and published at
 `/1.0.0/certificates` — see
 [BAAS server](https://github.com/kinnay/NintendoClients/wiki/BAAS-Server) for

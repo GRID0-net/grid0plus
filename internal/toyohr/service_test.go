@@ -12,9 +12,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/n-popescu/switchnet/internal/bcat"
-	"github.com/n-popescu/switchnet/internal/db"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/internal/bcat"
+	"github.com/n-popescu/grid0plus/internal/db"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 const testTenant = "dce9377b"

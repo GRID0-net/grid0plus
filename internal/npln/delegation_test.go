@@ -7,8 +7,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // TestASquadMemberCanDelegateToTheirLeader is the call a squad cannot queue

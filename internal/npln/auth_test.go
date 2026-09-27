@@ -11,16 +11,16 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
-	maintpb "github.com/n-popescu/switchnet/proto/maintenance/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
+	maintpb "github.com/n-popescu/grid0plus/proto/maintenance/v1"
 )
 
 // TestABAASIDTokenBuysAnNPLNSession drives the phase-1 → phase-2 seam end to
 // end over a real gRPC connection.
 //
-// This is the test that proves the two halves of SwitchNet connect at all: an
+// This is the test that proves the two halves of GRID0+ connect at all: an
 // id token signed by the key BAAS publishes at /1.0.0/certificates is presented
 // to the game server, which verifies it and issues its own session.
 func TestABAASIDTokenBuysAnNPLNSession(t *testing.T) {
@@ -462,7 +462,7 @@ func TestTheMaintenanceStreamKeepsTalkingRatherThanClosing(t *testing.T) {
 	if msg.GetKeepAlive() == nil {
 		t.Errorf("first message is not a keep-alive: %v", msg)
 	}
-	// And no schedule: SwitchNet has no maintenance windows.
+	// And no schedule: GRID0+ has no maintenance windows.
 	if msg.GetMessage() != nil {
 		t.Errorf("a maintenance schedule was announced: %v", msg.GetMessage())
 	}

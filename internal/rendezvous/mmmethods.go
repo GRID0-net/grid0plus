@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // The matchmaking methods. Request and response shapes from Kinnay's
@@ -588,7 +588,7 @@ func (m *Matchmaker) getDetailedParticipants(ext bool) Method {
 	}
 }
 
-// Nickname is a player's SwitchNet nickname, "" when unknown.
+// Nickname is a player's GRID0+ nickname, "" when unknown.
 func (s *Server) Nickname(pid uint64) string {
 	if s.store == nil {
 		return ""

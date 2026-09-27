@@ -18,7 +18,7 @@ import (
 // in fest.go, not a wire-protocol guess CLAUDE.md rule 6 would apply to.
 const DefaultCoopShiftDuration = 40 * time.Hour
 
-// grizzcoWeaponChance is SwitchNet's own policy, not a Nintendo value: the
+// grizzcoWeaponChance is GRID0+'s own policy, not a Nintendo value: the
 // per-slot chance a main weapon slot gets a Grizzco weapon (CoopKumaWeapons)
 // instead of an ordinary one (CoopWeapons).
 //
@@ -72,13 +72,13 @@ var normalCoopStages = func() []CoopStage {
 // What this is NOT: a discovered Nintendo algorithm. No public source this
 // project has found documents how Nintendo's own server actually picks a
 // rotation's stage and weapons -- only that it does, on the 40-hour cadence
-// above. This is SwitchNet's own generator, offered because hand-picking
+// above. This is GRID0+'s own generator, offered because hand-picking
 // every future shift is tedious, not because it reproduces Nintendo's real
 // selection logic. The one rule it applies beyond "pick something real" is
 // avoiding an immediate stage repeat between consecutive generated shifts,
 // which costs nothing to guarantee and reads better than letting one
 // recur by chance. Weapon and boss selection follow coopWeaponsFor and
-// coopBossFor -- the same SwitchNet-own policy the live generator
+// coopBossFor -- the same GRID0+-own policy the live generator
 // (coop_live.go) uses, so a hand-triggered `switchnetctl coop generate` and
 // an auto-filled live slot never look like two different generators.
 //
@@ -127,7 +127,7 @@ func GenerateCoopShifts(rng *rand.Rand, from time.Time, count int, duration time
 // coopWeaponsFor draws four distinct main-weapon ids, each slot
 // independently a grizzcoWeaponChance roll between CoopKumaWeapons and
 // CoopWeapons. See grizzcoWeaponChance's own comment for why this is a
-// SwitchNet policy, not a Nintendo mechanic.
+// GRID0+ policy, not a Nintendo mechanic.
 //
 // Capped at 200 attempts rather than looping unbounded: with 8 Grizzco ids
 // and CoopWeapons' own larger pool, a collision run long enough to hit this
@@ -173,7 +173,7 @@ func coopWeaponsFor(rng *rand.Rand) [4]int64 {
 // a given match is decided by each player's Salmometer (gold eggs collected
 // across waves 1-3), simulated entirely on the consoles hosting that match:
 // internal/matchmaking/README.md's "Gameplay is peer-to-peer" is why
-// SwitchNet's own server is never in a position to see, let alone decide,
+// GRID0+'s own server is never in a position to see, let alone decide,
 // that outcome -- the same is true of a real Nintendo server, since the
 // architecture is identical. CoopShift.Boss models which salmonid is
 // eligible for this shift, a real piece of schedule data; CoopBossValid

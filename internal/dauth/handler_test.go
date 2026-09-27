@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // harness is a dauth server wired up over httptest.

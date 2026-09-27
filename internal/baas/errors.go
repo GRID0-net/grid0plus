@@ -48,7 +48,7 @@ func (t errorTemplate) at(instance string) APIError {
 	}
 }
 
-// The errors SwitchNet can produce.
+// The errors GRID0+ can produce.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#known-errors
 var (
@@ -130,7 +130,7 @@ func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
 // ones Nintendo documents: an errorCode from the vocabulary above would look
 // like a real BAAS error to anyone reading this server's behaviour later,
 // the same confusion writeRateLimited's own doc comment already avoids for
-// SwitchNet's rate limit. Nothing console-facing ever reaches this path, so
+// GRID0+'s rate limit. Nothing console-facing ever reaches this path, so
 // there is no wire shape to match here in the first place.
 func writePlainError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")

@@ -27,7 +27,7 @@ import (
 // Syroot.NintenTools family already do this correctly, and they exist because it
 // is hard.
 //
-// So SwitchNet does not convert. It defines where conversion happens, invokes
+// So GRID0+ does not convert. It defines where conversion happens, invokes
 // whatever the operator points it at, checks that something came out, and — most
 // importantly — **refuses to build a pack containing a file the game cannot
 // read**. That last part is the change that matters: before it, a PNG left in an

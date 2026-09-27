@@ -80,9 +80,9 @@ modes, both quiet:
   keys in a JSON object cost nothing, and a parser that wants none of them is no
   worse off than with an empty object. This collapses to one field the moment a
   capture shows which.
-- **A hostname SwitchNet does not redirect** sends that connection to real
+- **A hostname GRID0+ does not redirect** sends that connection to real
   Nintendo, where it *succeeds*. Nothing fails on this side, and the game then
-  misbehaves in a way that looks like SwitchNet's fault while its traffic goes
+  misbehaves in a way that looks like GRID0+'s fault while its traffic goes
   somewhere this deployment promises it will not. `New` refuses to start rather
   than allow it, checking `npln.frontline_host` against
   `internal/nintendo.Resolve`.

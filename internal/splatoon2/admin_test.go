@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/n-popescu/switchnet/internal/rendezvous"
-	"github.com/n-popescu/switchnet/internal/splatoon2"
+	"github.com/n-popescu/grid0plus/internal/rendezvous"
+	"github.com/n-popescu/grid0plus/internal/splatoon2"
 )
 
 func adminDo(t *testing.T, h http.Handler, method, path, token, body string) (int, map[string]any) {

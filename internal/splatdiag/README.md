@@ -16,7 +16,7 @@ pair a save and attributes whose original owners differ; the bundle handles
 them independently. The save still contains the source account's progression,
 so this is strictly a temporary diagnostic, not a player initialization path. Other users and other documents retain the
 normal implementation. The imported game progression is intentionally not
-written to SwitchNet's database: this tests bootstrap behavior only. Remove
+written to GRID0+'s database: this tests bootstrap behavior only. Remove
 the four environment variables and private files after the diagnostic.
 
 The behavior under comparison is documented in

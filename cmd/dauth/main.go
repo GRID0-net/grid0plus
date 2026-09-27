@@ -1,4 +1,4 @@
-// Command dauth is SwitchNet's device authentication server.
+// Command dauth is GRID0+'s device authentication server.
 //
 // It reimplements https://dauth-lp1.ndas.srv.nintendo.net and serves the device
 // token JWK set that the dcert host publishes. See internal/dauth for what it
@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/dauth"
-	"github.com/n-popescu/switchnet/internal/health"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/service"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/dauth"
+	"github.com/n-popescu/grid0plus/internal/health"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/service"
 )
 
 func main() {

@@ -54,26 +54,26 @@ or considered latency measurement successful. It ruled out the earlier
 ICMP-port-unreachable result as the complete explanation.
 
 A controlled follow-up enabled seven regional latency resources, using the
-same region labels and endpoint as the local Nextendo reference. SwitchNet's
+same region labels and endpoint as the local Nextendo reference. GRID0+'s
 resource IDs in that test were still its own `switchnet-NN-udp` values, so this
 was not yet an exact copy of the reference's resource names. At 19:17:53 UTC,
-SwitchNet logged successful
+GRID0+ logged successful
 `IssuePrearrangedUserToken` and `ListLatencyMeasurementServers` calls; it then
 logged successful `ValidateToken` calls at 19:18:08 and 19:18:13. The capture
 contains 35 STUN Binding Requests to UDP 3478, each answered with a Binding
 Success response. The console still entered the hall reload/communication-error
 loop, and no matchmaking RPC reached the backend. Therefore, changing the
 count and region labels did not resolve the failure. This test did not settle
-whether the resource IDs matter; SwitchNet now uses the reference IDs for the
+whether the resource IDs matter; GRID0+ now uses the reference IDs for the
 next hardware attempt. The capture still cannot prove the client accepted the
 STUN results.
 
 The local Nextendo implementation uses the same seven region labels and
 addresses all entries to its configured UDP endpoint. Its `ValidateToken`
-returns `google.protobuf.Empty` on success. SwitchNet also returns that empty
+returns `google.protobuf.Empty` on success. GRID0+ also returns that empty
 message after the authenticated caller reaches the handler. Nextendo additionally
 checks its own account-verification state, which is not a useful distinction for
-this local SwitchNet account flow; both observed calls succeeded at the RPC
+this local GRID0+ account flow; both observed calls succeeded at the RPC
 level.
 
 A further hardware attempt used the exact seven resource IDs, region labels,
@@ -105,13 +105,13 @@ when the console reloaded the hall. This makes a failed Frontline bootstrap
 less likely, but does not establish what messages, if any, the client expected
 on that stream. Reviewing the local Nextendo handler exposed a concrete
 transport difference: it drains client request-body frames and holds the
-response until that body ends; SwitchNet had left the request body unread. The
+response until that body ends; GRID0+ had left the request body unread. The
 server-side handler now drains the opaque body without storing it or logging
 its contents, and ends the response when the request body ends. This is a
 reference-supported change, not yet hardware-verified.
 
 The local Nextendo implementation constructs the same five
-`LatencyMeasurementServer` fields that SwitchNet returns: resource name,
+`LatencyMeasurementServer` fields that GRID0+ returns: resource name,
 region, host, port, and UDP protocol. Its source comment says its working
 client proceeds with a non-empty list even when probes time out. This supports
 the current response shape, though it is reference-source evidence rather than

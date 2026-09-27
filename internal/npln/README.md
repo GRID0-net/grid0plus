@@ -48,7 +48,7 @@ is refused rather than resolved in either direction — a client sending someone
 else's uid is broken or probing, and neither deserves an answer.
 
 This is the same bug this repository is shaped around, in a new place. The
-production server SwitchNet replaces resolved a console by a cached credential
+production server GRID0+ replaces resolved a console by a cached credential
 and fell back to a process-wide "last account seen" when the lookup missed;
 every console then acted as one person. A gateway that resolved its caller from
 a client-supplied field would reproduce it exactly, and more directly.
@@ -70,7 +70,7 @@ to another user would keep a working session for hours.
 
 ## The phase-1 seam
 
-`IssueToken` is where the two halves of SwitchNet meet. The game presents the
+`IssueToken` is where the two halves of GRID0+ meet. The game presents the
 id token BAAS issued it — as `ExternalIdToken.nsa_id_token` — and receives an
 NPLN access token signed with a different key **and a different algorithm**.
 
@@ -89,7 +89,7 @@ That separation is the point, and it runs in both directions:
 **Malformed metadata is refused unhelpfully, on purpose.** Nintendo answers
 metadata it cannot parse with `Unimplemented` (12) on production and
 `Unavailable` (14) on development — neither of which means what happened. The
-game reacts to the code, so SwitchNet matches it; the log line on this side says
+game reacts to the code, so GRID0+ matches it; the log line on this side says
 what was actually wrong.
 
 ## Matchmaking: the console lives on the stream
@@ -114,13 +114,13 @@ leaves the console waiting for somebody who was never in the queue. And a
 public on a server whose point is a private group.
 
 `CreateAcceptance` is left unimplemented deliberately: acceptance is the flow
-where a formed match waits for each player to agree, SwitchNet never puts a
+where a formed match waits for each player to agree, GRID0+ never puts a
 ticket into that state, and answering would mean inventing a response for a flow
 that cannot occur.
 
 **A stream that goes quiet is a dead stream.** `SubscribeMaintenanceSchedules`
 carries a `KeepAlive` message in its own oneof, which is the protocol saying
-outright that silence is not a valid state. SwitchNet has no maintenance
+outright that silence is not a valid state. GRID0+ has no maintenance
 windows, but it cannot express that by returning — returning closes the stream,
 which the client reads as the connection failing. It sends keep-alives instead.
 ROADMAP §2.5 records the same rule for the friends streams.
@@ -331,9 +331,9 @@ The client pings on this bidi stream and resends its next ping the instant
 it receives a reply to the last one — so acking every single ping
 unconditionally makes the whole exchange spin as fast as the round trip
 allows, not at any pace the client sets on its own. A real Nintendo server
-sits far enough away that network latency alone keeps this slow; SwitchNet
+sits far enough away that network latency alone keeps this slow; GRID0+
 cannot assume that. Confirmed on real hardware on 2026-09-24: a mitmproxy
-capture of SwitchNet's own console showed 101 ping/ack round trips in 2
+capture of GRID0+'s own console showed 101 ping/ack round trips in 2
 seconds (~50Hz), ending with the console resetting every one of its
 long-lived NPLN streams at once and the game showing "a communication error
 has occurred" — with nothing actually disconnected.

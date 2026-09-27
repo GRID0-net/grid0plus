@@ -9,8 +9,8 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
-	"github.com/n-popescu/switchnet/internal/db"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	"github.com/n-popescu/grid0plus/internal/db"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // runQueryStream is a minimal ServerStreamingServer that collects what is sent.

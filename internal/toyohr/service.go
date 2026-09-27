@@ -19,11 +19,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/n-popescu/switchnet/internal/bcat"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/splatdiag"
-	"github.com/n-popescu/switchnet/internal/ugcstore"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	"github.com/n-popescu/grid0plus/internal/bcat"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/splatdiag"
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 // Service implements the Splatoon 3 services.
@@ -234,9 +234,9 @@ func (s *Service) scheduleProto(f Fest, region, target string) *toyohrpb.FestSch
 
 // GetFestDecryptionKey hands the console the keys that open a fest's BCAT packs.
 //
-// The keys are SwitchNet's own: the pack was encrypted with them. Nothing here
+// The keys are GRID0+'s own: the pack was encrypted with them. Nothing here
 // is Nintendo's, and nothing here decrypts anything of Nintendo's -- a fest
-// SwitchNet serves is a fest SwitchNet built.
+// GRID0+ serves is a fest GRID0+ built.
 //
 // The keys are returned POSITIONALLY, in the order the message declares them:
 // notice, start, result, then the three per-team keys. A key in the wrong slot

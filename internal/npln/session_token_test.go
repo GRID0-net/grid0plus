@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -91,7 +91,7 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 
 		// Five members, and the absence of the other two this package's claim
 		// struct can carry is asserted here rather than assumed: 'aud' and
-		// 'jti' are on every ES256 token SwitchNet mints, and the capture shows
+		// 'jti' are on every ES256 token GRID0+ mints, and the capture shows
 		// neither on this one.
 		payload := decodeJWTSegment(t, segments[1])
 		if len(payload) != 5 {

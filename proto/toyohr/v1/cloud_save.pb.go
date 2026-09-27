@@ -7,7 +7,7 @@
 package toyohrv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -598,7 +598,7 @@ const file_proto_toyohr_v1_cloud_save_proto_rawDesc = "" +
 	"\x0fWriteSaveRecord\x12).nn.npln.toyohr.v1.WriteSaveRecordRequest\x1a*.nn.npln.toyohr.v1.WriteSaveRecordResponse\x12e\n" +
 	"\x0eChangeUserName\x12(.nn.npln.toyohr.v1.ChangeUserNameRequest\x1a).nn.npln.toyohr.v1.ChangeUserNameResponse\x12k\n" +
 	"\x10DeleteSaveRecord\x12*.nn.npln.toyohr.v1.DeleteSaveRecordRequest\x1a+.nn.npln.toyohr.v1.DeleteSaveRecordResponseB\xc7\x01\n" +
-	"\x15com.nn.npln.toyohr.v1B\x0eCloudSaveProtoP\x01Z7github.com/n-popescu/switchnet/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
+	"\x15com.nn.npln.toyohr.v1B\x0eCloudSaveProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
 	file_proto_toyohr_v1_cloud_save_proto_rawDescOnce sync.Once

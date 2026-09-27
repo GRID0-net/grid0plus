@@ -7,8 +7,8 @@
 package messagingv1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
-	_ "github.com/n-popescu/switchnet/proto/validate"
+	common "github.com/n-popescu/grid0plus/proto/common"
+	_ "github.com/n-popescu/grid0plus/proto/validate"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -718,7 +718,7 @@ const file_proto_messaging_v1_messaging_proto_rawDesc = "" +
 	"\vRecvMessage\x12(.nn.npln.messaging.v1.RecvMessageRequest\x1a).nn.npln.messaging.v1.RecvMessageResponse0\x01\x12b\n" +
 	"\vSendMessage\x12(.nn.npln.messaging.v1.SendMessageRequest\x1a).nn.npln.messaging.v1.SendMessageResponse\x12V\n" +
 	"\aSendAck\x12$.nn.npln.messaging.v1.SendAckRequest\x1a%.nn.npln.messaging.v1.SendAckResponseB\xdf\x01\n" +
-	"\x18com.nn.npln.messaging.v1B\x0eMessagingProtoP\x01Z=github.com/n-popescu/switchnet/proto/messaging/v1;messagingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x14Nn.Npln.Messaging.V1\xca\x02\x14Nn\\Npln\\Messaging\\V1\xe2\x02 Nn\\Npln\\Messaging\\V1\\GPBMetadata\xea\x02\x17Nn::Npln::Messaging::V1b\x06proto3"
+	"\x18com.nn.npln.messaging.v1B\x0eMessagingProtoP\x01Z=github.com/n-popescu/grid0plus/proto/messaging/v1;messagingv1\xf8\x01\x01\xa2\x02\x03NNM\xaa\x02\x14Nn.Npln.Messaging.V1\xca\x02\x14Nn\\Npln\\Messaging\\V1\xe2\x02 Nn\\Npln\\Messaging\\V1\\GPBMetadata\xea\x02\x17Nn::Npln::Messaging::V1b\x06proto3"
 
 var (
 	file_proto_messaging_v1_messaging_proto_rawDescOnce sync.Once

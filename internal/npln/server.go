@@ -8,7 +8,7 @@
 // Reference: https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers
 // Definitions: https://github.com/kinnay/NPLN-Protocols, generated into proto/
 //
-// SwitchNet signs its own NPLN tokens and verifies its own signatures. It does
+// GRID0+ signs its own NPLN tokens and verifies its own signatures. It does
 // not reproduce or validate any Nintendo credential.
 package npln
 
@@ -27,16 +27,16 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/n-popescu/switchnet/config"
-	"github.com/n-popescu/switchnet/internal/db"
-	"github.com/n-popescu/switchnet/internal/identity"
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
-	"github.com/n-popescu/switchnet/internal/matchmaking"
-	"github.com/n-popescu/switchnet/internal/messaging"
-	"github.com/n-popescu/switchnet/internal/presence"
-	"github.com/n-popescu/switchnet/internal/presencebus"
-	"github.com/n-popescu/switchnet/internal/splatdiag"
-	"github.com/n-popescu/switchnet/internal/toyohr"
+	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/identity"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
+	"github.com/n-popescu/grid0plus/internal/matchmaking"
+	"github.com/n-popescu/grid0plus/internal/messaging"
+	"github.com/n-popescu/grid0plus/internal/presence"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/splatdiag"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -593,7 +593,7 @@ func (s *Server) unknownService(_ any, stream grpc.ServerStream) error {
 // .Unimplemented is also what this server deliberately answers for a flow it
 // will not serve — a delegated matchmaking ticket, malformed metadata — and
 // those are decisions, not gaps. protoc-gen-go-grpc's stubs all say "method X
-// not implemented"; SwitchNet's own refusals never do.
+// not implemented"; GRID0+'s own refusals never do.
 func (s *Server) noteUnimplemented(method string, err error) {
 	if status.Code(err) != codes.Unimplemented {
 		return

@@ -8,8 +8,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	ugcpb "github.com/n-popescu/switchnet/proto/ugcstore/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // decodeFields reads a stored MapValue. An empty blob is an empty map.

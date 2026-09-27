@@ -7,7 +7,7 @@
 package ugcstorev1
 
 import (
-	common "github.com/n-popescu/switchnet/proto/common"
+	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	_ "google.golang.org/protobuf/types/known/emptypb"
@@ -281,7 +281,7 @@ const file_proto_ugcstore_v1_screening_proto_rawDesc = "" +
 	"\tScreening\x12U\n" +
 	"\fCreateReport\x12(.nn.npln.ugcstore.v1.CreateReportRequest\x1a\x1b.nn.npln.ugcstore.v1.Report\x12i\n" +
 	"\x0eIssueUploadUri\x12*.nn.npln.ugcstore.v1.IssueUploadUriRequest\x1a+.nn.npln.ugcstore.v1.IssueUploadUriResponseB\xd5\x01\n" +
-	"\x17com.nn.npln.ugcstore.v1B\x0eScreeningProtoP\x01Z;github.com/n-popescu/switchnet/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
+	"\x17com.nn.npln.ugcstore.v1B\x0eScreeningProtoP\x01Z;github.com/n-popescu/grid0plus/proto/ugcstore/v1;ugcstorev1\xa2\x02\x03NNU\xaa\x02\x13Nn.Npln.Ugcstore.V1\xca\x02\x13Nn\\Npln\\Ugcstore\\V1\xe2\x02\x1fNn\\Npln\\Ugcstore\\V1\\GPBMetadata\xea\x02\x16Nn::Npln::Ugcstore::V1b\x06proto3"
 
 var (
 	file_proto_ugcstore_v1_screening_proto_rawDescOnce sync.Once

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/db"
+	"github.com/n-popescu/grid0plus/internal/db"
 )
 
 // writeSeed lays out a seed folder the way `switchnetctl fest build` does.

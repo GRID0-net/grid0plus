@@ -15,7 +15,7 @@ import (
 
 // Serving the BCAT delivery cache to the console-side installer.
 //
-// SwitchNet builds the delivery cache rather than serving BCAT (see
+// GRID0+ builds the delivery cache rather than serving BCAT (see
 // internal/bcat), which leaves the question of how the files get onto a console.
 // Doing it by hand with JKSV works and does not scale past the second fest, so
 // the answer is a small homebrew that fetches the seed and writes it into

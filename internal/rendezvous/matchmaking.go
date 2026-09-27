@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/n-popescu/switchnet/internal/nex"
+	"github.com/n-popescu/grid0plus/internal/nex"
 )
 
 // The matchmaking engine behind MatchMaking (21), MatchMakingExt (50) and

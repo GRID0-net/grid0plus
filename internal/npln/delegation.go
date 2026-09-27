@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
 // delegationTokenIssuer marks a delegation token. authenticate accepts only

@@ -63,16 +63,16 @@ func keyIDFor(pub crypto.PublicKey) KeyID {
 //	                      // every single token, not derived from anything
 //
 // called independently in both its device-token and app-token paths — the
-// "echoed unchanged" observation was SwitchNet's own /1.0.0/application/token
+// "echoed unchanged" observation was GRID0+'s own /1.0.0/application/token
 // copying a device token's nintendo block forward, not evidence dauth caches
 // or derives the value. So 'esv' is not a hash, a MAC, or anything touching
 // Nintendo key material — it never implicated CLAUDE.md's first ground rule
 // to begin with, it is just opaque padding a real server invents per call.
-// NewESV below does the same thing. What was still a real gap: SwitchNet's
+// NewESV below does the same thing. What was still a real gap: GRID0+'s
 // device tokens omitted the key entirely rather than sending a (harmless)
 // wrong value, and a console's local validation checking only for the key's
 // presence would have read that omission as malformed regardless of what
-// SwitchNet's actual bug turns out to be.
+// GRID0+'s actual bug turns out to be.
 type DeviceInfo struct {
 	// SerialNumber is the console serial, e.g. "XAW10012345678".
 	SerialNumber string `json:"sn"`

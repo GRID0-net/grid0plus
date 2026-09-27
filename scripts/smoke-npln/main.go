@@ -29,11 +29,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
-	authpb "github.com/n-popescu/switchnet/proto/auth/v1"
-	commonpb "github.com/n-popescu/switchnet/proto/common"
-	syncpb "github.com/n-popescu/switchnet/proto/gamesync/v1"
-	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
-	toyohrpb "github.com/n-popescu/switchnet/proto/toyohr/v1"
+	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
+	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
+	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
 func main() {

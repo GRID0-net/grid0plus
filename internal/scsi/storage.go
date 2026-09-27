@@ -16,7 +16,7 @@ var ErrQuotaExceeded = errors.New("scsi: storage quota exceeded")
 //
 // Metadata (who owns which archive, its status, its digest) lives in the SQL
 // store; this only ever sees an opaque key and a byte stream. It never
-// inspects the content — SwitchNet has no way to decrypt a console's save
+// inspects the content — GRID0+ has no way to decrypt a console's save
 // data and no legitimate reason to look at it.
 type BlobStore interface {
 	// Put writes r under key, replacing any existing content, and returns the
@@ -31,7 +31,7 @@ type BlobStore interface {
 	Delete(key string) error
 }
 
-// LocalDisk is a BlobStore backed by a directory on the same box SwitchNet
+// LocalDisk is a BlobStore backed by a directory on the same box GRID0+
 // runs on — the storage backend ROADMAP.md's phase 4 section picks as the
 // default: no new recurring cost, bounded by whatever disk the box has.
 //
@@ -47,7 +47,7 @@ type LocalDisk struct {
 	// warns rather than refuses on zero, the same posture as other
 	// unbounded-by-default settings in config/config.go, but an operator
 	// should set this: ROADMAP.md §4.2 calls out that a single console must
-	// not be able to fill the disk and take the rest of SwitchNet down with
+	// not be able to fill the disk and take the rest of GRID0+ down with
 	// it.
 	PerOwnerQuota int64
 

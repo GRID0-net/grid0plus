@@ -3,7 +3,7 @@ package baas
 import (
 	"net/http"
 
-	sjwt "github.com/n-popescu/switchnet/internal/jwt"
+	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
 // The two JWK set endpoints.
@@ -46,7 +46,7 @@ import (
 // previous keys in the set so tokens issued before a rotation still verify. The
 // exception is exactly this pair, which never changes.
 //
-// SwitchNet does not rotate either. On a private network rotation would mean
+// GRID0+ does not rotate either. On a private network rotation would mean
 // handing consoles tokens they cannot use until they re-authenticate, and buys
 // nothing: the keys are not exposed to anybody who is not already trusted with
 // the server.
