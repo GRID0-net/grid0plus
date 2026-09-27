@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	gojwt "github.com/golang-jwt/jwt/v5"
@@ -382,6 +383,41 @@ func (s *Server) issueAccessToken(c Caller, now time.Time) (string, time.Duratio
 // by an audience: an access token's issuer is the tenant URL and it carries no
 // gamesync block, so VerifyMatchmakingIDToken refuses it.
 const sessionTokenIssuer = "gss"
+
+// IssueGamesyncProbeToken tests whether Splatoon expects the access token
+// returned by Gamesync/IssueToken to be a signed JWT. Nextendo's working
+// server emits one with an NPLN rights block and a gss session binding;
+// SwitchNet has historically returned an opaque handle. This method is wired
+// in only by the VM diagnostic environment flag until a hardware test settles
+// whether the client actually reads it. The gamesync server still tracks the
+// exact returned token in its own session map.
+func (s *Server) IssueGamesyncProbeToken(userID, userSession string, expiresAt time.Time) (string, error) {
+	gameSession, _, ok := strings.Cut(userSession, "/userSessions/")
+	if !ok || !strings.HasPrefix(gameSession, s.tenantPath()+"/gameSessions/") {
+		return "", fmt.Errorf("invalid gamesync user session name")
+	}
+	now := s.now()
+	return s.issuer.Sign(gojwt.MapClaims{
+		"sub": userID,
+		"iss": "default iss",
+		"iat": now.Unix(),
+		"exp": expiresAt.Unix(),
+		"jti": sjwt.NewTokenID(),
+		"npln": map[string]any{
+			"aid":    "a-" + userID,
+			"app_id": s.appID,
+			"authorization": map[string]any{
+				"allow": []string{"**"}, "deny": []string{}, "nso_restricted": false,
+			},
+			"ext_id_type": 1,
+			"tid":         s.tenant,
+		},
+		"gss": map[string]string{
+			"game_session": gameSession,
+			"user_session": userSession,
+		},
+	})
+}
 
 // sessionTokenTTL is how long a session token is good for.
 //

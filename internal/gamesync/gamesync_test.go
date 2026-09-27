@@ -43,6 +43,10 @@ var idTokens = map[string]string{
 }
 
 func newHarness(t *testing.T) *harness {
+	return newHarnessWithSigner(t, nil)
+}
+
+func newHarnessWithSigner(t *testing.T, issue func(string, string, time.Time) (string, error)) *harness {
 	t.Helper()
 
 	h := &harness{t: t, now: time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)}
@@ -55,7 +59,8 @@ func newHarness(t *testing.T) *harness {
 			}
 			return "", errors.New("unknown token")
 		},
-		Now: func() time.Time { return h.now },
+		Now:              func() time.Time { return h.now },
+		IssueAccessToken: issue,
 	})
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -140,6 +145,29 @@ func TestAnUnknownIdTokenBuysNoSession(t *testing.T) {
 	})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("an unverifiable id token gave %v, want Unauthenticated", err)
+	}
+}
+
+func TestASignedAccessTokenProbeStillAuthorizesTheNextCall(t *testing.T) {
+	h := newHarnessWithSigner(t, func(userID, userSession string, expiresAt time.Time) (string, error) {
+		if userID != "alice" || userSession != "gameSessions/room/userSessions/alice" || expiresAt.IsZero() {
+			t.Errorf("signer received user=%q session=%q expiration=%s", userID, userSession, expiresAt)
+		}
+		return "header.payload.signature", nil
+	})
+	issued, err := h.client.IssueToken(context.Background(), &syncpb.IssueTokenRequest{
+		MatchmakingIdToken: "token-alice",
+		UserSession:        "gameSessions/room/userSessions/alice",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issued.GetToken().GetAccessToken() != "header.payload.signature" {
+		t.Fatalf("returned access token = %q", issued.GetToken().GetAccessToken())
+	}
+	_, err = h.client.GetDocument(h.authed(issued.GetToken().GetAccessToken()), &syncpb.GetDocumentRequest{Name: "documents/missing"})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("signed probe token did not authenticate the following call: %v", err)
 	}
 }
 

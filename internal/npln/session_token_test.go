@@ -5,6 +5,7 @@ import (
 	"github.com/google/uuid"
 	"strings"
 	"testing"
+	"time"
 
 	commonpb "github.com/n-popescu/switchnet/proto/common"
 	mmpb "github.com/n-popescu/switchnet/proto/matchmaking/v1"
@@ -190,5 +191,29 @@ func TestAnAccessTokenIsNotASessionToken(t *testing.T) {
 	}
 	if _, err := h.srv.VerifyMatchmakingIDToken(access); err == nil {
 		t.Fatal("an NPLN access token was accepted as a gamesync session token")
+	}
+}
+
+func TestGamesyncProbeTokenBindsTheRoomAndUserSession(t *testing.T) {
+	h := newHarness(t)
+	userSession := "tenants/" + testTenant + "/gameSessions/room-1/userSessions/player-1"
+	token, err := h.srv.IssueGamesyncProbeToken("player-1", userSession, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("probe token has %d parts, want a signed JWT", len(parts))
+	}
+	payload := decodeJWTSegment(t, parts[1])
+	if payload["sub"] != "player-1" || payload["iss"] != "default iss" {
+		t.Errorf("probe token identity = %v", payload)
+	}
+	gss, ok := payload["gss"].(map[string]any)
+	if !ok || gss["game_session"] != "tenants/"+testTenant+"/gameSessions/room-1" || gss["user_session"] != userSession {
+		t.Errorf("probe token room binding = %v", payload["gss"])
+	}
+	if _, err := h.srv.IssueGamesyncProbeToken("player-1", "userSessions/not-a-room", time.Now().Add(time.Hour)); err == nil {
+		t.Error("accepted a user-session name outside this tenant's room")
 	}
 }

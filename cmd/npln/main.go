@@ -20,6 +20,7 @@ import (
 	"flag"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/n-popescu/switchnet/config"
@@ -158,9 +159,15 @@ func main() {
 	// gamesync verifies the matchmaking id tokens the gateway signs. The same
 	// key, in the same process: there is nothing to distribute, and the
 	// audience is what stops an access token being accepted here.
+	var gamesyncProbeSigner func(string, string, time.Time) (string, error)
+	if os.Getenv("SWITCHNET_NPLN_DIAGNOSTIC_GAMESYNC_JWT") == "1" {
+		gamesyncProbeSigner = srv.IssueGamesyncProbeToken
+		log.Info("gamesync: signed access-token probe enabled")
+	}
 	sync, err := gamesync.New(gamesync.Options{
-		Log:           log.With("listener", "gamesync"),
-		VerifyIDToken: srv.VerifyMatchmakingIDToken,
+		Log:              log.With("listener", "gamesync"),
+		VerifyIDToken:    srv.VerifyMatchmakingIDToken,
+		IssueAccessToken: gamesyncProbeSigner,
 	})
 	if err != nil {
 		service.Fatal(log, "build gamesync", err)

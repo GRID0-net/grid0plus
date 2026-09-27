@@ -63,6 +63,10 @@ type Options struct {
 	// IssueToken. Required: without it there is no way to tell who is calling,
 	// and the answer to that is never "assume".
 	VerifyIDToken TokenVerifier
+	// IssueAccessToken is an optional diagnostic signer for the gamesync
+	// access token. The normal opaque token remains the default until hardware
+	// confirms whether the client parses this field as a JWT.
+	IssueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
 
 	// SessionTTL is how long a gamesync session lasts before it must be
 	// refreshed. Zero means the default.
@@ -82,10 +86,11 @@ const defaultSessionTTL = time.Hour
 type Server struct {
 	syncpb.UnimplementedGamesyncServer
 
-	log        *slog.Logger
-	verify     TokenVerifier
-	sessionTTL time.Duration
-	now        func() time.Time
+	log              *slog.Logger
+	verify           TokenVerifier
+	issueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
+	sessionTTL       time.Duration
+	now              func() time.Time
 
 	docs  *store
 	watch *watchers
@@ -126,14 +131,15 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		log:        opts.Log,
-		verify:     opts.VerifyIDToken,
-		sessionTTL: opts.SessionTTL,
-		now:        opts.Now,
-		docs:       newStore(opts.Now),
-		watch:      newWatchers(),
-		sessions:   map[string]*session{},
-		txns:       map[string]*transaction{},
+		log:              opts.Log,
+		verify:           opts.VerifyIDToken,
+		issueAccessToken: opts.IssueAccessToken,
+		sessionTTL:       opts.SessionTTL,
+		now:              opts.Now,
+		docs:             newStore(opts.Now),
+		watch:            newWatchers(),
+		sessions:         map[string]*session{},
+		txns:             map[string]*transaction{},
 	}
 	s.grpc = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(s.unaryInterceptor),
@@ -290,7 +296,11 @@ func (s *Server) IssueToken(
 		return nil, errUnauthenticated
 	}
 
-	sess := s.newSession(userID, req.GetUserSession())
+	sess, err := s.newSession(userID, req.GetUserSession())
+	if err != nil {
+		s.log.Error("gamesync: cannot issue session", "user", userID, "error", err)
+		return nil, status.Error(codes.Internal, "cannot issue gamesync session")
+	}
 	s.log.Info("gamesync: issued a session", "user", userID)
 	return &syncpb.IssueTokenResponse{Token: s.tokenProto(sess)}, nil
 }
@@ -324,11 +334,14 @@ func (s *Server) RefreshToken(
 		return nil, errUnauthenticated
 	}
 
-	sess := s.newSession(found.userID, found.userSession)
+	sess, err := s.newSession(found.userID, found.userSession)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "cannot refresh gamesync session")
+	}
 	return &syncpb.RefreshTokenResponse{Token: s.tokenProto(sess)}, nil
 }
 
-func (s *Server) newSession(userID, userSession string) *session {
+func (s *Server) newSession(userID, userSession string) (*session, error) {
 	sess := &session{
 		userID:       userID,
 		userSession:  userSession,
@@ -336,10 +349,17 @@ func (s *Server) newSession(userID, userSession string) *session {
 		refreshToken: randomToken(),
 		expiresAt:    s.now().Add(s.sessionTTL),
 	}
+	if s.issueAccessToken != nil {
+		var err error
+		sess.accessToken, err = s.issueAccessToken(userID, userSession, sess.expiresAt)
+		if err != nil {
+			return nil, err
+		}
+	}
 	s.mu.Lock()
 	s.sessions[sess.accessToken] = sess
 	s.mu.Unlock()
-	return sess
+	return sess, nil
 }
 
 func (s *Server) tokenProto(sess *session) *syncpb.Token {
