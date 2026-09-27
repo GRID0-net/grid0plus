@@ -224,7 +224,7 @@ Three separate problems, and most guides conflate them. Full detail, and the
 alternatives, in [`switch/README.md`](switch/README.md).
 
 **What this deployment actually runs:** the GRID0+ Toolbox homebrew
-([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro),
+([`n-popescu/grid0plus-toolbox`](https://github.com/n-popescu/grid0plus-toolbox),
 private), on an emuMMC that only ever talks to GRID0+. One menu entry
 writes Atmosphère's `hosts/{sysmmc,emummc}.txt` (generated from
 `internal/nintendo/hosts.go`), installs the certificate-verification IPS
@@ -246,7 +246,7 @@ LayeredFS data file — whose one unconfirmed step is written down there.
 **Splatoon 3 is a third problem.** It links its own TLS stack and pins its
 own certificates, so neither of the above touches it. The Toolbox ships
 patches for v11.3.0 (certificate pin, gRPC peer and verify options); how they
-were found is in switchnet-nro's `docs/game-specific-tls-pinning.md`. For a
+were found is in grid0plus-toolbox's `docs/game-specific-tls-pinning.md`. For a
 different build, `make patch-splatoon3` builds the upstream patch from your
 own dump:
 

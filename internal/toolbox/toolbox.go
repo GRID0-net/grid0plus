@@ -1,5 +1,5 @@
 // Package toolbox is the public, unauthenticated API the GRID0+ Toolbox
-// homebrew app (github.com/n-popescu/switchnet-nro) talks to: whether a
+// homebrew app (github.com/n-popescu/grid0plus-toolbox) talks to: whether a
 // newer build exists, and a coarse status of the other GRID0+ services.
 //
 // This is deliberately the one GRID0+ service any console can reach with
@@ -11,7 +11,7 @@
 // learn.
 //
 // The GitHub token this package holds is the whole reason it exists rather
-// than the console calling GitHub directly: switchnet-nro's source repo is
+// than the console calling GitHub directly: grid0plus-toolbox's source repo is
 // private, so an unauthenticated request from the console gets a 404, and
 // embedding a credential in a binary that ships to every console is the
 // exact thing this avoids. The token stays on this box and is never returned

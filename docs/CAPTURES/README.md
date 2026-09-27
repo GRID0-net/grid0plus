@@ -1187,10 +1187,10 @@ confirmed already decoded in this same second Nextendo capture:
 
 That fix alone did not clear the error: the missing `TLS: true` flag on the
 new host entry silently excluded it from the certificate's SAN list and
-nginx's routing table generation, and separately, switchnet-nro's own
+nginx's routing table generation, and separately, grid0plus-toolbox's own
 bundled hosts file still null-routed the same host client-side -- deploying
 to the VM never touches what is already written to a console's SD card.
-Both were fixed and a new switchnet-nro release shipped (v0.5.1), but the
+Both were fixed and a new grid0plus-toolbox release shipped (v0.5.1), but the
 operator still hit the identical error afterward. Asked to check how
 NextendoNetwork/Prelude routes the same hosts (facts only, not its code)
 rather than keep guessing from GRID0+'s own side alone, this turned up

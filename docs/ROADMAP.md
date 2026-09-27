@@ -806,7 +806,7 @@ console.
 
 **Built 2026-09-27.** What shipped, and where it differs from the plan below:
 
-- **The bot lives in its own repository**, `n-popescu/switchnet-discord`
+- **The bot lives in its own repository**, `n-popescu/grid0plus-discord`
   (private), not `cmd/discordbot`. It is a thin client of a bot API inside
   `baas` (`internal/baas/botapi.go`, `baas.bot_api` in `config.yaml`): a
   loopback-only listener, a shared bearer token, the caller named by Discord

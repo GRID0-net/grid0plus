@@ -14,7 +14,7 @@ commit it anywhere.**
 
 1. github.com/settings/personal-access-tokens → **Generate new token**
    (fine-grained, not classic — classic tokens can't be scoped to one repo).
-2. **Repository access**: "Only select repositories" → `switchnet-nro`.
+2. **Repository access**: "Only select repositories" → `grid0plus-toolbox`.
 3. **Permissions**: Repository permissions → **Contents: Read-only**.
    Nothing else.
 4. Generate, copy the token once.
@@ -28,7 +28,7 @@ public-shaped):
 toolbox:
   listen: "127.0.0.1:8090"
   github_owner: "n-popescu"
-  github_repo: "switchnet-nro"
+  github_repo: "grid0plus-toolbox"
   github_token: "<the token from step 1>"
   public_base_url: "https://<your public IP>:8443"
   release_cache_ttl_seconds: 120
@@ -112,7 +112,7 @@ curl -s http://127.0.0.1:8090/status
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090/updates/latest   # 200 once the token is set
 ```
 
-From outside (or from a console, once switchnet-nro's next release adds the
+From outside (or from a console, once grid0plus-toolbox's next release adds the
 "Server status" / relay-based updater — see below):
 
 ```sh
@@ -127,12 +127,12 @@ not the value this box's config actually loaded) — see step 2.
 
 (`-k`: the edge cert isn't issued for this IP/port combination specifically,
 and the console's own HTTPS client already skips verification entirely —
-see `source/net.c` in switchnet-nro — so a plain browser or `curl` will
+see `source/net.c` in grid0plus-toolbox — so a plain browser or `curl` will
 warn about the cert too. That's expected here, not a bug.)
 
-## 8. Tell the switchnet-nro side
+## 8. Tell the grid0plus-toolbox side
 
-Once step 7's external checks succeed, say so — the `switchnet-nro` `main`
+Once step 7's external checks succeed, say so — the `grid0plus-toolbox` `main`
 branch already has the client code for both features (relay-based updater,
 "Server status" screen) merged and building cleanly in CI, but the version
 was **deliberately not bumped**: cutting a release before this backend

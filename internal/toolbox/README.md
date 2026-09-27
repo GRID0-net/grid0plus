@@ -1,7 +1,7 @@
 # internal/toolbox
 
 The public API for the GRID0+ Toolbox homebrew app
-([`n-popescu/switchnet-nro`](https://github.com/n-popescu/switchnet-nro)):
+([`n-popescu/grid0plus-toolbox`](https://github.com/n-popescu/grid0plus-toolbox)):
 whether a newer build exists, and a coarse status of the other GRID0+
 services.
 
@@ -9,12 +9,12 @@ services.
 | --- | --- |
 | Needs a database | no |
 | Reimplements a Nintendo endpoint | no — this is not part of the console-facing protocol at all |
-| Credential it holds | a fine-grained GitHub PAT, scoped to `switchnet-nro`'s contents, read-only |
+| Credential it holds | a fine-grained GitHub PAT, scoped to `grid0plus-toolbox`'s contents, read-only |
 | Credential the caller needs | none |
 
 ## Why this exists, and why it is its own service
 
-`switchnet-nro` (the homebrew app's own source) is a private repository, so
+`grid0plus-toolbox` (the homebrew app's own source) is a private repository, so
 an unauthenticated `GET /repos/.../releases/latest` from a console gets a
 404. The two ways around that are: give the console a GitHub token, or give
 it a service that holds the token instead. The first means every console
@@ -66,7 +66,7 @@ more than a colour this package never earned.
 
 ### `/updates/latest` and `/updates/download`
 
-`source/update.c` in `switchnet-nro` already parses exactly three keys out
+`source/update.c` in `grid0plus-toolbox` already parses exactly three keys out
 of a GitHub release response — `tag_name`, `browser_download_url`, `size` —
 tolerant of GitHub's own formatting. `/updates/latest` answers those same
 three keys, so the client needed no parsing changes, only a different host

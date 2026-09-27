@@ -196,7 +196,7 @@ baas:
   # add themselves to it.
   allow_registration: true
 
-  # The Discord bot's account API (n-popescu/switchnet-discord): the only way
+  # The Discord bot's account API (n-popescu/grid0plus-discord): the only way
   # to create a person's account, plus friends, avatars, who is online and
   # service status. Loopback only; the bot runs on this host. Empty listen
   # turns it off. The token is a shared secret the bot also holds:
@@ -599,12 +599,12 @@ toolbox:
   # SNI map -- this answers a homebrew app, not a Nintendo endpoint.
   listen: "127.0.0.1:8090"
 
-  # Identify the private switchnet-nro repository /updates/* reads releases
+  # Identify the private grid0plus-toolbox repository /updates/* reads releases
   # from. Leave this and the other three toolbox.* keys below empty to serve
   # /status only, with /updates/* answering 503 instead of 502ing on every
   # request.
   github_owner: "n-popescu"
-  github_repo: "switchnet-nro"
+  github_repo: "grid0plus-toolbox"
 
   # A fine-grained personal access token (github.com/settings/personal-access-tokens),
   # scoped to ONLY github_owner/github_repo, permission Contents: Read-only,
@@ -615,7 +615,7 @@ toolbox:
   # This is the one credential in all of GRID0+ that exists so a *client*
   # binary never has to hold one: the console asks this service, never
   # GitHub directly, and the token never leaves this box.
-  github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-switchnet-nro-contents-read-only"
+  github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-grid0plus-toolbox-contents-read-only"
 
   # This service's own address as a console reaches it: the same public IP
   # as network.public_ip, fixed port 8443 (deploy/nginx.toolbox.conf),

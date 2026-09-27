@@ -289,7 +289,7 @@ func TestToolboxSettingsAreAllOrNothing(t *testing.T) {
 	for name, body := range map[string]string{
 		"owner only": "toolbox:\n  github_owner: n-popescu\n",
 		"missing public_base_url": "toolbox:\n" +
-			"  github_owner: n-popescu\n  github_repo: switchnet-nro\n  github_token: t\n",
+			"  github_owner: n-popescu\n  github_repo: grid0plus-toolbox\n  github_token: t\n",
 		"public_base_url only": "toolbox:\n  public_base_url: https://203.0.113.5:8443\n",
 	} {
 		if _, err := Load(writeConfig(t, body)); err == nil {
@@ -300,7 +300,7 @@ func TestToolboxSettingsAreAllOrNothing(t *testing.T) {
 	// All four together, or none at all, are both fine.
 	for name, body := range map[string]string{
 		"all four set": "toolbox:\n" +
-			"  github_owner: n-popescu\n  github_repo: switchnet-nro\n" +
+			"  github_owner: n-popescu\n  github_repo: grid0plus-toolbox\n" +
 			"  github_token: t\n  public_base_url: https://203.0.113.5:8443\n",
 		"none set": "toolbox:\n  listen: \"127.0.0.1:8090\"\n",
 	} {
@@ -321,7 +321,7 @@ func TestToolboxSettingsAreAllOrNothing(t *testing.T) {
 func TestToolboxPublicBaseURLMustBeAnAbsoluteHTTPSURL(t *testing.T) {
 	clearEnv(t)
 
-	base := "toolbox:\n  github_owner: n-popescu\n  github_repo: switchnet-nro\n  github_token: t\n"
+	base := "toolbox:\n  github_owner: n-popescu\n  github_repo: grid0plus-toolbox\n  github_token: t\n"
 	for name, url := range map[string]string{
 		"plain http, not https": "http://203.0.113.5:8443",
 		"no scheme at all":      "203.0.113.5:8443",

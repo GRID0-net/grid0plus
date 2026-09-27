@@ -108,7 +108,7 @@ func TestUpdatesLatestBuildsTheDownloadURLFromConfig(t *testing.T) {
 	defer gh.Close()
 
 	h := New(Config{
-		GitHubOwner: "n-popescu", GitHubRepo: "switchnet-nro", GitHubToken: "test-token",
+		GitHubOwner: "n-popescu", GitHubRepo: "grid0plus-toolbox", GitHubToken: "test-token",
 		PublicBaseURL: "https://toolbox.example:8443",
 	}, discardLogger())
 	// Point the handler at the fake GitHub server instead of the real one.

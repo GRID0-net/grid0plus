@@ -21,7 +21,7 @@ import (
 	"github.com/n-popescu/grid0plus/internal/db"
 )
 
-// The bot API is how the Discord bot (n-popescu/switchnet-discord) manages
+// The bot API is how the Discord bot (n-popescu/grid0plus-discord) manages
 // accounts: registration, password resets, friends, avatars, and read-only
 // views of who is online and whether GRID0+ is up. It is the only way to
 // create a person's account.
