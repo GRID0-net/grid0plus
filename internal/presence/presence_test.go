@@ -35,12 +35,16 @@ func TestAnIdleConsoleReadsAsOnlineNotOffline(t *testing.T) {
 	now := time.Now().UTC()
 	p := db.Presence{
 		State:      db.StateOffline,
+		ReportedAt: now.Add(-time.Hour),
 		LastSeenAt: now,
 		Extras:     db.EmptyExtras(),
 	}
 	got := Resolve(p, now, reportTTL, consoleTTL)
 	if got.State != db.StateOnline {
 		t.Errorf("state = %q, want ONLINE from request traffic alone", got.State)
+	}
+	if !got.ReportedAt.Equal(now) {
+		t.Errorf("effective presence updatedAt source = %v, want last authenticated request %v", got.ReportedAt, now)
 	}
 }
 

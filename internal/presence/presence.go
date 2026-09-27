@@ -115,6 +115,11 @@ func Resolve(p db.Presence, now time.Time, reportTTL, consoleTTL time.Duration) 
 		// in the Home Menu reports nothing and reads as offline to all its
 		// friends, which is exactly where players look at each other's status.
 		p.State = db.StateOnline
+		// This is an effective state change caused by the latest authenticated
+		// request. BAAS serializes ReportedAt as presence.updatedAt; leaving the
+		// old report's time there makes the friends applet treat ONLINE as stale.
+		// The returned value is a copy, so this does not rewrite the stored report.
+		p.ReportedAt = p.LastSeenAt
 		p.AppID = ""
 		p.PresenceGroupID = ""
 		p.AppField = ""
