@@ -337,6 +337,9 @@ type UserPatch struct {
 	Extras              *ExtrasByScope
 	Deleted             *bool
 	LoginPasswordHash   *string
+	// DiscordUserID links the user to a Discord account. ErrConflict if
+	// another user already has that Discord account.
+	DiscordUserID *string
 }
 
 // PresencePatch is a set of optional changes to a presence row.

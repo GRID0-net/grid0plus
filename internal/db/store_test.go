@@ -2228,6 +2228,18 @@ func testDiscordUsers(t *testing.T, s Store) {
 		t.Errorf("second user for one discord account: err = %v, want ErrConflict", err)
 	}
 
+	// Linking an existing user to a Discord account, and the same Discord
+	// account cannot be linked to a second user.
+	other := makeUser(t, s, "other")
+	otherDiscord := "223456789012345678"
+	if got, err := s.UpdateUser(ctx, other.ID, UserPatch{DiscordUserID: &otherDiscord}); err != nil || got.DiscordUserID != otherDiscord {
+		t.Fatalf("link discord: %+v, %v", got, err)
+	}
+	taken := u.DiscordUserID
+	if _, err := s.UpdateUser(ctx, other.ID, UserPatch{DiscordUserID: &taken}); !errors.Is(err, ErrConflict) {
+		t.Errorf("linking a Discord account another user has: err = %v, want ErrConflict", err)
+	}
+
 	hash := "$2a$10$new"
 	if _, err := s.UpdateUser(ctx, u.ID, UserPatch{LoginPasswordHash: &hash}); err != nil {
 		t.Fatal(err)

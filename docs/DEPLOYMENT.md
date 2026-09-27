@@ -317,9 +317,11 @@ debugging on hardware tractable.
 - [ ] **9. Launch a game on one.** The other shows "Playing &lt;game&gt;", and
       the log shows `presence reported … state=PLAYING title=…`.
 
-- [ ] **10. Turn registration off.** Once every console is registered, set
-      `baas.allow_registration: false`, so somebody who finds the server cannot
-      add themselves to it. This also stops the Discord bot's `/register`.
+- [ ] **10. Decide on registration.** `baas.allow_registration: false` stops
+      both the Discord bot's `/register` and a new console's own placeholder
+      account, so a new console cannot join until it is turned back on. With
+      the bot, the usual gate is the Discord server itself (and the bot's
+      `register_role_id`); turn this off only to freeze the group.
 
 People get their accounts from the Discord bot
 ([`n-popescu/switchnet-discord`](https://github.com/n-popescu/switchnet-discord)):

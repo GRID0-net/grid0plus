@@ -230,6 +230,14 @@ func (m *Memory) UpdateUser(_ context.Context, id string, p UserPatch) (User, er
 	if p.LoginPasswordHash != nil {
 		u.LoginPasswordHash = *p.LoginPasswordHash
 	}
+	if p.DiscordUserID != nil {
+		for otherID, other := range m.users {
+			if otherID != id && *p.DiscordUserID != "" && other.DiscordUserID == *p.DiscordUserID {
+				return User{}, fmt.Errorf("%w: discord user %s is registered", ErrConflict, *p.DiscordUserID)
+			}
+		}
+		u.DiscordUserID = *p.DiscordUserID
+	}
 	u.UpdatedAt = time.Now().UTC()
 	m.users[id] = u
 	return cloneUser(u), nil

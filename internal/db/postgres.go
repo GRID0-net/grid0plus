@@ -309,6 +309,9 @@ func (p *Postgres) UpdateUser(ctx context.Context, id string, patch UserPatch) (
 	if patch.LoginPasswordHash != nil {
 		add("login_password_hash", *patch.LoginPasswordHash)
 	}
+	if patch.DiscordUserID != nil {
+		add("discord_user_id", nullIfEmpty(*patch.DiscordUserID))
+	}
 
 	q := `UPDATE users SET ` + strings.Join(sets, ", ") +
 		` WHERE id = $1 RETURNING ` + userColumns

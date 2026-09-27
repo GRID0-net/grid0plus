@@ -53,6 +53,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	b := &botAPI{s: s, token: opts.Token, health: opts.Health}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bot/v1/register", b.register)
+	mux.HandleFunc("POST /bot/v1/link", b.link)
 	mux.HandleFunc("POST /bot/v1/reset-password", b.withUser(b.resetPassword))
 	mux.HandleFunc("GET /bot/v1/me", b.withUser(b.me))
 	mux.HandleFunc("PUT /bot/v1/avatar", b.withUser(b.avatar))
@@ -182,6 +183,62 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, credentialsResponse{
 		UserID: user.ID, Username: user.LoginUsername, Password: password, FriendCode: fc.Code,
 	})
+}
+
+type linkRequest struct {
+	DiscordUserID string `json:"discordUserId"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+}
+
+// link claims an account made before the bot existed, by its login and
+// password, for the Discord account asking. Without it those people, with
+// their consoles, friends and game data, could never use the bot.
+func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
+	var req linkRequest
+	if err := decodeJSONBody(r, &req); err != nil || !discordIDPattern.MatchString(req.DiscordUserID) ||
+		req.Username == "" || req.Password == "" {
+		writeBotError(w, http.StatusBadRequest, "bad_request", "need a Discord id, a username and a password")
+		return
+	}
+	// Same budget as every other password check, so /link cannot be used to
+	// guess a login's password faster than the login page can.
+	if !b.s.loginLimiter.Allow("discord:"+req.DiscordUserID, b.s.now()) {
+		writeBotError(w, http.StatusTooManyRequests, "rate_limited", "too many attempts; wait a while")
+		return
+	}
+	if _, err := b.s.store.GetUserByDiscordID(r.Context(), req.DiscordUserID); err == nil {
+		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a SwitchNet account")
+		return
+	}
+
+	user, err := b.s.store.GetUserByLoginUsername(r.Context(), req.Username)
+	if err == nil && !user.Deleted && user.LoginPasswordHash != "" &&
+		bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(req.Password)) == nil {
+		if user.DiscordUserID != "" {
+			writeBotError(w, http.StatusConflict, "claimed", "that account is already linked to another Discord account")
+			return
+		}
+		id := req.DiscordUserID
+		if _, err := b.s.store.UpdateUser(r.Context(), user.ID, db.UserPatch{DiscordUserID: &id}); err != nil {
+			if errors.Is(err, db.ErrConflict) {
+				writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a SwitchNet account")
+				return
+			}
+			b.internal(w, "link discord", err)
+			return
+		}
+		b.s.log.Info("botapi: linked an existing account", "user", user.ID, "login_username", user.LoginUsername)
+		writeJSON(w, http.StatusOK, b.describe(r.Context(), user, false))
+		return
+	}
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		b.internal(w, "load user by login", err)
+		return
+	}
+	// One answer for "no such login" and "wrong password", as on the login page.
+	b.s.log.Warn("botapi: link refused", "login_username", req.Username)
+	writeBotError(w, http.StatusUnauthorized, "bad_credentials", "wrong login or password")
 }
 
 func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, user db.User) {

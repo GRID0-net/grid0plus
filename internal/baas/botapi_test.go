@@ -259,3 +259,28 @@ func TestOnlineHidesPeopleWhoHideTheirPresence(t *testing.T) {
 		t.Errorf("online = %v, want nobody", body)
 	}
 }
+
+// An account made before the bot (the old web page, or an operator) is
+// claimed with its login and password, once, by one Discord account.
+func TestLinkClaimsAnExistingAccount(t *testing.T) {
+	b := newBotHarness(t)
+	registerWebsiteUser(t, b.harness, "doughston", "correct-horse")
+
+	link := func(discordID, password string) (*http.Response, map[string]any) {
+		return b.call("POST", "/bot/v1/link", "", map[string]string{
+			"discordUserId": discordID, "username": "doughston", "password": password,
+		})
+	}
+	if resp, body := link(aliceDiscord, "wrong-password"); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("wrong password: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := link(aliceDiscord, "correct-horse"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("link: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := b.call("GET", "/bot/v1/me", aliceDiscord, nil); resp.StatusCode != http.StatusOK || body["username"] != "doughston" {
+		t.Errorf("me after linking: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := link(bobDiscord, "correct-horse"); resp.StatusCode != http.StatusConflict || body["code"] != "claimed" {
+		t.Errorf("a second Discord account claiming it: %d %v", resp.StatusCode, body)
+	}
+}
