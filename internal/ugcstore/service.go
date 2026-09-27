@@ -137,22 +137,11 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 	return doc, nil
 }
 
-// RunQuery answers every structured query with zero matches, never
-// Unimplemented.
-//
-// Confirmed against a real capture (docs/CAPTURES/raw's Nextendo second
-// session, RunQuery against a live Splatoon 3 account, PolyForm
-// Shield-licensed source -- facts only, no code taken): a real server's
-// response to a query with no matches is exactly one streamed
-// RunQueryResponse carrying only read_time, with document and
-// skipped_results left unset. That is what GRID0+ answers here --
-// GRID0+ keeps no document collections a StructuredQuery could actually
-// match against (GetDocument/CommitDocuments address one document by name,
-// never a collection), so "zero matches, structurally correct" is not a
-// placeholder, it is this server's honest answer. Reproduced on real
-// hardware on 2026-09-24: Unimplemented here (grpc-status 12) is what the
-// console reads as a communication error right after entering the lobby --
-// this was the last RPC in the confirmed boot sequence still unanswered.
+// RunQuery currently answers the captured empty-query shape: one read_time
+// message, rather than Unimplemented (which broke hall entry on hardware).
+// This is incomplete for a nonempty collection. CommitDocuments persists
+// documents, but RunQuery does not enumerate them yet; a results query after
+// a match would therefore incorrectly look empty. See the 2026-09-27 audit.
 func (s *Service) RunQuery(
 	req *ugcpb.RunQueryRequest, stream grpc.ServerStreamingServer[ugcpb.RunQueryResponse],
 ) error {

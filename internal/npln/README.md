@@ -99,11 +99,10 @@ polling path, so three things follow:
 
 - **the current state is sent immediately** on attaching, or a stream that
   arrives after its ticket already matched waits for an event that has happened;
-- **the stream ends when the ticket is terminal**, because it cannot change
-  again and holding it open leaves the console waiting on nothing;
-- **both players are named on the ticket** rather than left for a follow-up
-  call, since the ticket stream is the only thing the console is certainly
-  reading at that moment.
+- **the stream stays open after `SUCCEEDED`** until the client releases it;
+  closing it immediately raced the client's session setup in hardware tests;
+- **each recipient receives only its own matched user session**, as in the
+  measured ticket shape. The actual roster is read from the session host.
 
 Two refusals worth knowing about. A ticket carrying **user delegation tokens**
 is refused rather than served for one player: honouring an unverified delegation
