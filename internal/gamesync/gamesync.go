@@ -213,9 +213,12 @@ func (s *Server) unaryInterceptor(
 	_ = grpc.SetHeader(ctx, metadata.Pairs("npln-grpc-type", "Unary"))
 	ctx, err := s.enter(ctx, info.FullMethod)
 	if err != nil {
+		s.log.Info("gamesync: call", "method", info.FullMethod, "code", status.Code(err))
 		return nil, err
 	}
-	return handler(ctx, req)
+	resp, err := handler(ctx, req)
+	s.log.Info("gamesync: call", "method", info.FullMethod, "code", status.Code(err))
+	return resp, err
 }
 
 func (s *Server) streamInterceptor(
@@ -225,9 +228,13 @@ func (s *Server) streamInterceptor(
 	_ = ss.SetHeader(metadata.Pairs("npln-grpc-type", grpcKind(info)))
 	ctx, err := s.enter(ss.Context(), info.FullMethod)
 	if err != nil {
+		s.log.Info("gamesync: stream refused", "method", info.FullMethod, "code", status.Code(err))
 		return err
 	}
-	return handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	s.log.Info("gamesync: stream open", "method", info.FullMethod)
+	err = handler(srv, wrappedStream{ServerStream: ss, ctx: ctx})
+	s.log.Info("gamesync: stream closed", "method", info.FullMethod, "code", status.Code(err))
+	return err
 }
 
 // grpcKind is the value Nintendo's NPLN gateway puts in npln-grpc-type: the
@@ -383,8 +390,10 @@ func (s *Server) GetDocument(
 	}
 	doc, ok := s.docs.get(req.GetName())
 	if !ok {
+		s.log.Info("gamesync: document missing", "name", req.GetName())
 		return nil, status.Error(codes.NotFound, "no such document")
 	}
+	s.log.Info("gamesync: document read", "name", req.GetName())
 	return applyReadMask(doc, req.GetReadMask().GetPaths()), nil
 }
 
@@ -706,6 +715,8 @@ func (s *Server) handleWatchRequest(
 
 	case *syncpb.KeepUserSessionRequest_UpdateTarget:
 		target := r.UpdateTarget.GetTarget()
+		s.log.Info("gamesync: watch target", "name", target.GetName(),
+			"documents", target.GetDocuments().GetDocuments(), "collection", target.GetCollection().GetCollection())
 		s.watch.addTarget(sub, target)
 		// The client is told the target is watched BEFORE any change for it
 		// arrives, so it can tell "nothing has changed" from "my target never
