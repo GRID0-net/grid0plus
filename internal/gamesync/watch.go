@@ -131,7 +131,7 @@ func (s *subscriber) targetFor(name string) (string, bool) {
 	for target, names := range s.documents {
 		for _, n := range names {
 			if n == name {
-				return target, true
+				return wireTargetID(target), true
 			}
 		}
 	}
@@ -146,7 +146,7 @@ func (s *subscriber) targetFor(name string) (string, bool) {
 		if strings.Contains(strings.TrimPrefix(name, prefix), "/") {
 			continue
 		}
-		return target, true
+		return wireTargetID(target), true
 	}
 	return "", false
 }

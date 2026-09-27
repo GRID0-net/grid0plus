@@ -783,6 +783,47 @@ func TestRollingBackTwiceIsNotAnError(t *testing.T) {
 
 // ---- the watch stream ----------------------------------------------------
 
+func TestOwnUserSessionArrivesBeforeWatchSnapshotCompletes(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	stream, err := h.client.KeepUserSession(alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&syncpb.KeepUserSessionRequest{
+		RequestType: &syncpb.KeepUserSessionRequest_UpdateTarget{
+			UpdateTarget: &syncpb.UpdateTargetRequest{Target: &syncpb.Target{
+				Name: "userSessions/current/targets/1",
+				TargetType: &syncpb.Target_Documents{Documents: &syncpb.DocumentsTarget{
+					Documents: []string{"docs/__us/token-alice"},
+				}},
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil || first.GetTargetChange().GetTargetId() != "1" || first.GetTargetChange().GetTargetChangeType() != syncpb.TargetChange_UPDATED {
+		t.Fatalf("snapshot start = %v, %v", first, err)
+	}
+	second, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	change := second.GetDocumentChange()
+	if change.GetTargetId() != "1" || change.GetDocumentChangeType() != syncpb.DocumentChange_EXIST || change.GetDocument().GetName() != "docs/__us/token-alice" {
+		t.Fatalf("session snapshot = %v", second)
+	}
+	fields := change.GetDocument().GetFields().GetFields()
+	if len(fields) != 9 || fields["uid"].GetStringValue() != "alice" || fields["st"].GetIntegerValue() != 2 || fields["pgn"].GetStringValue() != "All" || fields["att"].GetMapValue() == nil || fields["ltc"].GetMapValue() == nil {
+		t.Fatalf("session fields = %v", fields)
+	}
+	last, err := stream.Recv()
+	if err != nil || last.GetTargetChange().GetTargetId() != "1" || last.GetTargetChange().GetTargetChangeType() != syncpb.TargetChange_LISTED {
+		t.Fatalf("snapshot end = %v, %v", last, err)
+	}
+}
+
 func TestAWatchedDocumentChangeReachesTheOtherConsole(t *testing.T) {
 	h := newHarness(t)
 	alice := h.session("token-alice")
@@ -810,6 +851,10 @@ func TestAWatchedDocumentChangeReachesTheOtherConsole(t *testing.T) {
 		t.Fatalf("send target: %v", err)
 	}
 
+	updated, err := stream.Recv()
+	if err != nil || updated.GetTargetChange().GetTargetChangeType() != syncpb.TargetChange_UPDATED {
+		t.Fatalf("target start = %v, %v, want UPDATED", updated, err)
+	}
 	ack, err := stream.Recv()
 	if err != nil {
 		t.Fatalf("recv target ack: %v", err)
@@ -908,6 +953,11 @@ func TestRemovingATargetStopsTheChanges(t *testing.T) {
 		}
 		if _, err := stream.Recv(); err != nil {
 			t.Fatalf("recv ack: %v", err)
+		}
+		if req.GetUpdateTarget() != nil {
+			if _, err := stream.Recv(); err != nil {
+				t.Fatalf("recv snapshot end: %v", err)
+			}
 		}
 	}
 

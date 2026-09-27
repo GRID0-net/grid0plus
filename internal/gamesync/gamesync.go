@@ -109,6 +109,7 @@ type session struct {
 	userSession  string
 	accessToken  string
 	refreshToken string
+	createdAt    time.Time
 	expiresAt    time.Time
 }
 
@@ -355,6 +356,7 @@ func (s *Server) newSession(userID, userSession string) (*session, error) {
 		userSession:  userSession,
 		accessToken:  randomToken(),
 		refreshToken: randomToken(),
+		createdAt:    s.now(),
 		expiresAt:    s.now().Add(s.sessionTTL),
 	}
 	if s.issueAccessToken != nil {
@@ -672,7 +674,7 @@ func (s *Server) KeepUserSession(
 				close(done)
 				return
 			}
-			s.handleWatchRequest(sub, req, out)
+			s.handleWatchRequest(caller, sub, req, out)
 		}
 	}()
 
@@ -702,7 +704,7 @@ func (s *Server) KeepUserSession(
 }
 
 func (s *Server) handleWatchRequest(
-	sub *subscriber, req *syncpb.KeepUserSessionRequest,
+	caller *session, sub *subscriber, req *syncpb.KeepUserSessionRequest,
 	out chan<- *syncpb.KeepUserSessionResponse,
 ) {
 	switch r := req.GetRequestType().(type) {
@@ -715,24 +717,50 @@ func (s *Server) handleWatchRequest(
 
 	case *syncpb.KeepUserSessionRequest_UpdateTarget:
 		target := r.UpdateTarget.GetTarget()
+		if target == nil || target.GetName() == "" {
+			return
+		}
 		s.log.Info("gamesync: watch target", "name", target.GetName(),
 			"documents", target.GetDocuments().GetDocuments(), "collection", target.GetCollection().GetCollection())
 		s.watch.addTarget(sub, target)
-		// The client is told the target is watched BEFORE any change for it
-		// arrives, so it can tell "nothing has changed" from "my target never
-		// took effect".
-		send(out, &syncpb.KeepUserSessionResponse{
-			ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
-				TargetChange: &syncpb.TargetChange{
-					TargetId: target.GetName(),
-					// LISTED, not UPDATED: the client is being told the target
-					// now exists and is being watched, before any change for it
-					// arrives. UPDATED would say a document under it changed,
-					// which nothing has yet.
-					TargetChangeType: syncpb.TargetChange_LISTED,
+		id := wireTargetID(target.GetName())
+		targetChange := func(kind syncpb.TargetChange_TargetChangeType) {
+			send(out, &syncpb.KeepUserSessionResponse{
+				ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
+					TargetChange: &syncpb.TargetChange{TargetId: id, TargetChangeType: kind},
 				},
-			},
-		})
+			})
+		}
+		// LISTED closes the initial snapshot. Sending it before the documents
+		// makes the client conclude its own UserSession is absent and wait until
+		// the room-creation operation times out.
+		targetChange(syncpb.TargetChange_UPDATED)
+		var docs []*syncpb.Document
+		if list := target.GetDocuments(); list != nil {
+			for _, name := range list.GetDocuments() {
+				if doc, ok := s.watchDocument(caller, name); ok {
+					docs = append(docs, doc)
+				}
+			}
+		} else if coll := target.GetCollection(); coll != nil {
+			docs = s.docs.list(coll.GetCollection())
+			if coll.GetCollection() == "docs/__us" {
+				if doc, ok := s.watchDocument(caller, "docs/__us/"+sessionID(caller.userSession)); ok {
+					docs = append(docs, doc)
+				}
+			}
+		}
+		for _, doc := range docs {
+			send(out, &syncpb.KeepUserSessionResponse{
+				ResponseType: &syncpb.KeepUserSessionResponse_DocumentChange{
+					DocumentChange: &syncpb.DocumentChange{
+						TargetId: id, DocumentChangeType: syncpb.DocumentChange_EXIST, Document: doc,
+					},
+				},
+			})
+		}
+		s.log.Info("gamesync: initial watch snapshot", "target", target.GetName(), "documents", len(docs))
+		targetChange(syncpb.TargetChange_LISTED)
 
 	case *syncpb.KeepUserSessionRequest_DeleteTarget:
 		name := r.DeleteTarget.GetName()
@@ -740,7 +768,7 @@ func (s *Server) handleWatchRequest(
 		send(out, &syncpb.KeepUserSessionResponse{
 			ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
 				TargetChange: &syncpb.TargetChange{
-					TargetId:         name,
+					TargetId:         wireTargetID(name),
 					TargetChangeType: syncpb.TargetChange_DELETED,
 				},
 			},
