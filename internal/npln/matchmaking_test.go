@@ -277,8 +277,10 @@ func TestAGameSessionIsNotReadableByAPlayerWhoIsNotInIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JoinGameSession by a matched player: %v", err)
 	}
-	if len(joined.GetMatchedUserSessions()) != 2 {
-		t.Errorf("matched user sessions = %d, want 2", len(joined.GetMatchedUserSessions()))
+	// Only the caller's own entry, as in every Nintendo capture.
+	if got := joined.GetMatchedUserSessions(); len(got) != 1 ||
+		lastSegment(got[0].GetUserDefinition().GetUser()) != "in-two" {
+		t.Errorf("matched user sessions = %v, want in-two's alone", got)
 	}
 }
 

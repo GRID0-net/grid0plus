@@ -37,8 +37,10 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 	second = trackResult(t, client, two, second)
 
 	matched := second.GetMatchedUserSessions()
-	if len(matched) != 2 {
-		t.Fatalf("matched user sessions = %d, want one per player (2)", len(matched))
+	// Only the recipient's own entry: the players find each other on the
+	// session host, never in the ticket (every Nintendo capture).
+	if len(matched) != 1 || lastSegment(matched[0].GetUserDefinition().GetUser()) != "player-two" {
+		t.Fatalf("matched user sessions = %v, want player-two's alone", matched)
 	}
 	sessionID := lastSegment(second.GetGameSession().GetName())
 	if sessionID == "" {

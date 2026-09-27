@@ -386,7 +386,7 @@ func (g *gameSessionService) JoinGameSession(
 		return nil, ErrNotFound
 	}
 
-	matched, err := g.s.matchedUserSessions(sess)
+	matched, err := g.s.matchedUserSessions(sess, caller.UserID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -762,14 +762,6 @@ func turnProtocol(name string) mmpb.TurnServer_Protocol {
 // tenantPath is the resource-name prefix every matchmaking resource hangs off.
 func (s *Server) tenantPath() string { return "tenants/" + s.tenant }
 
-// concreteName resolves the "tenants/current/" alias to this server's tenant.
-func (s *Server) concreteName(name string) string {
-	if rest, ok := strings.CutPrefix(name, "tenants/current/"); ok {
-		return s.tenantPath() + "/" + rest
-	}
-	return name
-}
-
 // ticketPlacedMark is field 9 = 1 (tag 0x48, varint 1).
 var ticketPlacedMark = protoreflect.RawFields{0x48, 0x01}
 
@@ -798,7 +790,7 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		Name: s.tenantPath() + "/matchmakingTickets/" + t.ID,
 		// The game sends the tenants/current alias; Nintendo answers with the
 		// concrete tenant, and its stream carries no "tenants/current" anywhere.
-		MatchmakingConfig: s.concreteName(t.Mode),
+		MatchmakingConfig: s.configName(t.Mode),
 		State:             ticketState(t.State),
 		UserDefinitions:   []*mmpb.UserDefinition{def},
 	}
@@ -819,7 +811,7 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		return out, nil
 	}
 	out.GameSession = s.sessionProto(sess)
-	matched, err := s.matchedUserSessions(sess)
+	matched, err := s.matchedUserSessions(sess, t.UserID, def)
 	if err != nil {
 		// The session exists and is named, but no player can open it without a
 		// token. Sending the ticket without them would be the 2321-4992 shape
@@ -835,12 +827,14 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 	if sess.Room {
 		return s.roomProto(sess)
 	}
+	// Nintendo announces the mode's capacity as both counts (8/8 for a public
+	// battle, per Nextendo's capture notes), however many consoles are really
+	// in it; the actual roster is what the session host reports.
+	capacity := int32(modeCapacity(sess.Mode, len(sess.Players)))
 	return &mmpb.GameSession{
-		Name:                s.tenantPath() + "/gameSessions/" + sess.ID,
-		MaxParticipantCount: int32(len(sess.Players)),
-		// Everyone matched is a participant. There is no lobby to fill here:
-		// the session is created at the moment it is already full.
-		CurrentParticipantCount: int32(len(sess.Players)),
+		Name:                    s.tenantPath() + "/gameSessions/" + sess.ID,
+		MaxParticipantCount:     capacity,
+		CurrentParticipantCount: capacity,
 		// This project's own Nextendo-vs-SwitchNet comparison pass found
 		// Nextendo sets CanParticipate true on every GameSession it builds,
 		// with no exception for an already-full ticket match -- this used to
@@ -849,7 +843,8 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		// Nextendo's real-hardware-tested behaviour until a capture says
 		// otherwise.
 		CanParticipate: true,
-		IsPublic:       false,
+		IsPublic:       true,
+		Properties:     roomProperties(sess.Mode, nil, ""),
 		State:          mmpb.GameSession_ACTIVE,
 		// Host and Port are the address each console opens its gamesync
 		// session to for this match -- a server, not a player. This used to
@@ -923,20 +918,27 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 // players can open their session and others cannot is the failure this codebase
 // is shaped around, one phase later: the ones who did get in sit in a lobby
 // that never fills.
-func (s *Server) matchedUserSessions(sess matchmaking.Session) ([]*mmpb.MatchedUserSession, error) {
-	out := make([]*mmpb.MatchedUserSession, 0, len(sess.Players))
-	for _, userID := range sess.Players {
-		token, err := s.issueSessionToken(userID, sess.ID)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, &mmpb.MatchedUserSession{
-			UserDefinition:     &mmpb.UserDefinition{User: s.userResourceName(userID)},
-			UserSession:        s.userSessionName(sess.ID, userID),
-			MatchmakingIdToken: token,
-		})
+func (s *Server) matchedUserSessions(
+	sess matchmaking.Session, userID string, def *mmpb.UserDefinition,
+) ([]*mmpb.MatchedUserSession, error) {
+	// Only the recipient's own entry. Across the seven Nintendo captures
+	// Nextendo measured, matched_user_sessions always has exactly as many
+	// entries as the ticket's user_definitions: the players find each other on
+	// the session host, never in the ticket. Handing every console every
+	// player's entry and token (as this did) left both idle after SUCCEEDED
+	// on 2026-09-27 hardware.
+	token, err := s.issueSessionToken(userID, sess.ID)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	if def == nil {
+		def = &mmpb.UserDefinition{User: s.userResourceName(userID)}
+	}
+	return []*mmpb.MatchedUserSession{{
+		UserDefinition:     def,
+		UserSession:        s.userSessionName(sess.ID, userID),
+		MatchmakingIdToken: token,
+	}}, nil
 }
 
 func (s *Server) userSessionName(sessionID, userID string) string {
@@ -1058,4 +1060,18 @@ func queueConfig(c config.NPLN) matchmaking.Config {
 		}
 	}
 	return cfg
+}
+
+// modeCapacity is a matchmaking config's player capacity: 4 for Salmon Run,
+// 8 for every versus mode. Anything unrecognised falls back to the roster.
+func modeCapacity(mode string, fallback int) int {
+	switch {
+	case strings.Contains(mode, "coop"):
+		return 4
+	case strings.Contains(mode, "regular"), strings.Contains(mode, "bankara"),
+		strings.Contains(mode, "league"), strings.Contains(mode, "x_match"),
+		strings.Contains(mode, "fest"):
+		return 8
+	}
+	return fallback
 }
