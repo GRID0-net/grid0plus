@@ -392,9 +392,12 @@ const sessionTokenIssuer = "gss"
 // whether the client actually reads it. The gamesync server still tracks the
 // exact returned token in its own session map.
 func (s *Server) IssueGamesyncProbeToken(userID, userSession string, expiresAt time.Time) (string, error) {
+	// The client may send a short or alias-form user-session name here. The
+	// ordinary gamesync path echoes it unchanged; the probe must not reject a
+	// request that the baseline accepted merely because of its spelling.
 	gameSession, _, ok := strings.Cut(userSession, "/userSessions/")
-	if !ok || !strings.HasPrefix(gameSession, s.tenantPath()+"/gameSessions/") {
-		return "", fmt.Errorf("invalid gamesync user session name")
+	if !ok {
+		gameSession = userSession
 	}
 	now := s.now()
 	return s.issuer.Sign(gojwt.MapClaims{

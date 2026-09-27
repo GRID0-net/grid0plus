@@ -295,6 +295,7 @@ func (s *Server) IssueToken(
 		s.log.Debug("gamesync: rejected a matchmaking id token", "error", err)
 		return nil, errUnauthenticated
 	}
+	s.log.Info("gamesync: client user session name", "name", req.GetUserSession())
 
 	sess, err := s.newSession(userID, req.GetUserSession())
 	if err != nil {

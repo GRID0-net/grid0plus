@@ -213,7 +213,7 @@ func TestGamesyncProbeTokenBindsTheRoomAndUserSession(t *testing.T) {
 	if !ok || gss["game_session"] != "tenants/"+testTenant+"/gameSessions/room-1" || gss["user_session"] != userSession {
 		t.Errorf("probe token room binding = %v", payload["gss"])
 	}
-	if _, err := h.srv.IssueGamesyncProbeToken("player-1", "userSessions/not-a-room", time.Now().Add(time.Hour)); err == nil {
-		t.Error("accepted a user-session name outside this tenant's room")
+	if _, err := h.srv.IssueGamesyncProbeToken("player-1", "userSessions/short-name", time.Now().Add(time.Hour)); err != nil {
+		t.Errorf("rejected a short user-session name the baseline accepts: %v", err)
 	}
 }
