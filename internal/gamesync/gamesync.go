@@ -479,6 +479,8 @@ func (s *Server) WriteDocuments(
 		return nil, errUnauthenticated
 	}
 	if len(req.GetDefermentOperations()) > 0 {
+		s.log.Warn("gamesync: write includes unsupported deferments",
+			"writes", len(req.GetWriteOperations()), "deferments", len(req.GetDefermentOperations()))
 		// A deferment is a batch of writes to apply later, on a trigger nothing
 		// here models. Refused rather than dropped: a client that queued a
 		// write for later and was told "done" would wait for an effect that
@@ -488,6 +490,8 @@ func (s *Server) WriteDocuments(
 
 	results, commit, err := s.docs.apply(req.GetWriteOperations())
 	if err != nil {
+		s.log.Warn("gamesync: write rejected", "writes", len(req.GetWriteOperations()),
+			"error", err)
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
