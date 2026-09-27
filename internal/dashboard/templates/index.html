@@ -132,8 +132,9 @@
         <tbody></tbody>
       </table>
       <p class="empty" id="matches-empty" hidden>
-        No matches yet. A match appears here when enough players queue for the
-        same mode &mdash; <code>npln.players_per_match</code> decides how many.
+        No matches yet. A match appears here when a lobby fills
+        (<code>npln.players_per_match</code>), or when an even number of players
+        in one mode waits out <code>npln.versus_grace_period</code>.
       </p>
     </div>
   </section>

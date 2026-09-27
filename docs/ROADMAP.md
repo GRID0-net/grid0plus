@@ -180,11 +180,12 @@ the queue and session formation): a FIFO queue per mode, in memory. On a match,
 form a session naming a host and hand it to every player on their ticket
 stream. `AllocateIceServerSet` is built too.
 
-**`players_per_match` defaults to 2 rather than 8.** On a private network of a
-handful of consoles, waiting for a faithful 4v4 means never playing.
-`npln.mode_players` is how an operator with enough consoles asks for the real
-sizes — and the names are not hardcoded, because nothing public documents the
-strings the game puts in `matchmaking_config`. Every unknown mode is logged
+**`players_per_match` is 8, but as a cap.** A full lobby starts at once; below
+it, an even number of players (two equal teams) starts after
+`versus_grace_period` (20 seconds) passes with nobody arriving or leaving, so a
+handful of consoles still get to play. `npln.mode_players` sets a different cap
+per mode — and the names are not hardcoded, because nothing public documents
+the strings the game puts in `matchmaking_config`. Every unknown mode is logged
 once, and that log is how they get discovered.
 
 **Built: `SyncGameSession`.** The host publishes its listening port

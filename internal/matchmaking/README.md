@@ -55,12 +55,31 @@ after its ticket already succeeded does not wait for a change that has happened.
 
 ## Players per match
 
-`DefaultConfig` is **2**, not 8. This is a server for a handful of consoles the
-operator owns, and waiting for eight players means never playing.
+`DefaultConfig` is **8**, the real 4v4 — but for a versus mode it is a cap,
+not a target, because this is a server for a handful of consoles and waiting
+for eight players would mean never playing:
 
-`Config.ModeSizes` overrides that for one mode, and is how an operator with
-enough consoles asks for the faithful sizes — Turf War and Anarchy are 4v4,
-Salmon Run is four, Tricolour is 4v2v2.
+- **A full lobby starts immediately.** Nobody is left to wait for.
+- **Below the cap, only an even number starts,** so the two teams are equal.
+  An even count of two or more starts a countdown (`VersusGracePeriod`, 20
+  seconds by default); if it runs out with nobody arriving or leaving, the
+  match forms with everyone waiting.
+- **Any arrival or departure resets it.** An odd count stops the countdown
+  until one more player joins; a new even count starts it afresh. A player
+  who queues a second late joins the match instead of watching it leave.
+- **More than a full lobby** forms one full match at once, and the rest are
+  counted afresh under the same rule.
+- **A zero grace period** turns early starts off: matches form only when full.
+
+A formed match's capacity is the number of players it formed with, so an early
+four-player match is full at four.
+
+`Config.ModeSizes` sets a different cap for one mode — Turf War and Anarchy are
+4v4, Salmon Run is four, Tricolour is 4v2v2. Salmon Run-shaped modes
+(`CoopModes`) keep their own rule — no even split; a lone player waits on no
+clock, a second starts `CoopGracePeriod`, every arrival restarts it, and a
+full team forms at once — and need their size set here, or they take up to
+eight.
 
 **Those sizes are not hardcoded here, on purpose.** The key is the mode name the
 game puts in a ticket's `matchmaking_config`, and nothing public documents those

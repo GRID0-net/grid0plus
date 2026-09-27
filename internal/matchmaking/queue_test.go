@@ -488,73 +488,147 @@ func testGraceQueue(t *testing.T, playersPerMatch int, versus, coop time.Duratio
 	return New(cfg, func() time.Time { return *clock }), clock
 }
 
-// TestVersusGracePeriodWaitsThenFormsWithWhoIsThere: reaching the mode's size
-// does not form a match immediately; it starts a countdown, tracked as
-// StatePlacing, and forms once the countdown ends -- Sweep is what ends it,
-// since nothing else calls into the queue while everyone just waits.
-func TestVersusGracePeriodWaitsThenFormsWithWhoIsThere(t *testing.T) {
-	q, clock := testGraceQueue(t, 2, 30*time.Second, 0)
+// enqueueAll queues each player in a mode and returns every match that formed
+// along the way.
+func enqueueAll(t *testing.T, q *Queue, mode string, players ...string) []Session {
+	t.Helper()
+	var formed []Session
+	for _, who := range players {
+		_, sessions, err := q.Enqueue(who, mode)
+		if err != nil {
+			t.Fatalf("enqueue %s: %v", who, err)
+		}
+		formed = append(formed, sessions...)
+	}
+	return formed
+}
 
-	alice, sessions, _ := q.Enqueue("alice", "turf_war")
-	if len(sessions) != 0 {
-		t.Fatalf("a match formed with one player: %v", sessions)
+// enqueueTicket queues one player and returns their ticket.
+func enqueueTicket(t *testing.T, q *Queue, who, mode string) Ticket {
+	t.Helper()
+	ticket, _, err := q.Enqueue(who, mode)
+	if err != nil {
+		t.Fatalf("enqueue %s: %v", who, err)
 	}
-	_, sessions, _ = q.Enqueue("bob", "turf_war")
-	if len(sessions) != 0 {
-		t.Fatalf("a match formed the instant the grace period should have started: %v", sessions)
-	}
-	if got, _ := q.Get(alice.ID); got.State != StatePlacing {
-		t.Errorf("alice's state = %s, want placing once the countdown starts", got.State)
-	}
+	return ticket
+}
 
-	*clock = clock.Add(29 * time.Second)
-	if _, formed := q.Sweep(); len(formed) != 0 {
-		t.Fatalf("formed before the grace period elapsed: %v", formed)
-	}
+func TestAFullVersusLobbyStartsWithoutWaiting(t *testing.T) {
+	q, _ := testGraceQueue(t, 8, 20*time.Second, 0)
 
-	*clock = clock.Add(2 * time.Second)
-	_, formed := q.Sweep()
-	if len(formed) != 1 || len(formed[0].Players) != 2 {
-		t.Fatalf("formed = %v, want one 2-player match once the grace period elapsed", formed)
+	formed := enqueueAll(t, q, "turf_war", "p1", "p2", "p3", "p4", "p5", "p6", "p7")
+	if len(formed) != 0 {
+		t.Fatalf("a match formed before the lobby was full: %v", formed)
 	}
-	if got, _ := q.Get(alice.ID); got.State != StateSucceeded {
-		t.Errorf("alice's state = %s, want succeeded", got.State)
+	formed = enqueueAll(t, q, "turf_war", "p8")
+	if len(formed) != 1 || len(formed[0].Players) != 8 {
+		t.Fatalf("formed = %v, want one 8-player match the moment the eighth arrived", formed)
 	}
 }
 
-// TestVersusGracePeriodCancelsIfSomebodyLeaves: dropping below the mode's
-// size during the countdown cancels it -- there is no partial team to hold a
-// spot open for -- and reaching size again starts a fresh one.
-func TestVersusGracePeriodCancelsIfSomebodyLeaves(t *testing.T) {
-	q, clock := testGraceQueue(t, 2, 30*time.Second, 0)
+// TestAnEvenVersusLobbyStartsAfterTheGracePeriod: below the cap, an even count
+// starts a countdown (tracked as StatePlacing), and Sweep forms the match with
+// everyone waiting once it runs out -- nothing else calls into the queue while
+// the players just wait.
+func TestAnEvenVersusLobbyStartsAfterTheGracePeriod(t *testing.T) {
+	q, clock := testGraceQueue(t, 8, 20*time.Second, 0)
 
-	alice, _, _ := q.Enqueue("alice", "turf_war")
-	bob, _, _ := q.Enqueue("bob", "turf_war")
-	if got, _ := q.Get(alice.ID); got.State != StatePlacing {
-		t.Fatalf("state = %s, want placing", got.State)
+	if formed := enqueueAll(t, q, "turf_war", "alice", "bob", "carol", "dave"); len(formed) != 0 {
+		t.Fatalf("four players formed a match without waiting: %v", formed)
+	}
+	for _, id := range q.waiting["turf_war"] {
+		if got := q.tickets[id].State; got != StatePlacing {
+			t.Errorf("state = %s, want placing during the countdown", got)
+		}
 	}
 
-	if !q.Cancel(bob.ID) {
-		t.Fatal("cancelling bob's ticket (mid-countdown) was refused")
+	*clock = clock.Add(19 * time.Second)
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("formed before the grace period elapsed: %v", formed)
 	}
-	if got, _ := q.Get(alice.ID); got.State != StateSearching {
-		t.Errorf("alice's state = %s, want searching again once the countdown was cancelled", got.State)
+	*clock = clock.Add(2 * time.Second)
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 4 {
+		t.Fatalf("formed = %v, want one 4-player match once the grace period elapsed", formed)
+	}
+	if formed[0].MaxPlayers != 4 {
+		t.Errorf("an early match reports room for %d, want the 4 it formed with", formed[0].MaxPlayers)
+	}
+}
+
+// TestAnOddArrivalStopsTheCountdownUntilTheTeamsAreEven: a third player
+// joining two who are counting down stops the clock, since three cannot split
+// into two equal teams, and nothing starts however long they wait. A fourth
+// starts a fresh countdown, and the match that forms has all four.
+func TestAnOddArrivalStopsTheCountdownUntilTheTeamsAreEven(t *testing.T) {
+	q, clock := testGraceQueue(t, 8, 20*time.Second, 0)
+
+	enqueueAll(t, q, "turf_war", "alice", "bob")
+	*clock = clock.Add(15 * time.Second)
+	carol := enqueueTicket(t, q, "carol", "turf_war")
+	if got, _ := q.Get(carol.ID); got.State != StateSearching {
+		t.Errorf("carol's state = %s, want searching with an odd count", got.State)
 	}
 
 	*clock = clock.Add(time.Minute)
 	if _, formed := q.Sweep(); len(formed) != 0 {
-		t.Errorf("a match formed with nobody but alice waiting: %v", formed)
+		t.Fatalf("a match formed with three players: %v", formed)
 	}
 
-	// Reaching size again starts a fresh countdown, not an already-elapsed one.
-	q.Enqueue("carol", "turf_war")
-	*clock = clock.Add(29 * time.Second)
+	enqueueAll(t, q, "turf_war", "dave")
+	*clock = clock.Add(19 * time.Second)
 	if _, formed := q.Sweep(); len(formed) != 0 {
-		t.Fatalf("the new countdown fired early: %v", formed)
+		t.Fatalf("the fresh countdown fired early: %v", formed)
 	}
 	*clock = clock.Add(2 * time.Second)
-	if _, formed := q.Sweep(); len(formed) != 1 {
-		t.Fatalf("formed = %v, want one match once the fresh countdown elapsed", formed)
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 4 {
+		t.Fatalf("formed = %v, want one match with all four players", formed)
+	}
+}
+
+// TestLeavingToAnOddCountStopsTheCountdown: the same rule for a departure.
+func TestLeavingToAnOddCountStopsTheCountdown(t *testing.T) {
+	q, clock := testGraceQueue(t, 8, 20*time.Second, 0)
+
+	enqueueAll(t, q, "turf_war", "alice", "bob", "carol")
+	dave := enqueueTicket(t, q, "dave", "turf_war")
+	if !q.Cancel(dave.ID) {
+		t.Fatal("cancelling a ticket mid-countdown was refused")
+	}
+	*clock = clock.Add(time.Minute)
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("a match formed with three players left: %v", formed)
+	}
+}
+
+// TestPlayersPastAFullLobbyGetTheirOwnMatch: the first eight start at once,
+// and the rest are counted afresh under the same even-count rule.
+func TestPlayersPastAFullLobbyGetTheirOwnMatch(t *testing.T) {
+	q, clock := testGraceQueue(t, 8, 20*time.Second, 0)
+
+	formed := enqueueAll(t, q, "turf_war", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10")
+	if len(formed) != 1 || len(formed[0].Players) != 8 {
+		t.Fatalf("formed = %v, want one full match from the first eight", formed)
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, formed = q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 2 {
+		t.Fatalf("formed = %v, want the other two in their own match", formed)
+	}
+}
+
+// TestNoVersusGracePeriodMeansOnlyFullMatches: zero turns early starts off.
+func TestNoVersusGracePeriodMeansOnlyFullMatches(t *testing.T) {
+	q, clock := testGraceQueue(t, 4, 0, 0)
+
+	enqueueAll(t, q, "turf_war", "alice", "bob")
+	*clock = clock.Add(time.Minute)
+	if _, formed := q.Sweep(); len(formed) != 0 {
+		t.Fatalf("an early match formed with early starts off: %v", formed)
+	}
+	if formed := enqueueAll(t, q, "turf_war", "carol", "dave"); len(formed) != 1 {
+		t.Fatalf("formed = %v, want one match once the lobby was full", formed)
 	}
 }
 

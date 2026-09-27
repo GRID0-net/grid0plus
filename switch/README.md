@@ -448,8 +448,9 @@ Nothing public documents the strings the game puts in a ticket's
 `npln.mode_players`.
 
 **S7. Two consoles, one mode.** Both should be told about the same session with
-the same host, and the dashboard's Matches tab should show it. With
-`npln.players_per_match` at 2 this needs two consoles, not eight.
+the same host, and the dashboard's Matches tab should show it. Two consoles are
+enough: an even number of players below `npln.players_per_match` (8) starts
+after `npln.versus_grace_period` (20 seconds) with nobody else arriving.
 
 **S8. A Splatfest.** `switchnetctl fest build`, install the seed with
 `switch/bcat-installer` or by hand, and open the game. If the fest does not

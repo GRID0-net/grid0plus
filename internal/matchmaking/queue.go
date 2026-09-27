@@ -146,16 +146,12 @@ type Config struct {
 	// which the "unknown mode" log gives them the exact string for.
 	CoopModes map[string]bool
 
-	// VersusGracePeriod is how long a versus-shaped match waits, once it has
-	// enough players for two even teams, before actually forming.
+	// VersusGracePeriod is how long a versus-shaped match below its mode's
+	// size waits, with an even number of players, before forming anyway.
+	// Every arrival or departure restarts it, and an odd count stops it until
+	// one more player joins. A full match never waits.
 	//
-	// Zero means form the instant the count is reached, which is what this
-	// queue always did before grace periods existed. An operator running
-	// their own small group wants this non-zero: two players filling the
-	// lowered PlayersPerMatch is not "everyone who is coming has arrived", it
-	// is "the minimum has been met" -- a third or fourth player closing
-	// their own app at the same moment should still get to join, not watch
-	// the other two disappear into a match a second before they searched.
+	// Zero turns early starts off: versus matches then form only when full.
 	VersusGracePeriod time.Duration
 
 	// CoopGracePeriod is how long a Salmon Run-shaped match waits after its
@@ -185,20 +181,21 @@ type Config struct {
 
 // DefaultConfig is a sensible starting point for a small private network.
 //
-// PlayersPerMatch of 2 rather than 8 on purpose: this is a server for a handful
-// of consoles the operator owns, where waiting for eight players means never
-// playing. The real mode sizes belong in a mode table, driven by what a capture
-// shows the game expects; until then, a number that lets two friends actually
-// start a match is more useful than one that is faithful and idle.
+// PlayersPerMatch is 8, the real 4v4 size, but for a versus mode it is a cap
+// rather than a target: two, four or six players still get a match once the
+// grace period passes with an even count (see formVersusLocked). That is what
+// lets a handful of consoles play without waiting for eight, while a full
+// lobby still starts at once. Salmon Run-shaped modes take their own size from
+// ModeSizes; the real one is four.
 //
-// Both grace periods are 30 seconds, the operator's own choice for this
-// deployment rather than anything measured -- there is no real server to
-// capture a lobby-fill grace period from.
+// The grace periods are the operator's own choice for this deployment rather
+// than anything measured -- there is no real server to capture a lobby-fill
+// grace period from. Versus is 20 seconds, coop 30.
 var DefaultConfig = Config{
-	PlayersPerMatch:   2,
+	PlayersPerMatch:   8,
 	TicketTTL:         3 * time.Minute,
 	SessionTTL:        30 * time.Minute,
-	VersusGracePeriod: 30 * time.Second,
+	VersusGracePeriod: 20 * time.Second,
 	CoopGracePeriod:   30 * time.Second,
 }
 
@@ -841,37 +838,48 @@ func (q *Queue) formMatchesLocked() []Session {
 	return formed
 }
 
-// formVersusLocked forms a Turf War/Anarchy-shaped match: two even teams, one
-// countdown, started the moment the mode has enough players and run to
-// completion regardless of who queues behind it. Dropping below the mode's
-// size cancels the countdown -- there is no partial team to hold a spot open
-// for.
+// formVersusLocked forms a Turf War/Anarchy-shaped match: two even teams.
+//
+// The mode's size is a cap, not a target. A full room forms immediately --
+// there is nobody left to wait for. Below the cap, a match can still start,
+// but only with an even number of players, so the two teams are equal: an
+// even count of at least two starts a countdown, and if it runs out with the
+// count unchanged the match forms with everyone waiting. Anyone arriving or
+// leaving during the countdown resets it -- an odd count cancels it outright
+// and waits for one more player, and a new even count starts it afresh -- so
+// a player who queues a second late gets into the match instead of watching
+// it leave without them.
+//
+// A zero grace period turns early starts off entirely: matches then form only
+// when full.
 func (q *Queue) formVersusLocked(mode string) []Session {
 	size := q.playersForLocked(mode)
 	var formed []Session
 
-	for {
-		ids := q.liveWaitingLocked(mode)
-		if len(ids) < size {
-			q.cancelGraceLocked(mode)
-			return formed
-		}
-		if q.cfg.VersusGracePeriod <= 0 {
-			formed = append(formed, q.formSessionLocked(mode, ids[:size]))
-			continue
-		}
-		g, pending := q.grace[mode]
-		if !pending {
-			g = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod)}
-			q.grace[mode] = g
-			q.setModeStateLocked(mode, StatePlacing)
-		}
-		if q.now().Before(g.deadline) {
-			return formed
-		}
+	ids := q.liveWaitingLocked(mode)
+	for len(ids) >= size {
 		delete(q.grace, mode)
 		formed = append(formed, q.formSessionLocked(mode, ids[:size]))
+		ids = q.liveWaitingLocked(mode)
 	}
+
+	n := len(ids)
+	if q.cfg.VersusGracePeriod <= 0 || n < 2 || n%2 != 0 {
+		q.cancelGraceLocked(mode)
+		return formed
+	}
+
+	g, pending := q.grace[mode]
+	if !pending || n != g.lastCount {
+		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod), lastCount: n}
+		q.setModeStateLocked(mode, StatePlacing)
+		return formed
+	}
+	if q.now().Before(g.deadline) {
+		return formed
+	}
+	delete(q.grace, mode)
+	return append(formed, q.formSessionLocked(mode, ids))
 }
 
 // formCoopLocked forms a Salmon Run-shaped match: one team, no even split.
@@ -953,7 +961,10 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 	for _, id := range chosen {
 		players = append(players, q.tickets[id].UserID)
 	}
-	s := q.newSessionLocked(mode, q.playersForLocked(mode), players, false)
+	// A match's capacity is the number it formed with, not the mode's cap: an
+	// early four-player versus match is full at four, and a latecomer is
+	// matched into the next one rather than squeezed into this.
+	s := q.newSessionLocked(mode, len(players), players, false)
 
 	for _, id := range chosen {
 		t := q.tickets[id]

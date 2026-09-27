@@ -375,12 +375,14 @@ npln:
   # working server's access token, not guessed.
   access_token_ttl: 28800
 
-  # How many players a match takes.
+  # The most players a match takes.
   #
-  # TWO, not eight. This is a server for a handful of consoles, and waiting for
-  # a faithful 4v4 means never playing. Raise it once there are enough consoles
-  # to fill one.
-  players_per_match: 2
+  # Eight, the real 4v4. For Turf War/Anarchy-shaped modes this is a cap, not
+  # a target: a full lobby starts immediately, and below it a match with an
+  # even number of players (two equal teams) starts once versus_grace_period
+  # passes with nobody arriving or leaving -- so two, four or six friends
+  # still get to play.
+  players_per_match: 8
 
   # Per-mode overrides of the above.
   #
@@ -395,16 +397,18 @@ npln:
   # Modes formed like Salmon Run -- one team, no even split -- rather than
   # like Turf War/Anarchy. Same rule as mode_players: real strings from a
   # capture, none known yet, so this starts empty and everything is
-  # versus-shaped until you add one from the "unknown mode" log.
+  # versus-shaped until you add one from the "unknown mode" log. Give each one
+  # its size in mode_players too (Salmon Run is 4); otherwise it takes up to
+  # players_per_match.
   coop_modes: []
   #  - coop
 
-  # How long a versus-shaped match (two even teams) waits, once it has enough
-  # players, before actually forming -- so a third or fourth player closing
-  # their own app in the same instant the second one queued still gets to
-  # join, instead of watching the first two vanish into a match a second
-  # before they searched. Zero forms the instant the count is reached.
-  versus_grace_period: 30
+  # How long, in seconds, a versus-shaped match below players_per_match waits
+  # with an even number of players before starting anyway. Anyone arriving or
+  # leaving restarts the countdown; an odd count stops it until one more
+  # player joins, so the teams are always equal. A full lobby never waits.
+  # Zero turns early starts off: matches then start only when full.
+  versus_grace_period: 20
 
   # How long a Salmon Run-shaped match waits after its SECOND player joins
   # before forming, restarting on every further arrival up to the mode's size

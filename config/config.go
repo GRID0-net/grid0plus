@@ -310,11 +310,12 @@ type NPLN struct {
 	// exactly iat=..., exp=iat+28800.
 	AccessTokenTTL int `yaml:"access_token_ttl"`
 
-	// PlayersPerMatch is how many players a match takes for any mode
+	// PlayersPerMatch is the most players a match takes for any mode
 	// mode_players does not name.
 	//
-	// Two, not eight. This is a server for a handful of consoles, and waiting
-	// for a faithful 4v4 means never playing.
+	// Eight, the real 4v4. For a versus mode it is a cap, not a target: a full
+	// lobby starts at once, and below it an even count of players starts after
+	// versus_grace_period, so a handful of consoles still get to play.
 	PlayersPerMatch int `yaml:"players_per_match"`
 
 	// ModePlayers overrides players_per_match for one matchmaking mode.
@@ -332,9 +333,11 @@ type NPLN struct {
 	// shaped) until an operator adds one from the "unknown mode" log.
 	CoopModes []string `yaml:"coop_modes"`
 
-	// VersusGracePeriod is how many seconds a versus-shaped match (two even
-	// teams) waits, once it has enough players, before actually forming.
-	// Zero forms the instant the count is reached.
+	// VersusGracePeriod is how many seconds a versus-shaped match below its
+	// size waits with an even number of players (two teams of equal size)
+	// before forming anyway. Any arrival or departure restarts it; an odd
+	// count stops it until one more player joins. A full match never waits.
+	// Zero turns early starts off, so matches form only when full.
 	VersusGracePeriod int `yaml:"versus_grace_period"`
 
 	// CoopGracePeriod is how many seconds a Salmon Run-shaped match waits
@@ -779,9 +782,10 @@ func Default() Config {
 			Issuer:         "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
 			JWKSURL:        "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates",
 			AccessTokenTTL: 28800,
-			// Two, so two friends can start a match. See the field comment.
-			PlayersPerMatch:   2,
-			VersusGracePeriod: 30,
+			// Eight as a cap; smaller even matches start after the grace
+			// period. See the field comments.
+			PlayersPerMatch:   8,
+			VersusGracePeriod: 20,
 			CoopGracePeriod:   30,
 			TicketTTL:         180,
 			// fro-3 because that is the member the reference server resolves
