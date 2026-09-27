@@ -12,6 +12,7 @@ package matchmaking
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -943,6 +944,11 @@ func (q *Queue) setModeStateLocked(mode string, state State) {
 // the console can see -- the alternative, a second construction path, is how
 // the two drift until one of them produces a session the game will not join.
 func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
+	// Callers pass a slice of the waiting list itself, and removing each
+	// ticket below shifts that list in place. Without a copy the loop skips
+	// every other ticket, leaving players in the match whose tickets still
+	// say they are searching.
+	chosen = slices.Clone(chosen)
 	players := make([]string, 0, len(chosen))
 	for _, id := range chosen {
 		players = append(players, q.tickets[id].UserID)

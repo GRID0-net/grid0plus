@@ -673,3 +673,35 @@ func TestOnlyARoomCanBeClosed(t *testing.T) {
 		t.Error("a closed room is still there")
 	}
 }
+
+// TestEveryPlayerInABigMatchHasTheirTicketMarkedMatched: forming a match of
+// more than two once walked the waiting list while removing from it, and
+// skipped every other ticket -- the skipped players were in the match but their
+// tickets still said searching, so their consoles never learned of it.
+func TestEveryPlayerInABigMatchHasTheirTicketMarkedMatched(t *testing.T) {
+	q, _ := testQueue(t, 4)
+
+	var tickets []Ticket
+	var formed []Session
+	for _, who := range []string{"alice", "bob", "carol", "dave"} {
+		ticket, sessions, err := q.Enqueue(who, "turf_war")
+		if err != nil {
+			t.Fatalf("enqueue %s: %v", who, err)
+		}
+		tickets = append(tickets, ticket)
+		formed = append(formed, sessions...)
+	}
+	if len(formed) != 1 {
+		t.Fatalf("formed %d matches, want one", len(formed))
+	}
+	for _, ticket := range tickets {
+		got, _ := q.Get(ticket.ID)
+		if got.State != StateSucceeded || got.SessionID != formed[0].ID {
+			t.Errorf("%s: state %s, session %q; want succeeded in %s",
+				ticket.UserID, got.State, got.SessionID, formed[0].ID)
+		}
+	}
+	if left := q.liveWaitingLocked("turf_war"); len(left) != 0 {
+		t.Errorf("%d tickets still waiting after everyone was matched", len(left))
+	}
+}
