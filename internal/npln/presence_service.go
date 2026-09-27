@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -239,12 +241,18 @@ func (p *presenceService) SubscribePresences(
 		for _, id := range watched {
 			out = append(out, p.s.presenceProto(id, presences[id]))
 		}
-		if err := stream.Send(&friendspb.SubscribePresencesResponse{
-			Response: &friendspb.SubscribePresencesResponse_Presences_{
-				Presences: &friendspb.SubscribePresencesResponse_Presences{Presences: out},
-			},
-		}); err != nil {
-			return err
+		// A captured empty subscription has no presence page at all. For a
+		// nonempty page, the resume token describes the entire enumeration.
+		if len(out) > 0 {
+			if err := stream.Send(&friendspb.SubscribePresencesResponse{
+				Response: &friendspb.SubscribePresencesResponse_Presences_{
+					Presences: &friendspb.SubscribePresencesResponse_Presences{
+						Presences: out, ResumeToken: presenceResumeToken(out),
+					},
+				},
+			}); err != nil {
+				return err
+			}
 		}
 		return stream.Send(&friendspb.SubscribePresencesResponse{
 			Response: &friendspb.SubscribePresencesResponse_EnumerationDone{
@@ -297,7 +305,8 @@ func (p *presenceService) SubscribePresences(
 		return stream.Send(&friendspb.SubscribePresencesResponse{
 			Response: &friendspb.SubscribePresencesResponse_Presences_{
 				Presences: &friendspb.SubscribePresencesResponse_Presences{
-					Presences: []*friendspb.Presence{p.s.presenceProto(userID, presences[userID])},
+					Presences:   []*friendspb.Presence{p.s.presenceProto(userID, presences[userID])},
+					ResumeToken: presenceResumeTokenForIDs(watched),
 				},
 			},
 		})
@@ -361,6 +370,20 @@ func (s *Server) watchablePresenceIDs(ctx context.Context, callerID string, name
 	for _, fr := range friendships {
 		friend[fr.FriendID] = true
 	}
+	// An empty selector means enumerate the caller's friends, as in the
+	// working hall capture. Treating it as an empty set made Splatoon see no
+	// friends even though SubscribeFriendUsers had already listed them.
+	if len(names) == 0 {
+		out := make([]string, 0, len(friendships))
+		for _, fr := range friendships {
+			owner, err := s.store.GetUser(ctx, fr.FriendID)
+			if err != nil || !presence.Visible(ctx, s.store, owner, callerID) {
+				continue
+			}
+			out = append(out, fr.FriendID)
+		}
+		return out, nil
+	}
 
 	out := make([]string, 0, min(len(names), maxSubscribedPresences))
 	seen := make(map[string]bool, len(names))
@@ -402,6 +425,34 @@ func presenceUserID(name string) string {
 	name = strings.TrimSuffix(strings.TrimSpace(name), "/")
 	name = strings.TrimSuffix(name, "/presence")
 	return lastSegment(name)
+}
+
+// presenceResumeToken encodes the complete set being enumerated, not only
+// the latest changed presence. The working capture's token is base64 of a
+// repeated protobuf entry: each entry contains a user id and an empty cursor.
+func presenceResumeToken(presences []*friendspb.Presence) string {
+	ids := make([]string, 0, len(presences))
+	for _, p := range presences {
+		ids = append(ids, presenceUserID(p.GetName()))
+	}
+	return presenceResumeTokenForIDs(ids)
+}
+
+func presenceResumeTokenForIDs(ids []string) string {
+	var raw []byte
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		var entry []byte
+		entry = protowire.AppendTag(entry, 1, protowire.BytesType)
+		entry = protowire.AppendString(entry, id)
+		entry = protowire.AppendTag(entry, 2, protowire.BytesType)
+		entry = protowire.AppendString(entry, "")
+		raw = protowire.AppendTag(raw, 1, protowire.BytesType)
+		raw = protowire.AppendBytes(raw, entry)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
 }
 
 // presenceProto renders one user's resolved presence as the wire message.

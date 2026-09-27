@@ -75,6 +75,54 @@ func TestSubscribePresencesOnlyServesSelfAndFriends(t *testing.T) {
 	}
 }
 
+func TestSubscribePresencesWithoutNamesEnumeratesFriends(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("watcher0000000004", "device-watcher-4")
+	h.createUser("friend0000000004", "device-friend-4")
+	if err := h.store.AddFriendship(context.Background(), "watcher0000000004", "friend0000000004", h.now); err != nil {
+		t.Fatal(err)
+	}
+	rpcCtx := h.ctx(h.sessionFor(t, "watcher0000000004", "device-watcher-4"), "")
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).SubscribePresences(rpcCtx,
+		&friendspb.SubscribePresencesRequest{User: "tenants/current/users/current"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opening, err := stream.Recv(); err != nil || opening.GetHeartbeat() == nil {
+		t.Fatalf("opening heartbeat: %v, %v", opening, err)
+	}
+	page, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := page.GetPresences()
+	if got == nil || len(got.GetPresences()) != 1 ||
+		got.GetPresences()[0].GetName() != "tenants/"+testTenant+"/users/friend0000000004/presence" ||
+		got.GetResumeToken() == "" {
+		t.Fatalf("friend enumeration = %v, want one friend and a resume token", page)
+	}
+	if done, err := stream.Recv(); err != nil || done.GetEnumerationDone() == nil {
+		t.Fatalf("enumeration done: %v, %v", done, err)
+	}
+}
+
+func TestSubscribePresencesWithoutFriendsSkipsEmptyPage(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("alone00000000001", "device-alone")
+	rpcCtx := h.ctx(h.sessionFor(t, "alone00000000001", "device-alone"), "")
+	stream, err := friendspb.NewPresenceServiceClient(h.conn).SubscribePresences(rpcCtx,
+		&friendspb.SubscribePresencesRequest{User: "tenants/current/users/current"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opening, err := stream.Recv(); err != nil || opening.GetHeartbeat() == nil {
+		t.Fatalf("opening heartbeat: %v, %v", opening, err)
+	}
+	if done, err := stream.Recv(); err != nil || done.GetEnumerationDone() == nil {
+		t.Fatalf("expected enumeration_done without an empty presence page: %v, %v", done, err)
+	}
+}
+
 // TestSubscribePresencesRespectsAFriendsPresencePrivacySetting covers the gap
 // fixed alongside this test: watchablePresenceIDs used to allow any friend
 // through regardless of the friend's own presence.Permissions setting, unlike
