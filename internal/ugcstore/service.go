@@ -8,8 +8,8 @@
 // docs/CAPTURES/npln-gamerecord-attributes-2026-09-23.md:
 //
 //   - a document that does not exist is NotFound, sent as headers then a
-//     separate trailers frame (the npln interceptor does that for every unary
-//     call) -- an empty Document message instead crashes the game;
+//     separate trailers frame through GetDocument's server-streaming transport
+//     -- an empty Document message instead crashes the game;
 //   - writes persist, or a document the game created is missing on the next
 //     read and it re-initialises forever;
 //   - a name that does not parse is never stored.
@@ -116,12 +116,16 @@ func getDocumentStreamHandler(srv any, stream grpc.ServerStream) error {
 	}
 	doc, err := s.GetDocument(stream.Context(), req)
 	if err != nil {
-		// Nintendo's S3 path labels the empty/error response as Unary in
-		// addition to the ServerStreaming service header. Do not declare a
-		// zero Content-Length here: this deployment's nginx grpc_pass ended
-		// the response before forwarding trailers when that header was set.
+		// Nintendo's captured S3 response labels this as Unary as well as
+		// ServerStreaming and includes Content-Length: 0 before the NotFound
+		// trailers. The earlier nginx failure was measured with the generated
+		// unary handler; this streaming registration now matches the reference
+		// transport, so retain the captured header and verify it on hardware.
 		if status.Code(err) == codes.NotFound {
-			_ = stream.SetHeader(metadata.Pairs("npln-grpc-type", "Unary"))
+			_ = stream.SetHeader(metadata.Pairs(
+				"npln-grpc-type", "Unary",
+				"content-length", "0",
+			))
 		}
 		return err
 	}
