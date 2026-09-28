@@ -845,10 +845,12 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 	if sess.Room {
 		return s.roomProto(sess)
 	}
-	// Nintendo announces the mode's capacity as both counts (8/8 for a public
-	// battle, per Nextendo's capture notes), however many consoles are really
-	// in it; the actual roster is what the session host reports.
-	capacity := int32(modeCapacity(sess.Mode, len(sess.Players)))
+	// A full captured battle advertises 8/8. On this private network the
+	// queue can form a partial match after its grace period; advertising 8/8
+	// for a two-player roster asks the game to wait for six nonexistent
+	// participants. Advertise the formed roster as the session's capacity.
+	// Full-size matches retain the captured 8/8 (or Coop 4/4) shape.
+	capacity := int32(len(sess.Players))
 	return &mmpb.GameSession{
 		Name:                    s.tenantPath() + "/gameSessions/" + sess.ID,
 		MaxParticipantCount:     capacity,
@@ -1078,18 +1080,4 @@ func queueConfig(c config.NPLN) matchmaking.Config {
 		}
 	}
 	return cfg
-}
-
-// modeCapacity is a matchmaking config's player capacity: 4 for Salmon Run,
-// 8 for every versus mode. Anything unrecognised falls back to the roster.
-func modeCapacity(mode string, fallback int) int {
-	switch {
-	case strings.Contains(mode, "coop"):
-		return 4
-	case strings.Contains(mode, "regular"), strings.Contains(mode, "bankara"),
-		strings.Contains(mode, "league"), strings.Contains(mode, "x_match"),
-		strings.Contains(mode, "fest"):
-		return 8
-	}
-	return fallback
 }

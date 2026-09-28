@@ -11,8 +11,32 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/matchmaking"
 	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
+
+func TestPartialPublicMatchAdvertisesItsActualRosterAsFull(t *testing.T) {
+	h := newHarness(t)
+	for _, tc := range []struct {
+		mode    string
+		players int
+	}{
+		{"regular", 2},
+		{"coop", 2},
+		{"regular", 8},
+		{"coop", 4},
+	} {
+		players := make([]string, tc.players)
+		for i := range players {
+			players[i] = "player-" + string(rune('a'+i))
+		}
+		got := h.srv.sessionProto(matchmaking.Session{ID: "test", Mode: tc.mode, Players: players})
+		if got.GetCurrentParticipantCount() != int32(tc.players) || got.GetMaxParticipantCount() != int32(tc.players) {
+			t.Errorf("%s with %d players advertises %d/%d, want %d/%d", tc.mode, tc.players,
+				got.GetCurrentParticipantCount(), got.GetMaxParticipantCount(), tc.players, tc.players)
+		}
+	}
+}
 
 // TestTwoPlayersQueueAndBothReceiveTheSameSession is the matchmaking item's own
 // acceptance criterion: two clients queue, both receive a session on their
