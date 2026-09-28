@@ -24,15 +24,16 @@ package ugcstore
 import (
 	"context"
 	"errors"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"log/slog"
 	"strings"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/n-popescu/grid0plus/internal/db"
 	"github.com/n-popescu/grid0plus/internal/splatdiag"
@@ -77,7 +78,55 @@ func NewService(opts Options) *Service {
 }
 
 // Register attaches the service to a gRPC server.
-func (s *Service) Register(srv grpc.ServiceRegistrar) { ugcpb.RegisterUgcstoreServer(srv, s) }
+func (s *Service) Register(srv grpc.ServiceRegistrar) {
+	// Nintendo's gateway exposes GetDocument through a server-streaming
+	// transport even though the console sends one unary request and expects at
+	// most one Document. This matters for an absent document: a stream can end
+	// without a protobuf message, while grpc-go's generated unary handler cannot
+	// represent that response. Keep the generated descriptor for every other
+	// method and override only this one, as observed in Nextendo's working S3
+	// implementation.
+	desc := ugcpb.Ugcstore_ServiceDesc
+	methods := make([]grpc.MethodDesc, 0, len(desc.Methods))
+	for _, method := range desc.Methods {
+		if method.MethodName != "GetDocument" {
+			methods = append(methods, method)
+		}
+	}
+	desc.Methods = methods
+
+	streams := append([]grpc.StreamDesc(nil), desc.Streams...)
+	streams = append(streams, grpc.StreamDesc{
+		StreamName:    "GetDocument",
+		Handler:       getDocumentStreamHandler,
+		ServerStreams: true,
+	})
+	desc.Streams = streams
+	srv.RegisterService(&desc, s)
+}
+
+func getDocumentStreamHandler(srv any, stream grpc.ServerStream) error {
+	s, ok := srv.(*Service)
+	if !ok {
+		return status.Error(codes.Internal, "invalid ugcstore service")
+	}
+	req := new(ugcpb.GetDocumentRequest)
+	if err := stream.RecvMsg(req); err != nil {
+		return err
+	}
+	doc, err := s.GetDocument(stream.Context(), req)
+	if err != nil {
+		// Nintendo's S3 path labels the empty/error response as Unary in
+		// addition to the ServerStreaming service header. Do not declare a
+		// zero Content-Length here: this deployment's nginx grpc_pass ended
+		// the response before forwarding trailers when that header was set.
+		if status.Code(err) == codes.NotFound {
+			_ = stream.SetHeader(metadata.Pairs("npln-grpc-type", "Unary"))
+		}
+		return err
+	}
+	return stream.SendMsg(doc)
+}
 
 func (s *Service) caller(ctx context.Context) (string, error) {
 	if s.callerID == nil {

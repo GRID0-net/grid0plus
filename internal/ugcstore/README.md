@@ -23,7 +23,8 @@ them back. Before this package the service was not registered at all.
 
 | Rule | Because |
 | --- | --- |
-| a missing document is `NotFound`, headers and trailers in separate frames | an empty `Document`, or a single Trailers-Only frame, crashes the game (`2162-0001`) — the npln unary interceptor forces the two frames |
+| `GetDocument` is registered as server-streaming although the console sends one request | this matches the working S3 implementation and lets an absent read end without sending a protobuf message |
+| a missing document is `NotFound`, headers and trailers in separate frames | an empty `Document`, or a single Trailers-Only frame, crashes the game (`2162-0001`) — the NPLN stream interceptor forces the opening headers |
 | writes persist in Postgres | a document the game wrote and cannot read back makes it re-initialise forever |
 | names must be `tenants/<tenant>/documents/<rest>` | the game's own name parser aborts on anything else, and a stored bad name is read back on every start |
 | `tenants/current` and both forms of our tenant id are one document | the console uses more than one form |
