@@ -33,13 +33,13 @@ func TestNativeBCATServesOnlySeededTitlesAndLeavesTopicsAlone(t *testing.T) {
 	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("summary.yml")) {
 		t.Fatal("list lacks the seed filename")
 	}
-	for _, field := range []string{"version", "format", "semantics", "news_id"} {
-		if !bytes.Contains(list.Body.Bytes()[0x120:], []byte(field)) {
-			t.Errorf("list data entry lacks parser-required field %q", field)
-		}
-	}
 	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("async")) {
 		t.Fatal("seeded BCAT directory must use the mode previously observed to trigger data requests")
+	}
+	for _, field := range [][]byte{{0xa7, 'v', 'e', 'r', 's', 'i', 'o', 'n'}, {0xa7, 'n', 'e', 'w', 's', '_', 'i', 'd'}} {
+		if bytes.Contains(list.Body.Bytes()[0x120:], field) {
+			t.Errorf("list includes unverified metadata key %q", field[1:])
+		}
 	}
 	if !strings.Contains(list.Header().Get("ETag"), "\"") {
 		t.Fatal("missing quoted ETag")

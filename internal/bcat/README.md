@@ -32,13 +32,13 @@ patch before real hardware will accept it. The list digest algorithm and
 directory names still require a real capture/hardware check; see
 `docs/BCAT_NATIVE.md`.
 
-The 22.5.0 `bcat.nso` parser requires every `data_list` entry to include
-`version.format` (uint8), `version.semantics` (uint8), and `news_id`
-(non-negative integer), in addition to `data_id`, `filename`, `url`,
-`digest`, and `size`. The native list builder sends zero for the three
-metadata values because the parser accepts those types and values; their
-meaning for Splatoon 3 remains unverified. A successful hardware download
-capture should replace that provisional choice if it shows different values.
+The 22.5.0 `bcat.nso` contains parser paths for `version.format`,
+`version.semantics`, and `news_id`, in addition to the `data_list` fields the
+builder sends. A hardware run with guessed zero values for those three fields
+failed at list handling and made no data request; the preceding builder, which
+omitted them, did trigger file requests. The current builder therefore omits
+them. A successful Splatoon 3 list capture is still needed to establish whether
+they are optional or which values belong there.
 
 ## Earlier installer-only design
 
