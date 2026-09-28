@@ -121,9 +121,10 @@ Build the MessagePack `list` body from a seed folder. Reuse the existing
 `Seed` type (`internal/bcat/seed.go`) as the source of truth for what files
 exist. Map it to the confirmed field names:
 
-- one `directories[]` entry per delivery-cache directory (for a fest:
-  whatever the seed's tree is — `vsdata`/`coopdata`/`fesdata` for S2,
-  the fest packs for S3);
+- one `directories[]` entry per delivery-cache directory. The provided
+  Splatoon 3 fest cache uses `eu-default`, `us-default`, `jp-default`, and
+  `ap-default`; `fesdata` is not its region directory. The 22.5.0 module
+  returns 2122-0002 when the directory requested by the game is absent;
 - each `data_list[]` entry: `filename`, `size`, `data_id` (a stable small
   int per file — index is fine), `url` (see §3.3), and `digest`.
 - `digest`: **open** which hash (§7). Ship it as the same 16-byte value the

@@ -1,29 +1,8 @@
 // Package bcat builds the BCAT packs a custom Splatfest's content lives in.
-//
-// It does NOT serve BCAT — but the reason is narrower than an earlier version of
-// this comment claimed, and the difference matters enough to state.
-//
-// **The reason that does not hold on its own.** Nintendo's delivery container
-// carries an RSA-2048 signature at offset 0x20 of its 0x120 header, and it is
-// tempting to conclude that producing one would mean forging a Nintendo
-// signature. switchbrew documents only that the FIELD exists: nothing about a
-// verification step, nothing about what happens on failure. And a console
-// running GRID0+ already has sigpatches — bypassing Nintendo signature checks
-// is the normal state of a CFW console, which ROADMAP.md §3.3 already depends on.
-// Whether they reach the bcat sysmodule is untested, and untested is not
-// impossible.
-//
-// **The reason that does hold.** The response body of /api/nx/v1/list/<name> is
-// undocumented. Kinnay's wiki gives the paths and nothing else; no public
-// implementation exists. Serving BCAT means inventing the manifest the console
-// parses, and a wrong manifest gives a console that connects, receives something
-// unparseable and fails with nothing in any log — which is CLAUDE.md rule 6, not
-// rule 2.
-//
-// So GRID0+ builds the delivery cache directly instead: the same files a real
-// BCAT download would have left behind, installed onto the console by other
-// means. TODO.md §2.4 has the experiment that would change this, and Probe in
-// this package is its server.
+// The installer path writes regional cache directories directly. Native
+// list/data serving is opt-in through internal/stubs and requires a matching
+// signature-check patch on the console; see the package README for the
+// remaining manifest questions.
 //
 // What the console ends up with, per region:
 //

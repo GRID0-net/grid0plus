@@ -12,7 +12,7 @@ import (
 func TestNativeBCATServesOnlySeededTitlesAndLeavesTopicsAlone(t *testing.T) {
 	root := t.TempDir()
 	title := "0100c2500fc20000"
-	dir := filepath.Join(root, title, "fesdata")
+	dir := filepath.Join(root, title, "eu-default")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -33,24 +33,27 @@ func TestNativeBCATServesOnlySeededTitlesAndLeavesTopicsAlone(t *testing.T) {
 	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("summary.yml")) {
 		t.Fatal("list lacks the seed filename")
 	}
-	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("async")) {
-		t.Fatal("seeded BCAT directory must use the mode previously observed to trigger data requests")
+	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("eu-default")) {
+		t.Fatal("list does not advertise the regional Splatoon 3 directory")
+	}
+	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("sync")) {
+		t.Fatal("list uses a mode rejected by the BCAT parser")
 	}
 	for _, field := range [][]byte{{0xa7, 'v', 'e', 'r', 's', 'i', 'o', 'n'}, {0xa7, 'n', 'e', 'w', 's', '_', 'i', 'd'}} {
-		if bytes.Contains(list.Body.Bytes()[0x120:], field) {
-			t.Errorf("list includes unverified metadata key %q", field[1:])
+		if !bytes.Contains(list.Body.Bytes()[0x120:], field) {
+			t.Errorf("list is missing required metadata key %q", field[1:])
 		}
 	}
 	if !strings.Contains(list.Header().Get("ETag"), "\"") {
 		t.Fatal("missing quoted ETag")
 	}
-	data := get(t, h, "bcat-data-lp1.cdn.nintendo.net", bcatDataPrefix+title+"/fesdata/summary.yml")
+	data := get(t, h, "bcat-data-lp1.cdn.nintendo.net", bcatDataPrefix+title+"/eu-default/summary.yml")
 	if data.Code != http.StatusOK || string(data.Body.Bytes()[0x120:]) != "FestID: TEST\n" {
 		t.Fatalf("data status=%d body=%q", data.Code, data.Body.String())
 	}
 	for _, tt := range []struct{ host, path string }{
 		{"bcat-list-lp1.cdn.nintendo.net", bcatListPrefix + "01003bc0000a0000"},
-		{"bcat-data-lp1.cdn.nintendo.net", bcatDataPrefix + title + "/fesdata/nope"},
+		{"bcat-data-lp1.cdn.nintendo.net", bcatDataPrefix + title + "/eu-default/nope"},
 		{"bcat-topics-lp1.cdn.nintendo.net", "/api/nx/v1/titles/" + title + "/topics"},
 	} {
 		res := get(t, h, tt.host, tt.path)

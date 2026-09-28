@@ -44,13 +44,15 @@ Ordered by how much a capture would help.
 
 ### Native BCAT list metadata (`internal/bcat/native.go`)
 
-The 22.5.0 `bcat.nso` has parser paths for `version.format`,
-`version.semantics`, and `news_id` in each data-list entry. A hardware run with
-guessed zero values failed during list handling and made no data request; the
-prior builder omitted them and triggered file requests. The builder currently
-omits them pending a successful Splatoon 3 list capture, which would establish
-whether they are optional or what values to send. Change them only in
-`BuildNativeList`.
+The 22.5.0 `bcat.nso` requires `version.format`, `version.semantics`, and
+`news_id` in each data-list entry. The builder sends zero for each, but a
+successful Splatoon 3 list capture is needed to confirm their values. The
+earlier apparent data downloads after omitting them were manual `curl/8.5.0`
+probes, not console requests. The module also accepts `sync` or `copy` as a
+directory mode; `async` yields 2122-0203. The requested directory must appear
+in the list or the module yields 2122-0002. The provided working Splatoon 3
+fest cache uses regional names (`eu-default`, `us-default`, `jp-default`,
+`ap-default`), while the earlier VM seed exposed only `fesdata`.
 
 ### 1. `GET /2.0.0/users/<id>/friends` — ~~the response shape~~ **CAPTURED**
 

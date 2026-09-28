@@ -129,11 +129,9 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 		w.str("name")
 		w.str(dir)
 		w.str("mode")
-		// Keep the mode that produced actual data requests on this title. The
-		// Splatoon 2 fesdata sample uses sync, but changing Splatoon 3 to that
-		// value stopped its client after the list response; a successful S3
-		// manifest capture is needed before changing this again.
-		w.str("async")
+		// The 22.5.0 BCAT parser accepts sync and copy; async returns its
+		// list-parser error (2122-0203) before it considers the directory.
+		w.str("sync")
 		w.str("by_country_group")
 		w.bool(false)
 		w.str("digest")
@@ -141,14 +139,11 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 		w.str("data_list")
 		w.arrayLen(len(groups[dir]))
 		for i, file := range groups[dir] {
-			// The module contains parser paths for version and news_id, but a
-			// hardware run only advanced to file requests while these fields were
-			// absent. Sending guessed zero values made the console fail at the
-			// list. Keep them omitted until a successful Splatoon 3 response settles
-			// both presence and values.
-			// TODO(capture-needed): compare this entry with a successful Splatoon 3
-			// BCAT list response; change only here.
-			w.mapLen(5)
+			// The 22.5.0 parser requires all three bits at data_list entry close.
+			// Their types are known; the values for Splatoon 3 still need a capture.
+			// TODO(capture-needed): compare these values with a successful
+			// Splatoon 3 list response; change only here.
+			w.mapLen(7)
 			w.str("data_id")
 			w.uint(uint64(i + 1))
 			w.str("filename")
@@ -159,6 +154,14 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 			w.str(digestBytes(file.Data))
 			w.str("size")
 			w.uint(uint64(len(file.Data)))
+			w.str("version")
+			w.mapLen(2)
+			w.str("format")
+			w.uint(0)
+			w.str("semantics")
+			w.uint(0)
+			w.str("news_id")
+			w.uint(0)
 		}
 	}
 	return w.bytes(), nil
