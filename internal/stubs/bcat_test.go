@@ -38,6 +38,9 @@ func TestNativeBCATServesOnlySeededTitlesAndLeavesTopicsAlone(t *testing.T) {
 			t.Errorf("list data entry lacks parser-required field %q", field)
 		}
 	}
+	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("sync")) {
+		t.Fatal("seeded BCAT directory must be scheduled for synchronous delivery")
+	}
 	if !strings.Contains(list.Header().Get("ETag"), "\"") {
 		t.Fatal("missing quoted ETag")
 	}

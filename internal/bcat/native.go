@@ -129,7 +129,11 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 		w.str("name")
 		w.str(dir)
 		w.str("mode")
-		w.str("async")
+		// Fest and schedule packs must be present before the game consumes the
+		// directory. Real Splatoon 2 festival manifests mark fesdata as sync;
+		// advertising these operator-seeded packs as async can leave the console
+		// with the list cached but no download started for the active event.
+		w.str("sync")
 		w.str("by_country_group")
 		w.bool(false)
 		w.str("digest")
