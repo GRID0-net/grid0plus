@@ -51,6 +51,7 @@ It is a separate service (`cmd/toolbox`) rather than a route added to
 | --- | --- |
 | `GET /status` | `{"services":[{"name":"baas","status":"ok"}, ...]}` — see below |
 | `GET /updates/latest` | `{"tag_name", "browser_download_url", "size"}`, shaped exactly like GitHub's own release JSON |
+| `GET /updates/latest/download` | streams the latest release's `.nro`, for a caller that does not know the asset id |
 | `GET /updates/download?asset=<id>` | streams that release's `.nro` asset |
 
 ### `/status`
@@ -65,6 +66,24 @@ more detailed probe: a status that says "unknown, and here is why" is worth
 more than a colour this package never earned.
 
 ### `/updates/latest` and `/updates/download`
+
+`/updates/latest/download` is the same body as `/updates/download`, reached
+without the caller having to walk `/updates/latest` first and hold on to a
+numeric asset id. The updater shipped before this endpoint knew only the
+`browser_download_url` that `/updates/latest` hands back, so a console that
+wants the newest `.nro` outright — a first install, or a recovery where its
+stored URL is stale — otherwise has two round trips and a piece of
+GitHub-shaped state to get wrong. It resolves the asset through the same
+release fetch/cache and the same `nroAsset` check as everything else here, so
+a release with several `.nro` files is a `502` rather than whichever one
+GitHub happened to list first.
+
+Its response differs from the legacy path in one deliberate way: it sets
+`Content-Disposition: attachment; filename="switchnet.nro"`. That filename is
+part of the stable URL the toolbox's own updater was built against, so
+changing it would strand installed copies. `/updates/download?asset=<id>`
+keeps its old headers untouched, because something may already be parsing
+them.
 
 `source/update.c` in `grid0plus-toolbox` already parses exactly three keys out
 of a GitHub release response — `tag_name`, `browser_download_url`, `size` —
@@ -100,8 +119,9 @@ per console.
   consoles can check for updates, that has to be a different mechanism —
   this package is not it.
 - **No error detail in `/status`.** See "why this exists" above.
-- **No mirroring or caching of the `.nro` itself.** `/updates/download`
-  proxies GitHub live, per request. At the traffic level one GRID0+
+- **No mirroring or caching of the `.nro` itself.** `/updates/download` and
+  `/updates/latest/download` proxy GitHub live, per request; the latter reuses
+  only the *release metadata* cache, never the binary. At the traffic level one GRID0+
   deployment sees, holding a second copy of the binary on disk (and keeping
   it in sync with whatever GitHub currently has tagged latest) is
   complexity this does not need yet.
