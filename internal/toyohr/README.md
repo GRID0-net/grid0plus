@@ -54,6 +54,11 @@ against (6 real RPCs, 5 implemented):
 it to the service descriptor and answers the empty message Nintendo answered
 during a real Splatfest. An `Unimplemented` there is a hard error in-game.
 
+`GetFestResult` is addressed under the separate `festResults/<id>` resource
+collection, not `fests/<id>`. The result response echoes that requested name;
+returning `InvalidArgument` for this normal path stops the hall flow before the
+console can continue to the BCAT download.
+
 ## A Splatfest lives in two places, and they must agree
 
 This is the thing to understand before changing anything here.

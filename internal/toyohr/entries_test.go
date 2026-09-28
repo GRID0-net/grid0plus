@@ -256,6 +256,40 @@ func TestTheVoteIsMeasuredAndTheBattleRatiosAreReportedAsNotAvailable(t *testing
 	}
 }
 
+func TestGetFestResultAcceptsTheFestResultsResourceAndEchoesItsName(t *testing.T) {
+	started := time.Date(2026, 9, 5, 1, 0, 0, 0, time.UTC)
+	svc, _, f := liveFest(t, started)
+	requestedName := "tenants/current/festResults/" + f.ID
+
+	result, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
+		Name: requestedName,
+	})
+	if err != nil {
+		t.Fatalf("GetFestResult(%q): %v", requestedName, err)
+	}
+	if result.GetName() != requestedName {
+		t.Errorf("result name = %q, want request name %q", result.GetName(), requestedName)
+	}
+}
+
+func TestGetFestResultReturnsAnEmptyNamedResultForAnUnrecognizedResource(t *testing.T) {
+	svc, _, _ := liveFest(t, time.Date(2026, 9, 5, 1, 0, 0, 0, time.UTC))
+	requestedName := "tenants/current/festResults"
+
+	result, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
+		Name: requestedName,
+	})
+	if err != nil {
+		t.Fatalf("GetFestResult(%q): %v, want empty result", requestedName, err)
+	}
+	if result.GetName() != requestedName {
+		t.Errorf("empty result name = %q, want request name %q", result.GetName(), requestedName)
+	}
+	if result.GetYobisai() != nil || result.GetOverall() != nil {
+		t.Errorf("unrecognized resource returned result data: %v", result)
+	}
+}
+
 func TestTheVerdictIsPublishedOnlyOncePlayIsOver(t *testing.T) {
 	announced := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	svc, _, f := liveFest(t, announced)

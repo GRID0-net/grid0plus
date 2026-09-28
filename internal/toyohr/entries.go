@@ -153,7 +153,11 @@ func (s *Service) GetFestResult(
 
 	festID := festIDFromResourceName(req.GetName())
 	if festID == "" {
-		return nil, status.Error(codes.InvalidArgument, "no fest named")
+		// Nextendo's measured behavior for an unrecognized result resource is a
+		// successful empty result carrying the requested name. The console uses
+		// GetFestResult while reconciling old local fest state; a parse failure
+		// must not turn that lookup into a hard RPC failure.
+		return &toyohrpb.FestResult{Name: req.GetName()}, nil
 	}
 
 	fest, err := s.loadFest(ctx, festID)
@@ -174,7 +178,9 @@ func (s *Service) GetFestResult(
 	phase := fest.PhaseAt(s.now())
 
 	out := &toyohrpb.FestResult{
-		Name: s.tenantPath() + "/fests/" + festID + "/result",
+		// The result resource is in the caller's requested collection
+		// ("festResults"), not beneath the "fests" resource used by entries.
+		Name: req.GetName(),
 		// The vote, which is measured. Valid as soon as anybody has entered:
 		// an empty tally is a fest nobody joined, and reporting that as invalid
 		// would be indistinguishable from the vote not being implemented.

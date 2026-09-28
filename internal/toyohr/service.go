@@ -303,7 +303,11 @@ func assignPackKeys(dst *toyohrpb.FestDecryptionKey, keys []string) {
 func festIDFromResourceName(name string) string {
 	parts := strings.Split(name, "/")
 	for i, p := range parts {
-		if p == "fests" && i+1 < len(parts) {
+		// Entry and decryption-key resources use "fests"; result resources
+		// use the separate "festResults" collection. The console asks for the
+		// latter directly, so treating it as an unknown path turns a normal
+		// result lookup into InvalidArgument and aborts the hall flow.
+		if (p == "fests" || p == "festResults") && i+1 < len(parts) {
 			return strings.ToUpper(parts[i+1])
 		}
 	}
