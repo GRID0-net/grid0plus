@@ -385,6 +385,27 @@ see the comment on `switchnet-baas.service` for why the usual "5 failures in
 down with it, the same per-service isolation the old Docker setup's
 separate containers gave for free.
 
+### The box must not look idle
+
+If this deployment runs on Oracle's Always Free tier, the box has a deadline
+nobody wrote a ticket for: Oracle reclaims an instance that looks unused, and
+it defines unused as **all three** of the 95th percentile of CPU utilization,
+network utilization and (on A1 shapes) memory utilization being below the
+threshold across a **seven-day** window -- 20% in today's documentation, 10%
+in the older notices. Nine Go services waiting for a console that has not
+booted yet is idle in exactly that sense.
+
+`deploy/keepalive` exists for it: one stdlib-only Python file, installed and
+enabled by `scripts/install-systemd.sh`, that holds CPU utilization at 45% by
+sampling `/proc/stat` for the whole machine and making up only the shortfall.
+It restarts on any exit, comes up at boot, yields to everything else
+(`Nice=19`, `CPUWeight=1`), and does nothing at all on a host that is not a
+reclaiming cloud instance. Full details, including how to check it and turn
+it off, are in [`deploy/keepalive/README.md`](../deploy/keepalive/README.md).
+
+**The console's own CPU graph in the cloud console is the reading that
+decides.** Check that, not just the status file, after changing anything.
+
 ## Security
 
 This is a private server for a group of friends. It is not hardened for the open

@@ -1,0 +1,37 @@
+# Keeps this instance above the cloud provider's idle-reclaim line.
+#
+# This is not one of the Nintendo-facing services, which is why it is not
+# PartOf=switchnet.target and carries its own [Install] section: it never
+# talks to a console, and nothing that restarts the stack should be
+# entangled with it. It comes up at boot, restarts on any exit, and yields
+# the CPU to everything else on the machine -- see deploy/keepalive/README.md
+# for what it does and why Oracle's Always Free tier needs it.
+#
+# Deliberately not enabled by scripts/install-systemd.sh's own target: a
+# host that is not a cloud instance with an idle policy has nothing to hold
+# up, and the script detects that and idles instead. Enabling it there
+# anyway means one install step covers the deployment, which is the point.
+
+[Unit]
+Description=GRID0+ keepalive (holds CPU utilization above the cloud idle-reclaim line)
+Documentation=file:///opt/switchnet/deploy/keepalive/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=switchnet
+Group=switchnet
+WorkingDirectory=/opt/switchnet
+ExecStart=/usr/bin/python3 /opt/switchnet/deploy/keepalive/keepalive.py
+# The governor is the least important thing on the machine, and it should
+# know that: a busy console session or a build drives its duty cycle to
+# zero by itself, and these two make that true under contention too.
+Nice=19
+CPUWeight=1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

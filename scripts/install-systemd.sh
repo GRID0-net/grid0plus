@@ -40,19 +40,26 @@ else
 fi
 
 say "==> setting ownership"
-mkdir -p certs/keys data/images data/save-archives
-sudo chown -R switchnet:switchnet certs/keys data/images data/save-archives
+mkdir -p certs/keys data/images data/save-archives data/keepalive
+sudo chown -R switchnet:switchnet certs/keys data/images data/save-archives data/keepalive
 
 say "==> installing the systemd units"
 sudo cp deploy/systemd/switchnet-*.service deploy/systemd/switchnet.target /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable switchnet.target
+# The keepalive is enabled here, and not as part of switchnet.target, so that
+# one install step covers the whole deployment. It is a host helper rather
+# than a Nintendo-facing service: it never talks to a console, and it idles
+# by itself on a host that is not a cloud instance with an idle policy -- see
+# deploy/keepalive/README.md.
+sudo systemctl enable switchnet-keepalive.service
 
 echo
 say "==> installed, not started"
 echo "  sudo systemctl start switchnet.target      # start everything"
 echo "  systemctl status switchnet.target           # is it up"
 echo "  journalctl -u switchnet-baas -f              # one service's logs"
+echo "  systemctl status switchnet-keepalive         # the idle-reclaim keepalive"
 echo
 echo "Re-run this script after 'git pull' to pick up new/changed units; it is"
 echo "safe to run again (the user and ownership steps are no-ops once done)."
