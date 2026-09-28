@@ -1,5 +1,24 @@
 # Pointing a real Switch at GRID0+
 
+## Native BCAT patch for firmware 22.5.0
+
+`switch/atmosphere/exefs_patches/bcat_signature_bypass/` contains an IPS
+patch for the operator-supplied `bcat` sysmodule build
+`6D9772A733E2370B3F401EFEB7CA8F664309BD66000000000000000000000000`.
+It changes the boolean stored after the central RSA verification callback
+from the callback's result to true. The patch is local to that build and
+does not create or impersonate a Nintendo signature. At module RVA
+`0x944dc`, the original instruction is `and w8, w0, #1` (`08 00 00 12`);
+the patched instruction is `mov w8, #1` (`28 00 80 52`). The IPS record
+offset is `0x945dc`, including Atmosphere's required 0x100 NSO-header
+offset. The original bytes were checked against the operator's own 22.5.0
+dump, which is not stored here. Firmware updates require a new patch.
+
+Copy the `atmosphere/` subtree to the SD card and reboot before testing
+native BCAT delivery. The server also needs operator-supplied files under
+`bcat.seed_dir`; without them it continues answering 304. See
+`internal/bcat/README.md`. This patch has not yet been hardware-verified.
+
 There are two separate problems here, and they have very different answers:
 
 | | Problem | Solved |
