@@ -26,6 +26,7 @@ func main() {
 	handler, err := stubs.New(stubs.Config{
 		LogBodies:     cfg.Stubs.LogBodies,
 		BCATRecordDir: cfg.Stubs.BCATRecordDir,
+		BCATSeedDir:   cfg.BCAT.SeedDir,
 	}, log)
 	if err != nil {
 		service.Fatal(log, "build handler", err)

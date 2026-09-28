@@ -9,7 +9,30 @@ not carry.
 | Reference | [BCAT Content Container](https://switchbrew.org/wiki/BCAT_Content_Container), [BCAT Servers](https://github.com/kinnay/NintendoClients/wiki/BCAT-Servers) |
 | Needs a database | no |
 
-## This does not serve BCAT yet — and the blocker is now known exactly
+## Native BCAT delivery (operator-supplied files)
+
+`internal/stubs` can now answer the BCAT list/data HTTP paths when
+`bcat.seed_dir` points at a directory containing a title-specific tree:
+
+```text
+<seed_dir>/0100c2500fc20000/fesdata/<filename>    Splatoon 3
+<seed_dir>/01003bc0000a0000/vsdata/<filename>     Splatoon 2 Americas
+<seed_dir>/0100f8f0000a2000/vsdata/<filename>     Splatoon 2 Europe
+<seed_dir>/01003c700009c000/vsdata/<filename>     Splatoon 2 Japan
+```
+
+Each immediate subdirectory of a title is one BCAT delivery-cache directory;
+regular files in it are advertised and served. The server never invents game
+data. A title without files retains the prior 304 response, as does the
+System News host. This opt-in tree is distinct from the existing
+`bcat-seed/<region>-default` installer output: move or copy the intended
+files into the per-title tree only after their destination BCAT directory has
+been confirmed. An unsigned plaintext container needs the matching firmware
+patch before real hardware will accept it. The list digest algorithm and
+directory names still require a real capture/hardware check; see
+`docs/BCAT_NATIVE.md`.
+
+## Earlier installer-only design
 
 GRID0+ builds the delivery cache directly rather than speaking BCAT's
 delivery protocol. As of 2026-09-26 the reason is no longer "nobody has

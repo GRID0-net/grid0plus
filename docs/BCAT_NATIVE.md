@@ -1,7 +1,8 @@
 # Serving BCAT natively — design plan
 
-**Status:** not started. This is a plan for the next agent, not an
-implementation. Read it top to bottom before touching code.
+**Status:** the opt-in title seed reader and list/data HTTP path are
+implemented. Signature patch and real-hardware acceptance remain open; the
+later sections retain the original design reasoning and pending checks.
 
 **Goal:** a console pointed at GRID0+ downloads BCAT delivery-cache
 content — Splatoon 3 Splatfest packs, Splatoon 2 schedule seeds, and

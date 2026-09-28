@@ -92,11 +92,14 @@ here through a `default_server` block, so a host that was redirected on the
 console but has no server block shows up as a log line rather than getting an
 answer from whichever service nginx happened to list first.
 
-## The three `bcat-*` hosts, all answered with 304, none null-routed
+## The three `bcat-*` hosts, none null-routed
 
 All three — `bcat-list-lp1`, `bcat-data-lp1`, `bcat-topics-lp1.cdn.nintendo.net`
-— answer through `h.newsTopics` (in `handler.go`): an unconditional
-`304 Not Modified`, empty body. Named for its first confirmed case —
+— remain reachable. `bcat-topics-lp1` always answers `304 Not Modified`.
+The list/data hosts also answer 304 unless `bcat.seed_dir` contains an
+operator-supplied title tree; they then serve a BCAT list and its files.
+See `internal/bcat/README.md` for the directory layout. `h.newsTopics` is
+named for its first confirmed case —
 `bcat-topics-lp1`'s `GET /api/nx/v1/titles/<id>/topics`, the System news
 feed a title polls right at the start of its own boot sequence — but not
 specific to it any more.
@@ -130,12 +133,9 @@ the player.
 operator reaches for on purpose, not what these hosts answer with day to
 day since the 304 fix above shipped.
 
-GRID0+ cannot serve real BCAT delivery-cache content. The `list`
-response body is undocumented, and whether the console verifies the
-delivery container's RSA-2048 signature has never been established —
-switchbrew documents the *field* and says nothing about a verification
-step. A console running GRID0+ already has sigpatches, so the check may
-well be bypassed; nobody has looked.
+The native path can serve operator-supplied files but its list format and
+signature patch still need a real hardware acceptance test. The probe remains
+useful for recording the console's exact requests and conditional headers.
 
 The probe settles the cheap half of that. Reached, it logs each request —
 method, path, headers, a hexdump of the body — and replies `200` with an

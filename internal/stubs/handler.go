@@ -36,6 +36,8 @@ type Config struct {
 	// while still being answered 304 -- TODO.md §2.4 stage 1. Empty records
 	// nothing.
 	BCATRecordDir string
+	// BCATSeedDir contains per-title native delivery-cache files.
+	BCATSeedDir string
 }
 
 // Handler serves the stub endpoints.
@@ -128,16 +130,11 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.newsTopics(w, r)
 
 	case strings.HasPrefix(host, "bcat-"):
-		// bcat-list-lp1 and bcat-data-lp1, the unconfirmed BCAT
-		// delivery-cache hosts. NextendoNetwork/Prelude's own commit
-		// history (facts only, not its code) documents a real hard
-		// failure from leaving these unreachable -- Splatoon 3 raised
-		// 2122-2403 (module 122 = bcat) -- and their fix is the same
-		// unconditional 304 as newsTopics: "your cache is current," no
-		// data sent. See h.newsTopics's own doc comment and hosts.go's
-		// "BCAT: answered with 304" section. With stubs.bcat_record_dir
-		// set, internal/bcat.Probe records each request as well.
-		h.newsTopics(w, r)
+		// The list/data hosts serve only operator-provided title files.
+		// Otherwise they retain the proven 304 response: unreachable BCAT
+		// caused Splatoon 3's 2122-2403 on real hardware. The probe still
+		// records requests when configured.
+		h.nativeBCAT(w, r, host)
 
 	case strings.HasPrefix(host, "policy.") && strings.Contains(host, ".scsi.srv.nintendo.net"):
 		// GET /api/console/v2/application_policy/<title>/<value>, called by
