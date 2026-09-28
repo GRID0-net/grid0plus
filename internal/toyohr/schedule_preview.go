@@ -67,20 +67,30 @@ func (s *Service) PreviewCoopSchedule(ctx context.Context, now time.Time) ([]Coo
 		return nil, err
 	}
 
-	storedNormalStarts := map[int64]bool{}
 	out := make([]CoopShift, 0, len(rows)+coopLiveHorizonShifts)
 	for _, row := range rows {
 		if !row.EndAt.After(now) {
 			continue
 		}
 		out = append(out, coopShiftFromRow(row))
-		if row.Kind == CoopShiftNormal.String() {
-			storedNormalStarts[row.StartAt.UTC().Unix()] = true
-		}
 	}
 	if liveCoopFillEnabled {
 		for _, shift := range liveNormalCoopShifts(now, coopLiveHorizonShifts) {
-			if !shift.End.After(now) || storedNormalStarts[shift.Start.UTC().Unix()] {
+			if !shift.End.After(now) {
+				continue
+			}
+			// Big Run and Team Contest replace the ordinary rotation for their
+			// entire window. Filtering only an identical Normal start used to
+			// send two simultaneously-active Coop schedules when a Big Run was
+			// scheduled across a generated 40-hour Normal slot.
+			overlapsStored := false
+			for _, stored := range out {
+				if shift.Start.Before(stored.End) && stored.Start.Before(shift.End) {
+					overlapsStored = true
+					break
+				}
+			}
+			if overlapsStored {
 				continue
 			}
 			out = append(out, shift)

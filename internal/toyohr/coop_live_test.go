@@ -104,6 +104,35 @@ func TestSelectCoopSchedulesLiveFillsGapsNotOverridesStoredSlots(t *testing.T) {
 	}
 }
 
+func TestABigRunReplacesEveryOverlappingLiveNormalShift(t *testing.T) {
+	now := time.Date(2026, 9, 28, 7, 16, 0, 0, time.UTC)
+	svc, _ := newService(t, now)
+	shift := validBigRunShift()
+	shift.Start = time.Date(2026, 9, 28, 6, 0, 0, 0, time.UTC)
+	shift.End = shift.Start.Add(48 * time.Hour)
+	if err := svc.SaveCoopShift(context.Background(), shift); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := svc.PreviewCoopSchedule(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := 0
+	for _, got := range preview {
+		if got.Start.Before(shift.End) && shift.Start.Before(got.End) {
+			if got.ID() != shift.ID() {
+				t.Errorf("Big Run %s overlaps another Coop shift %s", shift.ID(), got.ID())
+			}
+			if got.Start.Before(now) && got.End.After(now) {
+				current++
+			}
+		}
+	}
+	if current != 1 {
+		t.Errorf("current overlapping shifts = %d, want Big Run only", current)
+	}
+}
+
 func otherNormalCoopStageID(t *testing.T, avoid int32) int32 {
 	t.Helper()
 	for _, s := range normalCoopStages {
