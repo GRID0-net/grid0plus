@@ -42,6 +42,15 @@ endpoint have nothing to show.
 
 Ordered by how much a capture would help.
 
+### Native BCAT list metadata (`internal/bcat/native.go`)
+
+The 22.5.0 `bcat.nso` parser requires `version.format`,
+`version.semantics`, and numeric `news_id` in every data-list entry. The
+server currently supplies zero for each: those values pass the parser's type
+checks, but their title-specific meaning has not been confirmed. A successful
+Splatoon 3 BCAT list response would settle these three values; change them only
+in `BuildNativeList`.
+
 ### 1. `GET /2.0.0/users/<id>/friends` — ~~the response shape~~ **CAPTURED**
 
 See [baas-2.0.0-friends.md](baas-2.0.0-friends.md).

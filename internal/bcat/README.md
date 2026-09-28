@@ -32,6 +32,14 @@ patch before real hardware will accept it. The list digest algorithm and
 directory names still require a real capture/hardware check; see
 `docs/BCAT_NATIVE.md`.
 
+The 22.5.0 `bcat.nso` parser requires every `data_list` entry to include
+`version.format` (uint8), `version.semantics` (uint8), and `news_id`
+(non-negative integer), in addition to `data_id`, `filename`, `url`,
+`digest`, and `size`. The native list builder sends zero for the three
+metadata values because the parser accepts those types and values; their
+meaning for Splatoon 3 remains unverified. A successful hardware download
+capture should replace that provisional choice if it shows different values.
+
 ## Earlier installer-only design
 
 GRID0+ builds the delivery cache directly rather than speaking BCAT's

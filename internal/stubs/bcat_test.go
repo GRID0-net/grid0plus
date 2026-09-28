@@ -33,6 +33,11 @@ func TestNativeBCATServesOnlySeededTitlesAndLeavesTopicsAlone(t *testing.T) {
 	if !bytes.Contains(list.Body.Bytes()[0x120:], []byte("summary.yml")) {
 		t.Fatal("list lacks the seed filename")
 	}
+	for _, field := range []string{"version", "format", "semantics", "news_id"} {
+		if !bytes.Contains(list.Body.Bytes()[0x120:], []byte(field)) {
+			t.Errorf("list data entry lacks parser-required field %q", field)
+		}
+	}
 	if !strings.Contains(list.Header().Get("ETag"), "\"") {
 		t.Fatal("missing quoted ETag")
 	}

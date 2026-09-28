@@ -137,7 +137,14 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 		w.str("data_list")
 		w.arrayLen(len(groups[dir]))
 		for i, file := range groups[dir] {
-			w.mapLen(5)
+			// bcat.nso's list parser requires version.format,
+			// version.semantics, and news_id on every entry before it accepts
+			// the list. The module validates these as uint8, uint8, and a
+			// non-negative integer respectively, but this title's values have
+			// not been observed in a successful server response.
+			// TODO(capture-needed): compare these three values with a
+			// successful Splatoon 3 BCAT list response; change only here.
+			w.mapLen(7)
 			w.str("data_id")
 			w.uint(uint64(i + 1))
 			w.str("filename")
@@ -148,6 +155,14 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 			w.str(digestBytes(file.Data))
 			w.str("size")
 			w.uint(uint64(len(file.Data)))
+			w.str("version")
+			w.mapLen(2)
+			w.str("format")
+			w.uint(0)
+			w.str("semantics")
+			w.uint(0)
+			w.str("news_id")
+			w.uint(0)
 		}
 	}
 	return w.bytes(), nil
