@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // Seed is one fest's delivery cache, ready to install.
@@ -72,9 +74,9 @@ func (s Seed) Validate() error {
 
 // Packs maps a pack's short name to its UNencrypted contents.
 //
-// A SARC archive, not a compressed one, despite the ".pack.zs" filename. That
-// was confirmed against a real seed: decrypting a pack yields SARC magic
-// directly, and the ".zs" is a leftover. See internal/bcat/sarc.go.
+// Packs holds the uncompressed SARC archives. WriteWith wraps each archive in
+// zstd before encrypting it: the working LoveFest pack decrypts to a zstd
+// frame, then decompresses to the same SARC bytes our builder produces.
 type Packs map[string][]byte
 
 // Write builds the seed folder under dir.
@@ -107,6 +109,11 @@ func (s Seed) WriteWith(dir string, packs Packs, keys map[string][]byte, table s
 			return fmt.Errorf("bcat: pack %q has no key", name)
 		}
 	}
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return fmt.Errorf("bcat: create zstd encoder: %w", err)
+	}
+	defer encoder.Close()
 
 	summary := s.Summary()
 	for _, region := range s.Regions {
@@ -127,7 +134,8 @@ func (s Seed) WriteWith(dir string, packs Packs, keys map[string][]byte, table s
 			if !ok {
 				continue
 			}
-			enc, err := EncryptWith(s.ResourceID, name, keys[name], payload, table)
+			compressed := encoder.EncodeAll(payload, nil)
+			enc, err := EncryptWith(s.ResourceID, name, keys[name], compressed, table)
 			if err != nil {
 				return fmt.Errorf("bcat: encrypt %s: %w", name, err)
 			}

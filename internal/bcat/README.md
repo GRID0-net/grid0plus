@@ -226,7 +226,14 @@ authority and the schedule follows it.
 
 ## nisasyst
 
-The packs are AES-128-CBC. The key is whatever `GetFestDecryptionKey` hands
+The packs are zstd-compressed SARC archives inside AES-128-CBC. This was checked
+against the working LoveFest seed: decrypting `base` and `bh` yields zstd
+frames, and decompressing them yields archives byte-for-byte identical to the
+raw SARC files GRID0+ had encrypted directly. The direct-SARC assumption let
+BCAT download finish but made the hall reject the active fest. `Seed.WriteWith`
+now compresses before encrypting, and its round-trip test checks both layers.
+
+The key is whatever `GetFestDecryptionKey` hands
 over — the server's to choose — and the **IV is derived from the pack's resource
 path**: CRC-32 of the path seeds `sead::Random`, and each of the sixteen IV
 bytes is two hex digits drawn from a lookup table at the index in the top byte

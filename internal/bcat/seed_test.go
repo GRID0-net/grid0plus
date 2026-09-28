@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // TestTheSummaryMatchesARealOne, field for field and in order.
@@ -189,10 +191,19 @@ func TestASeedAndItsKeysRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decrypt %s with the key the fest row holds: %v", name, err)
 		}
-		if !bytes.Equal(plain, want) {
-			t.Errorf("%s did not round-trip: %d bytes out, %d in", name, len(plain), len(want))
+		decoder, err := zstd.NewReader(nil)
+		if err != nil {
+			t.Fatalf("zstd decoder: %v", err)
 		}
-		if _, err := ParseSARC(plain); err != nil {
+		archive, err := decoder.DecodeAll(plain, nil)
+		decoder.Close()
+		if err != nil {
+			t.Fatalf("%s decrypted pack is not zstd: %v", name, err)
+		}
+		if !bytes.Equal(archive, want) {
+			t.Errorf("%s did not round-trip: %d bytes out, %d in", name, len(archive), len(want))
+		}
+		if _, err := ParseSARC(archive); err != nil {
 			t.Errorf("%s is not a readable archive after the round trip: %v", name, err)
 		}
 	}

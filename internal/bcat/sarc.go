@@ -10,10 +10,8 @@ import (
 // SARC is Nintendo's archive format, and what a decrypted Splatfest pack turns
 // out to be.
 //
-// Note the ".pack.zs" naming: the extension says zstd, and the packs in a real
-// seed are NOT compressed — decrypting one yields a SARC archive directly, magic
-// and all. The name is a leftover. Anything here that assumed a compression
-// layer would find a corrupt stream on the first real pack.
+// The builder produces an uncompressed SARC here; Seed.WriteWith zstd-compresses
+// it before encryption. The working LoveFest pack has that two-layer shape.
 //
 // Format: https://zeldamods.org/wiki/SARC
 //
