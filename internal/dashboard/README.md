@@ -186,6 +186,13 @@ A scheduled shift's status (`upcoming`/`live`/`ended`) is computed the same
 way `festRow`'s `Phase` is: from the server's clock against the shift's own
 `Start`/`End`, not tracked as separate state that could drift from them.
 
+The scheduling form selects a current or upcoming Normal rotation rather than
+accepting arbitrary dates. A Normal override keeps that rotation's start and
+end, including when only a little time remains. Big Run and Team Contest may
+start only at an upcoming Normal rotation boundary and run for 48 hours; the
+server derives the end, then resumes Normal rotations at the event's end.
+Overlapping stored shifts must be removed explicitly before scheduling an event.
+
 ## "Auto-fill" is additive, not authoritative
 
 The Salmon Run tab's "Auto-fill" panel (`POST /api/coop-shifts/generate`,

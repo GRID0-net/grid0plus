@@ -103,8 +103,20 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 	srv, store := newTestServer(t, "", now)
 	h := srv.Handler()
 
-	start := toyohr.AlignToSlot(now.Add(2 * time.Hour))
-	end := toyohr.AlignToSlot(now.Add(10 * time.Hour))
+	preview, err := srv.fests.PreviewCoopSchedule(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var start time.Time
+	for _, shift := range preview {
+		if shift.Kind == toyohr.CoopShiftNormal && shift.Start.After(now) {
+			start = shift.Start
+			break
+		}
+	}
+	if start.IsZero() {
+		t.Fatal("no upcoming normal rotation")
+	}
 	body := `{
 		"kind": "big_run",
 		"stageId": 100,
@@ -112,8 +124,7 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 		"weapons": [21000, 21010, 21020, 21030],
 		"kumaWeaponId": 21900,
 		"rewards": [100, 200, 300],
-		"startAt": "` + start.Format(time.RFC3339) + `",
-		"endAt": "` + end.Format(time.RFC3339) + `"
+		"startAt": "` + start.Format(time.RFC3339) + `"
 	}`
 
 	rec := httptest.NewRecorder()
@@ -131,6 +142,10 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 
 	if _, err := store.GetCoopShift(context.Background(), created.ID); err != nil {
 		t.Fatalf("shift was not stored: %v", err)
+	}
+	stored, _ := store.GetCoopShift(context.Background(), created.ID)
+	if want := start.Add(48 * time.Hour); !stored.EndAt.Equal(want) {
+		t.Errorf("Big Run ends at %s, want %s", stored.EndAt, want)
 	}
 
 	rows, err := srv.coopShiftRows(context.Background())
@@ -163,27 +178,76 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 	}
 }
 
+func TestNormalOverrideKeepsTheCurrentRotationsWindow(t *testing.T) {
+	now := time.Date(2026, 9, 28, 19, 0, 0, 0, time.UTC)
+	srv, store := newTestServer(t, "", now)
+	preview, err := srv.fests.PreviewCoopSchedule(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := preview[0]
+	for _, shift := range preview {
+		if !shift.Start.After(now) && shift.End.After(now) {
+			current = shift
+			break
+		}
+	}
+	if current.Kind != toyohr.CoopShiftNormal {
+		t.Fatalf("current kind = %v", current.Kind)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"kind": "normal", "stageId": int32(1), "boss": "",
+		"weapons":      []int64{20000, 20010, 20020, 20030},
+		"kumaWeaponId": int64(20900), "startAt": current.Start.Format(time.RFC3339),
+	})
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/api/coop-shifts", strings.NewReader(string(body))))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("normal override: %d %s", rec.Code, rec.Body.String())
+	}
+	stored, err := store.GetCoopShift(context.Background(), current.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.EndAt.Equal(current.End) {
+		t.Errorf("normal override ended at %s, want current rotation end %s", stored.EndAt, current.End)
+	}
+}
+
 // TestATeamContestCoopShiftCanBeScheduled mirrors
 // TestACoopShiftCanBeScheduledAndDeleted for team_contest specifically,
 // since it is the one Kind with fields (boss, reward gear id) the wire
 // message has no room for -- omitting both here is the happy path a real
 // operator's request looks like once dashboard.js clears them before
 // sending, per updateCoopKindFields/the coop-form submit handler.
+func nextNormalStart(t *testing.T, srv *Server, now time.Time) time.Time {
+	t.Helper()
+	shifts, err := srv.fests.PreviewCoopSchedule(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, shift := range shifts {
+		if shift.Kind == toyohr.CoopShiftNormal && shift.Start.After(now) {
+			return shift.Start
+		}
+	}
+	t.Fatal("no upcoming normal rotation")
+	return time.Time{}
+}
+
 func TestATeamContestCoopShiftCanBeScheduled(t *testing.T) {
 	now := time.Now().UTC()
 	srv, store := newTestServer(t, "", now)
 	h := srv.Handler()
 
-	start := toyohr.AlignToSlot(now.Add(2 * time.Hour))
-	end := toyohr.AlignToSlot(now.Add(10 * time.Hour))
+	start := nextNormalStart(t, srv, now)
 	body := `{
 		"kind": "team_contest",
 		"stageId": 1,
 		"weapons": [20000, 20010, 20020, 20030],
 		"kumaWeaponId": 20900,
 		"rewards": [50, 100],
-		"startAt": "` + start.Format(time.RFC3339) + `",
-		"endAt": "` + end.Format(time.RFC3339) + `"
+		"startAt": "` + start.Format(time.RFC3339) + `"
 	}`
 
 	rec := httptest.NewRecorder()
@@ -214,16 +278,14 @@ func TestATeamContestCoopShiftWithABossIsRefused(t *testing.T) {
 	srv, _ := newTestServer(t, "", now)
 	h := srv.Handler()
 
-	start := toyohr.AlignToSlot(now.Add(2 * time.Hour))
-	end := toyohr.AlignToSlot(now.Add(10 * time.Hour))
+	start := nextNormalStart(t, srv, now)
 	body := `{
 		"kind": "team_contest",
 		"stageId": 1,
 		"boss": "SakeJaw",
 		"weapons": [20000, 20010, 20020, 20030],
 		"kumaWeaponId": 20900,
-		"startAt": "` + start.Format(time.RFC3339) + `",
-		"endAt": "` + end.Format(time.RFC3339) + `"
+		"startAt": "` + start.Format(time.RFC3339) + `"
 	}`
 
 	rec := httptest.NewRecorder()
@@ -242,15 +304,13 @@ func TestCreatingACoopShiftWithAFakeIdIsRefused(t *testing.T) {
 	srv, _ := newTestServer(t, "", now)
 	h := srv.Handler()
 
-	start := toyohr.AlignToSlot(now.Add(2 * time.Hour))
-	end := toyohr.AlignToSlot(now.Add(10 * time.Hour))
+	start := nextNormalStart(t, srv, now)
 	body := `{
 		"kind": "normal",
 		"stageId": 999999,
 		"weapons": [20000, 20010, 20020, 20030],
 		"kumaWeaponId": 20900,
-		"startAt": "` + start.Format(time.RFC3339) + `",
-		"endAt": "` + end.Format(time.RFC3339) + `"
+		"startAt": "` + start.Format(time.RFC3339) + `"
 	}`
 
 	rec := httptest.NewRecorder()

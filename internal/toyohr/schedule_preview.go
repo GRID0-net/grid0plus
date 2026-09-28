@@ -74,27 +74,43 @@ func (s *Service) PreviewCoopSchedule(ctx context.Context, now time.Time) ([]Coo
 		}
 		out = append(out, coopShiftFromRow(row))
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
 	if liveCoopFillEnabled {
-		for _, shift := range liveNormalCoopShifts(now, coopLiveHorizonShifts) {
-			if !shift.End.After(now) {
-				continue
-			}
-			// Big Run and Team Contest replace the ordinary rotation for their
-			// entire window. Filtering only an identical Normal start used to
-			// send two simultaneously-active Coop schedules when a Big Run was
-			// scheduled across a generated 40-hour Normal slot.
-			overlapsStored := false
-			for _, stored := range out {
-				if shift.Start.Before(stored.End) && stored.Start.Before(shift.End) {
-					overlapsStored = true
-					break
+		// Special events interrupt the 40-hour clock. Resume it at the event's
+		// end instead of discarding a partly-overlapped generated shift: that
+		// used to leave a full day without a Coop schedule after a Big Run.
+		cursor := liveNormalCoopShifts(now, 1)[0].Start
+		generated := make([]CoopShift, 0, coopLiveHorizonShifts)
+		visible := 0
+		fillUntil := func(end time.Time) {
+			for cursor.Before(end) && visible < coopLiveHorizonShifts {
+				shift := coopShiftAtSlot(cursor, DefaultCoopShiftDuration)
+				if shift.End.After(end) {
+					shift.End = end
 				}
+				if shift.End.After(now) {
+					generated = append(generated, shift)
+					visible++
+				}
+				cursor = shift.End
 			}
-			if overlapsStored {
-				continue
-			}
-			out = append(out, shift)
 		}
+		for _, stored := range out {
+			fillUntil(stored.Start)
+			if stored.End.After(now) {
+				visible++
+			}
+			if stored.End.After(cursor) {
+				cursor = stored.End
+			}
+		}
+		for visible < coopLiveHorizonShifts {
+			shift := coopShiftAtSlot(cursor, DefaultCoopShiftDuration)
+			generated = append(generated, shift)
+			cursor = shift.End
+			visible++
+		}
+		out = append(out, generated...)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
 	return out, nil

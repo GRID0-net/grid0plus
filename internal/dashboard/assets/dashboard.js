@@ -369,6 +369,7 @@ function renderFests(fests) {
 // (internal/toyohr/coop_ids.go), not something that changes while the page
 // is open, unlike the shifts themselves.
 let coopReference = null;
+let coopShifts = [];
 
 async function loadCoopReference() {
   coopReference = await api("/api/coop-reference");
@@ -411,6 +412,26 @@ function updateCoopKindFields() {
   $("#coop-rewards-field").hidden = kind !== "big_run" && kind !== "team_contest";
   $("#coop-boss-field").hidden = kind === "team_contest";
   $("#coop-reward-gear-field").hidden = kind === "team_contest";
+  populateCoopStart();
+}
+
+function populateCoopStart() {
+  const select = $("#coop-start");
+  const previous = select.value;
+  const special = $('input[name="coop-kind"]:checked').value !== "normal";
+  const now = Date.now();
+  const slots = coopShifts.filter((s) => s.kind === "normal" && s.status !== "ended" &&
+    (!special || new Date(s.startAt).getTime() > now));
+  select.replaceChildren(...slots.map((s) => {
+    const option = document.createElement("option");
+    option.value = s.startAt;
+    option.textContent = `${new Date(s.startAt).toLocaleString()} – ${new Date(s.endAt).toLocaleString()} (${s.stageName})`;
+    return option;
+  }));
+  if (slots.some((s) => s.startAt === previous)) select.value = previous;
+  $("#coop-window-note").textContent = special
+    ? "Starts at this upcoming rotation boundary and lasts 48 hours. The normal rotation resumes afterward."
+    : "Replaces this rotation through its original end, even if only a few hours remain.";
 }
 
 $$('input[name="coop-kind"]').forEach((radio) =>
@@ -424,6 +445,8 @@ const COOP_STATUS_LABEL = { upcoming: "upcoming", live: "live", ended: "ended" }
 const COOP_KIND_LABEL = { big_run: "Big Run", team_contest: "Team Contest", normal: "Normal" };
 
 function renderCoopShifts(shifts) {
+	coopShifts = shifts;
+	populateCoopStart();
   $("#coop-empty").hidden = shifts.length > 0;
   $("#coop-list").replaceChildren(
     ...shifts.map((c) => {
@@ -533,8 +556,7 @@ $("#coop-form").addEventListener("submit", async (e) => {
   const err = $("#coop-error");
   err.hidden = true;
 
-  const startLocal = $("#coop-start").value;
-  const endLocal = $("#coop-end").value;
+  const startAt = $("#coop-start").value;
   const kind = $('input[name="coop-kind"]:checked').value;
   const rewardsRaw = $("#coop-rewards").value.trim();
 
@@ -558,8 +580,7 @@ $("#coop-form").addEventListener("submit", async (e) => {
         rewards: rewardsRaw
           ? rewardsRaw.split(",").map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n))
           : [],
-        startAt: startLocal ? new Date(startLocal).toISOString() : "",
-        endAt: endLocal ? new Date(endLocal).toISOString() : "",
+        startAt,
       }),
     });
     $("#coop-reward-gear").value = "";
@@ -1880,18 +1901,14 @@ async function refresh() {
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 })();
 
-// A default shift window: starting two hours from now (the next slot),
-// running eight hours -- a real rotation's typical length -- rather than
-// leaving the operator to work out two aligned timestamps from empty fields.
+// The form's start is filled from the current server rotation by refresh().
+// The separate batch generator still starts at the next two-hour boundary.
 (function seedCoopWindow() {
   const pad = (n) => String(n).padStart(2, "0");
   const toLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const start = new Date();
   start.setMinutes(0, 0, 0);
   start.setHours(start.getHours() - (start.getHours() % 2) + 2);
-  const end = new Date(start.getTime() + 8 * 60 * 60 * 1000);
-  $("#coop-start").value = toLocal(start);
-  $("#coop-end").value = toLocal(end);
   $("#coop-gen-from").value = toLocal(start);
 })();
 

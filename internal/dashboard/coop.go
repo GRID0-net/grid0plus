@@ -142,7 +142,6 @@ func (s *Server) handleCreateCoopShift(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Kind         string  `json:"kind"`
 		StartAt      string  `json:"startAt"`
-		EndAt        string  `json:"endAt"`
 		StageID      int32   `json:"stageId"`
 		Boss         string  `json:"boss"`
 		Weapons      []int64 `json:"weapons"`
@@ -165,10 +164,42 @@ func (s *Server) handleCreateCoopShift(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "startAt must be RFC3339", http.StatusBadRequest)
 		return
 	}
-	end, err := time.Parse(time.RFC3339, body.EndAt)
+	now := s.now()
+	visible, err := s.fests.PreviewCoopSchedule(r.Context(), now)
 	if err != nil {
-		http.Error(w, "endAt must be RFC3339", http.StatusBadRequest)
+		s.fail(w, "read coop rotation", err)
 		return
+	}
+	var slot *toyohr.CoopShift
+	for i := range visible {
+		if visible[i].Kind == toyohr.CoopShiftNormal && visible[i].Start.Equal(start) {
+			slot = &visible[i]
+			break
+		}
+	}
+	if slot == nil {
+		http.Error(w, "startAt must be the start of a current or upcoming normal rotation", http.StatusBadRequest)
+		return
+	}
+	end := slot.End
+	if kind != toyohr.CoopShiftNormal {
+		if start.Before(now) {
+			http.Error(w, "Big Run and Team Contest must start at an upcoming rotation boundary", http.StatusBadRequest)
+			return
+		}
+		end = start.Add(48 * time.Hour)
+	}
+	stored, err := s.fests.ListCoopShiftsForOperator(r.Context())
+	if err != nil {
+		s.fail(w, "read stored coop shifts", err)
+		return
+	}
+	for _, existing := range stored {
+		if start.Before(existing.End) && existing.Start.Before(end) &&
+			!(kind == toyohr.CoopShiftNormal && existing.Start.Equal(start) && existing.End.Equal(end)) {
+			http.Error(w, "selected window overlaps a stored shift; remove that shift first", http.StatusBadRequest)
+			return
+		}
 	}
 
 	shift := toyohr.CoopShift{

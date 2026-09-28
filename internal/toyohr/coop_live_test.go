@@ -2,6 +2,7 @@ package toyohr
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -130,6 +131,42 @@ func TestABigRunReplacesEveryOverlappingLiveNormalShift(t *testing.T) {
 	}
 	if current != 1 {
 		t.Errorf("current overlapping shifts = %d, want Big Run only", current)
+	}
+}
+
+func TestNormalRotationResumesAtBigRunEndWithoutAGap(t *testing.T) {
+	for _, hours := range []int{22, 48} {
+		t.Run(fmt.Sprintf("%dh", hours), func(t *testing.T) {
+			now := time.Date(2026, 9, 28, 19, 0, 0, 0, time.UTC)
+			svc, _ := newService(t, now)
+			shift := validBigRunShift()
+			shift.Start = time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC)
+			shift.End = shift.Start.Add(time.Duration(hours) * time.Hour)
+			if err := svc.SaveCoopShift(context.Background(), shift); err != nil {
+				t.Fatal(err)
+			}
+			preview, err := svc.PreviewCoopSchedule(context.Background(), now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(preview) < coopLiveHorizonShifts {
+				t.Fatalf("only %d shifts, want at least %d", len(preview), coopLiveHorizonShifts)
+			}
+			for i := 1; i < len(preview); i++ {
+				if preview[i].Start.Before(preview[i-1].End) {
+					t.Fatalf("overlapping shifts: %s and %s", preview[i-1].ID(), preview[i].ID())
+				}
+			}
+			for i, got := range preview {
+				if got.ID() == shift.ID() {
+					if i+1 >= len(preview) || !preview[i+1].Start.Equal(shift.End) {
+						t.Fatalf("rotation does not resume at Big Run end %s: %v", shift.End, preview)
+					}
+					return
+				}
+			}
+			t.Fatal("Big Run missing from preview")
+		})
 	}
 }
 

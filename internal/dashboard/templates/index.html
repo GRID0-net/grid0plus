@@ -583,13 +583,9 @@
           </select>
         </label>
         <label>
-          <span>Starts</span>
-          <input type="datetime-local" name="startAt" id="coop-start">
-          <small>Snapped to a two-hour slot, the same as a Splatfest.</small>
-        </label>
-        <label>
-          <span>Ends</span>
-          <input type="datetime-local" name="endAt" id="coop-end">
+          <span>Rotation to replace</span>
+          <select name="startAt" id="coop-start"></select>
+          <small id="coop-window-note">Normal keeps the selected rotation's end. Big Run and Team Contest run for 48 hours from an upcoming rotation boundary.</small>
         </label>
         <label id="coop-reward-gear-field">
           <span>Reward gear id <em>optional</em></span>
