@@ -59,7 +59,7 @@ What each open item is waiting on:
 | §4.5 | **the friend's console** — it stalls before any game call |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
-| §2.4 | **reverse engineering** of the module that verifies BCAT content, then a console test |
+| §2.4 | **the server's own `list`/`data` answers** — the signature patch that blocked it is built — then a console test |
 | §3.2 | **§2.1** |
 
 Splatoon 3 reached the hall on GRID0+ on 2026-09-25 (see
@@ -254,7 +254,7 @@ so that changing the assumption later, if GRID0+'s own hardware disagrees,
 is a contained change rather than a rewrite — keep the naming decision in one
 place.
 
-### 2.4 Serving BCAT natively — **P1, needs reverse engineering first**
+### 2.4 Serving BCAT natively — **P1, the patch is built; the server responses are not**
 
 **The goal is a vanilla path:** the console downloads fest packs and other
 delivery-cache content from GRID0+'s own `bcat-list`/`bcat-data` hosts,
@@ -422,8 +422,12 @@ update needs the patch regenerated.
 
 **Done when** GRID0+ answers the `list` and `data` requests and a patched
 console downloads and reads a GRID0+-built container, with a written
-record under `docs/CAPTURES/`. The signature question that blocked this is
-now settled; what remains is building the patch and the list/data responses.
+record under `docs/CAPTURES/`. Both questions that blocked this are settled
+and the signature-bypass patch is built
+(`switch/atmosphere/exefs_patches/bcat_signature_bypass/`) and shipped to
+consoles through the GRID0+ Toolbox's `romfs/sd/` mirror from v0.5.9; what
+remains is the server's own `list`/`data` answers, and the console test that
+nothing here can substitute for.
 
 **Stage 1 (what the console asks for) still needs a console**, and is
 recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md); it is no longer on the
@@ -432,7 +436,8 @@ critical path, since the container format and the blocker are both known.
 **The full implementation plan is [`docs/BCAT_NATIVE.md`](docs/BCAT_NATIVE.md)**
 — the server (list/data responses from the existing seed folders), the
 `bcat.nso` signature-bypass patch, the emulator-first verification path, and
-the small open questions. Nothing there is built yet.
+the small open questions. The patch is built and shipped; the server side is
+not.
 
 ### 2.4a The `.nro` installer — **P2, the path that works today**
 

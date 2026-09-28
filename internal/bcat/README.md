@@ -62,7 +62,11 @@ patch shipped alongside GRID0+'s others.
 module's secret strings; only the signature does.
 
 So: serving BCAT natively is possible, gated on one `bcat.nso` patch per
-firmware build plus the `list`/`data` responses. TODO.md §2.4 tracks it.
+firmware build plus the `list`/`data` responses. The patch for the 22.5.0
+build exists (`switch/atmosphere/exefs_patches/bcat_signature_bypass/`) and
+reaches consoles through the GRID0+ Toolbox's `romfs/sd/` mirror from
+v0.5.9 on; what is still missing is the server's own `list`/`data` answers.
+TODO.md §2.4 tracks it.
 Building the cache directly still sidesteps the patch entirely, which is why
 it remains what this package does today — but §2.4a's homebrew installer is
 now a fallback, not the only option.

@@ -15,7 +15,12 @@ offset. The original bytes were checked against the operator's own 22.5.0
 dump, which is not stored here. Firmware updates require a new patch.
 
 Copy the `atmosphere/` subtree to the SD card and reboot before testing
-native BCAT delivery. The server also needs operator-supplied files under
+native BCAT delivery. On a console that runs the GRID0+ Toolbox this is
+already done for you: the same bytes ship in that repository's `romfs/sd/`
+mirror as of v0.5.9, under both build-id filename spellings Atmosphère
+accepts, so updating the `.nro` and re-applying ("Switch to SwitchNet") is
+the normal route — the copy in this repository is only for a console that
+does not run it. The server also needs operator-supplied files under
 `bcat.seed_dir`; without them it continues answering 304. See
 `internal/bcat/README.md`. This patch has not yet been hardware-verified.
 

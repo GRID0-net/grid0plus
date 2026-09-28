@@ -219,9 +219,10 @@ named in §2.4 / the RE notes; do it against the operator's exact
 
 ### 4.3 Shipping and reversibility
 
-- Ship as an ExeFS patch keyed by `bcat.nso`'s build id, under `switch/`
-  alongside the existing patches, and hand it to Prelude the same way the
-  Splatoon 3 patch is handed over.
+- Shipped as an ExeFS patch keyed by `bcat.nso`'s build id, under `switch/`
+  alongside the existing patches — and in the GRID0+ Toolbox's `romfs/sd/`
+  mirror from v0.5.9, so "Switch to SwitchNet" provisions it with the CA and
+  the Splatoon 3 sets rather than asking for a manual copy.
 - It only takes effect on the build it was made for; on any other build
   Atmosphère ignores it (build-id mismatch), so it is safe to ship a set.
 - Document in `switch/README.md` that a firmware update requires
