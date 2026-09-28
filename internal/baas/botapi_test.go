@@ -163,6 +163,45 @@ func TestResetPasswordReplacesTheOldOne(t *testing.T) {
 	}
 }
 
+func TestResetPasswordCanKeepLinkedConsolesSignedIn(t *testing.T) {
+	b := newBotHarness(t)
+	b.registerDiscord(aliceDiscord, "alice")
+	user, err := b.store.GetUserByLoginUsername(t.Context(), "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	da := db.DeviceAccount{ID: "device-account-alice", UserID: user.ID}
+	if err := b.store.CreateDeviceAccountForUser(t.Context(), da); err != nil {
+		t.Fatal(err)
+	}
+	resp, body := b.call("POST", "/bot/v1/reset-password", aliceDiscord,
+		map[string]bool{"disconnectAllAccounts": false})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reset without disconnect: %d %v", resp.StatusCode, body)
+	}
+	stored, err := b.store.GetDeviceAccount(t.Context(), da.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.TokensRevokedBefore != nil {
+		t.Errorf("console tokens were revoked at %v", stored.TokensRevokedBefore)
+	}
+	fresh, _ := body["password"].(string)
+	user, err = b.store.GetUserByLoginUsername(t.Context(), "alice")
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(fresh)) != nil {
+		t.Errorf("new password was not stored: %v", err)
+	}
+
+	resp, body = b.call("POST", "/bot/v1/reset-password", aliceDiscord, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("default reset: %d %v", resp.StatusCode, body)
+	}
+	stored, err = b.store.GetDeviceAccount(t.Context(), da.ID)
+	if err != nil || stored.TokensRevokedBefore == nil {
+		t.Errorf("default reset did not revoke console tokens: %v", err)
+	}
+}
+
 // Two bot users add each other: a request, then accepting it, makes them
 // friends through the same rules the console's endpoints use.
 func TestFriendRequestsBetweenBotUsers(t *testing.T) {

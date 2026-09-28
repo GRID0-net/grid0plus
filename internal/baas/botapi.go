@@ -242,6 +242,16 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, user db.User) {
+	var req struct {
+		DisconnectAllAccounts *bool `json:"disconnectAllAccounts"`
+	}
+	if r.ContentLength != 0 {
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
+			return
+		}
+	}
+	disconnect := req.DisconnectAllAccounts == nil || *req.DisconnectAllAccounts
 	password, err := newHumanPassword()
 	if err != nil {
 		b.internal(w, "generate password", err)
@@ -257,21 +267,25 @@ func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, user db.U
 		b.internal(w, "store password", err)
 		return
 	}
-	// Anything signed in before the reset stops working: whoever knew the old
-	// password may have used it to link a console.
-	now := b.s.now()
-	das, err := b.s.store.ListDeviceAccounts(r.Context(), user.ID)
-	if err != nil {
-		b.internal(w, "list device accounts", err)
-		return
-	}
-	for _, da := range das {
-		if err := b.s.store.RevokeDeviceAccountTokens(r.Context(), da.ID, now); err != nil {
-			b.internal(w, "revoke tokens", err)
+	// A password reset may be for forgotten credentials rather than a compromised
+	// account. Keep existing console tokens only when the owner explicitly opts out.
+	revoked := 0
+	if disconnect {
+		now := b.s.now()
+		das, err := b.s.store.ListDeviceAccounts(r.Context(), user.ID)
+		if err != nil {
+			b.internal(w, "list device accounts", err)
 			return
 		}
+		for _, da := range das {
+			if err := b.s.store.RevokeDeviceAccountTokens(r.Context(), da.ID, now); err != nil {
+				b.internal(w, "revoke tokens", err)
+				return
+			}
+		}
+		revoked = len(das)
 	}
-	b.s.log.Info("botapi: password reset", "user", user.ID, "revoked_device_accounts", len(das))
+	b.s.log.Info("botapi: password reset", "user", user.ID, "revoked_device_accounts", revoked)
 	writeJSON(w, http.StatusOK, credentialsResponse{
 		UserID: user.ID, Username: user.LoginUsername, Password: password,
 	})
