@@ -212,15 +212,12 @@ the `name` field for a real violation if this server ever supports one.
 player who picked a side, and the ratio of entries per team is a number this
 server actually has.
 
-**The Honsai midterm and final ratios are not.** A real fest result carries
-per-category ratios derived from battles played, and nothing in GRID0+
-records a battle's result yet. Those are returned with
-`is_valid` false, which is the protocol's own way of saying a section is
-unavailable.
-
-They are **not** filled with a plausible number, and that is the point: a
-fabricated ratio is indistinguishable from a measured one to whoever reads it
-next, including a later version of this code.
+**The Honsai battle ratios are not measured yet.** GRID0+ does not record
+battle results. During the second half, the captured wire shape requires a
+valid midpoint ranking. Until battle results exist, the midpoint explicitly
+uses the locked preliminary vote, ranked by share. The final battle categories
+remain unavailable. This is this server's stated fallback, not a measurement
+of wins or Nintendo's ranking formula.
 
 **So the verdict is decided on the vote.** One point per entry, most points
 wins. That is an *editorial choice*, not a stand-in — this is one operator's

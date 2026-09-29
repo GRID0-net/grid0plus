@@ -288,6 +288,41 @@ func TestTheVoteIsMeasuredAndTheBattleRatiosAreReportedAsNotAvailable(t *testing
 	}
 }
 
+func TestSecondHalfPublishesRankedMidpointWithoutFinalResult(t *testing.T) {
+	announced := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	svc, _, f := liveFest(t, announced)
+	for _, choice := range []struct{ user, team string }{
+		{"p1", "Bravo"}, {"p2", "Bravo"}, {"p3", "Alpha"},
+	} {
+		as(t, choice.user)
+		entryFor(t, svc, f.ID, choice.team)
+	}
+	as(t, "reader")
+	svc.now = func() time.Time { return f.Timetable().Mid.Add(time.Hour) }
+	result, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
+		Name: "tenants/" + testTenant + "/festResults/" + f.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.GetYobisai().GetIsValid() || !result.GetHonsaiMidterm().GetIsValid() {
+		t.Fatalf("second half must contain valid preliminary and midpoint results: %v", result)
+	}
+	if result.GetHonsaiFinal() != nil || result.GetOverall().GetIsValid() || result.GetOverall().GetWeights() == nil {
+		t.Fatalf("second half must omit the final and carry an empty overall weights envelope: %v", result)
+	}
+	preliminary := result.GetYobisai().GetTeamRatios()
+	midpoint := result.GetHonsaiMidterm().GetTeamRatios()
+	if len(preliminary) != 3 || len(midpoint) != 3 || result.GetUnk() != 3 {
+		t.Fatalf("second half must include all three teams: %v", result)
+	}
+	if preliminary[0].GetFestTeam() != "Alpha" || midpoint[0].GetFestTeam() != "Bravo" ||
+		midpoint[0].GetRatio() != 2.0/3 || midpoint[1].GetFestTeam() != "Alpha" ||
+		midpoint[2].GetFestTeam() != "Charlie" {
+		t.Fatalf("midpoint should rank vote shares without reordering preliminary results: %v", result)
+	}
+}
+
 func TestGetFestResultAcceptsTheFestResultsResourceAndEchoesItsName(t *testing.T) {
 	started := time.Date(2026, 9, 5, 1, 0, 0, 0, time.UTC)
 	svc, _, f := liveFest(t, started)

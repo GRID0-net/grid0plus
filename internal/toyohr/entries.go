@@ -132,13 +132,10 @@ func (s *Service) GetFestEntry(
 // entries per team is a number GRID0+ actually has. That fills the Yobisai
 // result, which is the pre-fest vote.
 //
-// The BATTLE RATIOS are not. A real fest result carries per-category ratios
-// derived from battles played, and nothing in GRID0+ records a battle yet —
-// GameRecord is unimplemented. Those are reported with is_valid false, which is
-// the protocol's own way of saying a section is not available, rather than
-// filled with a plausible number. A fabricated ratio would be indistinguishable
-// from a measured one to anybody reading it later, including a future version of
-// this code.
+// The BATTLE RATIOS are not. Nothing in GRID0+ records a battle yet. At
+// midpoint, the live wire shape requires a valid ranked result, so this server
+// explicitly uses the locked preliminary vote as its fallback. The final
+// battle categories remain unavailable.
 //
 // So the overall verdict is decided on the vote. **That is an editorial choice,
 // not a stand-in**: this is one operator's server, a fest here is a fest
@@ -197,13 +194,28 @@ func (s *Service) GetFestResult(
 		out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{IsValid: false}
 		out.HonsaiFinal = &toyohrpb.HonsaiFinalResult{IsValid: false}
 		out.Overall = overallResult(entries)
-	} else if phase == PhaseFirstHalf {
+	} else if phase == PhaseFirstHalf || phase == PhaseSecondHalf {
 		// The live-fest capture omits the unplayed phases and carries an
 		// overall envelope with an empty weights map. A present-but-invalid
 		// midterm/final has a different wire shape and can redirect the game's
 		// result state machine before it loads the fest news.
 		out.Overall = &toyohrpb.OverallResult{Weights: &commonpb.MapValue{}}
 		out.Unk = int32(len(ratios))
+		if phase == PhaseSecondHalf && len(entries) > 0 {
+			// The captured second half has a valid midpoint, ranked by share,
+			// and no final result. We cannot measure battle performance yet;
+			// the locked preliminary vote is this server's explicit fallback
+			// until battle results are recorded. Keep the canonical Yobisai
+			// order above and sort a separate copy for the midpoint.
+			midterm := append([]*toyohrpb.FestTeamRatio(nil), ratios...)
+			sort.SliceStable(midterm, func(i, j int) bool {
+				return midterm[i].GetRatio() > midterm[j].GetRatio()
+			})
+			out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{
+				IsValid:    true,
+				TeamRatios: midterm,
+			}
+		}
 	} else {
 		out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{IsValid: false}
 		out.HonsaiFinal = &toyohrpb.HonsaiFinalResult{IsValid: false}
