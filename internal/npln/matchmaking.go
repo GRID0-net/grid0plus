@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/n-popescu/grid0plus/config"
 	"github.com/n-popescu/grid0plus/internal/db"
 	"github.com/n-popescu/grid0plus/internal/matchmaking"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
 
@@ -70,7 +72,36 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		return nil, errMalformed(m.s.env)
 	}
 
-	ticket, sessions, err := m.s.queue.Enqueue(caller.UserID, mode)
+	team := ""
+	if strings.Contains(strings.ToLower(mode), "fest") {
+		fests, err := m.s.store.ListFests(ctx)
+		if err != nil {
+			m.s.log.Error("npln: list fests for matchmaking", "error", err)
+			return nil, errInternal()
+		}
+		var selectedStart time.Time
+		for _, row := range fests {
+			phase := (toyohr.Fest{Start: row.StartAt}).PhaseAt(m.s.now())
+			if !row.Enabled || (phase != toyohr.PhaseFirstHalf && phase != toyohr.PhaseSecondHalf) {
+				continue
+			}
+			entry, err := m.s.store.GetFestEntry(ctx, row.ID, caller.UserID)
+			if err != nil {
+				if errors.Is(err, db.ErrNotFound) {
+					continue
+				}
+				m.s.log.Error("npln: look up fest team", "error", err)
+				return nil, errInternal()
+			}
+			if team == "" || row.StartAt.After(selectedStart) {
+				team, selectedStart = entry.Team, row.StartAt
+			}
+		}
+		if team == "" {
+			return nil, ErrNotFound
+		}
+	}
+	ticket, sessions, err := m.s.queue.EnqueueWithFestTeam(caller.UserID, mode, team)
 	if err != nil {
 		m.s.log.Error("npln: enqueue", "user", caller.UserID, "error", err)
 		return nil, errMalformed(m.s.env)
@@ -821,6 +852,9 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		// The state is still the truth, so the ticket is worth sending without
 		// it rather than failing the stream.
 		return out, nil
+	}
+	if slot := sess.TeamSlots[t.UserID]; slot != "" {
+		def.Team = slot
 	}
 	out.GameSession = s.sessionProto(sess)
 	if !sess.Room {

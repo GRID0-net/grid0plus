@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,8 @@ type Ticket struct {
 	UserID string
 	// Mode is what they are queuing for. Tickets only match within one mode.
 	Mode string
+	// FestTeam comes from the account's stored fest entry, never ticket metadata.
+	FestTeam string
 
 	State     State
 	CreatedAt time.Time
@@ -90,6 +93,8 @@ type Session struct {
 	ID      string
 	Mode    string
 	Players []string
+	// TeamSlots maps fest players onto the game's team1/team2 slots.
+	TeamSlots map[string]string
 
 	// MaxPlayers is the size the match was formed at. Carried on the session
 	// rather than recomputed from the live mode size, because an operator
@@ -287,6 +292,10 @@ func New(cfg Config, now func() time.Time) *Queue {
 // queue would match a player who is no longer waiting — the other consoles then
 // sit in a lobby that never fills.
 func (q *Queue) Enqueue(userID, mode string) (Ticket, []Session, error) {
+	return q.EnqueueWithFestTeam(userID, mode, "")
+}
+
+func (q *Queue) EnqueueWithFestTeam(userID, mode, team string) (Ticket, []Session, error) {
 	if userID == "" {
 		return Ticket{}, nil, fmt.Errorf("matchmaking: no user")
 	}
@@ -303,6 +312,7 @@ func (q *Queue) Enqueue(userID, mode string) (Ticket, []Session, error) {
 		ID:        uuid.NewString(),
 		UserID:    userID,
 		Mode:      mode,
+		FestTeam:  team,
 		State:     StateSearching,
 		CreatedAt: q.now(),
 	}
@@ -544,6 +554,9 @@ func (q *Queue) ForceMatch(mode string) (Session, bool, error) {
 	defer q.mu.Unlock()
 
 	ids := q.liveWaitingLocked(mode)
+	if isFestMode(mode) {
+		ids = q.selectFestPlayersLocked(ids, q.playersForLocked(mode))
+	}
 	if len(ids) == 0 {
 		return Session{}, false, nil
 	}
@@ -857,10 +870,16 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	var formed []Session
 
 	ids := q.liveWaitingLocked(mode)
+	if isFestMode(mode) {
+		ids = q.selectFestPlayersLocked(ids, size)
+	}
 	for len(ids) >= size {
 		delete(q.grace, mode)
 		formed = append(formed, q.formSessionLocked(mode, ids[:size]))
 		ids = q.liveWaitingLocked(mode)
+		if isFestMode(mode) {
+			ids = q.selectFestPlayersLocked(ids, size)
+		}
 	}
 
 	n := len(ids)
@@ -880,6 +899,41 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	}
 	delete(q.grace, mode)
 	return append(formed, q.formSessionLocked(mode, ids))
+}
+
+func isFestMode(mode string) bool { return strings.Contains(strings.ToLower(mode), "fest") }
+
+// selectFestPlayersLocked requires two different fest teams with equal
+// numbers. The result is grouped by team so the session can assign stable
+// team1/team2 slots. Extra tickets remain queued for the next match.
+func (q *Queue) selectFestPlayersLocked(ids []string, size int) []string {
+	byTeam := map[string][]string{}
+	for _, id := range ids {
+		if team := q.tickets[id].FestTeam; team != "" {
+			byTeam[team] = append(byTeam[team], id)
+		}
+	}
+	if len(byTeam) < 2 {
+		return nil
+	}
+	teams := make([]string, 0, len(byTeam))
+	for team := range byTeam {
+		teams = append(teams, team)
+	}
+	sort.Slice(teams, func(i, j int) bool {
+		if len(byTeam[teams[i]]) != len(byTeam[teams[j]]) {
+			return len(byTeam[teams[i]]) > len(byTeam[teams[j]])
+		}
+		return teams[i] < teams[j]
+	})
+	perTeam := min(size/2, len(byTeam[teams[0]]), len(byTeam[teams[1]]))
+	if perTeam == 0 {
+		return nil
+	}
+	out := make([]string, 0, perTeam*2)
+	out = append(out, byTeam[teams[0]][:perTeam]...)
+	out = append(out, byTeam[teams[1]][:perTeam]...)
+	return out
 }
 
 // formCoopLocked forms a Salmon Run-shaped match: one team, no even split.
@@ -965,6 +1019,18 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 	// early four-player versus match is full at four, and a latecomer is
 	// matched into the next one rather than squeezed into this.
 	s := q.newSessionLocked(mode, len(players), players, false)
+	if isFestMode(mode) && len(chosen) > 0 {
+		firstTeam := q.tickets[chosen[0]].FestTeam
+		s.TeamSlots = map[string]string{}
+		for _, id := range chosen {
+			slot := "team2"
+			if q.tickets[id].FestTeam == firstTeam {
+				slot = "team1"
+			}
+			s.TeamSlots[q.tickets[id].UserID] = slot
+		}
+		q.sessions[s.ID].TeamSlots = s.TeamSlots
+	}
 
 	for _, id := range chosen {
 		t := q.tickets[id]

@@ -11,9 +11,87 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/n-popescu/grid0plus/config"
+	"github.com/n-popescu/grid0plus/internal/db"
 	"github.com/n-popescu/grid0plus/internal/matchmaking"
 	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
+
+func TestFestTicketCarriesTheServerAssignedTeamSlot(t *testing.T) {
+	h := newHarness(t)
+	mode := "fest_match_regular_normal_config"
+	if _, _, err := h.srv.queue.EnqueueWithFestTeam("alice", mode, "Alpha"); err != nil {
+		t.Fatal(err)
+	}
+	second, formed, err := h.srv.queue.EnqueueWithFestTeam("bob", mode, "Bravo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A partial fest match forms after the configured grace period, unless
+	// disabled in this harness. ForceMatch follows the same session path.
+	if len(formed) == 0 {
+		if _, ok, err := h.srv.queue.ForceMatch(mode); err != nil || !ok {
+			t.Fatalf("force a balanced fest pair: %v, %v", ok, err)
+		}
+	}
+	second, _ = h.srv.queue.Get(second.ID)
+	proto, err := h.srv.ticketProto(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := proto.GetUserDefinitions()[0].GetTeam(); got != "team2" {
+		t.Fatalf("matched fest ticket team = %q, want team2", got)
+	}
+}
+
+func TestFestMatchmakingUsesStoredVotesInsteadOfClientTeamClaims(t *testing.T) {
+	h := newHarness(t)
+	for _, p := range []struct{ user, device, team string }{
+		{"alpha-player", "alpha-device", "Alpha"},
+		{"bravo-player", "bravo-device", "Bravo"},
+	} {
+		h.createUser(p.user, p.device)
+	}
+	start := h.now.Add(-2 * time.Hour).Truncate(2 * time.Hour)
+	if err := h.store.UpsertFest(context.Background(), db.Fest{
+		ID: "JUEA-00015", Resource: "test-fest", StartAt: start,
+		Revision: strings.Repeat("a", 40), Regions: []string{"EU"}, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []struct{ user, team string }{{"alpha-player", "Alpha"}, {"bravo-player", "Bravo"}} {
+		if err := h.store.UpsertFestEntry(context.Background(), db.FestEntry{
+			FestID: "JUEA-00015", UserID: p.user, Team: p.team,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	client := mmpb.NewMatchmakerClient(h.conn)
+	request := ticketFor("fest_match_regular_normal_config")
+	request.MatchmakingTicket.UserDefinitions = []*mmpb.UserDefinition{{Team: "Charlie"}}
+	one := h.ctx(h.sessionFor(t, "alpha-player", "alpha-device"), "")
+	two := h.ctx(h.sessionFor(t, "bravo-player", "bravo-device"), "")
+	first, err := client.CreateMatchmakingTicket(one, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.CreateMatchmakingTicket(two, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		ctx        context.Context
+		name, want string
+	}{{one, first.GetName(), "team1"}, {two, second.GetName(), "team2"}} {
+		stream, err := client.TrackMatchmakingTicket(tc.ctx, &mmpb.TrackMatchmakingTicketRequest{Name: tc.name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := awaitSucceeded(t, stream)
+		if got.GetUserDefinitions()[0].GetTeam() != tc.want {
+			t.Fatalf("server-assigned team for %s = %v; want %s", tc.name, got, tc.want)
+		}
+	}
+}
 
 func TestPartialPublicMatchAdvertisesItsActualRosterAsFull(t *testing.T) {
 	h := newHarness(t)

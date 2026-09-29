@@ -58,6 +58,32 @@ func TestAMatchFormsWhenEnoughPlayersAreWaiting(t *testing.T) {
 	}
 }
 
+func TestFestMatchKeepsEachSideOnOneVotedTeam(t *testing.T) {
+	q, _ := testQueue(t, 4)
+	mode := "fest_match_regular_normal_config"
+	for _, p := range []struct{ user, team string }{
+		{"a1", "Alpha"}, {"a2", "Alpha"}, {"a3", "Alpha"},
+		{"b1", "Bravo"}, {"c1", "Charlie"},
+	} {
+		if _, formed, err := q.EnqueueWithFestTeam(p.user, mode, p.team); err != nil || len(formed) != 0 {
+			t.Fatalf("premature fest match: %v, %v", formed, err)
+		}
+	}
+	_, formed, err := q.EnqueueWithFestTeam("b2", mode, "Bravo")
+	if err != nil || len(formed) != 1 {
+		t.Fatalf("two complete fest teams did not form: %v, %v", formed, err)
+	}
+	s := formed[0]
+	if len(s.Players) != 4 || s.TeamSlots["a1"] != "team1" || s.TeamSlots["a2"] != "team1" ||
+		s.TeamSlots["b1"] != "team2" || s.TeamSlots["b2"] != "team2" ||
+		s.TeamSlots["a3"] != "" || s.TeamSlots["c1"] != "" {
+		t.Fatalf("fest slots mix voted teams or include waiting players: %v", s)
+	}
+	if waiting := q.Waiting()[mode]; waiting != 2 {
+		t.Fatalf("waiting after one 2v2 match = %d, want 2", waiting)
+	}
+}
+
 // TestPlayersInDifferentModesDoNotMatchEachOther.
 //
 // Two people queuing for different things are not two people who can play
