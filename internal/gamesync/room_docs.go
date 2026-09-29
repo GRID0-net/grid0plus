@@ -61,9 +61,8 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 		fields = map[string]*commonpb.Value{
 			"addr": str(d.Host), "gsid": str(d.SessionID),
 			"maxu": integer(int64(d.Capacity)), "mcn": str(d.Mode),
-			"p":   integer(int64(d.Port)),
-			"rs":  &commonpb.Value{ValueType: &commonpb.Value_BytesValue{BytesValue: secret[:]}},
-			"tid": str(d.Tenant),
+			"p":  integer(int64(d.Port)),
+			"rs": &commonpb.Value{ValueType: &commonpb.Value_BytesValue{BytesValue: secret[:]}},
 		}
 	case "docs/__gs/m", "docs/__gs/s":
 		fields = settings()
@@ -79,6 +78,10 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	case "docs/__stg/All":
 		mutable := settings()
 		mutable["cp"] = boolean(false)
+		// The captured mutable-session readback keeps the full room capacity
+		// here, even though __gs/m and __gs/s use capacity minus three.
+		mutable["bfmax"] = integer(int64(d.Capacity))
+		mutable["prp"] = mapValue(nil)
 		fields = map[string]*commonpb.Value{
 			"gsid": str(d.SessionID), "addr": str(d.Host), "p": integer(int64(d.Port)),
 			"mcn": str(d.Mode), "maxu": integer(int64(d.Capacity)), "rs": mapValue(mutable),
