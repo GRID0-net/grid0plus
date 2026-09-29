@@ -327,6 +327,14 @@ func (p *Postgres) LinkBotAccount(ctx context.Context, discordUserID, userID str
 	if discordUserID == "" || userID == "" {
 		return fmt.Errorf("%w: a link needs a Discord account and a user", ErrNotFound)
 	}
+	// Whether the user exists is answered first, on purpose. Postgres checks
+	// the indexes in its own order, so a link for a user that does not exist
+	// would otherwise be refused as a duplicate main account whenever the
+	// caller already had one -- a different, and wrong, reason for the same
+	// "no".
+	if _, err := p.GetUser(ctx, userID); err != nil {
+		return err
+	}
 	tag, err := p.pool.Exec(ctx, `
 		INSERT INTO bot_account_links (user_id, discord_user_id, primary_account)
 		VALUES ($1, $2, $3)
