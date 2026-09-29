@@ -191,6 +191,9 @@ func (s *Service) SelectFestSchedule(
 	if !ok {
 		return &toyohrpb.SelectFestScheduleResponse{}, nil
 	}
+	s.log.Info("toyohr: announced fest schedule", "fest", fest.ID,
+		"phase", fest.PhaseAt(s.now()), "region", region,
+		"requested_target", req.GetTarget(), "target", scheduleTarget(req.GetTarget()))
 
 	return &toyohrpb.SelectFestScheduleResponse{
 		Schedule: s.scheduleProto(fest, region, req.GetTarget()),
