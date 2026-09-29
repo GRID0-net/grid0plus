@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"net"
@@ -32,6 +33,7 @@ import (
 	"github.com/n-popescu/grid0plus/internal/nplnrest"
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/toyohr"
 )
 
 func main() {
@@ -169,6 +171,9 @@ func main() {
 		VerifyIDToken:    srv.VerifyMatchmakingIDToken,
 		ResolveSession:   srv.ResolveGamesyncSession,
 		IssueAccessToken: gamesyncProbeSigner,
+		OnRefereeReport: func(ctx context.Context, report gamesync.RefereeReport) error {
+			return toyohr.RecordFestReport(ctx, store, report, time.Now().UTC())
+		},
 	})
 	if err != nil {
 		service.Fatal(log, "build gamesync", err)

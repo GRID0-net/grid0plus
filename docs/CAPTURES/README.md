@@ -612,14 +612,14 @@ this version deliberately names no number to keep stale).
   what `CreateFestEntry`'s response actually names a new entry, or whether
   the console parses this field at all rather than only checking the RPC
   succeeded.
-- **Whether an all-`is_valid: false` `FestResult` reads as "not concluded"**
-  (`internal/toyohr/entries.go`, `GetFestResult`): GRID0+ has no real
-  battle-outcome data (`npln_fest_entries` records who picked which team,
-  not who won, and `GameRecord` is unimplemented), so every sub-result
-  reports `IsValid: false` rather than a fabricated ratio. Whether the
-  console reads that as "the fest has not concluded yet" (leaving it
-  running, the same as before this RPC existed) or as a valid but empty
-  outcome is unconfirmed either way.
+- **Nintendo's per-player Splatfest clout formula**
+  (`internal/toyohr/fest_scoring.go`, `midpointShares`): GRID0+ now records
+  completed referee reports and counts wins by mode. For the midpoint it uses
+  reported ink points, with a documented fallback to wins and then votes.
+  Nextendo's captured match results show Nintendo-derived clout values that
+  the client never sends, and the exact derivation is still unknown. A capture
+  with controlled ink, win, and multiplier changes would settle that single
+  scoring rule.
 - ~~**Whether Gamesync is reached through the tenant channel or a separate
   port**~~ — resolved: its own port. `gamesync.npln.nintendo.net` not ending
   in `srv.nintendo.net`, unlike every other NPLN host, turned out to be

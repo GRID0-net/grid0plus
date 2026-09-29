@@ -43,6 +43,19 @@ func (s *store) get(name string) (*syncpb.Document, bool) {
 	return doc, true
 }
 
+// snapshot returns a safe copy for post-commit observers. A report may arrive
+// as several masked writes, so examining only the last operation misses fields
+// that were already present in the committed document.
+func (s *store) snapshot(name string) (*syncpb.Document, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	doc, ok := s.docs[name]
+	if !ok {
+		return nil, false
+	}
+	return proto.Clone(doc).(*syncpb.Document), true
+}
+
 // list returns the documents directly under a collection path.
 //
 // Directly: "a/b/c" is under "a/b" and "a/b/c/d/e" is not. A recursive list

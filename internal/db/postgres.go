@@ -1318,6 +1318,41 @@ func (p *Postgres) ListFestEntries(ctx context.Context, festID string) ([]FestEn
 	return out, mapErr(rows.Err())
 }
 
+func (p *Postgres) RecordFestBattle(ctx context.Context, b FestBattle) error {
+	ink, err := json.Marshal(b.Ink)
+	if err != nil {
+		return err
+	}
+	_, err = p.pool.Exec(ctx, `INSERT INTO npln_fest_battles
+		(fest_id, battle_id, mode, winning_team, ink, finished_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (fest_id, battle_id) DO NOTHING`,
+		b.FestID, b.BattleID, b.Mode, b.WinningTeam, ink, b.FinishedAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) ListFestBattles(ctx context.Context, festID string) ([]FestBattle, error) {
+	rows, err := p.pool.Query(ctx, `SELECT fest_id, battle_id, mode, winning_team, ink, finished_at
+		FROM npln_fest_battles WHERE fest_id = $1 ORDER BY finished_at, battle_id`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []FestBattle
+	for rows.Next() {
+		var b FestBattle
+		var ink []byte
+		if err := rows.Scan(&b.FestID, &b.BattleID, &b.Mode, &b.WinningTeam, &ink, &b.FinishedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		if err := json.Unmarshal(ink, &b.Ink); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, mapErr(rows.Err())
+}
+
 func scanFestEntry(row interface{ Scan(...any) error }) (FestEntry, error) {
 	var e FestEntry
 	err := row.Scan(&e.FestID, &e.UserID, &e.Team, &e.Region, &e.CreatedAt, &e.UpdatedAt)

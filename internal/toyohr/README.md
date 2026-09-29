@@ -204,7 +204,7 @@ violation. GRID0+ now does the same, and a gRPC test checks both the
 status and the opening `npln-grpc-type` header. The upstream proto retains
 the `name` field for a real violation if this server ever supports one.
 
-## The vote is measured; the battle ratios are not
+## Fest scoring
 
 `GetFestResult` fills four sections, and they are not equally real.
 
@@ -212,18 +212,22 @@ the `name` field for a real violation if this server ever supports one.
 player who picked a side, and the ratio of entries per team is a number this
 server actually has.
 
-**The Honsai battle ratios are not measured yet.** GRID0+ does not record
-battle results. During the second half, the captured wire shape requires a
-valid midpoint ranking. Until battle results exist, the midpoint explicitly
-uses the locked preliminary vote, ranked by share. The final battle categories
-remain unavailable. This is this server's stated fallback, not a measurement
-of wins or Nintendo's ranking formula.
+**Completed gamesync referee reports are now recorded once per battle.** The
+verified session supplies the match and player identities; each player's team
+comes from their stored fest entry. GRID0+ counts wins by mode and sums reported
+paint points by team. The midpoint freezes at its scheduled time and uses
+pre-midpoint paint points, then wins, then the vote if no reports exist.
 
-**So the verdict is decided on the vote.** One point per entry, most points
-wins. That is an *editorial choice*, not a stand-in — this is one operator's
-server, a fest here is a fest GRID0+ built, and "the side more people picked
-wins" is a rule that can be stated to the players. `overallResult` is the single
-function that changes when battles start being recorded.
+At results time, the five captured ranking weights are 90/45/0 for the vote,
+70/35/0 for popularity, 120/60/0 each for open and challenge battles, and
+180/90/0 for tricolor. A battle category with no recorded wins uses the vote
+ranking; this is explicitly an editorial fallback, not a measured battle
+result or a claim to reproduce Nintendo's undisclosed clout formula. Tied
+teams share the last rank occupied by their tie group.
+
+`GetFestResult` and the result-pack winner in `GetFestDecryptionKey` read the
+same scoring function, so the announced winning team matches the points the
+game displays. The result key and winner are withheld until results open.
 
 The verdict is withheld until play is over. Publishing one mid-fest would have
 the game announce a winner while the fest is still open.

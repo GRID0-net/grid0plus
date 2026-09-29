@@ -36,6 +36,7 @@ type Memory struct {
 	// festEntries is keyed by fest id then user id: one entry per account per
 	// fest, the same shape friendships uses for its own per-pair map.
 	festEntries map[string]map[string]FestEntry
+	festBattles map[string]map[string]FestBattle
 	coopShifts  map[string]CoopShift
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
@@ -60,6 +61,7 @@ func NewMemory() *Memory {
 		friendCodes:    map[string]FriendCode{},
 		fests:          map[string]Fest{},
 		festEntries:    map[string]map[string]FestEntry{},
+		festBattles:    map[string]map[string]FestBattle{},
 		coopShifts:     map[string]CoopShift{},
 		friendships:    map[string]map[string]Friendship{},
 		friendRequests: map[string]FriendRequest{},
@@ -1369,6 +1371,7 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	// The entries go with it, matching the ON DELETE CASCADE on the table.
 	// Without this a recreated fest of the same id would inherit the old votes.
 	delete(m.festEntries, id)
+	delete(m.festBattles, id)
 	return nil
 }
 
@@ -1417,6 +1420,48 @@ func (m *Memory) ListFestEntries(_ context.Context, festID string) ([]FestEntry,
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
+}
+
+func (m *Memory) RecordFestBattle(_ context.Context, b FestBattle) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.fests[b.FestID]; !ok {
+		return ErrNotFound
+	}
+	if m.festBattles[b.FestID] == nil {
+		m.festBattles[b.FestID] = map[string]FestBattle{}
+	}
+	if _, exists := m.festBattles[b.FestID][b.BattleID]; exists {
+		return nil
+	}
+	b.Ink = cloneInk(b.Ink)
+	m.festBattles[b.FestID][b.BattleID] = b
+	return nil
+}
+
+func (m *Memory) ListFestBattles(_ context.Context, festID string) ([]FestBattle, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]FestBattle, 0, len(m.festBattles[festID]))
+	for _, b := range m.festBattles[festID] {
+		b.Ink = cloneInk(b.Ink)
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].FinishedAt.Equal(out[j].FinishedAt) {
+			return out[i].BattleID < out[j].BattleID
+		}
+		return out[i].FinishedAt.Before(out[j].FinishedAt)
+	})
+	return out, nil
+}
+
+func cloneInk(in map[string]int64) map[string]int64 {
+	out := make(map[string]int64, len(in))
+	for team, points := range in {
+		out[team] = points
+	}
+	return out
 }
 
 // ---- Salmon Run / Big Run schedule ---------------------------------------

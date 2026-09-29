@@ -77,6 +77,17 @@ type Options struct {
 	SessionTTL time.Duration
 
 	Now func() time.Time
+	// OnRefereeReport records a completed match outside the transient lobby
+	// document store. A nil callback leaves ordinary gamesync unchanged.
+	OnRefereeReport func(context.Context, RefereeReport) error
+}
+
+// RefereeReport is the authenticated match context plus the game's final
+// report. Its user and session IDs come from the verified gamesync token.
+type RefereeReport struct {
+	BattleID, SessionID, Mode, UserID string
+	Players                           []string
+	Fields                            *commonpb.MapValue
 }
 
 // defaultSessionTTL is how long a gamesync session lasts.
@@ -94,6 +105,7 @@ type Server struct {
 	verify           TokenVerifier
 	resolveSession   func(string) (SessionDetails, error)
 	issueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
+	onRefereeReport  func(context.Context, RefereeReport) error
 	sessionTTL       time.Duration
 	now              func() time.Time
 
@@ -145,6 +157,7 @@ func New(opts Options) (*Server, error) {
 		verify:           opts.VerifyIDToken,
 		resolveSession:   opts.ResolveSession,
 		issueAccessToken: opts.IssueAccessToken,
+		onRefereeReport:  opts.OnRefereeReport,
 		sessionTTL:       opts.SessionTTL,
 		now:              opts.Now,
 		docs:             newStore(opts.Now),
@@ -514,6 +527,7 @@ func (s *Server) WriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
 		caller, _ := callerFrom(ctx)
 		s.stageDeferments(caller, req.GetDefermentOperations())
@@ -559,6 +573,7 @@ func (s *Server) LazyWriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	s.observeRefereeReports(ctx, ops)
 
 	return &syncpb.LazyWriteDocumentsResponse{CommitTime: timestamppb.New(commit.at)}, nil
 }
@@ -616,6 +631,7 @@ func (s *Server) CommitTransaction(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	s.observeRefereeReports(ctx, req.GetWriteOperations())
 
 	return &syncpb.CommitTransactionResponse{
 		WriteResults: results,

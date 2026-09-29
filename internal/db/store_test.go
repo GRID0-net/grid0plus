@@ -76,6 +76,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"userLogin":                 testUserLogin,
 		"fests":                     testFests,
 		"festEntries":               testFestEntries,
+		"festBattles":               testFestBattles,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
 		"saveDataArchives":          testSaveDataArchives,
@@ -1712,6 +1713,41 @@ func testCoopShifts(t *testing.T, s Store) {
 // The two properties that matter are the ones a divergence would corrupt a
 // result with: one row per player per fest, and votes not outliving the fest
 // they belong to.
+func testFestBattles(t *testing.T, s Store) {
+	ctx := t.Context()
+	fest := Fest{ID: "NXTD-00051", Resource: "nxtd-00051-fes",
+		Revision: "2222222222222222222222222222222222222222",
+		StartAt:  time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC),
+		Regions:  []string{"EU"}, Enabled: true}
+	if err := s.UpsertFest(ctx, fest); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 10, 3, 5, 0, 0, 0, time.UTC)
+	b := FestBattle{FestID: fest.ID, BattleID: "match-1", Mode: "fest_regular",
+		WinningTeam: "Alpha", Ink: map[string]int64{"Alpha": 1410}, FinishedAt: when}
+	for range 2 {
+		if err := s.RecordFestBattle(ctx, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ListFestBattles(ctx, fest.ID)
+	if err != nil || len(got) != 1 || got[0].Ink["Alpha"] != 1410 {
+		t.Fatalf("idempotent battle record: %v, %v", got, err)
+	}
+	got[0].Ink["Alpha"] = 0
+	again, err := s.ListFestBattles(ctx, fest.ID)
+	if err != nil || again[0].Ink["Alpha"] != 1410 {
+		t.Fatalf("battle read must not mutate stored ink: %v, %v", again, err)
+	}
+	if err := s.DeleteFest(ctx, fest.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.ListFestBattles(ctx, fest.ID)
+	if err != nil || len(after) != 0 {
+		t.Fatalf("deleted fest retained battles: %v, %v", after, err)
+	}
+}
+
 func testFestEntries(t *testing.T, s Store) {
 	ctx := t.Context()
 

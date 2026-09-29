@@ -280,8 +280,14 @@ func TestTheDecryptionKeysComeBackInTheOrderTheMessageDeclares(t *testing.T) {
 	if got.GetStartKey() != keys[1] {
 		t.Errorf("start key = %q, want %q", got.GetStartKey(), keys[1])
 	}
-	if got.GetResultWinningTeamKey() != keys[2] {
-		t.Errorf("result key = %q, want %q", got.GetResultWinningTeamKey(), keys[2])
+	if got.GetResultWinningTeamKey() != "" {
+		t.Errorf("result key was published before the results opened: %q", got.GetResultWinningTeamKey())
+	}
+	svc.now = func() time.Time { return f.Timetable().Close.Add(time.Minute) }
+	closed, err := svc.GetFestDecryptionKey(context.Background(),
+		&toyohrpb.GetFestDecryptionKeyRequest{Name: f.ID})
+	if err != nil || closed.GetResultWinningTeamKey() != keys[2] {
+		t.Fatalf("closed fest result key = %q, error %v; want %q", closed.GetResultWinningTeamKey(), err, keys[2])
 	}
 
 	// A key that was not supplied is left ABSENT, not empty. Nintendo omits the

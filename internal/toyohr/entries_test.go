@@ -362,15 +362,23 @@ func TestTheVerdictIsPublishedOnlyOncePlayIsOver(t *testing.T) {
 	svc, _, f := liveFest(t, announced)
 
 	as(t, "p1")
-	entryFor(t, svc, f.ID, "alpha")
+	entryFor(t, svc, f.ID, "Alpha")
 	as(t, "p2")
-	entryFor(t, svc, f.ID, "alpha")
+	entryFor(t, svc, f.ID, "Alpha")
 	as(t, "p3")
-	entryFor(t, svc, f.ID, "bravo")
+	entryFor(t, svc, f.ID, "Bravo")
 	as(t, "reader")
-
-	// Counting: play has ended, results are not out yet.
 	svc.now = func() time.Time { return f.Timetable().End.Add(time.Minute) }
+	pending, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
+		Name: "tenants/" + testTenant + "/festResults/" + f.ID,
+	})
+	if err != nil || pending.GetOverall().GetIsValid() || pending.GetHonsaiFinal() != nil {
+		t.Fatalf("counting phase exposed a final verdict: %v, %v", pending, err)
+	}
+
+	// The result window opens after counting; publishing before it would show
+	// the winner while Nintendo's phase still says results are pending.
+	svc.now = func() time.Time { return f.Timetable().Close.Add(time.Minute) }
 
 	result, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
 		Name: "tenants/" + testTenant + "/fests/" + f.ID + "/result",
@@ -383,11 +391,11 @@ func TestTheVerdictIsPublishedOnlyOncePlayIsOver(t *testing.T) {
 		t.Fatal("no verdict once play is over, so the fest never concludes")
 	}
 	points := overall.GetPoints()
-	if len(points) != 2 {
-		t.Fatalf("got %d team points, want 2", len(points))
+	if len(points) != 3 {
+		t.Fatalf("got %d team points, want 3", len(points))
 	}
-	if points[0].GetFestTeam() != "alpha" || points[0].GetPoints() != 2 {
-		t.Errorf("winner = %s with %d, want alpha with 2",
+	if points[0].GetFestTeam() != "Alpha" || points[0].GetPoints() != 580 {
+		t.Errorf("winner = %s with %d, want Alpha with 580",
 			points[0].GetFestTeam(), points[0].GetPoints())
 	}
 }

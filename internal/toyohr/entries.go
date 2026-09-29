@@ -132,16 +132,14 @@ func (s *Service) GetFestEntry(
 // entries per team is a number GRID0+ actually has. That fills the Yobisai
 // result, which is the pre-fest vote.
 //
-// The BATTLE RATIOS are not. Nothing in GRID0+ records a battle yet. At
-// midpoint, the live wire shape requires a valid ranked result, so this server
-// explicitly uses the locked preliminary vote as its fallback. The final
-// battle categories remain unavailable.
+// Completed gamesync referee reports now supply wins by mode and paint points.
+// The midpoint uses those measured paint points before the midpoint, falling
+// back to wins and then the locked vote if no usable reports exist. The final
+// ranks each battle category from recorded wins, with the vote as the stated
+// fallback for an unplayed category.
 //
-// So the overall verdict is decided on the vote. **That is an editorial choice,
-// not a stand-in**: this is one operator's server, a fest here is a fest
-// GRID0+ built, and "the side more people picked wins" is a rule that can be
-// stated to the players. When GameRecord lands, overallResult is the single
-// function that changes.
+// Nintendo's precise clout formula is unknown; these are GRID0+'s explicit
+// scoring rules, while the point weights and wire structure come from capture.
 func (s *Service) GetFestResult(
 	ctx context.Context, req *toyohrpb.GetFestResultRequest,
 ) (*toyohrpb.FestResult, error) {
@@ -171,6 +169,11 @@ func (s *Service) GetFestResult(
 		s.log.Error("toyohr: list fest entries", "fest", festID, "error", err)
 		return nil, status.Error(codes.Internal, "")
 	}
+	battles, err := s.store.ListFestBattles(ctx, festID)
+	if err != nil {
+		s.log.Error("toyohr: list fest battles", "fest", festID, "error", err)
+		return nil, status.Error(codes.Internal, "")
+	}
 
 	ratios := voteRatios(entries)
 	phase := fest.PhaseAt(s.now())
@@ -190,27 +193,21 @@ func (s *Service) GetFestResult(
 
 	// The verdict only exists once play is over. Publishing one mid-fest would
 	// have the game announce a winner while the fest is still open.
-	if phase == PhaseCounting || phase == PhaseClosed {
-		out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{IsValid: false}
-		out.HonsaiFinal = &toyohrpb.HonsaiFinalResult{IsValid: false}
-		out.Overall = overallResult(entries)
-	} else if phase == PhaseFirstHalf || phase == PhaseSecondHalf {
+	if phase == PhaseClosed {
+		out.HonsaiMidterm, out.HonsaiFinal, out.Overall = finalFestResult(entries, battles, festShares(ratios), fest.Timetable().Mid)
+		out.Unk = int32(len(ratios))
+	} else if phase == PhaseFirstHalf || phase == PhaseSecondHalf || phase == PhaseCounting {
 		// The live-fest capture omits the unplayed phases and carries an
 		// overall envelope with an empty weights map. A present-but-invalid
 		// midterm/final has a different wire shape and can redirect the game's
 		// result state machine before it loads the fest news.
 		out.Overall = &toyohrpb.OverallResult{Weights: &commonpb.MapValue{}}
 		out.Unk = int32(len(ratios))
-		if phase == PhaseSecondHalf && len(entries) > 0 {
+		if phase != PhaseFirstHalf && len(entries) > 0 {
 			// The captured second half has a valid midpoint, ranked by share,
-			// and no final result. We cannot measure battle performance yet;
-			// the locked preliminary vote is this server's explicit fallback
-			// until battle results are recorded. Keep the canonical Yobisai
-			// order above and sort a separate copy for the midpoint.
-			midterm := append([]*toyohrpb.FestTeamRatio(nil), ratios...)
-			sort.SliceStable(midterm, func(i, j int) bool {
-				return midterm[i].GetRatio() > midterm[j].GetRatio()
-			})
+			// and no final result. Keep the canonical Yobisai order above and
+			// rank a separate midpoint snapshot from pre-midpoint reports.
+			midterm := rankedShares(midpointShares(battles, fest.Timetable().Mid, festShares(ratios)))
 			out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{
 				IsValid:    true,
 				TeamRatios: midterm,
@@ -257,38 +254,6 @@ func voteRatios(entries []db.FestEntry) []*toyohrpb.FestTeamRatio {
 		})
 	}
 	return out
-}
-
-// overallResult is the verdict: points per team, most first.
-//
-// One point per vote, so the side more people picked wins. **This is the single
-// function that changes when GRID0+ starts recording battles** — see
-// GetFestResult's doc comment for why it is a stated rule rather than a
-// placeholder.
-func overallResult(entries []db.FestEntry) *toyohrpb.OverallResult {
-	if len(entries) == 0 {
-		// Nobody entered, so there is no verdict to publish. Invalid rather
-		// than a tie: a tie is a result, and this is the absence of one.
-		return &toyohrpb.OverallResult{IsValid: false}
-	}
-
-	counts := map[string]int64{}
-	for _, e := range entries {
-		counts[e.Team]++
-	}
-
-	points := make([]*toyohrpb.FestTeamPoint, 0, len(counts))
-	for team, n := range counts {
-		points = append(points, &toyohrpb.FestTeamPoint{FestTeam: team, Points: n})
-	}
-	sort.Slice(points, func(i, j int) bool {
-		if points[i].Points != points[j].Points {
-			return points[i].Points > points[j].Points
-		}
-		return points[i].FestTeam < points[j].FestTeam
-	})
-
-	return &toyohrpb.OverallResult{IsValid: true, Points: points}
 }
 
 func (s *Service) festEntryProto(e db.FestEntry) *toyohrpb.FestEntry {

@@ -275,6 +275,26 @@ func (s *Service) GetFestDecryptionKey(
 		Name: s.tenantPath() + "/fests/" + id + "/decryptionKey",
 	}
 	assignPackKeys(out, row.PackKeys)
+	if f := festFromRow(row); f.PhaseAt(s.now()) == PhaseClosed {
+		entries, err := s.store.ListFestEntries(ctx, id)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "")
+		}
+		battles, err := s.store.ListFestBattles(ctx, id)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "")
+		}
+		_, _, overall := finalFestResult(entries, battles, festShares(voteRatios(entries)), f.Timetable().Mid)
+		if overall.GetIsValid() && len(overall.GetPoints()) > 0 {
+			// The winner in the result-pack key must be the same team as the
+			// one awarded the most points in GetFestResult.
+			out.WinningTeam = overall.GetPoints()[0].GetFestTeam()
+		}
+	} else {
+		// A result key and winner during an active fest make the game read
+		// the victory pack before the result window opens.
+		out.ResultWinningTeamKey = ""
+	}
 	return out, nil
 }
 

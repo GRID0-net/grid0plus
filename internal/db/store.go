@@ -405,8 +405,7 @@ type Fest struct {
 
 // FestEntry is one player's team choice for one Splatfest.
 //
-// The vote is the only fest data GRID0+ measures. internal/toyohr decides
-// what a tally of these means; this type just carries one.
+// internal/toyohr decides what a tally of these means; this type just carries one.
 type FestEntry struct {
 	// FestID is uppercase, matching Fest.ID.
 	FestID string
@@ -421,6 +420,15 @@ type FestEntry struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// FestBattle is one completed Splatfest match, recorded once under its referee
+// report ID. Only the winning team's identity and mode are needed for the team
+// ranking; Ink holds the reported paint points by team for midpoint ranking.
+type FestBattle struct {
+	FestID, BattleID, Mode, WinningTeam string
+	Ink                                 map[string]int64
+	FinishedAt                          time.Time
 }
 
 // CoopShift is one Salmon Run rotation slot, as the operator scheduled it.
@@ -692,6 +700,9 @@ type Store interface {
 	GetFestEntry(ctx context.Context, festID, userID string) (FestEntry, error)
 	// ListFestEntries returns every entry for a fest, oldest first.
 	ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error)
+	// RecordFestBattle is idempotent: eight consoles may report the same match.
+	RecordFestBattle(ctx context.Context, b FestBattle) error
+	ListFestBattles(ctx context.Context, festID string) ([]FestBattle, error)
 
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.

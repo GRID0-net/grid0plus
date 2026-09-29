@@ -15,6 +15,7 @@ import (
 // from a Gamesync request's self-reported document names.
 type SessionDetails struct {
 	UserID, UserSessionID, SessionID, Tenant, Mode, Host, Password string
+	Players                                                        []string
 	Port                                                           int32
 	Capacity, ParticipantCount                                     int
 	CreatedAt                                                      time.Time

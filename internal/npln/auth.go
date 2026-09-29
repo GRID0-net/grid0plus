@@ -559,7 +559,8 @@ func (s *Server) ResolveGamesyncSession(idToken string) (gamesync.SessionDetails
 	}
 	d := gamesync.SessionDetails{
 		UserID: claims.Subject, UserSessionID: g.USID, SessionID: sess.ID,
-		Tenant: s.tenant, Mode: sess.Mode, Host: s.sessionHost, Port: s.sessionPort,
+		Players: append([]string(nil), sess.Players...),
+		Tenant:  s.tenant, Mode: sess.Mode, Host: s.sessionHost, Port: s.sessionPort,
 		Capacity: sess.MaxPlayers, ParticipantCount: len(sess.Players), CreatedAt: sess.CreatedAt,
 	}
 	if sess.Room {
