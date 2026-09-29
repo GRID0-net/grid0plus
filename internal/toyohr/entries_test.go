@@ -7,6 +7,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/n-popescu/grid0plus/internal/db"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
@@ -210,11 +212,12 @@ func TestTheVoteIsMeasuredAndTheBattleRatiosAreReportedAsNotAvailable(t *testing
 	// Three for alpha, one for bravo.
 	for _, who := range []string{"p1", "p2", "p3"} {
 		as(t, who)
-		entryFor(t, svc, f.ID, "alpha")
+		entryFor(t, svc, f.ID, "Alpha")
 	}
 	as(t, "p4")
-	entryFor(t, svc, f.ID, "bravo")
+	entryFor(t, svc, f.ID, "Bravo")
 	as(t, "reader")
+	svc.now = func() time.Time { return f.Timetable().Start.Add(time.Hour) }
 
 	result, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
 		Name: "tenants/" + testTenant + "/fests/" + f.ID + "/result",
@@ -229,17 +232,19 @@ func TestTheVoteIsMeasuredAndTheBattleRatiosAreReportedAsNotAvailable(t *testing
 		t.Error("the vote is reported as not available, but it is the one thing measured")
 	}
 	ratios := yobisai.GetTeamRatios()
-	if len(ratios) != 2 {
-		t.Fatalf("got %d team ratios, want 2", len(ratios))
+	if len(ratios) != 3 {
+		t.Fatalf("got %d team ratios, want all 3 protocol teams", len(ratios))
 	}
-	// Largest first, so the leading side is not buried.
-	if ratios[0].GetFestTeam() != "alpha" || ratios[0].GetRatio() != 0.75 {
-		t.Errorf("first ratio = %s %.2f, want alpha 0.75",
+	if ratios[0].GetFestTeam() != "Alpha" || ratios[0].GetRatio() != 0.75 {
+		t.Errorf("first ratio = %s %.2f, want Alpha 0.75",
 			ratios[0].GetFestTeam(), ratios[0].GetRatio())
 	}
-	if ratios[1].GetFestTeam() != "bravo" || ratios[1].GetRatio() != 0.25 {
-		t.Errorf("second ratio = %s %.2f, want bravo 0.25",
+	if ratios[1].GetFestTeam() != "Bravo" || ratios[1].GetRatio() != 0.25 {
+		t.Errorf("second ratio = %s %.2f, want Bravo 0.25",
 			ratios[1].GetFestTeam(), ratios[1].GetRatio())
+	}
+	if ratios[2].GetFestTeam() != "Charlie" || ratios[2].GetRatio() != 0 {
+		t.Errorf("third ratio = %s %.2f, want Charlie 0", ratios[2].GetFestTeam(), ratios[2].GetRatio())
 	}
 
 	// Battle ratios need battle records, and nothing writes those yet. Reported
@@ -253,6 +258,33 @@ func TestTheVoteIsMeasuredAndTheBattleRatiosAreReportedAsNotAvailable(t *testing
 	// fest is still open.
 	if result.GetOverall().GetIsValid() {
 		t.Error("a verdict was published while the fest was still open")
+	}
+	if result.GetHonsaiMidterm() != nil || result.GetHonsaiFinal() != nil {
+		t.Error("live-fest result must omit phases that have not been played")
+	}
+	if result.GetOverall().GetWeights() == nil || result.GetUnk() != 3 {
+		t.Errorf("live-fest result has overall=%v unk=%d, want empty weights envelope and 3 teams", result.GetOverall(), result.GetUnk())
+	}
+	raw, err := proto.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireFields := map[protowire.Number]bool{}
+	for len(raw) > 0 {
+		field, kind, tagLen := protowire.ConsumeTag(raw)
+		if tagLen < 0 {
+			t.Fatal("invalid FestResult wire tag")
+		}
+		raw = raw[tagLen:]
+		valueLen := protowire.ConsumeFieldValue(field, kind, raw)
+		if valueLen < 0 {
+			t.Fatal("invalid FestResult wire value")
+		}
+		wireFields[field] = true
+		raw = raw[valueLen:]
+	}
+	if wireFields[3] || wireFields[4] || !wireFields[2] || !wireFields[5] || !wireFields[6] {
+		t.Errorf("first-half FestResult wire fields = %v, want yobisai/overall/unk and no midterm/final", wireFields)
 	}
 }
 

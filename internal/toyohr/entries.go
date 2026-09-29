@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/n-popescu/grid0plus/internal/db"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
@@ -188,27 +189,35 @@ func (s *Service) GetFestResult(
 			IsValid:    len(entries) > 0,
 			TeamRatios: ratios,
 		},
-		// Battle ratios. Not measured -- see the doc comment.
-		HonsaiMidterm: &toyohrpb.HonsaiMidtermResult{IsValid: false},
-		HonsaiFinal:   &toyohrpb.HonsaiFinalResult{IsValid: false},
 	}
 
 	// The verdict only exists once play is over. Publishing one mid-fest would
 	// have the game announce a winner while the fest is still open.
 	if phase == PhaseCounting || phase == PhaseClosed {
+		out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{IsValid: false}
+		out.HonsaiFinal = &toyohrpb.HonsaiFinalResult{IsValid: false}
 		out.Overall = overallResult(entries)
+	} else if phase == PhaseFirstHalf {
+		// The live-fest capture omits the unplayed phases and carries an
+		// overall envelope with an empty weights map. A present-but-invalid
+		// midterm/final has a different wire shape and can redirect the game's
+		// result state machine before it loads the fest news.
+		out.Overall = &toyohrpb.OverallResult{Weights: &commonpb.MapValue{}}
+		out.Unk = int32(len(ratios))
 	} else {
+		out.HonsaiMidterm = &toyohrpb.HonsaiMidtermResult{IsValid: false}
+		out.HonsaiFinal = &toyohrpb.HonsaiFinalResult{IsValid: false}
 		out.Overall = &toyohrpb.OverallResult{IsValid: false}
 	}
 	return out, nil
 }
 
-// voteRatios turns entries into a share per team, largest share first.
+// voteRatios turns entries into a share per team.
 //
-// The shares sum to 1 across the teams anybody picked. Teams nobody picked are
-// absent rather than present at zero: the team names live in the BCAT pack, so
-// this layer does not know which teams a fest has and cannot list the empty
-// ones without inventing them.
+// S3's three-team live-fest response includes Alpha, Bravo and Charlie even
+// when a side has no votes. These are protocol-side identifiers rather than
+// the localized team names in the BCAT pack. Keep any noncanonical side a
+// client submitted too, so its measured votes are not silently discarded.
 func voteRatios(entries []db.FestEntry) []*toyohrpb.FestTeamRatio {
 	if len(entries) == 0 {
 		return nil
@@ -219,22 +228,22 @@ func voteRatios(entries []db.FestEntry) []*toyohrpb.FestTeamRatio {
 		counts[e.Team]++
 	}
 
-	out := make([]*toyohrpb.FestTeamRatio, 0, len(counts))
-	for team, n := range counts {
+	teams := []string{"Alpha", "Bravo", "Charlie"}
+	for team := range counts {
+		if team != "Alpha" && team != "Bravo" && team != "Charlie" {
+			teams = append(teams, team)
+		}
+	}
+	if len(teams) > 3 {
+		sort.Strings(teams[3:])
+	}
+	out := make([]*toyohrpb.FestTeamRatio, 0, len(teams))
+	for _, team := range teams {
 		out = append(out, &toyohrpb.FestTeamRatio{
 			FestTeam: team,
-			Ratio:    float64(n) / float64(len(entries)),
+			Ratio:    float64(counts[team]) / float64(len(entries)),
 		})
 	}
-	// Largest first, team name as the tiebreak. Deterministic, because a map
-	// range would reorder the result between two calls and the console has no
-	// reason to expect a verdict to move.
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Ratio != out[j].Ratio {
-			return out[i].Ratio > out[j].Ratio
-		}
-		return out[i].FestTeam < out[j].FestTeam
-	})
 	return out
 }
 
