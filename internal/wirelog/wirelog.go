@@ -96,16 +96,27 @@ func (r *Recorder) writeTranscript(req *http.Request, response []byte, status in
 		return
 	}
 
-	n := r.seq.Add(1)
 	// Both the host and the path are attacker-controlled -- the Host header is
 	// whatever reaches the port -- so both are slugged. A separator or a
 	// traversal surviving into either would write outside the directory.
-	name := fmt.Sprintf("%04d-%s-%s.txt", n, Slug(HostOnly(req.Host)), Slug(req.URL.Path))
-	f, err := os.OpenFile(filepath.Join(r.dir, name),
-		os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
-	if err != nil {
-		r.log.Error("wirelog: write transcript", "error", err)
-		return
+	var f *os.File
+	for {
+		// The counter resets when the service restarts, but captures in the
+		// directory survive. O_EXCL preserves them; advance until a free name
+		// is found so later boots are recorded too.
+		n := r.seq.Add(1)
+		name := fmt.Sprintf("%04d-%s-%s.txt", n, Slug(HostOnly(req.Host)), Slug(req.URL.Path))
+		var err error
+		f, err = os.OpenFile(filepath.Join(r.dir, name),
+			os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			r.log.Error("wirelog: write transcript", "error", err)
+			return
+		}
+		break
 	}
 	defer f.Close()
 
