@@ -1,5 +1,8 @@
 # Serving BCAT natively — design plan
 
+For the operator steps to build, stage, and announce a Splatfest, see
+[SPLATFEST_ACTIVATION.md](SPLATFEST_ACTIVATION.md).
+
 **Status:** the opt-in title seed reader and list/data HTTP path are
 implemented. Signature patch and real-hardware acceptance remain open; the
 later sections retain the original design reasoning and pending checks.
