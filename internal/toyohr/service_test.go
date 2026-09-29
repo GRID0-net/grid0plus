@@ -86,6 +86,17 @@ func TestTheAnnouncedFestNamesThePackAndRevisionTheConsoleMustLoad(t *testing.T)
 	if sched.GetFestGameDataRevision() != f.Revision {
 		t.Errorf("revision = %q, want %q", sched.GetFestGameDataRevision(), f.Revision)
 	}
+	if got := sched.GetTarget(); got != "default" {
+		t.Errorf("target = %q, want default for an omitted request target", got)
+	}
+	withResourceTarget, err := svc.SelectFestSchedule(context.Background(),
+		&toyohrpb.SelectFestScheduleRequest{Tenant: testTenant, Region: "EU", Target: "tenants/current/targets/default"})
+	if err != nil {
+		t.Fatalf("SelectFestSchedule with resource target: %v", err)
+	}
+	if got := withResourceTarget.GetSchedule().GetTarget(); got != "default" {
+		t.Errorf("target = %q, want default for a resource target", got)
+	}
 	stages := sched.GetAttributes().GetFields()["TricolorStages"].GetArrayValue().GetValues()
 	if len(stages) != 2 || stages[0].GetIntegerValue() != 2 || stages[1].GetIntegerValue() != 12 {
 		t.Errorf("TricolorStages = %v, want captured two-stage attribute [2, 12]", stages)

@@ -217,7 +217,7 @@ func (s *Service) scheduleProto(f Fest, region, target string) *toyohrpb.FestSch
 		// carries the whole publication map, and a console comparing its own
 		// region against a one-entry map would find nothing for its neighbours.
 		FestRegions: append([]string(nil), f.Regions...),
-		Target:      target,
+		Target:      scheduleTarget(target),
 		// The BCAT pack, and the revision of it. These two plus the fest id are
 		// the three things that must match the console's cache.
 		FestGameData:         f.Resource,
