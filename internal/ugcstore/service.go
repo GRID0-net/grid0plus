@@ -116,16 +116,13 @@ func getDocumentStreamHandler(srv any, stream grpc.ServerStream) error {
 	}
 	doc, err := s.GetDocument(stream.Context(), req)
 	if err != nil {
-		// Nintendo's captured S3 response labels this as Unary as well as
-		// ServerStreaming and includes Content-Length: 0 before the NotFound
-		// trailers. The earlier nginx failure was measured with the generated
-		// unary handler; this streaming registration now matches the reference
-		// transport, so retain the captured header and verify it on hardware.
+		// The captured response labels an absent document as Unary as well as
+		// ServerStreaming. Nintendo also sends Content-Length: 0, but this
+		// deployment's nginx grpc_pass treats that as the end of the response
+		// and drops the NotFound trailers. The console then sees UNKNOWN rather
+		// than NotFound, as measured on hardware on 2026-09-25.
 		if status.Code(err) == codes.NotFound {
-			_ = stream.SetHeader(metadata.Pairs(
-				"npln-grpc-type", "Unary",
-				"content-length", "0",
-			))
+			_ = stream.SetHeader(metadata.Pairs("npln-grpc-type", "Unary"))
 		}
 		return err
 	}

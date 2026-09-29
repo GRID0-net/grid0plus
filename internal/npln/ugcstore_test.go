@@ -53,8 +53,8 @@ func TestAMissingDocumentIsATwoFrameNotFound(t *testing.T) {
 	if got := header.Get("npln-grpc-type"); len(got) != 2 || got[0] != "ServerStreaming" || got[1] != "Unary" {
 		t.Errorf("missing document grpc type = %v, want captured ServerStreaming, Unary", got)
 	}
-	if got := header.Get("content-length"); len(got) != 1 || got[0] != "0" {
-		t.Errorf("missing document content-length = %v, want [0] as in the S3 capture", got)
+	if got := header.Get("content-length"); len(got) != 0 {
+		t.Errorf("missing document content-length = %v, want absent so nginx forwards the status trailers", got)
 	}
 	if len(trailer.Get("grpc-status-details-bin")) == 0 {
 		t.Error("missing captured NError status detail")
