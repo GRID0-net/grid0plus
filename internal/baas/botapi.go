@@ -32,6 +32,12 @@ import (
 // because the token proves the request comes from the bot, which takes it
 // from Discord's own interaction payload, never from anything a person typed.
 // Identity stays fail-closed: an unknown Discord id is 404, never a fallback.
+//
+// One Discord account owns several GRID0+ accounts. The first one it creates
+// is the main account, the one commands that name no account act on; the rest
+// are extras the person reaches by naming their login. A password reset
+// resolves its target through that ownership and refuses anything else, so
+// naming a login can only ever reach the caller's own accounts.
 
 // ServiceStatus is one service's health, as the bot shows it.
 type ServiceStatus struct {
@@ -54,7 +60,8 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bot/v1/register", b.register)
 	mux.HandleFunc("POST /bot/v1/link", b.link)
-	mux.HandleFunc("POST /bot/v1/reset-password", b.withUser(b.resetPassword))
+	mux.HandleFunc("POST /bot/v1/reset-password", b.withDiscordID(b.resetPassword))
+	mux.HandleFunc("GET /bot/v1/accounts", b.withDiscordID(b.accounts))
 	mux.HandleFunc("GET /bot/v1/me", b.withUser(b.me))
 	mux.HandleFunc("PUT /bot/v1/avatar", b.withUser(b.avatar))
 	mux.HandleFunc("GET /bot/v1/friends", b.withUser(b.friends))
@@ -96,14 +103,24 @@ func (b *botAPI) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-// withUser resolves the caller's Discord id to their GRID0+ user.
-func (b *botAPI) withUser(h func(http.ResponseWriter, *http.Request, db.User)) http.HandlerFunc {
+// withDiscordID resolves the caller, by Discord user id, to nothing but the
+// id: the handler picks which of that Discord account's accounts to act on.
+func (b *botAPI) withDiscordID(h func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		discordID := r.Header.Get("X-Discord-User-ID")
 		if !discordIDPattern.MatchString(discordID) {
 			writeBotError(w, http.StatusBadRequest, "bad_discord_id", "missing or malformed X-Discord-User-ID")
 			return
 		}
+		h(w, r, discordID)
+	}
+}
+
+// withUser is withDiscordID for the endpoints that act on one account: it
+// resolves the caller's main account, and refuses a Discord account that owns
+// none. Still fail-closed, never a fallback to somebody else's account.
+func (b *botAPI) withUser(h func(http.ResponseWriter, *http.Request, db.User)) http.HandlerFunc {
+	return b.withDiscordID(func(w http.ResponseWriter, r *http.Request, discordID string) {
 		user, err := b.s.store.GetUserByDiscordID(r.Context(), discordID)
 		switch {
 		case errors.Is(err, db.ErrNotFound) || (err == nil && user.Deleted):
@@ -114,6 +131,20 @@ func (b *botAPI) withUser(h func(http.ResponseWriter, *http.Request, db.User)) h
 			return
 		}
 		h(w, r, user)
+	})
+}
+
+// hasMainAccount reports whether a Discord account already owns a main
+// account, which is what decides whether the next one it makes is that main
+// account or an extra beside it.
+func (b *botAPI) hasMainAccount(ctx context.Context, discordUserID string) (bool, error) {
+	switch _, err := b.s.store.GetUserByDiscordID(ctx, discordUserID); {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, db.ErrNotFound):
+		return false, nil
+	default:
+		return false, err
 	}
 }
 
@@ -125,8 +156,11 @@ func (b *botAPI) internal(w http.ResponseWriter, what string, err error) {
 // Discord snowflakes are decimal, 17 to 20 digits.
 var discordIDPattern = regexp.MustCompile(`^[0-9]{15,21}$`)
 
-// Discord usernames since 2023: lowercase letters, digits, '_' and '.'.
-var discordUsernamePattern = regexp.MustCompile(`^[a-z0-9_.]{2,32}$`)
+// A GRID0+ login. Discord usernames since 2023 are lowercase letters, digits,
+// '_' and '.', and a login a person chooses in Discord is held to the same
+// shape: it has to be typeable on a Switch's on-screen keyboard, and one rule
+// for both is better than a second one nobody has evidence for.
+var loginUsernamePattern = regexp.MustCompile(`^[a-z0-9_.]{2,32}$`)
 
 // ---- registration and credentials ------------------------------------------
 
@@ -134,6 +168,9 @@ type registerRequest struct {
 	DiscordUserID string `json:"discordUserId"`
 	Username      string `json:"username"`
 	DisplayName   string `json:"displayName"`
+	// Additional is set when the person named this login themselves, which is
+	// the only way a Discord account that already has one may make another.
+	Additional bool `json:"additional"`
 }
 
 type credentialsResponse struct {
@@ -153,11 +190,19 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
 		return
 	}
-	if !discordIDPattern.MatchString(req.DiscordUserID) || !discordUsernamePattern.MatchString(req.Username) {
+	if !discordIDPattern.MatchString(req.DiscordUserID) || !loginUsernamePattern.MatchString(req.Username) {
 		writeBotError(w, http.StatusBadRequest, "bad_request", "malformed Discord id or username")
 		return
 	}
-	if _, err := b.s.store.GetUserByDiscordID(r.Context(), req.DiscordUserID); err == nil {
+	hasMain, err := b.hasMainAccount(r.Context(), req.DiscordUserID)
+	if err != nil {
+		b.internal(w, "look up accounts for discord id", err)
+		return
+	}
+	if hasMain && !req.Additional {
+		// The default /register mints one account from the person's own
+		// Discord username, so a second one only makes sense if they asked
+		// for it by name.
 		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a GRID0+ account")
 		return
 	}
@@ -168,7 +213,7 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nickname := nicknameFrom(req.DisplayName, req.Username)
-	user, err := b.s.createLoginUser(r.Context(), req.Username, nickname, password, req.DiscordUserID)
+	user, err := b.s.createLoginUser(r.Context(), req.Username, nickname, password, req.DiscordUserID, !hasMain)
 	switch {
 	case errors.Is(err, db.ErrConflict):
 		writeBotError(w, http.StatusConflict, "username_taken", "that username is already a GRID0+ login")
@@ -177,7 +222,7 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		b.internal(w, "create user", err)
 		return
 	}
-	b.s.log.Info("botapi: registered", "user", user.ID, "login_username", user.LoginUsername)
+	b.s.log.Info("botapi: registered", "user", user.ID, "login_username", user.LoginUsername, "main_account", !hasMain)
 
 	fc, _ := b.s.store.GetFriendCode(r.Context(), user.ID)
 	writeJSON(w, http.StatusCreated, credentialsResponse{
@@ -207,28 +252,30 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 		writeBotError(w, http.StatusTooManyRequests, "rate_limited", "too many attempts; wait a while")
 		return
 	}
-	if _, err := b.s.store.GetUserByDiscordID(r.Context(), req.DiscordUserID); err == nil {
-		writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a GRID0+ account")
+	hasMain, err := b.hasMainAccount(r.Context(), req.DiscordUserID)
+	if err != nil {
+		b.internal(w, "look up accounts for discord id", err)
 		return
 	}
 
 	user, err := b.s.store.GetUserByLoginUsername(r.Context(), req.Username)
 	if err == nil && !user.Deleted && user.LoginPasswordHash != "" &&
 		bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(req.Password)) == nil {
-		if user.DiscordUserID != "" {
+		// Re-linking an account this Discord account already owns is a no-op,
+		// not a refusal: running /link twice must not be an error.
+		if user.DiscordUserID != "" && user.DiscordUserID != req.DiscordUserID {
 			writeBotError(w, http.StatusConflict, "claimed", "that account is already linked to another Discord account")
 			return
 		}
-		id := req.DiscordUserID
-		if _, err := b.s.store.UpdateUser(r.Context(), user.ID, db.UserPatch{DiscordUserID: &id}); err != nil {
+		if err := b.s.store.LinkBotAccount(r.Context(), req.DiscordUserID, user.ID, !hasMain); err != nil {
 			if errors.Is(err, db.ErrConflict) {
-				writeBotError(w, http.StatusConflict, "already_registered", "this Discord account already has a GRID0+ account")
+				writeBotError(w, http.StatusConflict, "claimed", "that account is already linked to another Discord account")
 				return
 			}
 			b.internal(w, "link discord", err)
 			return
 		}
-		b.s.log.Info("botapi: linked an existing account", "user", user.ID, "login_username", user.LoginUsername)
+		b.s.log.Info("botapi: linked an existing account", "user", user.ID, "login_username", user.LoginUsername, "main_account", !hasMain)
 		writeJSON(w, http.StatusOK, b.describe(r.Context(), user, false))
 		return
 	}
@@ -241,9 +288,10 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 	writeBotError(w, http.StatusUnauthorized, "bad_credentials", "wrong login or password")
 }
 
-func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, user db.User) {
+func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, discordID string) {
 	var req struct {
-		DisconnectAllAccounts *bool `json:"disconnectAllAccounts"`
+		Username              string `json:"username"`
+		DisconnectAllAccounts *bool  `json:"disconnectAllAccounts"`
 	}
 	if r.ContentLength != 0 {
 		if err := decodeJSONBody(r, &req); err != nil {
@@ -251,6 +299,32 @@ func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, user db.U
 			return
 		}
 	}
+	// Which account the person means: the one they named, or their main
+	// account. A named login is resolved through the caller's own accounts, so
+	// this can only ever reach an account of theirs -- a login that does not
+	// exist and a login that belongs to somebody else are one refusal, which
+	// is also what keeps a login's existence from being a public fact.
+	user, err := b.s.store.GetUserByDiscordID(r.Context(), discordID)
+	switch {
+	case errors.Is(err, db.ErrNotFound) || (err == nil && user.Deleted):
+		writeBotError(w, http.StatusNotFound, "not_registered", "this Discord account has no GRID0+ account")
+		return
+	case err != nil:
+		b.internal(w, "load user by discord id", err)
+		return
+	}
+	if req.Username != "" {
+		user, err = b.s.store.GetUserByDiscordLogin(r.Context(), discordID, req.Username)
+		switch {
+		case errors.Is(err, db.ErrNotFound) || (err == nil && user.Deleted):
+			writeBotError(w, http.StatusNotFound, "not_your_account", "that login is not one of your accounts")
+			return
+		case err != nil:
+			b.internal(w, "load your account by login", err)
+			return
+		}
+	}
+
 	disconnect := req.DisconnectAllAccounts == nil || *req.DisconnectAllAccounts
 	password, err := newHumanPassword()
 	if err != nil {
@@ -285,7 +359,7 @@ func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, user db.U
 		}
 		revoked = len(das)
 	}
-	b.s.log.Info("botapi: password reset", "user", user.ID, "revoked_device_accounts", revoked)
+	b.s.log.Info("botapi: password reset", "user", user.ID, "login_username", user.LoginUsername, "revoked_device_accounts", revoked)
 	writeJSON(w, http.StatusOK, credentialsResponse{
 		UserID: user.ID, Username: user.LoginUsername, Password: password,
 	})
@@ -374,6 +448,30 @@ func (b *botAPI) me(w http.ResponseWriter, r *http.Request, user db.User) {
 		botUser:  b.describe(r.Context(), user, true),
 		Consoles: len(das), Friends: len(friends), RegisteredAt: user.CreatedAt,
 	})
+}
+
+// accounts lists the caller's own accounts, so the bot can offer them for
+// /reset-password. Its own accounts only: this is the same lookup a reset
+// resolves its target through, so offering anybody else's logins here would be
+// exactly the leak that lookup refuses. The main account comes first, which is
+// the order a person should pick from.
+func (b *botAPI) accounts(w http.ResponseWriter, r *http.Request, discordID string) {
+	list, err := b.s.store.ListUsersByDiscordID(r.Context(), discordID)
+	if err != nil {
+		b.internal(w, "list your accounts", err)
+		return
+	}
+	out := make([]botAccount, 0, len(list))
+	for i, u := range list {
+		out = append(out, botAccount{UserID: u.ID, Username: u.LoginUsername, Primary: i == 0})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"accounts": out})
+}
+
+type botAccount struct {
+	UserID   string `json:"userId"`
+	Username string `json:"username"`
+	Primary  bool   `json:"primary"`
 }
 
 // lookupDiscordUser tells the bot whether a mentioned Discord account is

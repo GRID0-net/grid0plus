@@ -42,7 +42,7 @@ func registerLoginUser(t *testing.T, h *harness, username, password string) db.U
 		LoginUsername:     username,
 		LoginPasswordHash: string(hash),
 	}
-	if err := h.store.CreateUserWithLogin(t.Context(), u); err != nil {
+	if err := h.store.CreateUserWithLogin(t.Context(), u, true); err != nil {
 		t.Fatal(err)
 	}
 	return u

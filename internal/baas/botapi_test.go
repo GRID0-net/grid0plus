@@ -323,3 +323,187 @@ func TestLinkClaimsAnExistingAccount(t *testing.T) {
 		t.Errorf("a second Discord account claiming it: %d %v", resp.StatusCode, body)
 	}
 }
+
+// One Discord account owning several GRID0+ accounts is the whole point of the
+// link table: /register with a chosen login makes another one, the first stays
+// the account that commands naming no account act on, and all of them are
+// reachable by their own login.
+func TestOneDiscordAccountCanOwnSeveralGrid0Accounts(t *testing.T) {
+	b := newBotHarness(t)
+	b.registerDiscord(aliceDiscord, "alice")
+
+	// Without a chosen login there is nothing to say "and another one".
+	resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": aliceDiscord, "username": "alice.psn", "additional": false,
+	})
+	if resp.StatusCode != http.StatusConflict || body["code"] != "already_registered" {
+		t.Errorf("a second registration that did not ask for one: %d %v", resp.StatusCode, body)
+	}
+
+	resp, body = b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": aliceDiscord, "username": "alice.psn", "displayName": "Alice", "additional": true,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("second account: %d %v", resp.StatusCode, body)
+	}
+	extraPassword, _ := body["password"].(string)
+	if body["username"] != "alice.psn" || extraPassword == "" {
+		t.Errorf("second account response = %v", body)
+	}
+	extra, err := b.store.GetUserByLoginUsername(t.Context(), "alice.psn")
+	if err != nil {
+		t.Fatalf("the second account was not stored: %v", err)
+	}
+	if extra.Provisional || extra.DiscordUserID != aliceDiscord {
+		t.Errorf("stored second account = %+v", extra)
+	}
+
+	// The first account is still the one a command that names none means.
+	if resp, body := b.call("GET", "/bot/v1/me", aliceDiscord, nil); resp.StatusCode != http.StatusOK || body["username"] != "alice" {
+		t.Errorf("me: %d %v", resp.StatusCode, body)
+	}
+	resp, body = b.call("GET", "/bot/v1/accounts", aliceDiscord, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("accounts: %d %v", resp.StatusCode, body)
+	}
+	list, _ := body["accounts"].([]any)
+	if len(list) != 2 {
+		t.Fatalf("accounts = %v, want both", list)
+	}
+	first, _ := list[0].(map[string]any)
+	second, _ := list[1].(map[string]any)
+	if first["username"] != "alice" || first["primary"] != true || second["username"] != "alice.psn" || second["primary"] != false {
+		t.Errorf("accounts = %v, want the main account first", list)
+	}
+	// A login that is already somebody else's cannot be taken by naming it.
+	if resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": bobDiscord, "username": "alice.psn", "additional": true,
+	}); resp.StatusCode != http.StatusConflict || body["code"] != "username_taken" {
+		t.Errorf("another person taking that login: %d %v", resp.StatusCode, body)
+	}
+}
+
+// The point of resolving a named login through the caller's own accounts: a
+// reset naming somebody else's login is the same refusal as naming one that
+// does not exist, and changes nobody's password.
+func TestAResetByLoginOnlyReachesTheCallersOwnAccounts(t *testing.T) {
+	b := newBotHarness(t)
+	b.registerDiscord(aliceDiscord, "alice")
+	if resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": aliceDiscord, "username": "alice.psn", "additional": true,
+	}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("second account: %d %v", resp.StatusCode, body)
+	}
+	bobPassword := b.registerDiscord(bobDiscord, "bob")["password"].(string)
+
+	// Each of the caller's own accounts, by login.
+	for _, login := range []string{"alice", "alice.psn", "ALICE.PSN"} {
+		resp, body := b.call("POST", "/bot/v1/reset-password", aliceDiscord, map[string]string{"username": login})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("reset %s: %d %v", login, resp.StatusCode, body)
+		}
+		fresh, _ := body["password"].(string)
+		if fresh == "" {
+			t.Errorf("reset %s handed out no password", login)
+		}
+		user, err := b.store.GetUserByLoginUsername(t.Context(), login)
+		if err != nil || bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(fresh)) != nil {
+			t.Errorf("reset %s did not store the password it handed out: %v", login, err)
+		}
+		if userID, _ := body["userId"].(string); userID != user.ID {
+			t.Errorf("reset %s answered for user %q", login, userID)
+		}
+	}
+
+	// Somebody else's account, and one that does not exist, are one refusal.
+	for _, login := range []string{"bob", "nobody"} {
+		resp, body := b.call("POST", "/bot/v1/reset-password", aliceDiscord, map[string]string{"username": login})
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("reset %q: status %d, %v", login, resp.StatusCode, body)
+		}
+		if body["code"] != "not_your_account" {
+			t.Errorf("reset %q: code %v, want not_your_account", login, body["code"])
+		}
+	}
+	bob, err := b.store.GetUserByLoginUsername(t.Context(), "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(bob.LoginPasswordHash), []byte(bobPassword)) != nil {
+		t.Error("another person's password changed")
+	}
+}
+
+// A reset that names no account means the main account, even once the person
+// owns more than one: "the one I registered first" has to stay a fixed answer.
+func TestABareResetPasswordMeansTheMainAccount(t *testing.T) {
+	b := newBotHarness(t)
+	b.registerDiscord(aliceDiscord, "alice")
+	if resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": aliceDiscord, "username": "alice.psn", "additional": true,
+	}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("second account: %d %v", resp.StatusCode, body)
+	}
+	extraBefore, err := b.store.GetUserByLoginUsername(t.Context(), "alice.psn")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, body := b.call("POST", "/bot/v1/reset-password", aliceDiscord, nil)
+	if resp.StatusCode != http.StatusOK || body["username"] != "alice" {
+		t.Fatalf("bare reset: %d %v", resp.StatusCode, body)
+	}
+	extraAfter, err := b.store.GetUserByLoginUsername(t.Context(), "alice.psn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extraAfter.LoginPasswordHash != extraBefore.LoginPasswordHash {
+		t.Error("a bare reset changed an account other than the main one")
+	}
+}
+
+// /link can add a second account to a Discord account that already has one,
+// and cannot take an account another Discord account owns.
+func TestLinkCanAddAnAccountBesideTheFirst(t *testing.T) {
+	b := newBotHarness(t)
+	registerWebsiteUser(t, b.harness, "doughston", "correct-horse")
+	registerWebsiteUser(t, b.harness, "relic", "another-horse")
+
+	link := func(discordID, login, password string) (*http.Response, map[string]any) {
+		return b.call("POST", "/bot/v1/link", "", map[string]string{
+			"discordUserId": discordID, "username": login, "password": password,
+		})
+	}
+	if resp, body := link(aliceDiscord, "doughston", "correct-horse"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("link the first account: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := link(aliceDiscord, "relic", "another-horse"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("link a second account: %d %v", resp.StatusCode, body)
+	}
+	// Linking the same account again is what running /link twice looks like.
+	if resp, body := link(aliceDiscord, "relic", "another-horse"); resp.StatusCode != http.StatusOK {
+		t.Errorf("re-linking: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := link(bobDiscord, "relic", "another-horse"); resp.StatusCode != http.StatusConflict || body["code"] != "claimed" {
+		t.Errorf("another Discord account taking it: %d %v", resp.StatusCode, body)
+	}
+
+	// The first one linked is still the main account, and both are listed.
+	if resp, body := b.call("GET", "/bot/v1/me", aliceDiscord, nil); resp.StatusCode != http.StatusOK || body["username"] != "doughston" {
+		t.Errorf("me: %d %v", resp.StatusCode, body)
+	}
+	resp, body := b.call("GET", "/bot/v1/accounts", aliceDiscord, nil)
+	list, _ := body["accounts"].([]any)
+	if resp.StatusCode != http.StatusOK || len(list) != 2 {
+		t.Fatalf("accounts = %d %v", resp.StatusCode, list)
+	}
+	first, _ := list[0].(map[string]any)
+	if first["username"] != "doughston" || first["primary"] != true {
+		t.Errorf("accounts = %v, want doughston first", list)
+	}
+	// And the second one is reachable for a reset by its own login.
+	if resp, body := b.call("POST", "/bot/v1/reset-password", aliceDiscord,
+		map[string]string{"username": "relic"}); resp.StatusCode != http.StatusOK || body["username"] != "relic" {
+		t.Errorf("reset the linked account: %d %v", resp.StatusCode, body)
+	}
+}

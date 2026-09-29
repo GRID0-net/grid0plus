@@ -46,6 +46,10 @@ type Memory struct {
 	ugcDocuments    map[string]UGCDocument
 	nexRecords      map[nexRecordKey]NEXRecord
 
+	// botLinks is keyed by user id, so an account belongs to at most one
+	// Discord account; a Discord account can own many.
+	botLinks map[string]botLink
+
 	saveDataArchives map[string]SaveDataArchive
 	// componentFiles is keyed by archive id then component file id, the same
 	// shape friendships/festEntries use for their own per-parent maps.
@@ -72,6 +76,8 @@ func NewMemory() *Memory {
 		naRefreshTokens: map[string]NARefreshToken{},
 		ugcDocuments:    map[string]UGCDocument{},
 		nexRecords:      map[nexRecordKey]NEXRecord{},
+
+		botLinks: map[string]botLink{},
 
 		saveDataArchives: map[string]SaveDataArchive{},
 		componentFiles:   map[string]map[string]ComponentFile{},
@@ -115,8 +121,8 @@ func (m *Memory) CreateUser(_ context.Context, u User, da DeviceAccount) error {
 }
 
 // CreateUserWithLogin inserts a user with login credentials and no device
-// account.
-func (m *Memory) CreateUserWithLogin(_ context.Context, u User) error {
+// account, and links it to the Discord account in u.DiscordUserID.
+func (m *Memory) CreateUserWithLogin(_ context.Context, u User, primary bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -127,17 +133,45 @@ func (m *Memory) CreateUserWithLogin(_ context.Context, u User) error {
 		if existing.LoginUsername != "" && strings.EqualFold(existing.LoginUsername, u.LoginUsername) {
 			return fmt.Errorf("%w: login username %s is taken", ErrConflict, u.LoginUsername)
 		}
-		if u.DiscordUserID != "" && existing.DiscordUserID == u.DiscordUserID {
-			return fmt.Errorf("%w: discord user %s is registered", ErrConflict, u.DiscordUserID)
+	}
+	if u.DiscordUserID != "" {
+		if err := m.checkLinkLocked("", u.DiscordUserID, primary); err != nil {
+			return err
 		}
 	}
 	if u.Extras == nil {
 		u.Extras = EmptyExtras()
 	}
 	m.users[u.ID] = u
+	if u.DiscordUserID != "" {
+		m.botLinks[u.ID] = botLink{discordUserID: u.DiscordUserID, primary: primary}
+	}
 	m.presence[u.ID] = Presence{
 		UserID: u.ID, State: StateOffline, Extras: EmptyExtras(),
 		LastSeenAt: u.CreatedAt,
+	}
+	return nil
+}
+
+// botLink is one row of bot_account_links: which Discord account owns this
+// user, and whether it is that account's main one.
+type botLink struct {
+	discordUserID string
+	primary       bool
+}
+
+// checkLinkLocked applies the two uniqueness rules bot_account_links holds:
+// an account belongs to at most one Discord account, and a Discord account has
+// at most one main account. userID is the account being linked, "" when it
+// does not exist yet, which is how a brand new account passes the first check.
+func (m *Memory) checkLinkLocked(userID, discordUserID string, primary bool) error {
+	for existingUser, link := range m.botLinks {
+		if existingUser == userID {
+			continue
+		}
+		if link.discordUserID == discordUserID && primary && link.primary {
+			return fmt.Errorf("%w: discord user %s already has a main account", ErrConflict, discordUserID)
+		}
 	}
 	return nil
 }
@@ -160,25 +194,102 @@ func (m *Memory) GetUserByLoginUsername(_ context.Context, username string) (Use
 	defer m.mu.RUnlock()
 	for _, u := range m.users {
 		if u.LoginUsername != "" && strings.EqualFold(u.LoginUsername, username) {
-			return cloneUser(u), nil
+			return m.cloneUser(u), nil
 		}
 	}
 	return User{}, ErrNotFound
 }
 
-// GetUserByDiscordID looks up the user a Discord account registered.
+// GetUserByDiscordID returns the main account of the accounts a Discord
+// account owns.
 func (m *Memory) GetUserByDiscordID(_ context.Context, discordUserID string) (User, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if discordUserID == "" {
 		return User{}, ErrNotFound
 	}
-	for _, u := range m.users {
-		if u.DiscordUserID == discordUserID {
-			return cloneUser(u), nil
+	for userID, link := range m.botLinks {
+		if link.discordUserID == discordUserID && link.primary {
+			return m.cloneUser(m.users[userID]), nil
 		}
 	}
 	return User{}, ErrNotFound
+}
+
+// ListUsersByDiscordID returns every account a Discord account owns, its main
+// account first, then oldest.
+func (m *Memory) ListUsersByDiscordID(_ context.Context, discordUserID string) ([]User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var out []User
+	for userID, link := range m.botLinks {
+		if link.discordUserID != discordUserID {
+			continue
+		}
+		if u, ok := m.users[userID]; ok {
+			out = append(out, m.cloneUser(u))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		iPrimary := m.botLinks[out[i].ID].primary
+		jPrimary := m.botLinks[out[j].ID].primary
+		if iPrimary != jPrimary {
+			return iPrimary
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// GetUserByDiscordLogin returns one of the accounts a Discord account owns,
+// named by its login. An account belonging to somebody else is not one this
+// Discord account owns, so the link does the refusing, and "no such login" and
+// "not yours" come out as the same ErrNotFound.
+func (m *Memory) GetUserByDiscordLogin(_ context.Context, discordUserID, username string) (User, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if discordUserID == "" || username == "" {
+		return User{}, ErrNotFound
+	}
+	for userID, link := range m.botLinks {
+		if link.discordUserID != discordUserID {
+			continue
+		}
+		if u, ok := m.users[userID]; ok && u.LoginUsername != "" && strings.EqualFold(u.LoginUsername, username) {
+			return m.cloneUser(u), nil
+		}
+	}
+	return User{}, ErrNotFound
+}
+
+// LinkBotAccount attaches an account to the Discord account that owns it.
+func (m *Memory) LinkBotAccount(_ context.Context, discordUserID, userID string, primary bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if discordUserID == "" || userID == "" {
+		return fmt.Errorf("%w: a link needs a Discord account and a user", ErrNotFound)
+	}
+	if _, ok := m.users[userID]; !ok {
+		return fmt.Errorf("%w: user %s", ErrNotFound, userID)
+	}
+	if existing, ok := m.botLinks[userID]; ok {
+		if existing.discordUserID != discordUserID {
+			return fmt.Errorf("%w: user %s belongs to another Discord account", ErrConflict, userID)
+		}
+		// Already this Discord account's. Re-linking the same pair is what
+		// /link does when somebody runs it twice, and it is not an error.
+		if !primary || existing.primary {
+			return nil
+		}
+	}
+	if err := m.checkLinkLocked(userID, discordUserID, primary); err != nil {
+		return err
+	}
+	m.botLinks[userID] = botLink{discordUserID: discordUserID, primary: primary}
+	return nil
 }
 
 // GetUser returns a user by id.
@@ -189,7 +300,7 @@ func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	if !ok {
 		return User{}, ErrNotFound
 	}
-	return cloneUser(u), nil
+	return m.cloneUser(u), nil
 }
 
 // UpdateUser applies a patch.
@@ -232,17 +343,9 @@ func (m *Memory) UpdateUser(_ context.Context, id string, p UserPatch) (User, er
 	if p.LoginPasswordHash != nil {
 		u.LoginPasswordHash = *p.LoginPasswordHash
 	}
-	if p.DiscordUserID != nil {
-		for otherID, other := range m.users {
-			if otherID != id && *p.DiscordUserID != "" && other.DiscordUserID == *p.DiscordUserID {
-				return User{}, fmt.Errorf("%w: discord user %s is registered", ErrConflict, *p.DiscordUserID)
-			}
-		}
-		u.DiscordUserID = *p.DiscordUserID
-	}
 	u.UpdatedAt = time.Now().UTC()
 	m.users[id] = u
-	return cloneUser(u), nil
+	return m.cloneUser(u), nil
 }
 
 // FindUsers returns the users matching a query.
@@ -278,7 +381,7 @@ func (m *Memory) FindUsers(_ context.Context, q UserQuery) ([]User, error) {
 		if wantIDs != nil && !wantIDs[id] {
 			continue
 		}
-		out = append(out, cloneUser(u))
+		out = append(out, m.cloneUser(u))
 	}
 	sortUsersNewestFirst(out)
 	if q.Limit > 0 && len(out) > q.Limit {
@@ -295,7 +398,7 @@ func (m *Memory) ListUsers(_ context.Context, limit int) ([]User, error) {
 	var out []User
 	for _, u := range m.users {
 		if !u.Deleted {
-			out = append(out, cloneUser(u))
+			out = append(out, m.cloneUser(u))
 		}
 	}
 	sortUsersNewestFirst(out)
@@ -417,6 +520,7 @@ func (m *Memory) ReassignDeviceAccount(_ context.Context, deviceAccountID, newUs
 // CASCADE foreign keys would remove with it.
 func (m *Memory) deleteUserLocked(id string) {
 	delete(m.users, id)
+	delete(m.botLinks, id)
 	delete(m.friendCodes, id)
 	delete(m.presence, id)
 	delete(m.friendships, id)
@@ -1260,13 +1364,15 @@ func (m *Memory) Stats(context.Context) (Stats, error) {
 // cloneUser deep-copies the maps in a user, so a caller mutating what it got
 // back cannot reach into the store. Without this, a handler that edits an
 // extras map in place would corrupt stored state in a way that only shows up
-// under the memory store and never under PostgreSQL.
-func cloneUser(u User) User {
+// under the memory store and never under PostgreSQL. The owning Discord
+// account is filled in from botLinks, the way the PostgreSQL store joins it in.
+func (m *Memory) cloneUser(u User) User {
 	u.Extras = cloneExtras(u.Extras)
 	if u.ThumbnailUploadedAt != nil {
 		t := *u.ThumbnailUploadedAt
 		u.ThumbnailUploadedAt = &t
 	}
+	u.DiscordUserID = m.botLinks[u.ID].discordUserID
 	return u
 }
 

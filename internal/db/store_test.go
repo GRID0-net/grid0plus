@@ -268,7 +268,7 @@ func testUserLogin(t *testing.T, s Store) {
 		LoginUsername:       "bob",
 		LoginPasswordHash:   "$2a$10$notarealhash",
 	}
-	if err := s.CreateUserWithLogin(ctx, u); err != nil {
+	if err := s.CreateUserWithLogin(ctx, u, true); err != nil {
 		t.Fatalf("create user with login: %v", err)
 	}
 
@@ -358,7 +358,7 @@ func testUserLogin(t *testing.T, s Store) {
 		LoginUsername:     "BOB",
 		LoginPasswordHash: "$2a$10$anotherhash",
 	}
-	if err := s.CreateUserWithLogin(ctx, dup); !errors.Is(err, ErrConflict) {
+	if err := s.CreateUserWithLogin(ctx, dup, true); !errors.Is(err, ErrConflict) {
 		t.Errorf("duplicate login username: err = %v, want ErrConflict", err)
 	}
 
@@ -2232,55 +2232,171 @@ func testProvisionalUsers(t *testing.T, s Store) {
 	}
 }
 
+// testDiscordUsers is the contract for one Discord account owning several
+// GRID0+ accounts: one of them is the main account, the rest are extras, and
+// reaching an account by its login only ever reaches one of the caller's own.
 func testDiscordUsers(t *testing.T, s Store) {
 	ctx := t.Context()
-	seq++
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	u := User{
-		ID: hexID(seq), Nickname: "disc", Birthday: "0000-00-00",
-		Permissions: DefaultPermissions(now), Extras: EmptyExtras(),
-		BlocksUpdatedAt: now, FriendsUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
-		LoginUsername: "disc", LoginPasswordHash: "$2a$10$old",
-		DiscordUserID: "123456789012345678",
+	const aliceDiscord = "123456789012345678"
+	const bobDiscord = "223456789012345678"
+
+	newLoginUser := func(login, discordID string) User {
+		t.Helper()
+		seq++
+		now := time.Now().UTC().Truncate(time.Microsecond)
+		u := User{
+			ID: hexID(seq), Nickname: login, Birthday: "0000-00-00",
+			Permissions: DefaultPermissions(now), Extras: EmptyExtras(),
+			BlocksUpdatedAt: now, FriendsUpdatedAt: now,
+			CreatedAt: now, UpdatedAt: now,
+			LoginUsername: login, LoginPasswordHash: "$2a$10$old",
+			DiscordUserID: discordID,
+		}
+		return u
 	}
-	if err := s.CreateUserWithLogin(ctx, u); err != nil {
-		t.Fatalf("create: %v", err)
+
+	// The first account a Discord account makes is its main account.
+	alice := newLoginUser("alice", aliceDiscord)
+	if err := s.CreateUserWithLogin(ctx, alice, true); err != nil {
+		t.Fatalf("create alice: %v", err)
 	}
-	got, err := s.GetUserByDiscordID(ctx, "123456789012345678")
-	if err != nil || got.ID != u.ID || got.DiscordUserID != u.DiscordUserID || got.Provisional {
+	got, err := s.GetUserByDiscordID(ctx, aliceDiscord)
+	if err != nil || got.ID != alice.ID || got.DiscordUserID != aliceDiscord || got.Provisional {
 		t.Fatalf("GetUserByDiscordID = %+v, %v", got, err)
 	}
-	if _, err := s.GetUserByDiscordID(ctx, ""); !errors.Is(err, ErrNotFound) {
-		t.Errorf("empty discord id: err = %v, want ErrNotFound", err)
-	}
-	if _, err := s.GetUserByDiscordID(ctx, "999"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("unknown discord id: err = %v, want ErrNotFound", err)
-	}
-
-	seq++
-	dup := u
-	dup.ID, dup.LoginUsername = hexID(seq), "disc2"
-	if err := s.CreateUserWithLogin(ctx, dup); !errors.Is(err, ErrConflict) {
-		t.Errorf("second user for one discord account: err = %v, want ErrConflict", err)
+	for _, bad := range []string{"", "999"} {
+		if _, err := s.GetUserByDiscordID(ctx, bad); !errors.Is(err, ErrNotFound) {
+			t.Errorf("GetUserByDiscordID(%q): err = %v, want ErrNotFound", bad, err)
+		}
 	}
 
-	// Linking an existing user to a Discord account, and the same Discord
-	// account cannot be linked to a second user.
-	other := makeUser(t, s, "other")
-	otherDiscord := "223456789012345678"
-	if got, err := s.UpdateUser(ctx, other.ID, UserPatch{DiscordUserID: &otherDiscord}); err != nil || got.DiscordUserID != otherDiscord {
-		t.Fatalf("link discord: %+v, %v", got, err)
+	// A second account for the same Discord account is allowed, and does not
+	// take over as the main one.
+	aliceAlt := newLoginUser("alice_alt", aliceDiscord)
+	if err := s.CreateUserWithLogin(ctx, aliceAlt, false); err != nil {
+		t.Fatalf("create a second account for one Discord account: %v", err)
 	}
-	taken := u.DiscordUserID
-	if _, err := s.UpdateUser(ctx, other.ID, UserPatch{DiscordUserID: &taken}); !errors.Is(err, ErrConflict) {
-		t.Errorf("linking a Discord account another user has: err = %v, want ErrConflict", err)
+	if got, err := s.GetUserByDiscordID(ctx, aliceDiscord); err != nil || got.ID != alice.ID {
+		t.Errorf("the main account changed: got %+v, %v", got, err)
+	}
+	owned, err := s.ListUsersByDiscordID(ctx, aliceDiscord)
+	if err != nil {
+		t.Fatalf("ListUsersByDiscordID: %v", err)
+	}
+	if len(owned) != 2 || owned[0].ID != alice.ID || owned[1].ID != aliceAlt.ID {
+		t.Fatalf("ListUsersByDiscordID = %+v, want the main account first", owned)
+	}
+	// A third main account would mean two accounts a bare command could mean.
+	aliceThird := newLoginUser("alice_third", aliceDiscord)
+	if err := s.CreateUserWithLogin(ctx, aliceThird, true); !errors.Is(err, ErrConflict) {
+		t.Errorf("a second main account: err = %v, want ErrConflict", err)
+	}
+	if found, err := s.GetUserByLoginUsername(ctx, "alice_third"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the refused account was created anyway: %+v, %v", found, err)
+	}
+
+	// Naming an account by its login reaches it, and only when the caller owns
+	// it. A login that does not exist and a login that is somebody else's are
+	// the same answer.
+	for _, tc := range []struct{ discordID, login string }{
+		{aliceDiscord, "alice_alt"},
+		{aliceDiscord, "ALICE_ALT"}, // login matching is case-insensitive
+	} {
+		if got, err := s.GetUserByDiscordLogin(ctx, tc.discordID, tc.login); err != nil {
+			t.Errorf("GetUserByDiscordLogin(%q, %q): %v", tc.discordID, tc.login, err)
+		} else if got.ID != aliceAlt.ID {
+			t.Errorf("GetUserByDiscordLogin(%q, %q) = %s, want %s", tc.discordID, tc.login, got.ID, aliceAlt.ID)
+		}
+	}
+	bob := newLoginUser("bob", bobDiscord)
+	if err := s.CreateUserWithLogin(ctx, bob, true); err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+	for _, tc := range []struct{ discordID, login string }{
+		{bobDiscord, "alice_alt"}, // somebody else's account
+		{aliceDiscord, "bob"},     // a login that does not exist at all
+		{aliceDiscord, ""},        // no login named
+		{"", "alice_alt"},         // no caller
+		{bobDiscord, "nobody"},    // a login that does not exist
+	} {
+		if got, err := s.GetUserByDiscordLogin(ctx, tc.discordID, tc.login); !errors.Is(err, ErrNotFound) {
+			t.Errorf("GetUserByDiscordLogin(%q, %q) = %+v, %v, want ErrNotFound", tc.discordID, tc.login, got, err)
+		}
+	}
+	if owned, err := s.ListUsersByDiscordID(ctx, ""); err != nil || len(owned) != 0 {
+		t.Errorf("ListUsersByDiscordID(\"\") = %+v, %v, want nothing", owned, err)
+	}
+
+	// Linking an account made before the bot existed. The first account a
+	// Discord account links is its main account; beside an existing one, only
+	// an extra can be linked, and re-linking the same pair is a no-op rather
+	// than an error.
+	const carolDiscord = "323456789012345678"
+	prebot := newLoginUser("prebot", "")
+	if err := s.CreateUserWithLogin(ctx, prebot, true); err != nil {
+		t.Fatalf("create an account with no Discord owner: %v", err)
+	}
+	if got, err := s.GetUser(ctx, prebot.ID); err != nil || got.DiscordUserID != "" {
+		t.Fatalf("an unlinked account is owned by nobody: %+v, %v", got, err)
+	}
+	if err := s.LinkBotAccount(ctx, carolDiscord, prebot.ID, true); err != nil {
+		t.Fatalf("link an account made before the bot: %v", err)
+	}
+	if got, err := s.GetUserByDiscordID(ctx, carolDiscord); err != nil || got.ID != prebot.ID {
+		t.Errorf("the first linked account is not the main one: %+v, %v", got, err)
+	}
+	if err := s.LinkBotAccount(ctx, carolDiscord, prebot.ID, true); err != nil {
+		t.Errorf("re-linking the same account: %v", err)
+	}
+	if err := s.LinkBotAccount(ctx, carolDiscord, prebot.ID, false); err != nil {
+		t.Errorf("re-linking as an extra: %v", err)
+	}
+	if got, err := s.GetUserByDiscordLogin(ctx, carolDiscord, "prebot"); err != nil || got.ID != prebot.ID {
+		t.Errorf("a linked account is not reachable by its own login: %+v, %v", got, err)
+	}
+	if err := s.LinkBotAccount(ctx, bobDiscord, prebot.ID, true); !errors.Is(err, ErrConflict) {
+		t.Errorf("an account another Discord account owns: err = %v, want ErrConflict", err)
+	}
+	if err := s.LinkBotAccount(ctx, bobDiscord, "000000000000dead", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("linking a user that does not exist: err = %v, want ErrNotFound", err)
+	}
+	if err := s.LinkBotAccount(ctx, "", prebot.ID, true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("linking with no Discord account: err = %v, want ErrNotFound", err)
+	}
+
+	// The owner is joined in on every read, not just the Discord lookups.
+	if got, err := s.GetUser(ctx, aliceAlt.ID); err != nil || got.DiscordUserID != aliceDiscord {
+		t.Errorf("GetUser: DiscordUserID = %q, %v", got.DiscordUserID, err)
+	}
+	if got, err := s.GetUserByLoginUsername(ctx, "alice_alt"); err != nil || got.DiscordUserID != aliceDiscord {
+		t.Errorf("GetUserByLoginUsername: DiscordUserID = %q, %v", got.DiscordUserID, err)
+	}
+	if found, err := s.FindUsers(ctx, UserQuery{IDs: []string{alice.ID, aliceAlt.ID, bob.ID}}); err != nil {
+		t.Errorf("FindUsers: %v", err)
+	} else {
+		owners := map[string]string{}
+		for _, u := range found {
+			owners[u.ID] = u.DiscordUserID
+		}
+		if owners[alice.ID] != aliceDiscord || owners[aliceAlt.ID] != aliceDiscord || owners[bob.ID] != bobDiscord {
+			t.Errorf("FindUsers owners = %+v", owners)
+		}
+	}
+	if all, err := s.ListUsers(ctx, 1000); err != nil {
+		t.Errorf("ListUsers: %v", err)
+	} else {
+		for _, u := range all {
+			if u.ID == aliceAlt.ID && u.DiscordUserID != aliceDiscord {
+				t.Errorf("ListUsers: alice_alt's owner = %q", u.DiscordUserID)
+			}
+		}
 	}
 
 	hash := "$2a$10$new"
-	if _, err := s.UpdateUser(ctx, u.ID, UserPatch{LoginPasswordHash: &hash}); err != nil {
+	if _, err := s.UpdateUser(ctx, alice.ID, UserPatch{LoginPasswordHash: &hash}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.GetUser(ctx, u.ID); got.LoginPasswordHash != hash {
+	if got, _ := s.GetUser(ctx, alice.ID); got.LoginPasswordHash != hash {
 		t.Errorf("password hash after update = %q", got.LoginPasswordHash)
 	}
 }

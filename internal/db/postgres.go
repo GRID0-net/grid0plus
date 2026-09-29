@@ -96,7 +96,16 @@ const userColumns = `
 	thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 	permissions, extras, deleted,
 	blocks_updated_at, friends_updated_at, created_at, updated_at,
-	login_username, login_password_hash, provisional, discord_user_id`
+	login_username, login_password_hash, provisional`
+
+// withDiscordOwner appends the Discord account that owns the user to a users
+// column list, read from bot_account_links. It is a joined expression rather
+// than a plain column so that prefixColumns, which FindUsers uses to qualify
+// the list with its table alias, can keep treating userColumns as a bare list
+// of columns. prefix is how the caller refers to the users table.
+func withDiscordOwner(cols, prefix string) string {
+	return cols + `, (SELECT owner.discord_user_id FROM bot_account_links owner WHERE owner.user_id = ` + prefix + `id)`
+}
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
@@ -192,8 +201,8 @@ func (p *Postgres) CreateUser(ctx context.Context, u User, da DeviceAccount) err
 }
 
 // CreateUserWithLogin inserts a user with login credentials and no device
-// account.
-func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User) error {
+// account, and links it to the Discord account in u.DiscordUserID.
+func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User, primary bool) error {
 	perms, err := json.Marshal(u.Permissions)
 	if err != nil {
 		return err
@@ -203,29 +212,49 @@ func (p *Postgres) CreateUserWithLogin(ctx context.Context, u User) error {
 		return err
 	}
 
-	_, err = p.pool.Exec(ctx, `
+	// The user, its presence row and its Discord link go in together: an
+	// account nobody owns is an orphan the bot cannot reach again, and
+	// half of one is worse than none.
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
 		INSERT INTO users (
 			id, nickname, country, birthday,
 			thumbnail_url, thumbnail2_url, thumbnail_uploaded_at,
 			permissions, extras,
 			blocks_updated_at, friends_updated_at, created_at, updated_at,
-			login_username, login_password_hash, discord_user_id)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10,$11,$12,$13)`,
+			login_username, login_password_hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$10,$10,$11,$12)`,
 		u.ID, u.Nickname, u.Country, u.Birthday,
 		u.ThumbnailURL, u.Thumbnail2URL, u.ThumbnailUploadedAt,
 		perms, extras, u.CreatedAt,
-		u.LoginUsername, u.LoginPasswordHash, nullIfEmpty(u.DiscordUserID))
+		u.LoginUsername, u.LoginPasswordHash)
 	if err != nil {
 		return mapErr(err)
 	}
 
 	// A presence row from the start, matching CreateUser, so every read path
 	// can assume it exists even before this user ever links a console.
-	_, err = p.pool.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO presence (user_id, state, extras, last_seen_at)
 		VALUES ($1, $2, $3, $4)`,
-		u.ID, StateOffline, []byte(`{}`), u.CreatedAt)
-	return mapErr(err)
+		u.ID, StateOffline, []byte(`{}`), u.CreatedAt); err != nil {
+		return mapErr(err)
+	}
+
+	if u.DiscordUserID != "" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO bot_account_links (user_id, discord_user_id, primary_account)
+			VALUES ($1, $2, $3)`,
+			u.ID, u.DiscordUserID, primary); err != nil {
+			return mapErr(err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // CreateDeviceAccountForUser adds a device account to an existing user.
@@ -244,22 +273,81 @@ func (p *Postgres) CreateDeviceAccountForUser(ctx context.Context, da DeviceAcco
 // GetUserByLoginUsername looks up a user by their login username.
 func (p *Postgres) GetUserByLoginUsername(ctx context.Context, username string) (User, error) {
 	return scanUser(p.pool.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE lower(login_username) = lower($1)`, username))
+		`SELECT `+withDiscordOwner(userColumns, "users.")+
+			` FROM users WHERE lower(login_username) = lower($1)`, username))
 }
 
-// GetUserByDiscordID looks up the user a Discord account registered.
+// GetUserByDiscordID returns the main account of the accounts a Discord
+// account owns.
 func (p *Postgres) GetUserByDiscordID(ctx context.Context, discordUserID string) (User, error) {
 	if discordUserID == "" {
 		return User{}, ErrNotFound
 	}
 	return scanUser(p.pool.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE discord_user_id = $1`, discordUserID))
+		`SELECT `+withDiscordOwner(userColumns, "users.")+`
+		 FROM users JOIN bot_account_links bl ON bl.user_id = users.id
+		 WHERE bl.discord_user_id = $1 AND bl.primary_account`, discordUserID))
+}
+
+// ListUsersByDiscordID returns every account a Discord account owns, its main
+// account first, then oldest.
+func (p *Postgres) ListUsersByDiscordID(ctx context.Context, discordUserID string) ([]User, error) {
+	if discordUserID == "" {
+		return nil, nil
+	}
+	return p.queryUsers(ctx,
+		`SELECT `+withDiscordOwner(userColumns, "users.")+`
+		 FROM users JOIN bot_account_links bl ON bl.user_id = users.id
+		 WHERE bl.discord_user_id = $1
+		 ORDER BY bl.primary_account DESC, users.created_at`, discordUserID)
+}
+
+// GetUserByDiscordLogin returns one of the accounts a Discord account owns,
+// named by its login. An account belonging to somebody else is not an account
+// this Discord account owns, so the join does the refusing.
+func (p *Postgres) GetUserByDiscordLogin(ctx context.Context, discordUserID, username string) (User, error) {
+	if discordUserID == "" || username == "" {
+		return User{}, ErrNotFound
+	}
+	return scanUser(p.pool.QueryRow(ctx,
+		`SELECT `+withDiscordOwner(userColumns, "users.")+`
+		 FROM users JOIN bot_account_links bl ON bl.user_id = users.id
+		 WHERE bl.discord_user_id = $1 AND lower(users.login_username) = lower($2)`,
+		discordUserID, username))
+}
+
+// LinkBotAccount attaches an account to the Discord account that owns it.
+// Linking the same pair again is a no-op rather than an error, so running
+// /link twice does not fail -- and it can promote an account to main but never
+// demote one, which is why the main flag is OR-ed rather than assigned. An
+// account another Discord account owns is a conflict: the ON CONFLICT clause
+// below does not match, and nothing is written. A second main account for a
+// Discord account that has one is a conflict from the partial unique index.
+func (p *Postgres) LinkBotAccount(ctx context.Context, discordUserID, userID string, primary bool) error {
+	if discordUserID == "" || userID == "" {
+		return fmt.Errorf("%w: a link needs a Discord account and a user", ErrNotFound)
+	}
+	tag, err := p.pool.Exec(ctx, `
+		INSERT INTO bot_account_links (user_id, discord_user_id, primary_account)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE
+		   SET discord_user_id = EXCLUDED.discord_user_id,
+		       primary_account  = bot_account_links.primary_account OR EXCLUDED.primary_account
+		 WHERE bot_account_links.discord_user_id = EXCLUDED.discord_user_id`,
+		userID, discordUserID, primary)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: user %s belongs to another Discord account", ErrConflict, userID)
+	}
+	return nil
 }
 
 // GetUser returns a user by id.
 func (p *Postgres) GetUser(ctx context.Context, id string) (User, error) {
 	return scanUser(p.pool.QueryRow(ctx,
-		`SELECT `+userColumns+` FROM users WHERE id = $1`, id))
+		`SELECT `+withDiscordOwner(userColumns, "users.")+` FROM users WHERE users.id = $1`, id))
 }
 
 // UpdateUser applies a patch and returns the updated user.
@@ -309,12 +397,9 @@ func (p *Postgres) UpdateUser(ctx context.Context, id string, patch UserPatch) (
 	if patch.LoginPasswordHash != nil {
 		add("login_password_hash", *patch.LoginPasswordHash)
 	}
-	if patch.DiscordUserID != nil {
-		add("discord_user_id", nullIfEmpty(*patch.DiscordUserID))
-	}
 
 	q := `UPDATE users SET ` + strings.Join(sets, ", ") +
-		` WHERE id = $1 RETURNING ` + userColumns
+		` WHERE id = $1 RETURNING ` + withDiscordOwner(userColumns, "users.")
 	return scanUser(p.pool.QueryRow(ctx, q, args...))
 }
 
@@ -341,7 +426,8 @@ func (p *Postgres) FindUsers(ctx context.Context, q UserQuery) ([]User, error) {
 		add("u.id = ANY($%d)", q.IDs)
 	}
 
-	sql := `SELECT ` + prefixColumns(userColumns, "u.") + ` FROM users u` + join +
+	sql := `SELECT ` + withDiscordOwner(prefixColumns(userColumns, "u."), "u.") +
+		` FROM users u` + join +
 		` WHERE ` + strings.Join(where, " AND ") + ` ORDER BY u.created_at DESC`
 	if q.Limit > 0 {
 		args = append(args, q.Limit)
@@ -352,7 +438,8 @@ func (p *Postgres) FindUsers(ctx context.Context, q UserQuery) ([]User, error) {
 
 // ListUsers returns every user, newest first.
 func (p *Postgres) ListUsers(ctx context.Context, limit int) ([]User, error) {
-	sql := `SELECT ` + userColumns + ` FROM users WHERE NOT deleted ORDER BY created_at DESC`
+	sql := `SELECT ` + withDiscordOwner(userColumns, "users.") +
+		` FROM users WHERE NOT deleted ORDER BY created_at DESC`
 	args := []any{}
 	if limit > 0 {
 		args = append(args, limit)

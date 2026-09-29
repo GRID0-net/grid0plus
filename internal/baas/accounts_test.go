@@ -890,7 +890,7 @@ func TestLoginRefusesADeletedUser(t *testing.T) {
 // /login (username/password) that need one already to exist.
 func registerWebsiteUser(t *testing.T, h *harness, username, password string) {
 	t.Helper()
-	if _, err := h.srv.createLoginUser(t.Context(), username, username, password, ""); err != nil {
+	if _, err := h.srv.createLoginUser(t.Context(), username, username, password, "", true); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1555,7 +1555,7 @@ func TestLinkingAConsoleLeavesNoThrowawayUserBehind(t *testing.T) {
 		BlocksUpdatedAt: now, FriendsUpdatedAt: now, CreatedAt: now, UpdatedAt: now,
 		LoginUsername: "person", LoginPasswordHash: "$2a$10$x",
 	}
-	if err := h.store.CreateUserWithLogin(t.Context(), person); err != nil {
+	if err := h.store.CreateUserWithLogin(t.Context(), person, true); err != nil {
 		t.Fatal(err)
 	}
 

@@ -826,12 +826,30 @@ console.
   `/fc-pending` (with buttons), `/fc-remove`, `/friends`, `/online`,
   `/status`, `/avatar`. `/matches` is not built. `/online` leaves out anyone
   whose presence setting is SELF. See the bot's README.
+- **One Discord account, several GRID0+ accounts.** `/register username:…`
+  makes an extra account beside the first, and `/link` can attach an account
+  made before the bot. The ownership used to be a `discord_user_id` column on
+  `users`, which could only ever say "this account, that Discord account"; it is
+  now `bot_account_links` (migration 0024), which can also say which of them is
+  the Discord account's *main* one — the one `/whoami`, `/fc`, `/friends` and a
+  bare `/reset-password` act on. `/reset-password username:…` names one, and
+  resolves it through that table, so naming a login can only ever reach the
+  caller's own: somebody else's login and a login that does not exist are one
+  refusal, which is also what keeps a login's existence from being a public
+  fact. The bot autocompletes that option from the caller's own accounts, read
+  from the new `GET /bot/v1/accounts`.
 - **Avatars:** the bot fetches Discord's CDN as a 256×256 JPEG and uploads it
   through the same code path as a console upload; re-syncing deletes the
   replaced file.
 
 Still open: the Switch-side test (link a console with bot-issued credentials,
-then check the placeholder is gone and the friend list works).
+then check the placeholder is gone and the friend list works). Also still
+single-account: `/whoami`, `/fc`, `/friends`, `/avatar` and `/fc-pending` act on
+the main account and take no `username`, so a person's extra accounts have
+credentials and password resets but no friends list, avatar or Discord-side
+view yet. The Discord console on this point is honest rather than unfinished: one
+identity per console is what phase 1 verified, and which console signs in as
+which of a person's accounts is a bigger question than a command option.
 
 The original plan follows, kept for its reasoning.
 

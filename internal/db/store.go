@@ -58,8 +58,11 @@ type User struct {
 	// until its console links to a real person's account; then it is
 	// deleted (ReassignDeviceAccount). Not counted as a person.
 	Provisional bool
-	// DiscordUserID links the user to the Discord account that registered it
-	// through the bot. Empty for any user that did not.
+	// DiscordUserID is the Discord account that owns this user through the
+	// bot. Empty for any user nobody owns, a console's placeholder most of
+	// all. Read-only: the ownership itself lives in bot_account_links, and a
+	// user belongs to at most one Discord account however many accounts that
+	// Discord account owns.
 	DiscordUserID string
 
 	Deleted bool
@@ -337,9 +340,6 @@ type UserPatch struct {
 	Extras              *ExtrasByScope
 	Deleted             *bool
 	LoginPasswordHash   *string
-	// DiscordUserID links the user to a Discord account. ErrConflict if
-	// another user already has that Discord account.
-	DiscordUserID *string
 }
 
 // PresencePatch is a set of optional changes to a presence row.
@@ -637,13 +637,30 @@ type Store interface {
 	CreateUser(ctx context.Context, u User, da DeviceAccount) error
 	// CreateUserWithLogin creates a user with login credentials
 	// (LoginUsername/LoginPasswordHash already set on u) and no device
-	// account. ErrConflict if the username is taken.
-	CreateUserWithLogin(ctx context.Context, u User) error
+	// account, and links it to the Discord account in u.DiscordUserID.
+	// primary says whether it is that Discord account's main account, the one
+	// commands that name no account act on; an empty u.DiscordUserID ignores
+	// it. ErrConflict if the username is taken, or if that Discord account
+	// already has a main account.
+	CreateUserWithLogin(ctx context.Context, u User, primary bool) error
 	// GetUserByLoginUsername looks up a user by their login username.
 	// ErrNotFound if none matches.
 	GetUserByLoginUsername(ctx context.Context, username string) (User, error)
-	// GetUserByDiscordID looks up the user a Discord account registered.
+	// GetUserByDiscordID returns the main account of the accounts a Discord
+	// account owns. ErrNotFound if it owns none.
 	GetUserByDiscordID(ctx context.Context, discordUserID string) (User, error)
+	// ListUsersByDiscordID returns every account a Discord account owns, its
+	// main account first, then oldest first.
+	ListUsersByDiscordID(ctx context.Context, discordUserID string) ([]User, error)
+	// GetUserByDiscordLogin returns one of the accounts a Discord account
+	// owns, named by its login. ErrNotFound when no account has that login,
+	// and ErrNotFound too when it belongs to somebody else: one answer for
+	// both, so whether a login exists is not something a stranger can ask.
+	GetUserByDiscordLogin(ctx context.Context, discordUserID, username string) (User, error)
+	// LinkBotAccount attaches an account to the Discord account that owns it.
+	// ErrConflict if it already belongs to a different Discord account, or if
+	// primary and that Discord account already has a main account.
+	LinkBotAccount(ctx context.Context, discordUserID, userID string, primary bool) error
 	// GetUser returns a user by id, or ErrNotFound.
 	GetUser(ctx context.Context, id string) (User, error)
 	// UpdateUser applies a patch and returns the updated user.

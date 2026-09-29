@@ -14,10 +14,13 @@ import (
 // create one (botapi.go); the self-registration web page it replaced is gone.
 
 // createLoginUser makes a person's account: login credentials, a friend code,
-// and no device account until they link a console. Shared by the website and
-// the Discord bot. db.ErrConflict if the username or Discord account is
-// already registered.
-func (s *Server) createLoginUser(ctx context.Context, username, nickname, password, discordUserID string) (db.User, error) {
+// and no device account until they link a console, owned by the Discord
+// account in discordUserID. primary says whether it is that Discord account's
+// main account, the one commands that name no account act on; a person
+// registering a second account is always an extra beside the first.
+// db.ErrConflict if the username is taken, or if that Discord account already
+// has a main account.
+func (s *Server) createLoginUser(ctx context.Context, username, nickname, password, discordUserID string, primary bool) (db.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return db.User{}, err
@@ -43,7 +46,7 @@ func (s *Server) createLoginUser(ctx context.Context, username, nickname, passwo
 		LoginPasswordHash:   string(hash),
 		DiscordUserID:       discordUserID,
 	}
-	if err := s.store.CreateUserWithLogin(ctx, user); err != nil {
+	if err := s.store.CreateUserWithLogin(ctx, user, primary); err != nil {
 		return db.User{}, err
 	}
 	if _, err := assignFriendCode(ctx, s.store, now, userID, s.cfg.FriendCodeCooldown); err != nil {
