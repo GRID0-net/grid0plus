@@ -611,8 +611,11 @@ func TestAllocateIceServerSetReturnsWhatWasConfigured(t *testing.T) {
 	if got.GetStunServer() != nil || len(got.GetTurnServers()) != 0 {
 		t.Errorf("an unconfigured server offered ICE servers: %v", got)
 	}
-	if got.GetTtl().AsDuration() <= 0 {
-		t.Error("ttl is not set; a zero reads as already stale")
+	if got.Ttl == nil || got.GetTtl().AsDuration() != 0 {
+		t.Errorf("ttl = %v; captured response has a present, empty Duration", got.Ttl)
+	}
+	if want := "tenants/" + testTenant + "/iceServerSets/static"; got.GetName() != want {
+		t.Errorf("name = %q, want %q", got.GetName(), want)
 	}
 
 	// Now with servers configured.

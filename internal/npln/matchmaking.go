@@ -523,15 +523,13 @@ func (g *gameSessionService) SyncGameSession(
 // NAT-check pair, so these addresses are how two consoles behind different NATs
 // find a path to each other. They must be reachable FROM THE CONSOLE.
 //
-// An empty set is a valid answer and the default one: consoles on the same LAN
-// connect directly, which is the whole of what a small private network needs.
-// 'switchnetctl check' warns when it is empty, because the failure it causes
-// elsewhere -- the lobby fills and the match never starts -- reads as a
-// matchmaking bug rather than a connectivity one.
+// An empty set remains a valid configuration for one LAN, but a real console
+// creating a private room asks for ICE even while it is the room's sole member.
+// The production deployment therefore advertises its reachable STUN listener.
 func (g *gameSessionService) AllocateIceServerSet(
 	ctx context.Context, _ *mmpb.AllocateIceServerSetRequest,
 ) (*mmpb.IceServerSet, error) {
-	caller, ok := CallerFrom(ctx)
+	_, ok := CallerFrom(ctx)
 	if !ok {
 		return nil, ErrUnauthenticated
 	}
@@ -540,8 +538,10 @@ func (g *gameSessionService) AllocateIceServerSet(
 	// already checked against this server's own on the way in, and the user is
 	// the caller's token, not the request's field.
 	set := &mmpb.IceServerSet{
-		Name: g.s.tenantPath() + "/users/" + caller.UserID + "/iceServerSet",
-		Ttl:  durationpb.New(iceServerSetTTL),
+		Name: g.s.tenantPath() + "/iceServerSets/static",
+		// Nintendo's captured response includes ttl as a present, empty
+		// Duration. Absence and a nonzero duration both differ on the wire.
+		Ttl: &durationpb.Duration{},
 		// Cached for the same span it is valid for. A console that re-asks
 		// every match adds a round trip to something that has not changed since
 		// the operator last edited their configuration file.
@@ -769,13 +769,8 @@ func (g *gameSessionService) GetUserSession(
 	return nil, ErrNotFound
 }
 
-// iceServerSetTTL is how long an allocated ICE server set is good for.
-//
-// GRID0+'s set does not actually expire -- it is read straight from a
-// configuration file and changes only when the operator edits one -- but the
-// field is not optional and a zero would read as "already stale". An hour is
-// long enough not to churn and short enough that an edit takes effect within
-// one session.
+// iceServerSetTTL is the cache duration; the separate ttl field is present
+// but empty in Nintendo's captured response.
 const iceServerSetTTL = time.Hour
 
 func stunProtocol(name string) mmpb.StunServer_Protocol {
