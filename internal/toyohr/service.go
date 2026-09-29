@@ -23,6 +23,7 @@ import (
 	"github.com/n-popescu/grid0plus/internal/db"
 	"github.com/n-popescu/grid0plus/internal/splatdiag"
 	"github.com/n-popescu/grid0plus/internal/ugcstore"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
@@ -229,6 +230,14 @@ func (s *Service) scheduleProto(f Fest, region, target string) *toyohrpb.FestSch
 			CloseTime: timestamppb.New(tt.Close),
 		},
 		FestPublishments: publishments,
+		// The captured fest schedule carries this attribute even before play
+		// starts. Without it, our announcement has a different wire shape from
+		// the one Splatoon 3 accepts for team selection.
+		Attributes: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"TricolorStages": {ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{
+				Values: []*commonpb.Value{intValue(2), intValue(12)},
+			}}},
+		}},
 	}
 }
 

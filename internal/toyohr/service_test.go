@@ -62,8 +62,8 @@ func newService(t *testing.T, now time.Time) (*Service, *db.Memory) {
 // checks against its own BCAT cache. A mismatch is BcatInvalid.
 func TestTheAnnouncedFestNamesThePackAndRevisionTheConsoleMustLoad(t *testing.T) {
 	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
-	// Mid-fest.
-	svc, _ := newService(t, start.Add(6*time.Hour))
+	// Team selection is open, but matches have not started.
+	svc, _ := newService(t, start.Add(-24*time.Hour))
 
 	f := NewFest(start, []string{"JP", "EU"})
 	if err := svc.SaveFest(context.Background(), f, true, nil); err != nil {
@@ -85,6 +85,10 @@ func TestTheAnnouncedFestNamesThePackAndRevisionTheConsoleMustLoad(t *testing.T)
 	}
 	if sched.GetFestGameDataRevision() != f.Revision {
 		t.Errorf("revision = %q, want %q", sched.GetFestGameDataRevision(), f.Revision)
+	}
+	stages := sched.GetAttributes().GetFields()["TricolorStages"].GetArrayValue().GetValues()
+	if len(stages) != 2 || stages[0].GetIntegerValue() != 2 || stages[1].GetIntegerValue() != 12 {
+		t.Errorf("TricolorStages = %v, want captured two-stage attribute [2, 12]", stages)
 	}
 	// The fest id has to appear in the resource names, because that is what the
 	// console matches against its cache metadata.
