@@ -699,6 +699,9 @@ type NATCheck struct {
 	// AlternateListen is a socket on a DIFFERENT ADDRESS, used for message
 	// type 2. Leave empty if you only have one address.
 	AlternateListen string `yaml:"alternate_listen"`
+	// Type102SamePort is a reversible compatibility mode for clients that
+	// repeat type 101/102 probes without completing NAT detection.
+	Type102SamePort bool `yaml:"type102_same_port"`
 	// StunListen answers STUN (RFC 5389) Binding requests -- a different
 	// protocol from the NCS one above, but the same kind of lightweight UDP
 	// connectivity responder, so it runs alongside it rather than as a
@@ -960,6 +963,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NATCHECK_PRIMARY_LISTEN", &c.NATCheck.PrimaryListen)
 	envStr("SWITCHNET_NATCHECK_SECONDARY_LISTEN", &c.NATCheck.SecondaryListen)
 	envStr("SWITCHNET_NATCHECK_ALTERNATE_LISTEN", &c.NATCheck.AlternateListen)
+	envBool("SWITCHNET_NATCHECK_TYPE102_SAME_PORT", &c.NATCheck.Type102SamePort)
 
 	envStr("SWITCHNET_LOG_LEVEL", &c.Log.Level)
 	envStr("SWITCHNET_LOG_FORMAT", &c.Log.Format)

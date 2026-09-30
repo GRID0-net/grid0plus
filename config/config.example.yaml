@@ -650,6 +650,11 @@ natcheck:
   # NAT than the router really has.
   alternate_listen: "192.168.1.51:10025"
 
+  # Compatibility probe for a Switch that repeats type 101/102 and never
+  # reaches nncs2. False preserves the documented different-port reply.
+  # Enable only while comparing against a real packet capture.
+  type102_same_port: false
+
   # Answers STUN (RFC 5389) Binding requests -- a different protocol from NCS
   # above, but the same kind of lightweight UDP connectivity responder.
   # Splatoon 3 sends these to whatever host

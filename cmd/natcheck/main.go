@@ -80,6 +80,7 @@ func main() {
 		AlternateListen:       cfg.NATCheck.AlternateListen,
 		AdvertisedIP:          cfg.Network.PublicIP,
 		AlternateAdvertisedIP: cfg.Network.NATCheckSecondaryIP,
+		Type102SamePort:       cfg.NATCheck.Type102SamePort,
 		Observe:               observe,
 	}, log)
 	if err != nil {

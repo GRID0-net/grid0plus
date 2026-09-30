@@ -57,7 +57,7 @@ func TestDecodeRejectsWrongLengths(t *testing.T) {
 }
 
 // listenTestServer starts a responder on loopback with ephemeral ports.
-func listenTestServer(t *testing.T, withAlternate bool) *Server {
+func listenTestServer(t *testing.T, withAlternate bool, type102SamePort ...bool) *Server {
 	t.Helper()
 
 	cfg := Config{
@@ -68,6 +68,9 @@ func listenTestServer(t *testing.T, withAlternate bool) *Server {
 	if withAlternate {
 		cfg.AlternateListen = "127.0.0.2:0"
 		cfg.AlternateAdvertisedIP = "127.0.0.2"
+	}
+	if len(type102SamePort) != 0 {
+		cfg.Type102SamePort = type102SamePort[0]
 	}
 
 	srv, err := Listen(cfg, slog.New(slog.DiscardHandler))
@@ -90,6 +93,19 @@ func listenTestServer(t *testing.T, withAlternate bool) *Server {
 		}
 	})
 	return srv
+}
+
+func TestType102CompatibilityModeRepliesFromTheAddressedSocket(t *testing.T) {
+	srv := listenTestServer(t, true, true)
+	primary := srv.Addrs()[0]
+	reply, from := probe(t, primary, Message{Type: TypeDifferentPortAlt})
+	want, err := net.ResolveUDPAddr("udp4", primary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.Type != TypeDifferentPortAlt || from.Port != want.Port || !from.IP.Equal(want.IP) {
+		t.Errorf("type 102 to %s returned type %d from %s", primary, reply.Type, from)
+	}
 }
 
 // probe sends one message and returns the reply plus the address it came from.

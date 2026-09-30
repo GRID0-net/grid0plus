@@ -120,6 +120,11 @@ type Config struct {
 	// AlternateAdvertisedIP is the public address of AlternateListen. Cloud
 	// hosts often bind a private address that maps to a second public IP.
 	AlternateAdvertisedIP string
+	// Type102SamePort answers the Switch-specific type 102 probe from the
+	// addressed socket. Keep false for the documented different-port behavior;
+	// this is a reversible compatibility probe for a client that otherwise
+	// repeats 101/102 without progressing to the second NCS host.
+	Type102SamePort bool
 	// Observe, when set, is told the source address of every reachability
 	// message: the external port the console's router mapped for its Pia
 	// socket, which the NEX game server uses to correct the stations it
@@ -308,7 +313,12 @@ func (s *Server) socketFor(msgType uint32, incoming *net.UDPConn) *net.UDPConn {
 		}
 		return s.primary
 
-	case TypeDifferentPort, TypeDifferentPortAlt:
+	case TypeDifferentPortAlt:
+		if s.cfg.Type102SamePort {
+			return incoming
+		}
+		fallthrough
+	case TypeDifferentPort:
 		if s.secondary != nil {
 			return s.secondary
 		}
