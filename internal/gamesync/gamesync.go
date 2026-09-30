@@ -107,6 +107,7 @@ type Server struct {
 	issueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
 	onRefereeReport  func(context.Context, RefereeReport) error
 	sessionTTL       time.Duration
+	refreshEvery     time.Duration
 	now              func() time.Time
 
 	docs  *store
@@ -162,6 +163,7 @@ func New(opts Options) (*Server, error) {
 		issueAccessToken: opts.IssueAccessToken,
 		onRefereeReport:  opts.OnRefereeReport,
 		sessionTTL:       opts.SessionTTL,
+		refreshEvery:     3 * time.Second,
 		now:              opts.Now,
 		docs:             newStore(opts.Now),
 		watch:            newWatchers(),
@@ -709,6 +711,9 @@ func (s *Server) KeepUserSession(
 		sessionID = caller.details.SessionID
 	}
 	sub := s.watch.subscribe(caller.userID, sessionID)
+	refresh := time.NewTicker(s.refreshEvery)
+	defer refresh.Stop()
+	refreshLogged := false
 	caller.mu.Lock()
 	caller.activeStreams++
 	caller.mu.Unlock()
@@ -746,6 +751,18 @@ func (s *Server) KeepUserSession(
 			// is nothing left to tell it about: its targets went with the
 			// stream.
 			return nil
+		case <-refresh.C:
+			messages := s.refreshSessionDocuments(caller, sub)
+			if len(messages) > 0 && !refreshLogged {
+				s.log.Info("gamesync: live session refresh started", "user", caller.userID,
+					"session", sessionID, "messages", len(messages))
+				refreshLogged = true
+			}
+			for _, msg := range messages {
+				if err := stream.Send(msg); err != nil {
+					return err
+				}
+			}
 		case msg := <-out:
 			if err := stream.Send(msg); err != nil {
 				return err
