@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"time"
 
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
@@ -39,19 +38,16 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	mapValue := func(fields map[string]*commonpb.Value) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: fields}}}
 	}
-	props := map[string]*commonpb.Value{}
-	for k, v := range d.Properties.GetFields() {
-		props[k] = proto.Clone(v).(*commonpb.Value)
-	}
-	bfmax := d.Capacity - 3
-	if bfmax < 1 {
-		bfmax = 1
-	}
+	// All three room-creation modes in the working capture (private battle,
+	// join-room, and Coop private) publish the same Gamesync format capacity of
+	// eight, even though their NPLN tickets advertise 10/4/4 respectively.
+	// The game reads these documents after the ticket succeeds.
+	const wireCapacity = 8
 	settings := func() map[string]*commonpb.Value {
 		return map[string]*commonpb.Value{
-			"bfmax": integer(int64(bfmax)), "bfmin": integer(1),
+			"bfmax": integer(wireCapacity - 3), "bfmin": integer(1),
 			"cp": boolean(true), "ebf": boolean(false), "ip": boolean(true),
-			"pw": str(d.Password), "prp": mapValue(props),
+			"pw": str(d.Password),
 		}
 	}
 	var fields map[string]*commonpb.Value
@@ -60,12 +56,30 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 		secret := sha256.Sum256([]byte("switchnet-room:" + d.SessionID))
 		fields = map[string]*commonpb.Value{
 			"addr": str(d.Host), "gsid": str(d.SessionID),
-			"maxu": integer(int64(d.Capacity)), "mcn": str(d.Mode),
-			"p":  integer(int64(d.Port)),
+			"maxu": integer(wireCapacity), "mcn": str(""),
+			"p": integer(int64(d.Port)), "tid": str(d.Tenant),
 			"rs": &commonpb.Value{ValueType: &commonpb.Value_BytesValue{BytesValue: secret[:]}},
 		}
-	case "docs/__gs/m", "docs/__gs/s":
+	case "docs/__gs/m":
 		fields = settings()
+	case "docs/__gs/s":
+		// The working server mirrors the caller's nine-field __us document
+		// here, including its live session counters. Returning room settings
+		// at this path gives the game an entirely different value type.
+		fields = map[string]*commonpb.Value{
+			"uid": str(d.UserID), "ussid": integer(1), "ucsid": integer(1),
+			"upcsid": integer(1), "pgn": str("All"), "st": integer(2),
+			"tn": str(""), "att": mapValue(nil), "ltc": mapValue(nil),
+		}
+		if s.docs != nil {
+			if userSession, ok := s.docs.snapshot("docs/__us/" + sessionID(caller.userSession)); ok {
+				for _, key := range []string{"att", "ltc", "pgn", "st", "tn", "ucsid", "upcsid", "ussid"} {
+					if value := userSession.GetFields().GetFields()[key]; value != nil {
+						fields[key] = value
+					}
+				}
+			}
+		}
 	case "docs/__gs/r":
 		fields = map[string]*commonpb.Value{"ipc": integer(int64(d.ParticipantCount)), "dpc": integer(0)}
 	case "docs/__gs/n":
@@ -78,13 +92,11 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	case "docs/__stg/All":
 		mutable := settings()
 		mutable["cp"] = boolean(false)
-		// The captured mutable-session readback keeps the full room capacity
-		// here, even though __gs/m and __gs/s use capacity minus three.
-		mutable["bfmax"] = integer(int64(d.Capacity))
+		mutable["bfmax"] = integer(wireCapacity)
 		mutable["prp"] = mapValue(nil)
 		fields = map[string]*commonpb.Value{
 			"gsid": str(d.SessionID), "addr": str(d.Host), "p": integer(int64(d.Port)),
-			"mcn": str(d.Mode), "maxu": integer(int64(d.Capacity)), "rs": mapValue(mutable),
+			"mcn": str(""), "maxu": integer(wireCapacity), "rs": mapValue(mutable),
 		}
 	default:
 		return nil, false
