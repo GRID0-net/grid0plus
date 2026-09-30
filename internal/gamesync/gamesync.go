@@ -111,6 +111,9 @@ type Server struct {
 
 	docs  *store
 	watch *watchers
+	// A report from any player may update the same battle verdict. Serialize
+	// read/merge/write so simultaneous reports cannot discard one another.
+	refereeMu sync.Mutex
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -527,6 +530,7 @@ func (s *Server) WriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
 		caller, _ := callerFrom(ctx)
@@ -573,6 +577,7 @@ func (s *Server) LazyWriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	s.publishRefereeVerdicts(ctx, ops)
 	s.observeRefereeReports(ctx, ops)
 
 	return &syncpb.LazyWriteDocumentsResponse{CommitTime: timestamppb.New(commit.at)}, nil
@@ -631,6 +636,7 @@ func (s *Server) CommitTransaction(
 		return nil, err
 	}
 	s.watch.publish(commit.changes)
+	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 
 	return &syncpb.CommitTransactionResponse{
@@ -698,7 +704,11 @@ func (s *Server) KeepUserSession(
 		return errUnauthenticated
 	}
 
-	sub := s.watch.subscribe(caller.userID)
+	sessionID := ""
+	if caller.details != nil {
+		sessionID = caller.details.SessionID
+	}
+	sub := s.watch.subscribe(caller.userID, sessionID)
 	caller.mu.Lock()
 	caller.activeStreams++
 	caller.mu.Unlock()

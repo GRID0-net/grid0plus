@@ -16,6 +16,9 @@ type watchers struct {
 // subscriber is one open KeepUserSession stream and what it is watching.
 type subscriber struct {
 	userID string
+	// The referee-result collection is shared by name across matches. A
+	// subscriber must only see verdicts for its verified game session.
+	sessionID string
 
 	// changes is buffered, and a send that would block is dropped. A console
 	// that has stopped reading its stream must not be able to stall a write for
@@ -34,9 +37,10 @@ func newWatchers() *watchers {
 	return &watchers{subs: map[*subscriber]struct{}{}}
 }
 
-func (w *watchers) subscribe(userID string) *subscriber {
+func (w *watchers) subscribe(userID, sessionID string) *subscriber {
 	sub := &subscriber{
 		userID:      userID,
+		sessionID:   sessionID,
 		changes:     make(chan *syncpb.DocumentChange, 64),
 		documents:   map[string][]string{},
 		collections: map[string]string{},
@@ -123,6 +127,10 @@ func (w *watchers) publish(changes []*syncpb.DocumentChange) {
 // targetFor returns the target a document name matches, if any.
 func (s *subscriber) targetFor(name string) (string, bool) {
 	if name == "" {
+		return "", false
+	}
+	if strings.HasPrefix(name, refereeResultPrefix) &&
+		(s.sessionID == "" || !strings.HasSuffix(name, "_"+s.sessionID)) {
 		return "", false
 	}
 	s.mu.Lock()

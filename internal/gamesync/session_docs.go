@@ -21,6 +21,19 @@ func wireTargetID(name string) string { return sessionID(name) }
 
 func (s *Server) collectionSnapshot(caller *session, collection string) []*syncpb.Document {
 	docs := s.docs.list(collection)
+	if collection == "docs/@@RefereeResult" {
+		if caller.details == nil || caller.details.SessionID == "" {
+			docs = nil
+		} else {
+			visible := docs[:0]
+			for _, doc := range docs {
+				if strings.HasSuffix(doc.GetName(), "_"+caller.details.SessionID) {
+					visible = append(visible, doc)
+				}
+			}
+			docs = visible
+		}
+	}
 	seen := make(map[string]bool, len(docs))
 	for _, doc := range docs {
 		seen[doc.GetName()] = true
@@ -57,6 +70,11 @@ func (s *Server) syntheticCollectionMember(caller *session, collection string) *
 // watchDocument only synthesizes the caller's own UserSession. A missing
 // document for another session is not evidence that the caller owns it.
 func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, bool) {
+	if strings.HasPrefix(name, refereeResultPrefix) &&
+		(caller.details == nil || caller.details.SessionID == "" ||
+			!strings.HasSuffix(name, "_"+caller.details.SessionID)) {
+		return nil, false
+	}
 	if doc, ok := s.docs.get(name); ok {
 		return doc, true
 	}

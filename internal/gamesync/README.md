@@ -133,6 +133,15 @@ console holds it — the same rule `SubscribeMaintenanceSchedules` and
 - **a send that would block is dropped.** A console that stopped reading must not
   stall a write for every other console in the lobby.
 
+Splatoon 3 also watches `docs/@@RefereeResult` as a direct-child collection.
+Its `@@RefereeRequest` write is a match-start barrier, and its
+`@@RefereeReport/.../User/...` write is a results-screen barrier. A working
+match capture shows a result document with the same battle suffix changing from
+`status=0` to `status=1`. The service constructs those two verdicts from the
+committed request and report; storing the writes without publishing the result
+leaves the game waiting even though matchmaking already succeeded. Results are
+scoped to the authenticated game session on both reads and watches.
+
 ## Not implemented, and why
 
 | RPC | Why |
