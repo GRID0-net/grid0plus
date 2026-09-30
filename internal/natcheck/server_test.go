@@ -63,10 +63,9 @@ func listenTestServer(t *testing.T, withAlternate bool) *Server {
 	cfg := Config{
 		PrimaryListen:   "127.0.0.1:0",
 		SecondaryListen: "127.0.0.1:0",
-		AdvertisedIP:    "127.0.0.1",
 	}
 	if withAlternate {
-		cfg.AlternateListen = "127.0.0.1:0"
+		cfg.AlternateListen = "127.0.0.2:0"
 	}
 
 	srv, err := Listen(cfg, slog.New(slog.DiscardHandler))
@@ -215,6 +214,25 @@ func TestSourcePortPerMessageType(t *testing.T) {
 		if got := itoa(from.Port); got != c.wantPort {
 			t.Errorf("type %d: reply came from port %s, want %s (%s)",
 				c.msgType, got, c.wantPort, c.why)
+		}
+	}
+}
+
+// Both NCS hostnames and the secondary port accept reachability probes.
+// Their replies must come from the socket the client actually addressed.
+func TestReachabilityRepliesFromTheAddressedSocket(t *testing.T) {
+	srv := listenTestServer(t, true)
+	for _, target := range srv.Addrs() {
+		reply, from := probe(t, target, Message{Type: TypeReachability})
+		want, err := net.ResolveUDPAddr("udp4", target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if from.Port != want.Port || !from.IP.Equal(want.IP) {
+			t.Errorf("probe to %s replied from %s", target, from)
+		}
+		if reply.LocalIP != ipToUint32(want.IP) {
+			t.Errorf("probe to %s advertised local IP %#x", target, reply.LocalIP)
 		}
 	}
 }

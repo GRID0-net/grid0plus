@@ -239,12 +239,12 @@ func (s *Server) readLoop(ctx context.Context, conn *net.UDPConn) {
 			s.log.Debug("natcheck: discarding datagram", "from", from, "error", err)
 			continue
 		}
-		s.respond(msg, from)
+		s.respond(msg, from, conn)
 	}
 }
 
 // respond answers one message from the socket the message type requires.
-func (s *Server) respond(msg Message, from *net.UDPAddr) {
+func (s *Server) respond(msg Message, from *net.UDPAddr, incoming *net.UDPConn) {
 	reply := Message{
 		Type: msg.Type,
 		// The console learns its external address from these two fields. They
@@ -255,7 +255,7 @@ func (s *Server) respond(msg Message, from *net.UDPAddr) {
 		LocalIP:      s.localIP,
 	}
 
-	conn := s.socketFor(msg.Type)
+	conn := s.socketFor(msg.Type, incoming)
 	if conn == nil {
 		s.log.Debug("natcheck: no socket for message type", "type", msg.Type, "from", from)
 		return
@@ -280,7 +280,7 @@ func (s *Server) respond(msg Message, from *net.UDPAddr) {
 }
 
 // socketFor picks the socket a message type must be answered from.
-func (s *Server) socketFor(msgType uint32) *net.UDPConn {
+func (s *Server) socketFor(msgType uint32, incoming *net.UDPConn) *net.UDPConn {
 	switch msgType {
 	case TypeDifferentAddress:
 		if s.alternate != nil {
@@ -301,7 +301,11 @@ func (s *Server) socketFor(msgType uint32) *net.UDPConn {
 
 	case TypeReachability, TypeMapping1, TypeMapping2,
 		TypeReachabilityAlt, TypeReachabilityAlt2:
-		return s.primary
+		// Reachability probes are also sent directly to the second NCS
+		// endpoint. Answering those from the primary socket makes the
+		// response appear to come from a different server (or port), so a
+		// client filtering by destination never sees a valid reply.
+		return incoming
 
 	default:
 		// An unknown type is answered from the primary socket rather than
