@@ -2,11 +2,15 @@ package npln
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -529,7 +533,7 @@ func (g *gameSessionService) SyncGameSession(
 func (g *gameSessionService) AllocateIceServerSet(
 	ctx context.Context, _ *mmpb.AllocateIceServerSetRequest,
 ) (*mmpb.IceServerSet, error) {
-	_, ok := CallerFrom(ctx)
+	caller, ok := CallerFrom(ctx)
 	if !ok {
 		return nil, ErrUnauthenticated
 	}
@@ -548,6 +552,11 @@ func (g *gameSessionService) AllocateIceServerSet(
 		ClientCacheDuration: durationpb.New(iceServerSetTTL),
 		UpdateTime:          timestamppb.New(g.s.now()),
 	}
+	if g.s.turnAuthSecret != "" {
+		// The credential expires after an hour; the console may cache this
+		// response for only 90 seconds so it never reuses a stale allocation.
+		set.ClientCacheDuration = durationpb.New(90 * time.Second)
+	}
 
 	for _, cfgServer := range g.s.iceServers {
 		switch cfgServer.Kind {
@@ -558,16 +567,28 @@ func (g *gameSessionService) AllocateIceServerSet(
 				Protocol: stunProtocol(cfgServer.Protocol),
 			}
 		case "turn":
+			username, password := cfgServer.Username, cfgServer.Password
+			if g.s.turnAuthSecret != "" {
+				username, password = turnCredentials(g.s.turnAuthSecret,
+					g.s.tenantPath()+"/users/"+caller.UserID, g.s.now())
+			}
 			set.TurnServers = append(set.TurnServers, &mmpb.TurnServer{
 				Host:     cfgServer.Host,
 				Port:     int32(cfgServer.Port),
 				Protocol: turnProtocol(cfgServer.Protocol),
-				Username: cfgServer.Username,
-				Password: cfgServer.Password,
+				Username: username,
+				Password: password,
 			})
 		}
 	}
 	return set, nil
+}
+
+func turnCredentials(secret, user string, now time.Time) (string, string) {
+	username := fmt.Sprintf("%d:%s", now.Add(time.Hour).Unix(), user)
+	mac := hmac.New(sha1.New, []byte(secret))
+	_, _ = mac.Write([]byte(username))
+	return username, base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
 // ListLatencyMeasurementServers hands the console what it pings, before

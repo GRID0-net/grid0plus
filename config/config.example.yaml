@@ -449,6 +449,11 @@ npln:
   # Empty is fine for consoles on one LAN: they reach each other directly.
   # `switchnetctl check` warns so that the choice is a deliberate one.
   ice_servers: []
+  # Optional coturn REST shared secret. Keep the real value only in the
+  # untracked config.yaml (or SWITCHNET_NPLN_TURN_AUTH_SECRET); never commit it.
+  # With this set, turn entries below omit username/password: GRID0+ issues
+  # a distinct expiring credential to each authenticated player.
+  turn_auth_secret: ""
   #  - kind: stun          # stun or turn
   #    host: "192.168.1.50"
   #    port: 3478

@@ -384,6 +384,9 @@ type NPLN struct {
 	// the server side. Empty is legitimate: peers on one LAN reach each other
 	// without ICE, and `switchnetctl check` warns rather than refuses.
 	IceServers []IceServer `yaml:"ice_servers"`
+	// TurnAuthSecret is shared with coturn's static-auth-secret. When set,
+	// TURN entries receive distinct, expiring credentials for each signed user.
+	TurnAuthSecret string `yaml:"turn_auth_secret"`
 
 	// FrontlineHost is the fro-N hostname the console is told to open its
 	// persistent connection to.
@@ -937,6 +940,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_NPLN_ISSUER", &c.NPLN.Issuer)
 	envStr("SWITCHNET_NPLN_JWKS_URL", &c.NPLN.JWKSURL)
 	envStr("SWITCHNET_NPLN_GAMESYNC_LISTEN", &c.NPLN.GamesyncListen)
+	envStr("SWITCHNET_NPLN_TURN_AUTH_SECRET", &c.NPLN.TurnAuthSecret)
 	envStr("SWITCHNET_NPLN_FRONTLINE_HOST", &c.NPLN.FrontlineHost)
 	envStr("SWITCHNET_NPLN_SESSION_HOST", &c.NPLN.SessionHost)
 	envStr("SWITCHNET_NPLN_REST_RECORD_DIR", &c.NPLN.RestRecordDir)
@@ -1116,6 +1120,14 @@ func (c Config) Validate() error {
 		if s.Port <= 0 || s.Port > 65535 {
 			errs = append(errs, fmt.Errorf(
 				"npln.ice_servers[%d].port: %d is not a port", i, s.Port))
+		}
+		if s.Kind == "turn" {
+			if c.NPLN.TurnAuthSecret == "" && (s.Username == "" || s.Password == "") {
+				errs = append(errs, fmt.Errorf("npln.ice_servers[%d]: TURN needs both static credentials or npln.turn_auth_secret", i))
+			}
+			if c.NPLN.TurnAuthSecret != "" && (s.Username != "" || s.Password != "") {
+				errs = append(errs, fmt.Errorf("npln.ice_servers[%d]: remove static TURN credentials when turn_auth_secret is set", i))
+			}
 		}
 	}
 

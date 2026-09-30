@@ -94,7 +94,8 @@ type Server struct {
 	seenMethods sync.Map
 
 	// iceServers are the STUN/TURN servers handed out by AllocateIceServerSet.
-	iceServers []config.IceServer
+	iceServers     []config.IceServer
+	turnAuthSecret string
 	// regionalLatencyServers enables the seven-region hardware experiment.
 	regionalLatencyServers bool
 	// publicIP is network.public_ip -- ListLatencyMeasurementServers' fallback
@@ -235,6 +236,7 @@ func New(opts Options) (*Server, error) {
 		queue:                  matchmaking.New(queueConfig(opts.Config), opts.Now),
 		matchModes:             opts.Config.ModePlayers,
 		iceServers:             iceServersFrom(opts.Config.IceServers),
+		turnAuthSecret:         opts.Config.TurnAuthSecret,
 		regionalLatencyServers: opts.Config.RegionalLatencyServers,
 		publicIP:               opts.PublicIP,
 		adminToken:             opts.Config.AdminToken,

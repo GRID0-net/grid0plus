@@ -2,6 +2,9 @@ package npln
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
@@ -15,6 +18,45 @@ import (
 	"github.com/n-popescu/grid0plus/internal/matchmaking"
 	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
+
+func TestAllocateIceServerSetIssuesPerUserTurnCredentials(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("alice", "alice-device")
+	h.createUser("bob", "bob-device")
+	h.srv.turnAuthSecret = "test-only-shared-secret"
+	h.srv.iceServers = iceServersFrom([]config.IceServer{
+		{Kind: "stun", Host: "192.0.2.1", Port: 3478},
+		{Kind: "turn", Host: "192.0.2.1", Port: 3479},
+	})
+	client := mmpb.NewGameSessionServiceClient(h.conn)
+	var usernames []string
+	for _, user := range []struct{ id, device string }{{"alice", "alice-device"}, {"bob", "bob-device"}} {
+		ctx := h.ctx(h.sessionFor(t, user.id, user.device), "")
+		set, err := client.AllocateIceServerSet(ctx, &mmpb.AllocateIceServerSetRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(set.GetTurnServers()) != 1 || set.GetStunServer().GetPort() != 3478 {
+			t.Fatalf("ICE servers = %v", set)
+		}
+		turn := set.GetTurnServers()[0]
+		if !strings.HasSuffix(turn.GetUsername(), "/users/"+user.id) {
+			t.Errorf("TURN identity %q does not name %s", turn.GetUsername(), user.id)
+		}
+		mac := hmac.New(sha1.New, []byte(h.srv.turnAuthSecret))
+		_, _ = mac.Write([]byte(turn.GetUsername()))
+		if turn.GetPassword() != base64.StdEncoding.EncodeToString(mac.Sum(nil)) {
+			t.Error("TURN password does not match coturn REST authentication")
+		}
+		if set.GetClientCacheDuration().AsDuration() != 90*time.Second {
+			t.Errorf("ICE cache = %v, want 90 seconds", set.GetClientCacheDuration())
+		}
+		usernames = append(usernames, turn.GetUsername())
+	}
+	if usernames[0] == usernames[1] {
+		t.Error("two consoles received the same TURN identity")
+	}
+}
 
 func TestFestTicketCarriesTheServerAssignedTeamSlot(t *testing.T) {
 	h := newHarness(t)
