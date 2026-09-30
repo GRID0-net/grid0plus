@@ -143,3 +143,50 @@ func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
 		}
 	}
 }
+
+func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
+	h := newHarness(t)
+	host, err := h.srv.newSession("alice", "userSessions/us-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joiner, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsider, err := h.srv.newSession("mallory", "userSessions/us-mallory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.details = &SessionDetails{SessionID: "room-1"}
+	joiner.details = &SessionDetails{SessionID: "room-1"}
+	outsider.details = &SessionDetails{SessionID: "room-2"}
+	write := func(name string, blob []byte) {
+		t.Helper()
+		_, _, err := h.srv.docs.apply([]*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_MergeDocument{
+			MergeDocument: &syncpb.MergeDocumentRequest{Document: &syncpb.Document{
+				Name: name, Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+					"pl": {ValueType: &commonpb.Value_BytesValue{BytesValue: blob}},
+				}},
+			}},
+		}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	const prefix = "docs/__pgn/All/__stu/"
+	write(prefix+"us-alice", []byte{1, 2, 3})
+	write(prefix+"us-mallory", []byte{9, 9, 9})
+	docs := h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
+	if len(docs) != 2 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-alice" {
+		t.Fatalf("joiner's state watch = %v, want own and host only", docs)
+	}
+	if got := docs[1].GetFields().GetFields()["pl"].GetBytesValue(); !reflect.DeepEqual(got, []byte{1, 2, 3}) {
+		t.Fatalf("host pl = %x, want console-written bytes", got)
+	}
+	write(prefix+"us-alice", nil)
+	docs = h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
+	if len(docs) != 1 || docs[0].GetName() != prefix+"us-bob" {
+		t.Fatalf("empty peer blob leaked into state watch: %v", docs)
+	}
+}

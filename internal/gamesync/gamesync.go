@@ -827,11 +827,7 @@ func (s *Server) handleWatchRequest(
 		targetChange(syncpb.TargetChange_UPDATED)
 		var docs []*syncpb.Document
 		if list := target.GetDocuments(); list != nil {
-			for _, name := range list.GetDocuments() {
-				if doc, ok := s.watchDocument(caller, name); ok {
-					docs = append(docs, doc)
-				}
-			}
+			docs = s.watchedDocuments(caller, list.GetDocuments())
 		} else if coll := target.GetCollection(); coll != nil {
 			docs = s.collectionSnapshot(caller, coll.GetCollection())
 		}

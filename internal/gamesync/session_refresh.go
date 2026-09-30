@@ -47,11 +47,7 @@ func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber) []*sy
 		if target.collection != "" {
 			docs = s.collectionSnapshot(caller, target.collection)
 		} else {
-			for _, name := range target.documents {
-				if doc, ok := s.watchDocument(caller, name); ok {
-					docs = append(docs, doc)
-				}
-			}
+			docs = s.watchedDocuments(caller, target.documents)
 		}
 		id := wireTargetID(target.name)
 		pushed := false

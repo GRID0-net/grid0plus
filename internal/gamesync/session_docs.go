@@ -153,6 +153,48 @@ func (s *Server) roomPeerForDocument(caller *session, name string) *session {
 	return nil
 }
 
+// The client asks target 9 for its own __stu document, but the game uses that
+// same target to learn every room peer's P2P state. Only relay a peer's real
+// console-written pl blob; a synthetic empty blob cannot identify a peer.
+func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Document {
+	var docs []*syncpb.Document
+	seen := map[string]bool{}
+	add := func(name string) {
+		if seen[name] {
+			return
+		}
+		if doc, ok := s.watchDocument(caller, name); ok {
+			docs = append(docs, doc)
+			seen[name] = true
+		}
+	}
+	for _, name := range names {
+		add(name)
+		if name != "docs/__pgn/All/__stu/"+sessionID(caller.userSession) ||
+			caller.details == nil || caller.details.SessionID == "" {
+			continue
+		}
+		var peers []string
+		s.mu.Lock()
+		for _, peer := range s.sessions {
+			if peer.details != nil && peer.details.SessionID == caller.details.SessionID &&
+				peer.userSession != caller.userSession && s.now().Before(peer.expiresAt) {
+				peers = append(peers, "docs/__pgn/All/__stu/"+sessionID(peer.userSession))
+			}
+		}
+		s.mu.Unlock()
+		sort.Strings(peers)
+		for _, peerName := range peers {
+			stored, ok := s.docs.get(peerName)
+			if !ok || len(stored.GetFields().GetFields()["pl"].GetBytesValue()) == 0 {
+				continue
+			}
+			add(peerName)
+		}
+	}
+	return docs
+}
+
 func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb.Document, bool) {
 	id := sessionID(caller.userSession)
 	if id == "" {
