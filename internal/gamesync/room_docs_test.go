@@ -94,3 +94,52 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 		t.Errorf("__gs/s trusted a client-supplied identity: %q", got)
 	}
 }
+
+func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
+	h := newHarness(t)
+	host, err := h.srv.newSession("alice", "userSessions/us-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joiner, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsider, err := h.srv.newSession("mallory", "userSessions/us-mallory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.details = &SessionDetails{SessionID: "room-1"}
+	joiner.details = &SessionDetails{SessionID: "room-1"}
+	outsider.details = &SessionDetails{SessionID: "room-2"}
+	partial := func(name string, fields map[string]*commonpb.Value) *syncpb.WriteOperation {
+		return &syncpb.WriteOperation{OperationType: &syncpb.WriteOperation_MergeDocument{
+			MergeDocument: &syncpb.MergeDocumentRequest{Document: &syncpb.Document{
+				Name: name, Fields: &commonpb.MapValue{Fields: fields},
+			}},
+		}}
+	}
+	_, _, err = h.srv.docs.apply([]*syncpb.WriteOperation{
+		partial("docs/__us/us-alice", map[string]*commonpb.Value{"att": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{}}}}),
+		partial("docs/__pgn/All/__pus/us-alice", map[string]*commonpb.Value{"pgn": stringValue("All"), "uid": stringValue("forged")}),
+		partial("docs/__us/us-mallory", map[string]*commonpb.Value{"uid": stringValue("mallory")}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, collection := range []string{"docs/__us", "docs/__pgn/All/__pus"} {
+		docs := h.srv.collectionSnapshot(joiner, collection)
+		for _, doc := range docs {
+			if doc.GetName() == "docs/__us/us-mallory" || doc.GetName() == "docs/__pgn/All/__pus/us-mallory" {
+				t.Fatalf("%s leaked an unrelated room player", collection)
+			}
+			if doc.GetName() != collection+"/us-alice" {
+				continue
+			}
+			fields := doc.GetFields().GetFields()
+			if len(fields) != 9 || fields["uid"].GetStringValue() != "alice" || fields["att"].GetMapValue() == nil || fields["ltc"].GetMapValue() == nil {
+				t.Fatalf("joiner's %s host snapshot is incomplete or trusts a forged uid: %v", collection, fields)
+			}
+		}
+	}
+}

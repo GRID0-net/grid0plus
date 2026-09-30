@@ -22,11 +22,13 @@ func wireTargetID(name string) string { return sessionID(name) }
 
 func (s *Server) collectionSnapshot(caller *session, collection string) []*syncpb.Document {
 	docs := s.docs.list(collection)
-	for i, doc := range docs {
+	visible := docs[:0]
+	for _, doc := range docs {
 		if normalized, ok := s.watchDocument(caller, doc.GetName()); ok {
-			docs[i] = normalized
+			visible = append(visible, normalized)
 		}
 	}
+	docs = visible
 	if collection == "docs/@@RefereeResult" {
 		if caller.details == nil || caller.details.SessionID == "" {
 			docs = nil
@@ -81,15 +83,17 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 			!strings.HasSuffix(name, "_"+caller.details.SessionID)) {
 		return nil, false
 	}
+	peer := s.roomPeerForDocument(caller, name)
+	if isPlayerSessionDocument(name) && peer == nil {
+		return nil, false
+	}
 	if doc, ok := s.docs.get(name); ok {
-		id := sessionID(caller.userSession)
-		if name == "docs/__us/"+id || name == "docs/__pgn/All/__pus/"+id ||
-			(name == "docs/MasterCollection/Session" && caller.details != nil) {
+		if peer != nil || (name == "docs/MasterCollection/Session" && caller.details != nil) {
 			var defaults *syncpb.Document
 			if name == "docs/MasterCollection/Session" {
 				defaults, _ = s.roomDocument(caller, name)
 			} else {
-				defaults, _ = s.syntheticSessionDocument(caller, name)
+				defaults, _ = s.syntheticSessionDocument(peer, name)
 			}
 			merged := proto.Clone(doc).(*syncpb.Document)
 			if merged.Fields == nil {
@@ -100,6 +104,11 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 					merged.Fields.Fields[key] = proto.Clone(value).(*commonpb.Value)
 				}
 			}
+			if peer != nil && (strings.HasPrefix(name, "docs/__us/") || strings.HasPrefix(name, "docs/__pgn/All/__pus/")) {
+				// The stored fields came from a client write. Identity comes from
+				// the authenticated session, for both this player and room peers.
+				merged.Fields.Fields["uid"] = &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: peer.userID}}
+			}
 			return merged, true
 		}
 		return doc, true
@@ -107,7 +116,41 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 	if doc, ok := s.roomDocument(caller, name); ok {
 		return doc, true
 	}
+	if peer != nil {
+		return s.syntheticSessionDocument(peer, name)
+	}
 	return s.syntheticSessionDocument(caller, name)
+}
+
+func isPlayerSessionDocument(name string) bool {
+	return strings.HasPrefix(name, "docs/__us/") ||
+		strings.HasPrefix(name, "docs/__pgn/All/__pus/") ||
+		strings.HasPrefix(name, "docs/__pgn/All/__stu/")
+}
+
+// A room watch includes the other participants' session documents. Their
+// client writes can be partial; resolve the owner through the signed Gamesync
+// session before supplying the same typed defaults as for the caller's own.
+func (s *Server) roomPeerForDocument(caller *session, name string) *session {
+	if !isPlayerSessionDocument(name) {
+		return nil
+	}
+	id := sessionID(name)
+	if id == sessionID(caller.userSession) {
+		return caller
+	}
+	if caller.details == nil || caller.details.SessionID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, peer := range s.sessions {
+		if peer.details != nil && peer.details.SessionID == caller.details.SessionID &&
+			sessionID(peer.userSession) == id && s.now().Before(peer.expiresAt) {
+			return peer
+		}
+	}
+	return nil
 }
 
 func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb.Document, bool) {
