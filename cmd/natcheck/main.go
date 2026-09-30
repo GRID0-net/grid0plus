@@ -75,11 +75,12 @@ func main() {
 	}
 
 	srv, err := natcheck.Listen(natcheck.Config{
-		PrimaryListen:   cfg.NATCheck.PrimaryListen,
-		SecondaryListen: cfg.NATCheck.SecondaryListen,
-		AlternateListen: cfg.NATCheck.AlternateListen,
-		AdvertisedIP:    cfg.Network.PublicIP,
-		Observe:         observe,
+		PrimaryListen:         cfg.NATCheck.PrimaryListen,
+		SecondaryListen:       cfg.NATCheck.SecondaryListen,
+		AlternateListen:       cfg.NATCheck.AlternateListen,
+		AdvertisedIP:          cfg.Network.PublicIP,
+		AlternateAdvertisedIP: cfg.Network.NATCheckSecondaryIP,
+		Observe:               observe,
 	}, log)
 	if err != nil {
 		service.Fatal(log, "listen", err)

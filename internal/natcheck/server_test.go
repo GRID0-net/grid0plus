@@ -63,9 +63,11 @@ func listenTestServer(t *testing.T, withAlternate bool) *Server {
 	cfg := Config{
 		PrimaryListen:   "127.0.0.1:0",
 		SecondaryListen: "127.0.0.1:0",
+		AdvertisedIP:    "127.0.0.1",
 	}
 	if withAlternate {
 		cfg.AlternateListen = "127.0.0.2:0"
+		cfg.AlternateAdvertisedIP = "127.0.0.2"
 	}
 
 	srv, err := Listen(cfg, slog.New(slog.DiscardHandler))
@@ -210,10 +212,13 @@ func TestSourcePortPerMessageType(t *testing.T) {
 		{TypeReachabilityAlt2, port(primary), "103 behaves like 1"},
 	}
 	for _, c := range cases {
-		_, from := probe(t, primary, Message{Type: c.msgType})
+		reply, from := probe(t, primary, Message{Type: c.msgType})
 		if got := itoa(from.Port); got != c.wantPort {
 			t.Errorf("type %d: reply came from port %s, want %s (%s)",
 				c.msgType, got, c.wantPort, c.why)
+		}
+		if c.msgType == TypeDifferentAddress && reply.LocalIP != ipToUint32(net.IPv4(127, 0, 0, 2)) {
+			t.Errorf("type 2 advertised local IP %#x, want the alternate public address", reply.LocalIP)
 		}
 	}
 }

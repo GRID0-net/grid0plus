@@ -117,6 +117,9 @@ type Config struct {
 	// AdvertisedIP is the address the server reports as its own local IP in the
 	// last field of a reply. Empty means it is derived from the socket.
 	AdvertisedIP string
+	// AlternateAdvertisedIP is the public address of AlternateListen. Cloud
+	// hosts often bind a private address that maps to a second public IP.
+	AlternateAdvertisedIP string
 	// Observe, when set, is told the source address of every reachability
 	// message: the external port the console's router mapped for its Pia
 	// socket, which the NEX game server uses to correct the stations it
@@ -135,7 +138,8 @@ type Server struct {
 	alternate *net.UDPConn
 
 	// localIP is the value put in the reply's last field.
-	localIP uint32
+	localIP          uint32
+	alternateLocalIP uint32
 }
 
 // Listen opens the sockets.
@@ -171,6 +175,14 @@ func Listen(cfg Config, log *slog.Logger) (*Server, error) {
 			return nil, fmt.Errorf("natcheck: advertised IP %q is not an IPv4 address", cfg.AdvertisedIP)
 		}
 		s.localIP = ipToUint32(ip)
+	}
+	if cfg.AlternateAdvertisedIP != "" {
+		ip := net.ParseIP(cfg.AlternateAdvertisedIP)
+		if ip == nil || ip.To4() == nil {
+			_ = s.Close()
+			return nil, fmt.Errorf("natcheck: alternate advertised IP %q is not an IPv4 address", cfg.AlternateAdvertisedIP)
+		}
+		s.alternateLocalIP = ipToUint32(ip)
 	}
 
 	return s, nil
@@ -260,7 +272,10 @@ func (s *Server) respond(msg Message, from *net.UDPAddr, incoming *net.UDPConn) 
 		s.log.Debug("natcheck: no socket for message type", "type", msg.Type, "from", from)
 		return
 	}
-	if s.localIP == 0 {
+	if conn == s.alternate && s.alternateLocalIP != 0 {
+		reply.LocalIP = s.alternateLocalIP
+	}
+	if reply.LocalIP == 0 {
 		// Not configured, so derive it from the socket answering the reply.
 		if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok {
 			reply.LocalIP = ipToUint32(addr.IP)
