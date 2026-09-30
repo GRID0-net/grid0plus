@@ -83,8 +83,14 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 	}
 	if doc, ok := s.docs.get(name); ok {
 		id := sessionID(caller.userSession)
-		if name == "docs/__us/"+id || name == "docs/__pgn/All/__pus/"+id {
-			defaults, _ := s.syntheticSessionDocument(caller, name)
+		if name == "docs/__us/"+id || name == "docs/__pgn/All/__pus/"+id ||
+			(name == "docs/MasterCollection/Session" && caller.details != nil) {
+			var defaults *syncpb.Document
+			if name == "docs/MasterCollection/Session" {
+				defaults, _ = s.roomDocument(caller, name)
+			} else {
+				defaults, _ = s.syntheticSessionDocument(caller, name)
+			}
 			merged := proto.Clone(doc).(*syncpb.Document)
 			if merged.Fields == nil {
 				merged.Fields = &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}

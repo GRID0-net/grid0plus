@@ -62,6 +62,11 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 		t.Error("room settings omit the captured prp map")
 	}
 	wantKeys("__gs/m", settings.GetFields().GetFields(), []string{"bfmax", "bfmin", "cp", "ebf", "ip", "prp", "pw"})
+	master := s.collectionSnapshot(caller, "docs/MasterCollection")
+	if len(master) != 1 || master[0].GetName() != "docs/MasterCollection/Session" ||
+		master[0].GetFields().GetFields()["id"].GetStringValue() != "" {
+		t.Fatalf("room's MasterCollection snapshot = %v", master)
+	}
 	if got := settings.GetFields().GetFields()["bfmax"].GetIntegerValue(); got != 5 {
 		t.Errorf("__gs/m bfmax = %d, want captured 5", got)
 	}

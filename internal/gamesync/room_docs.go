@@ -89,6 +89,10 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 		}
 	case "docs/__gs/ck":
 		fields = map[string]*commonpb.Value{"k": str(d.Password)}
+	case "docs/MasterCollection/Session":
+		// The working room watch lists this anchor before the client writes its
+		// friend-room and tracking state into the same document.
+		fields = map[string]*commonpb.Value{"id": str("")}
 	case "docs/__stg/All":
 		mutable := settings()
 		mutable["cp"] = boolean(false)
@@ -108,6 +112,10 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 }
 
 func (s *Server) roomCollectionDocuments(caller *session, collection string) []*syncpb.Document {
+	if collection == "docs/MasterCollection" && caller.details != nil {
+		doc, _ := s.roomDocument(caller, "docs/MasterCollection/Session")
+		return []*syncpb.Document{doc}
+	}
 	if collection != "docs/__gs" || caller.details == nil {
 		return nil
 	}
