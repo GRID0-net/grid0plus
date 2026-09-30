@@ -47,7 +47,7 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 		return map[string]*commonpb.Value{
 			"bfmax": integer(wireCapacity - 3), "bfmin": integer(1),
 			"cp": boolean(true), "ebf": boolean(false), "ip": boolean(true),
-			"pw": str(d.Password),
+			"prp": mapValue(nil), "pw": str(d.Password),
 		}
 	}
 	var fields map[string]*commonpb.Value

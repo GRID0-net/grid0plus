@@ -58,7 +58,10 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 		t.Errorf("mutable properties = %v, want empty map", rs["prp"])
 	}
 	settings, _ := s.roomDocument(caller, "docs/__gs/m")
-	wantKeys("__gs/m", settings.GetFields().GetFields(), []string{"bfmax", "bfmin", "cp", "ebf", "ip", "pw"})
+	if settings.GetFields().GetFields()["prp"].GetMapValue() == nil {
+		t.Error("room settings omit the captured prp map")
+	}
+	wantKeys("__gs/m", settings.GetFields().GetFields(), []string{"bfmax", "bfmin", "cp", "ebf", "ip", "prp", "pw"})
 	if got := settings.GetFields().GetFields()["bfmax"].GetIntegerValue(); got != 5 {
 		t.Errorf("__gs/m bfmax = %d, want captured 5", got)
 	}
