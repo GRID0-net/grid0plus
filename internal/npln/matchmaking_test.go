@@ -93,25 +93,26 @@ func TestFestMatchmakingUsesStoredVotesInsteadOfClientTeamClaims(t *testing.T) {
 	}
 }
 
-func TestPartialPublicMatchAdvertisesItsActualRosterAsFull(t *testing.T) {
+func TestPartialPublicMatchAdvertisesTheCapturedGameFormat(t *testing.T) {
 	h := newHarness(t)
 	for _, tc := range []struct {
-		mode    string
-		players int
+		mode     string
+		players  int
+		capacity int32
 	}{
-		{"regular", 2},
-		{"coop", 2},
-		{"regular", 8},
-		{"coop", 4},
+		{"regular", 2, 8},
+		{"coop", 2, 4},
+		{"regular", 8, 8},
+		{"coop", 4, 4},
 	} {
 		players := make([]string, tc.players)
 		for i := range players {
 			players[i] = "player-" + string(rune('a'+i))
 		}
 		got := h.srv.sessionProto(matchmaking.Session{ID: "test", Mode: tc.mode, Players: players})
-		if got.GetCurrentParticipantCount() != int32(tc.players) || got.GetMaxParticipantCount() != int32(tc.players) {
+		if got.GetCurrentParticipantCount() != tc.capacity || got.GetMaxParticipantCount() != tc.capacity {
 			t.Errorf("%s with %d players advertises %d/%d, want %d/%d", tc.mode, tc.players,
-				got.GetCurrentParticipantCount(), got.GetMaxParticipantCount(), tc.players, tc.players)
+				got.GetCurrentParticipantCount(), got.GetMaxParticipantCount(), tc.capacity, tc.capacity)
 		}
 	}
 }
@@ -195,8 +196,8 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 	if gs := gotOne.GetGameSession(); gs.GetHost() != testSessionHost || gs.GetPort() != 443 {
 		t.Errorf("session endpoint = %s:%d, want %s:443", gs.GetHost(), gs.GetPort(), testSessionHost)
 	}
-	if n := gotOne.GetGameSession().GetCurrentParticipantCount(); n != 2 {
-		t.Errorf("participant count = %d, want 2", n)
+	if n := gotOne.GetGameSession().GetCurrentParticipantCount(); n != 8 {
+		t.Errorf("wire format count = %d, want captured Versus 8", n)
 	}
 
 	// Both players can then read the session back, which is what the console

@@ -874,12 +874,12 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 	if sess.Room {
 		return s.roomProto(sess)
 	}
-	// A full captured battle advertises 8/8. On this private network the
-	// queue can form a partial match after its grace period; advertising 8/8
-	// for a two-player roster asks the game to wait for six nonexistent
-	// participants. Advertise the formed roster as the session's capacity.
-	// Full-size matches retain the captured 8/8 (or Coop 4/4) shape.
-	capacity := int32(len(sess.Players))
+	// The working Splatoon capture advertises 8/8 for a Versus session. The
+	// peer implementation's measured two-player matches use the same wire
+	// capacity: these counts describe the configured match format, while the
+	// actual roster is delivered through Gamesync's __us collection. Reporting
+	// 2/2 for a partial Versus match changes the format the game tries to join.
+	capacity := publicMatchWireCapacity(sess.Mode, len(sess.Players))
 	return &mmpb.GameSession{
 		Name:                    s.tenantPath() + "/gameSessions/" + sess.ID,
 		MaxParticipantCount:     capacity,
@@ -908,6 +908,19 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		CreateTime:   timestamppb.New(sess.CreatedAt),
 		UserSessions: s.userSessions(sess),
 	}
+}
+
+func publicMatchWireCapacity(mode string, actual int) int32 {
+	mode = strings.ToLower(mode)
+	if strings.Contains(mode, "coop") {
+		return 4
+	}
+	for _, marker := range []string{"regular", "turf", "bankara", "league", "x_match", "fest"} {
+		if strings.Contains(mode, marker) {
+			return 8
+		}
+	}
+	return int32(actual)
 }
 
 // roomProto renders a room. Unlike a match, a room is not full when it
