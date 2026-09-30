@@ -565,6 +565,53 @@ func TestAMaskedUpdateClearsAFieldTheClientOmitted(t *testing.T) {
 	}
 }
 
+func TestConsoleQuotedAndWildcardMasksKeepItsRoomDocuments(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	name := "docs/SessionInfo/alice"
+	if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{
+		WriteOperations: []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_UpdateDocument{
+			UpdateDocument: &syncpb.UpdateDocumentRequest{
+				Document: doc(name, map[string]*commonpb.Value{
+					"done_match_step": intValue(1), "name": stringValue("alice"),
+				}),
+				UpdateMask: fieldMask("`done_match_step`", "`name`"),
+			},
+		}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{
+		Name: name, ReadMask: fieldMask("`done_match_step`"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := read.GetFields().GetFields()
+	if len(fields) != 1 || fields["done_match_step"].GetIntegerValue() != 1 {
+		t.Fatalf("quoted read mask returned %v", fields)
+	}
+
+	if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{
+		WriteOperations: []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_UpdateDocument{
+			UpdateDocument: &syncpb.UpdateDocumentRequest{
+				Document:   doc(name, map[string]*commonpb.Value{"name": stringValue("updated")}),
+				UpdateMask: fieldMask("*"),
+			},
+		}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read, err = h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: name, ReadMask: fieldMask("*")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields = read.GetFields().GetFields()
+	if len(fields) != 1 || fields["name"].GetStringValue() != "updated" {
+		t.Errorf("wildcard mask returned %v", fields)
+	}
+}
+
 // ---- transforms ----------------------------------------------------------
 
 func TestIncrementingAFieldThatDoesNotExistCreatesIt(t *testing.T) {

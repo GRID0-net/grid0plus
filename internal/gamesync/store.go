@@ -261,7 +261,7 @@ func (s *store) writeDocument(doc *syncpb.Document, mask []string, now time.Time
 		stored.Fields = emptyMap()
 	}
 
-	if len(mask) == 0 {
+	if len(mask) == 0 || (len(mask) == 1 && mask[0] == "*") {
 		// No mask means replace the whole field set. That is what an update
 		// without a mask means everywhere this shape is used, and it is why
 		// MergeDocument passes the sent field names as its mask instead.
@@ -274,7 +274,7 @@ func (s *store) writeDocument(doc *syncpb.Document, mask []string, now time.Time
 			// Top-level fields only, matching applyReadMask. A nested path
 			// would need structural merging inside a MapValue, and getting that
 			// subtly wrong loses a field rather than failing.
-			field := strings.SplitN(path, ".", 2)[0]
+			field := maskTopLevel(path)
 			v, present := doc.GetFields().GetFields()[field]
 			if !present {
 				// A masked field the client did not send is a deletion. That is

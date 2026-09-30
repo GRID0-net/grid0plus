@@ -921,7 +921,7 @@ func randomToken() string {
 // between every console in the lobby.
 func applyReadMask(doc *syncpb.Document, paths []string) *syncpb.Document {
 	out := proto.Clone(doc).(*syncpb.Document)
-	if len(paths) == 0 {
+	if len(paths) == 0 || (len(paths) == 1 && paths[0] == "*") {
 		return out
 	}
 
@@ -932,7 +932,10 @@ func applyReadMask(doc *syncpb.Document, paths []string) *syncpb.Document {
 		// would silently drop data the client asked for. Keeping the whole
 		// top-level field errs towards sending too much, which is the harmless
 		// direction.
-		keep[strings.SplitN(p, ".", 2)[0]] = true
+		if p == "*" {
+			return out
+		}
+		keep[maskTopLevel(p)] = true
 	}
 	if out.Fields == nil {
 		return out
