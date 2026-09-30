@@ -311,7 +311,7 @@ func (s *store) transform(
 
 	values := make([]*commonpb.Value, 0, len(req.GetFieldTransforms()))
 	for _, ft := range req.GetFieldTransforms() {
-		field := strings.SplitN(ft.GetFieldPath(), ".", 2)[0]
+		field := maskTopLevel(ft.GetFieldPath())
 		current := stored.Fields.Fields[field]
 
 		var next *commonpb.Value

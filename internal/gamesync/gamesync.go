@@ -516,7 +516,8 @@ func (s *Server) QueryCollectionIds(
 func (s *Server) WriteDocuments(
 	ctx context.Context, req *syncpb.WriteDocumentsRequest,
 ) (*syncpb.WriteDocumentsResponse, error) {
-	if _, ok := callerFrom(ctx); !ok {
+	caller, ok := callerFrom(ctx)
+	if !ok {
 		return nil, errUnauthenticated
 	}
 	if len(req.GetDefermentOperations()) > 0 {
@@ -531,7 +532,7 @@ func (s *Server) WriteDocuments(
 			"error", err)
 		return nil, err
 	}
-	s.watch.publish(commit.changes)
+	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
@@ -554,7 +555,8 @@ func (s *Server) WriteDocuments(
 func (s *Server) LazyWriteDocuments(
 	ctx context.Context, req *syncpb.LazyWriteDocumentsRequest,
 ) (*syncpb.LazyWriteDocumentsResponse, error) {
-	if _, ok := callerFrom(ctx); !ok {
+	caller, ok := callerFrom(ctx)
+	if !ok {
 		return nil, errUnauthenticated
 	}
 
@@ -578,7 +580,7 @@ func (s *Server) LazyWriteDocuments(
 	if err != nil {
 		return nil, err
 	}
-	s.watch.publish(commit.changes)
+	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, ops)
 	s.observeRefereeReports(ctx, ops)
 
@@ -637,7 +639,7 @@ func (s *Server) CommitTransaction(
 	if err != nil {
 		return nil, err
 	}
-	s.watch.publish(commit.changes)
+	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 

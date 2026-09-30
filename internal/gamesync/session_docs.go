@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
@@ -21,6 +22,11 @@ func wireTargetID(name string) string { return sessionID(name) }
 
 func (s *Server) collectionSnapshot(caller *session, collection string) []*syncpb.Document {
 	docs := s.docs.list(collection)
+	for i, doc := range docs {
+		if normalized, ok := s.watchDocument(caller, doc.GetName()); ok {
+			docs[i] = normalized
+		}
+	}
 	if collection == "docs/@@RefereeResult" {
 		if caller.details == nil || caller.details.SessionID == "" {
 			docs = nil
@@ -76,11 +82,29 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 		return nil, false
 	}
 	if doc, ok := s.docs.get(name); ok {
+		id := sessionID(caller.userSession)
+		if name == "docs/__us/"+id || name == "docs/__pgn/All/__pus/"+id {
+			defaults, _ := s.syntheticSessionDocument(caller, name)
+			merged := proto.Clone(doc).(*syncpb.Document)
+			if merged.Fields == nil {
+				merged.Fields = &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
+			}
+			for key, value := range defaults.GetFields().GetFields() {
+				if _, present := merged.Fields.Fields[key]; !present {
+					merged.Fields.Fields[key] = proto.Clone(value).(*commonpb.Value)
+				}
+			}
+			return merged, true
+		}
 		return doc, true
 	}
 	if doc, ok := s.roomDocument(caller, name); ok {
 		return doc, true
 	}
+	return s.syntheticSessionDocument(caller, name)
+}
+
+func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb.Document, bool) {
 	id := sessionID(caller.userSession)
 	if id == "" {
 		return nil, false
@@ -120,4 +144,16 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 		CreateTime: timestamppb.New(caller.createdAt),
 		UpdateTime: timestamppb.New(caller.createdAt),
 	}, true
+}
+
+func (s *Server) normalizeSessionChanges(caller *session, changes []*syncpb.DocumentChange) []*syncpb.DocumentChange {
+	for _, change := range changes {
+		if change.GetDocumentChangeType() == syncpb.DocumentChange_DELETED {
+			continue
+		}
+		if doc, ok := s.watchDocument(caller, change.GetDocument().GetName()); ok {
+			change.Document = doc
+		}
+	}
+	return changes
 }

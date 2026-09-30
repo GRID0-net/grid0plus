@@ -612,6 +612,89 @@ func TestConsoleQuotedAndWildcardMasksKeepItsRoomDocuments(t *testing.T) {
 	}
 }
 
+func TestPartialConsoleSessionWritesRemainCompleteOnTheWatch(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	ctx, cancel := context.WithTimeout(alice, 3*time.Second)
+	defer cancel()
+	stream, err := h.client.KeepUserSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&syncpb.KeepUserSessionRequest{RequestType: &syncpb.KeepUserSessionRequest_UpdateTarget{
+		UpdateTarget: &syncpb.UpdateTargetRequest{Target: &syncpb.Target{
+			Name:       "userSessions/current/targets/5",
+			TargetType: &syncpb.Target_Collection{Collection: &syncpb.CollectionTarget{Collection: "docs/__us"}},
+		}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.GetTargetChange().GetTargetChangeType() == syncpb.TargetChange_LISTED {
+			break
+		}
+	}
+	name := "docs/__us/token-alice"
+	if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{WriteOperations: []*syncpb.WriteOperation{{
+		OperationType: &syncpb.WriteOperation_UpdateDocument{UpdateDocument: &syncpb.UpdateDocumentRequest{
+			Document: doc(name, map[string]*commonpb.Value{"att": {
+				ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{}},
+			}}),
+			UpdateMask: fieldMask("`att`"),
+		}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if change := msg.GetDocumentChange(); change != nil && change.GetDocument().GetName() == name {
+			fields := change.GetDocument().GetFields().GetFields()
+			if len(fields) != 9 || fields["uid"].GetStringValue() != "alice" || fields["att"].GetMapValue() == nil {
+				t.Fatalf("partial write published incomplete session: %v", fields)
+			}
+			break
+		}
+	}
+	read, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: name})
+	if err != nil || len(read.GetFields().GetFields()) != 9 {
+		t.Fatalf("partial session readback = %v, %v", read, err)
+	}
+
+	presence := "docs/__pgn/All/__pus/token-alice"
+	if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{WriteOperations: []*syncpb.WriteOperation{{
+		OperationType: &syncpb.WriteOperation_UpdateDocument{UpdateDocument: &syncpb.UpdateDocumentRequest{
+			Document:   doc(presence, map[string]*commonpb.Value{"uid": stringValue("alice"), "upcsid": intValue(1)}),
+			UpdateMask: fieldMask("*"),
+		}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{WriteOperations: []*syncpb.WriteOperation{{
+		OperationType: &syncpb.WriteOperation_TransformDocument{TransformDocument: &syncpb.TransformDocumentRequest{
+			Name: presence,
+			FieldTransforms: []*syncpb.FieldTransform{{FieldPath: "`upcsid`",
+				TransformType: &syncpb.FieldTransform_Increment{Increment: intValue(1)}}},
+		}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	read, err = h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: presence})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := read.GetFields().GetFields()
+	if len(fields) != 9 || fields["upcsid"].GetIntegerValue() != 2 {
+		t.Errorf("presence after quoted transform = %v", fields)
+	}
+}
+
 // ---- transforms ----------------------------------------------------------
 
 func TestIncrementingAFieldThatDoesNotExistCreatesIt(t *testing.T) {
