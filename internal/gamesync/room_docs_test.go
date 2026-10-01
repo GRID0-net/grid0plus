@@ -174,8 +174,8 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
-	joiner.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
+	host.details = &SessionDetails{SessionID: "room-1", Mode: "private_match_config", Players: []string{"alice", "bob"}}
+	joiner.details = &SessionDetails{SessionID: "room-1", Mode: "private_match_config", Players: []string{"alice", "bob"}}
 	outsider.details = &SessionDetails{SessionID: "room-2"}
 	write := func(name string, blob []byte) {
 		t.Helper()
@@ -206,7 +206,7 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	}
 	mailbox := docs[1].GetFields().GetFields()
 	if mailbox["suid"].GetStringValue() != "alice" || mailbox["susid"].GetStringValue() != "us-alice" ||
-		mailbox["sussid"].GetIntegerValue() != 1 || mailbox["suscid"].GetIntegerValue() != 1 || len(mailbox) != 5 ||
+		mailbox["sussid"].GetIntegerValue() != 1 || mailbox["suscid"].GetIntegerValue() != 10001 || len(mailbox) != 5 ||
 		!reflect.DeepEqual(mailbox["pl"].GetBytesValue(), []byte{1, 2, 3}) {
 		t.Fatalf("joiner's own document did not carry the host's Pia mailbox: %v", mailbox)
 	}
@@ -217,8 +217,19 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	}
 	guestMailbox := hostDocs[1].GetFields().GetFields()
 	if guestMailbox["suid"].GetStringValue() != "bob" || guestMailbox["sussid"].GetIntegerValue() != 2 ||
-		guestMailbox["suscid"].GetIntegerValue() != 2 || len(guestMailbox) != 5 || !reflect.DeepEqual(guestMailbox["pl"].GetBytesValue(), []byte{4, 5}) {
+		guestMailbox["suscid"].GetIntegerValue() != 10002 || len(guestMailbox) != 5 || !reflect.DeepEqual(guestMailbox["pl"].GetBytesValue(), []byte{4, 5}) {
 		t.Fatalf("host's mailbox did not identify the second player: %v", guestMailbox)
+	}
+	privateMode := host.details.Mode
+	host.details.Mode = "regular_match_config"
+	publicMailbox := h.srv.peerMailboxDocument(prefix+"us-bob", host, &syncpb.Document{
+		Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"pl": {ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{1, 2, 3}}},
+		}},
+	})
+	host.details.Mode = privateMode
+	if got := publicMailbox.GetFields().GetFields()["suscid"].GetIntegerValue(); got != 1 {
+		t.Fatalf("public-match mailbox suscid = %d, want captured rank 1", got)
 	}
 	live, ok := h.srv.watchDocument(joiner, prefix+"us-bob")
 	if !ok {

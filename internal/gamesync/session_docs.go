@@ -233,6 +233,13 @@ func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Doc
 // measured in the working relay capture.
 func (s *Server) peerMailboxDocument(recipientName string, peer *session, source *syncpb.Document) *syncpb.Document {
 	rank := participantRank(peer)
+	connectionID := rank
+	if peer.details != nil && strings.Contains(peer.details.Mode, "private_match") {
+		// Nintendo's captured private-room relay mailbox uses a separate
+		// connection-id namespace. The working public-match stream uses rank
+		// directly, so keep that behavior outside private rooms.
+		connectionID += 10000
+	}
 	str := func(v string) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
 	}
@@ -245,7 +252,7 @@ func (s *Server) peerMailboxDocument(recipientName string, peer *session, source
 			"suid":   str(peer.userID),
 			"susid":  str(sessionID(peer.userSession)),
 			"sussid": integer(rank),
-			"suscid": integer(rank),
+			"suscid": integer(connectionID),
 			"pl":     proto.Clone(source.GetFields().GetFields()["pl"]).(*commonpb.Value),
 		}},
 		CreateTime: source.GetCreateTime(),
