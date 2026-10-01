@@ -8,10 +8,49 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
+
+// Both room members send the same kickoff request with exists=false. The
+// first write creates the document and verdict; the second is a retry of the
+// shared battle barrier, not an independent create. Answer that one exact
+// duplicate without changing the stored request. Other optimistic-concurrency
+// preconditions remain enforced by store.apply.
+func (s *Server) duplicateRefereeKickoff(caller *session, req *syncpb.WriteDocumentsRequest) (*syncpb.WriteDocumentsResponse, bool) {
+	if caller.details == nil || caller.details.SessionID == "" || len(req.GetWriteOperations()) != 1 ||
+		len(req.GetDefermentOperations()) != 0 {
+		return nil, false
+	}
+	update := req.GetWriteOperations()[0].GetUpdateDocument()
+	if update == nil || update.GetCurrentDocument() == nil {
+		return nil, false
+	}
+	if exists, ok := update.GetCurrentDocument().GetConditionType().(*syncpb.Precondition_Exists); !ok || exists.Exists {
+		return nil, false
+	}
+	name := update.GetDocument().GetName()
+	if !strings.HasPrefix(name, refereeRequestPrefix) || !strings.HasSuffix(name, "_"+caller.details.SessionID) {
+		return nil, false
+	}
+	stored, exists := s.docs.snapshot(name)
+	if !exists {
+		return nil, false
+	}
+	if _, ready := s.docs.snapshot(refereeResultPrefix + strings.TrimPrefix(name, refereeRequestPrefix)); !ready {
+		return nil, false
+	}
+	commitTime := stored.GetUpdateTime()
+	if commitTime == nil {
+		commitTime = timestamppb.New(s.now())
+	}
+	return &syncpb.WriteDocumentsResponse{
+		WriteResults: []*syncpb.WriteResult{updateResult()},
+		CommitTime:   commitTime,
+	}, true
+}
 
 const (
 	refereeRequestPrefix = "docs/@@RefereeRequest/"

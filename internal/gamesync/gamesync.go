@@ -525,6 +525,9 @@ func (s *Server) WriteDocuments(
 	if !ok {
 		return nil, errUnauthenticated
 	}
+	if response, duplicate := s.duplicateRefereeKickoff(caller, req); duplicate {
+		return response, nil
+	}
 	if len(req.GetDefermentOperations()) > 0 {
 		if err := validateDeferments(req.GetDefermentOperations()); err != nil {
 			return nil, err

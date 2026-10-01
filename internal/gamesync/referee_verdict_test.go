@@ -147,6 +147,42 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 	}
 }
 
+func TestBothRoomMembersCanAcknowledgeTheSameRefereeKickoff(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	bob := h.session("token-bob")
+	h.srv.mu.Lock()
+	for _, sess := range h.srv.sessions {
+		sess.details = &SessionDetails{UserID: sess.userID, SessionID: "room-1"}
+	}
+	h.srv.mu.Unlock()
+	name := refereeRequestPrefix + "20261001T130000_room-1"
+	write := func(ctx context.Context, stage int64) (*syncpb.WriteDocumentsResponse, error) {
+		return h.client.WriteDocuments(ctx, &syncpb.WriteDocumentsRequest{WriteOperations: []*syncpb.WriteOperation{{
+			OperationType: &syncpb.WriteOperation_UpdateDocument{UpdateDocument: &syncpb.UpdateDocumentRequest{
+				Document: doc(name, map[string]*commonpb.Value{
+					"users": {ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{Values: []*commonpb.Value{
+						verdictString("alice"), verdictString("bob"),
+					}}}},
+					"stage": intValue(stage),
+				}),
+				CurrentDocument: &syncpb.Precondition{ConditionType: &syncpb.Precondition_Exists{Exists: false}},
+			}},
+		}}})
+	}
+	if _, err := write(alice, 14); err != nil {
+		t.Fatalf("first kickoff: %v", err)
+	}
+	ack, err := write(bob, 99)
+	if err != nil || len(ack.GetWriteResults()) != 1 {
+		t.Fatalf("second room member did not receive kickoff acknowledgement: results=%v err=%v", ack.GetWriteResults(), err)
+	}
+	stored, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: name})
+	if err != nil || stored.GetFields().GetFields()["stage"].GetIntegerValue() != 14 {
+		t.Fatalf("duplicate kickoff changed the first request: doc=%v err=%v", stored, err)
+	}
+}
+
 func TestARefereeRequestForAnotherSessionDoesNotPublishAVerdict(t *testing.T) {
 	h := newHarness(t)
 	alice := h.session("token-alice")
