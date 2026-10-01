@@ -2,6 +2,7 @@ package gamesync
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,6 +62,64 @@ func TestTheRoomWatchRepublishesMutableSessionDocumentsAfterListing(t *testing.T
 				t.Fatalf("live __gs/s is not the player's session state: fields=%v", fields)
 			}
 			liveStatus = true
+		}
+	}
+}
+
+func TestRoomWatchPublishesTheCurrentParticipantCountAfterAnotherPlayerJoins(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	h.srv.refreshEvery = 20 * time.Millisecond
+	var participants atomic.Int32
+	participants.Store(1)
+	h.srv.liveParticipants = func(room, user string) (int, bool) {
+		return int(participants.Load()), room == "room" && user == "alice"
+	}
+	h.srv.mu.Lock()
+	for _, sess := range h.srv.sessions {
+		sess.details = &SessionDetails{
+			UserID: "alice", SessionID: "room", UserSessionID: "alice-us",
+			Tenant: "t-dce9377b-lp1", Host: "example.invalid", Port: 7575,
+			Capacity: 10, ParticipantCount: 1, CreatedAt: h.now,
+		}
+	}
+	h.srv.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(alice, 2*time.Second)
+	defer cancel()
+	stream, err := h.client.KeepUserSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&syncpb.KeepUserSessionRequest{
+		RequestType: &syncpb.KeepUserSessionRequest_UpdateTarget{
+			UpdateTarget: &syncpb.UpdateTargetRequest{Target: &syncpb.Target{
+				Name: "userSessions/current/targets/6",
+				TargetType: &syncpb.Target_Collection{Collection: &syncpb.CollectionTarget{
+					Collection: "docs/__gs",
+				}},
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	listed := false
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("room count never advanced to two: %v", err)
+		}
+		if change := msg.GetTargetChange(); change != nil && change.GetTargetId() == "6" &&
+			change.GetTargetChangeType() == syncpb.TargetChange_LISTED {
+			listed = true
+			participants.Store(2)
+		}
+		if change := msg.GetDocumentChange(); change != nil && listed &&
+			change.GetDocument().GetName() == "docs/__gs/r" &&
+			change.GetDocumentChangeType() == syncpb.DocumentChange_UPDATED {
+			if got := change.GetDocument().GetFields().GetFields()["ipc"].GetIntegerValue(); got == 2 {
+				return
+			}
 		}
 	}
 }

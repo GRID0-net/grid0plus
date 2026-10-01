@@ -67,6 +67,9 @@ type Options struct {
 	// watched immediately after IssueToken. It must reject a token that does
 	// not belong to an active session and its named user session.
 	ResolveSession func(idToken string) (SessionDetails, error)
+	// LiveParticipants reads the current room roster for an authenticated
+	// member. Room occupancy changes after IssueToken, while its details do not.
+	LiveParticipants func(sessionID, userID string) (int, bool)
 	// IssueAccessToken is an optional diagnostic signer for the gamesync
 	// access token. The normal opaque token remains the default until hardware
 	// confirms whether the client parses this field as a JWT.
@@ -104,6 +107,7 @@ type Server struct {
 	log              *slog.Logger
 	verify           TokenVerifier
 	resolveSession   func(string) (SessionDetails, error)
+	liveParticipants func(sessionID, userID string) (int, bool)
 	issueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
 	onRefereeReport  func(context.Context, RefereeReport) error
 	sessionTTL       time.Duration
@@ -160,6 +164,7 @@ func New(opts Options) (*Server, error) {
 		log:              opts.Log,
 		verify:           opts.VerifyIDToken,
 		resolveSession:   opts.ResolveSession,
+		liveParticipants: opts.LiveParticipants,
 		issueAccessToken: opts.IssueAccessToken,
 		onRefereeReport:  opts.OnRefereeReport,
 		sessionTTL:       opts.SessionTTL,

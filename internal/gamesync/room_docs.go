@@ -81,7 +81,15 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 			}
 		}
 	case "docs/__gs/r":
-		fields = map[string]*commonpb.Value{"ipc": integer(int64(d.ParticipantCount)), "dpc": integer(0)}
+		count := d.ParticipantCount
+		if s.liveParticipants != nil {
+			var member bool
+			count, member = s.liveParticipants(d.SessionID, caller.userID)
+			if !member {
+				return nil, false
+			}
+		}
+		fields = map[string]*commonpb.Value{"ipc": integer(int64(count)), "dpc": integer(0)}
 	case "docs/__gs/n":
 		fields = map[string]*commonpb.Value{
 			"etn": boolean(false),

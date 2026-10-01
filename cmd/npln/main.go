@@ -170,6 +170,7 @@ func main() {
 		Log:              log.With("listener", "gamesync"),
 		VerifyIDToken:    srv.VerifyMatchmakingIDToken,
 		ResolveSession:   srv.ResolveGamesyncSession,
+		LiveParticipants: srv.GamesyncRoomParticipants,
 		IssueAccessToken: gamesyncProbeSigner,
 		OnRefereeReport: func(ctx context.Context, report gamesync.RefereeReport) error {
 			return toyohr.RecordFestReport(ctx, store, report, time.Now().UTC())

@@ -572,6 +572,22 @@ func (s *Server) ResolveGamesyncSession(idToken string) (gamesync.SessionDetails
 	return d, nil
 }
 
+// GamesyncRoomParticipants supplies the current occupancy for a player whose
+// session was already verified at IssueToken. The host's token can precede
+// another player's JoinGameSession, so the count in that token goes stale.
+func (s *Server) GamesyncRoomParticipants(sessionID, userID string) (int, bool) {
+	sess, ok := s.queue.Session(sessionID)
+	if !ok {
+		return 0, false
+	}
+	for _, player := range sess.Players {
+		if player == userID {
+			return len(sess.Players), true
+		}
+	}
+	return 0, false
+}
+
 // logAuthFailure records why a call was refused, at the level that makes the
 // log useful without making it noise.
 //
