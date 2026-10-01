@@ -209,10 +209,12 @@ func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Doc
 			if !ok || len(stored.GetFields().GetFields()["pl"].GetBytesValue()) == 0 {
 				continue
 			}
+			// Target 9 names only the recipient's document. A peer-named
+			// document on that target is not part of the watch the console
+			// requested; peer identity belongs in the mailbox fields instead.
 			if peer := s.roomPeerForDocument(caller, peerName); peer != nil {
 				docs = append(docs, s.peerMailboxDocument(name, peer, stored))
 			}
-			add(peerName)
 		}
 	}
 	return docs

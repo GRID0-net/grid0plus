@@ -194,8 +194,8 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	write(prefix+"us-alice", []byte{1, 2, 3})
 	write(prefix+"us-mallory", []byte{9, 9, 9})
 	docs := h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
-	if len(docs) != 3 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-bob" || docs[2].GetName() != prefix+"us-alice" {
-		t.Fatalf("joiner's state watch = %v, want own state, peer mailbox, and peer state", docs)
+	if len(docs) != 2 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-bob" {
+		t.Fatalf("joiner's state watch = %v, want only its own state and a peer mailbox under the watched name", docs)
 	}
 	initial := docs[0].GetFields().GetFields()
 	if initial["pl"].GetMapValue() == nil || initial["mp"].GetMapValue() == nil ||
@@ -210,12 +210,9 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 		!reflect.DeepEqual(mailbox["pl"].GetBytesValue(), []byte{1, 2, 3}) {
 		t.Fatalf("joiner's own document did not carry the host's Pia mailbox: %v", mailbox)
 	}
-	if got := docs[2].GetFields().GetFields()["pl"].GetBytesValue(); !reflect.DeepEqual(got, []byte{1, 2, 3}) {
-		t.Fatalf("host pl = %x, want console-written bytes", got)
-	}
 	write(prefix+"us-bob", []byte{4, 5})
 	hostDocs := h.srv.watchedDocuments(host, []string{prefix + "us-alice"})
-	if len(hostDocs) != 3 || hostDocs[1].GetName() != prefix+"us-alice" {
+	if len(hostDocs) != 2 || hostDocs[1].GetName() != prefix+"us-alice" {
 		t.Fatalf("host did not receive a mailbox on its own document: %v", hostDocs)
 	}
 	guestMailbox := hostDocs[1].GetFields().GetFields()
