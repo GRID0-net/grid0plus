@@ -1,6 +1,7 @@
 package gamesync
 
 import (
+	"sort"
 	"strings"
 	"sync"
 
@@ -104,42 +105,42 @@ func (w *watchers) publish(changes []*syncpb.DocumentChange) {
 
 	for _, sub := range subs {
 		for _, change := range changes {
-			targetID, ok := sub.targetFor(change.GetDocument().GetName())
-			if !ok {
-				continue
-			}
-			// Copied so each subscriber's target id is its own. The Document
-			// inside was already cloned once per write, and it is only read
-			// from here on.
-			out := &syncpb.DocumentChange{
-				TargetId:           targetID,
-				DocumentChangeType: change.GetDocumentChangeType(),
-				Document:           change.GetDocument(),
-			}
-			select {
-			case sub.changes <- out:
-			default:
+			for _, targetID := range sub.targetIDsFor(change.GetDocument().GetName()) {
+				// The same collection may be watched under two targets. Each
+				// target must get its own boundary for the client to apply it.
+				out := &syncpb.DocumentChange{
+					TargetId:           targetID,
+					DocumentChangeType: change.GetDocumentChangeType(),
+					Document:           change.GetDocument(),
+				}
+				select {
+				case sub.changes <- out:
+				default:
+				}
 			}
 		}
 	}
 }
 
-// targetFor returns the target a document name matches, if any.
-func (s *subscriber) targetFor(name string) (string, bool) {
+// targetIDsFor returns every target a document name matches. One client can
+// watch the same collection under multiple target names at once.
+func (s *subscriber) targetIDsFor(name string) []string {
 	if name == "" {
-		return "", false
+		return nil
 	}
 	if strings.HasPrefix(name, refereeResultPrefix) &&
 		(s.sessionID == "" || !strings.HasSuffix(name, "_"+s.sessionID)) {
-		return "", false
+		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var ids []string
 
 	for target, names := range s.documents {
 		for _, n := range names {
 			if n == name {
-				return wireTargetID(target), true
+				ids = append(ids, wireTargetID(target))
+				break
 			}
 		}
 	}
@@ -154,7 +155,8 @@ func (s *subscriber) targetFor(name string) (string, bool) {
 		if strings.Contains(strings.TrimPrefix(name, prefix), "/") {
 			continue
 		}
-		return wireTargetID(target), true
+		ids = append(ids, wireTargetID(target))
 	}
-	return "", false
+	sort.Strings(ids)
+	return ids
 }
