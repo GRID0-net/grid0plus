@@ -189,10 +189,47 @@ func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Doc
 			if !ok || len(stored.GetFields().GetFields()["pl"].GetBytesValue()) == 0 {
 				continue
 			}
+			if peer := s.roomPeerForDocument(caller, peerName); peer != nil {
+				docs = append(docs, s.peerMailboxDocument(name, peer, stored))
+			}
 			add(peerName)
 		}
 	}
 	return docs
+}
+
+// Pia reads peer payloads from the local player's watched __stu document.
+// The document name remains the recipient's; the fields identify the peer.
+// A peer-named update alone reaches the stream but is not the mailbox message
+// measured in the working relay capture.
+func (s *Server) peerMailboxDocument(recipientName string, peer *session, source *syncpb.Document) *syncpb.Document {
+	rank := int64(1)
+	if peer.details != nil {
+		for i, id := range peer.details.Players {
+			if id == peer.userID {
+				rank = int64(i + 1)
+				break
+			}
+		}
+	}
+	str := func(v string) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
+	}
+	integer := func(v int64) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}}
+	}
+	return &syncpb.Document{
+		Name: recipientName,
+		Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"suid":   str(peer.userID),
+			"susid":  str(sessionID(peer.userSession)),
+			"sussid": integer(rank),
+			"suscid": integer(10000 + rank),
+			"pl":     proto.Clone(source.GetFields().GetFields()["pl"]).(*commonpb.Value),
+		}},
+		CreateTime: source.GetCreateTime(),
+		UpdateTime: source.GetUpdateTime(),
+	}
 }
 
 func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb.Document, bool) {

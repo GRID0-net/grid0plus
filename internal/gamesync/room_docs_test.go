@@ -109,8 +109,8 @@ func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host.details = &SessionDetails{SessionID: "room-1"}
-	joiner.details = &SessionDetails{SessionID: "room-1"}
+	host.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
+	joiner.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
 	outsider.details = &SessionDetails{SessionID: "room-2"}
 	partial := func(name string, fields map[string]*commonpb.Value) *syncpb.WriteOperation {
 		return &syncpb.WriteOperation{OperationType: &syncpb.WriteOperation_MergeDocument{
@@ -158,8 +158,8 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host.details = &SessionDetails{SessionID: "room-1"}
-	joiner.details = &SessionDetails{SessionID: "room-1"}
+	host.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
+	joiner.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
 	outsider.details = &SessionDetails{SessionID: "room-2"}
 	write := func(name string, blob []byte) {
 		t.Helper()
@@ -178,8 +178,8 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	write(prefix+"us-alice", []byte{1, 2, 3})
 	write(prefix+"us-mallory", []byte{9, 9, 9})
 	docs := h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
-	if len(docs) != 2 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-alice" {
-		t.Fatalf("joiner's state watch = %v, want own and host only", docs)
+	if len(docs) != 3 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-bob" || docs[2].GetName() != prefix+"us-alice" {
+		t.Fatalf("joiner's state watch = %v, want own state, peer mailbox, and peer state", docs)
 	}
 	initial := docs[0].GetFields().GetFields()
 	if initial["pl"].GetMapValue() == nil || initial["mp"].GetMapValue() == nil ||
@@ -188,8 +188,24 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 		initial["suscid"].GetStringValue() != "1" {
 		t.Fatalf("initial player state differs from the private-room capture: %v", initial)
 	}
-	if got := docs[1].GetFields().GetFields()["pl"].GetBytesValue(); !reflect.DeepEqual(got, []byte{1, 2, 3}) {
+	mailbox := docs[1].GetFields().GetFields()
+	if mailbox["suid"].GetStringValue() != "alice" || mailbox["susid"].GetStringValue() != "us-alice" ||
+		mailbox["sussid"].GetIntegerValue() != 1 || mailbox["suscid"].GetIntegerValue() != 10001 ||
+		!reflect.DeepEqual(mailbox["pl"].GetBytesValue(), []byte{1, 2, 3}) {
+		t.Fatalf("joiner's own document did not carry the host's Pia mailbox: %v", mailbox)
+	}
+	if got := docs[2].GetFields().GetFields()["pl"].GetBytesValue(); !reflect.DeepEqual(got, []byte{1, 2, 3}) {
 		t.Fatalf("host pl = %x, want console-written bytes", got)
+	}
+	write(prefix+"us-bob", []byte{4, 5})
+	hostDocs := h.srv.watchedDocuments(host, []string{prefix + "us-alice"})
+	if len(hostDocs) != 3 || hostDocs[1].GetName() != prefix+"us-alice" {
+		t.Fatalf("host did not receive a mailbox on its own document: %v", hostDocs)
+	}
+	guestMailbox := hostDocs[1].GetFields().GetFields()
+	if guestMailbox["suid"].GetStringValue() != "bob" || guestMailbox["sussid"].GetIntegerValue() != 2 ||
+		guestMailbox["suscid"].GetIntegerValue() != 10002 || !reflect.DeepEqual(guestMailbox["pl"].GetBytesValue(), []byte{4, 5}) {
+		t.Fatalf("host's mailbox did not identify the second player: %v", guestMailbox)
 	}
 	write(prefix+"us-alice", nil)
 	docs = h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
