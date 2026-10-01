@@ -114,6 +114,13 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 				merged.Fields = &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
 			}
 			for key, value := range defaults.GetFields().GetFields() {
+				// The initial __stu snapshot has empty pl/mp maps. Once a
+				// console writes a byte payload, the working stream omits mp
+				// rather than carrying that initial default beside the bytes.
+				if key == "mp" && strings.HasPrefix(name, "docs/__pgn/All/__stu/") &&
+					len(merged.Fields.Fields["pl"].GetBytesValue()) > 0 {
+					continue
+				}
 				if _, present := merged.Fields.Fields[key]; !present {
 					merged.Fields.Fields[key] = proto.Clone(value).(*commonpb.Value)
 				}
@@ -238,7 +245,7 @@ func (s *Server) peerMailboxDocument(recipientName string, peer *session, source
 			"suid":   str(peer.userID),
 			"susid":  str(sessionID(peer.userSession)),
 			"sussid": integer(rank),
-			"suscid": integer(10000 + rank),
+			"suscid": integer(rank),
 			"pl":     proto.Clone(source.GetFields().GetFields()["pl"]).(*commonpb.Value),
 		}},
 		CreateTime: source.GetCreateTime(),
