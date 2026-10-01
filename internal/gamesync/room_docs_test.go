@@ -181,6 +181,13 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	if len(docs) != 2 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-alice" {
 		t.Fatalf("joiner's state watch = %v, want own and host only", docs)
 	}
+	initial := docs[0].GetFields().GetFields()
+	if initial["pl"].GetMapValue() == nil || initial["mp"].GetMapValue() == nil ||
+		initial["susid"].GetStringValue() != "us-bob" ||
+		initial["sussid"].GetStringValue() != "us-bob" ||
+		initial["suscid"].GetStringValue() != "1" {
+		t.Fatalf("initial player state differs from the private-room capture: %v", initial)
+	}
 	if got := docs[1].GetFields().GetFields()["pl"].GetBytesValue(); !reflect.DeepEqual(got, []byte{1, 2, 3}) {
 		t.Fatalf("host pl = %x, want console-written bytes", got)
 	}

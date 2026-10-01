@@ -220,12 +220,12 @@ func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb
 			"tn": str(""), "att": emptyMap(), "ltc": emptyMap(),
 		}
 	case "docs/__pgn/All/__stu/" + id:
-		// The player-state reader expects a bytes-valued pl field. Once the
-		// console writes its real P2P blob, the stored document takes precedence.
+		// The working private-room capture starts this watch with empty pl/mp
+		// maps and string session IDs. Once a console writes its own P2P pl
+		// bytes, the stored document takes precedence over these defaults.
 		fields = map[string]*commonpb.Value{
-			"suid": str(caller.userID), "susid": str(id), "sussid": integer(1),
-			"suscid": integer(10001),
-			"pl":     &commonpb.Value{ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{}}},
+			"suid": str(caller.userID), "susid": str(id), "sussid": str(id),
+			"suscid": str("1"), "pl": emptyMap(), "mp": emptyMap(),
 		}
 	default:
 		return nil, false
