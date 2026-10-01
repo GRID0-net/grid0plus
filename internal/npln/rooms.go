@@ -303,7 +303,7 @@ func (s *Server) succeededRoomTicket(t roomTicket) (*mmpb.GameSessionCreationTic
 	if !ok {
 		return nil, ErrNotFound
 	}
-	token, err := s.issueSessionToken(t.userID, sess.ID)
+	token, err := s.issueSessionTokenForDefinition(t.userID, sess.ID, t.hostDef)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +385,8 @@ func (s *Server) joinRoom(ctx context.Context, sess matchmaking.Session, req *mm
 	case err != nil:
 		return nil, ErrNotFound
 	}
-	token, err := s.issueSessionToken(userID, joined.ID)
+	definition := s.concreteUserDefinition(userID, req.GetUserDefinitions())
+	token, err := s.issueSessionTokenForDefinition(userID, joined.ID, definition)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +395,7 @@ func (s *Server) joinRoom(ctx context.Context, sess matchmaking.Session, req *mm
 	return &mmpb.JoinGameSessionResponse{
 		GameSession: s.sessionProto(joined),
 		MatchedUserSessions: []*mmpb.MatchedUserSession{{
-			UserDefinition:     s.concreteUserDefinition(userID, req.GetUserDefinitions()),
+			UserDefinition:     definition,
 			UserSession:        s.userSessionName(joined.ID, userID),
 			MatchmakingIdToken: token,
 		}},

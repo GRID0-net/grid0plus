@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
@@ -158,6 +160,84 @@ func TestAFriendJoinsARoomByItsName(t *testing.T) {
 	again, err := client.JoinGameSession(friend, &mmpb.JoinGameSessionRequest{Name: room.GetName()})
 	if err != nil || again.GetGameSession().GetCurrentParticipantCount() != 2 {
 		t.Errorf("rejoining: count %d, err %v; want 2 and no error", again.GetGameSession().GetCurrentParticipantCount(), err)
+	}
+}
+
+func TestRoomSessionTokensCarrySubmittedPlayerData(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("room-host-data", "room-host-device")
+	h.createUser("room-guest-data", "room-guest-device")
+	host := h.ctx(h.sessionFor(t, "room-host-data", "room-host-device"), "")
+	guest := h.ctx(h.sessionFor(t, "room-guest-data", "room-guest-device"), "")
+	client := mmpb.NewGameSessionServiceClient(h.conn)
+	definition := func(label string) *mmpb.UserDefinition {
+		return &mmpb.UserDefinition{
+			User: "tenants/current/users/current",
+			Team: label,
+			Attributes: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+				"match_hash": stringValue(label),
+			}},
+			LatencyData: &mmpb.LatencyData{Latencies: map[string]*durationpb.Duration{
+				"region-a": durationpb.New(25_000_000),
+			}},
+		}
+	}
+	created, err := client.CreateGameSessionCreationTicket(host, &mmpb.CreateGameSessionCreationTicketRequest{
+		Parent: "tenants/current",
+		GameSessionCreationTicket: &mmpb.GameSessionCreationTicket{
+			MatchmakingConfig: "tenants/current/matchmakingConfigs/private_match_config",
+			UserDefinitions:   []*mmpb.UserDefinition{definition("host-team")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := client.TrackGameSessionCreationTicket(host, &mmpb.TrackGameSessionCreationTicketRequest{Name: created.GetName()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err := client.JoinGameSession(guest, &mmpb.JoinGameSessionRequest{
+		Name:            opened.GetGameSession().GetName(),
+		UserDefinitions: []*mmpb.UserDefinition{definition("guest-team")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		label   string
+		matched []*mmpb.MatchedUserSession
+	}{
+		{"host-team", opened.GetMatchedUserSessions()},
+		{"guest-team", joined.GetMatchedUserSessions()},
+	} {
+		if len(tc.matched) != 1 {
+			t.Fatalf("%s matched sessions = %d", tc.label, len(tc.matched))
+		}
+		payload := decodeJWTSegment(t, strings.Split(tc.matched[0].GetMatchmakingIdToken(), ".")[1])
+		gs := payload["gamesync"].(map[string]any)
+		if gs["team"] != tc.label {
+			t.Errorf("%s token team = %v", tc.label, gs["team"])
+		}
+		attr := map[string]any{}
+		if err := json.Unmarshal([]byte(gs["attr"].(string)), &attr); err != nil {
+			t.Fatal(err)
+		}
+		matchHash := attr["match_hash"].(map[string]any)
+		if matchHash["value"] != tc.label {
+			t.Errorf("%s token match_hash = %v", tc.label, matchHash)
+		}
+		ltcy := map[string]any{}
+		if err := json.Unmarshal([]byte(gs["ltcy"].(string)), &ltcy); err != nil {
+			t.Fatal(err)
+		}
+		region := ltcy["latencies"].(map[string]any)["region-a"].(map[string]any)
+		if region["nanos"] != float64(25_000_000) {
+			t.Errorf("%s token latency = %v", tc.label, region)
+		}
 	}
 }
 

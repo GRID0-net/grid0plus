@@ -1057,11 +1057,14 @@ func TestOwnPresenceAndPlayerStateHaveTheCapturedFieldTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fields := state.GetFields().GetFields()
-	if fields["suid"].GetStringValue() != "alice" || fields["suscid"].GetIntegerValue() != 10001 {
+	if fields["suid"].GetStringValue() != "alice" || fields["suscid"].GetStringValue() != "1" {
 		t.Fatalf("player state identity = %v", fields)
 	}
-	if _, ok := fields["pl"].GetValueType().(*commonpb.Value_BytesValue); !ok {
-		t.Fatalf("player state pl has type %T, want bytes", fields["pl"].GetValueType())
+	if _, ok := fields["pl"].GetValueType().(*commonpb.Value_MapValue); !ok {
+		t.Fatalf("player state pl has type %T, want map", fields["pl"].GetValueType())
+	}
+	if _, ok := fields["mp"].GetValueType().(*commonpb.Value_MapValue); !ok {
+		t.Fatalf("player state mp has type %T, want map", fields["mp"].GetValueType())
 	}
 }
 

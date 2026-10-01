@@ -468,9 +468,8 @@ func (s *Server) issueSessionTokenForDefinition(userID, sessionID string, def *m
 			Attr: attr,
 			GSID: sessionID,
 			LTCY: ltcy,
-			// A Splatfest team. GRID0+ announces fests but does not place a
-			// player on a team, so this is empty rather than guessed.
-			Team: "",
+			// Carry the team's value as submitted by this player's console.
+			Team: def.GetTeam(),
 			TID:  s.tenant,
 			Typ:  1,
 			UID:  userID,
