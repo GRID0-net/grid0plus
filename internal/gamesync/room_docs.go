@@ -66,14 +66,15 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 		// The working server mirrors the caller's nine-field __us document
 		// here, including its live session counters. Returning room settings
 		// at this path gives the game an entirely different value type.
+		rank := participantRank(caller)
 		fields = map[string]*commonpb.Value{
-			"uid": str(d.UserID), "ussid": integer(1), "ucsid": integer(1),
-			"upcsid": integer(1), "pgn": str("All"), "st": integer(2),
+			"uid": str(d.UserID), "ussid": integer(rank), "ucsid": integer(rank),
+			"upcsid": integer(rank), "pgn": str("All"), "st": integer(2),
 			"tn": str(""), "att": mapValue(nil), "ltc": mapValue(nil),
 		}
 		if s.docs != nil {
 			if userSession, ok := s.docs.snapshot("docs/__us/" + sessionID(caller.userSession)); ok {
-				for _, key := range []string{"att", "ltc", "pgn", "st", "tn", "ucsid", "upcsid", "ussid"} {
+				for _, key := range []string{"att", "ltc", "pgn", "st", "tn"} {
 					if value := userSession.GetFields().GetFields()[key]; value != nil {
 						fields[key] = value
 					}

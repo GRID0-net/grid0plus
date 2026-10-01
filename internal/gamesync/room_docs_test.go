@@ -87,8 +87,8 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, _ = s.roomDocument(caller, "docs/__gs/s")
-	if got := status.GetFields().GetFields()["ucsid"].GetIntegerValue(); got != 7 {
-		t.Errorf("__gs/s ignored the client's current session counter: %d", got)
+	if got := status.GetFields().GetFields()["ucsid"].GetIntegerValue(); got != 1 {
+		t.Errorf("__gs/s used a client counter instead of the authenticated room rank: %d", got)
 	}
 	if got := status.GetFields().GetFields()["uid"].GetStringValue(); got != "alice" {
 		t.Errorf("__gs/s trusted a client-supplied identity: %q", got)
@@ -112,6 +112,22 @@ func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
 	host.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
 	joiner.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
 	outsider.details = &SessionDetails{SessionID: "room-2"}
+	for _, name := range []string{"docs/__us/us-bob", "docs/__pgn/All/__pus/us-bob"} {
+		member, ok := h.srv.watchDocument(joiner, name)
+		if !ok {
+			t.Fatalf("missing guest session document %s", name)
+		}
+		for _, key := range []string{"ussid", "ucsid", "upcsid"} {
+			if got := member.GetFields().GetFields()[key].GetIntegerValue(); got != 2 {
+				t.Errorf("%s %s = %d, want guest rank 2", name, key, got)
+			}
+		}
+	}
+	joiner.details.UserID = "bob"
+	guestStatus, ok := h.srv.roomDocument(joiner, "docs/__gs/s")
+	if !ok || guestStatus.GetFields().GetFields()["ussid"].GetIntegerValue() != 2 {
+		t.Errorf("guest room status does not carry rank 2: %v", guestStatus)
+	}
 	partial := func(name string, fields map[string]*commonpb.Value) *syncpb.WriteOperation {
 		return &syncpb.WriteOperation{OperationType: &syncpb.WriteOperation_MergeDocument{
 			MergeDocument: &syncpb.MergeDocumentRequest{Document: &syncpb.Document{

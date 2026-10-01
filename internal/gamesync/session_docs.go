@@ -20,6 +20,20 @@ func sessionID(name string) string {
 
 func wireTargetID(name string) string { return sessionID(name) }
 
+// The session sequence belongs to the player's place in the authenticated
+// matchmaking roster. Reusing 1 for every room member makes two distinct
+// players appear to have the same connection sequence in Gamesync documents.
+func participantRank(caller *session) int64 {
+	if caller.details != nil {
+		for i, userID := range caller.details.Players {
+			if userID == caller.userID {
+				return int64(i + 1)
+			}
+		}
+	}
+	return 1
+}
+
 func (s *Server) collectionSnapshot(caller *session, collection string) []*syncpb.Document {
 	docs := s.docs.list(collection)
 	visible := docs[:0]
@@ -108,6 +122,12 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 				// The stored fields came from a client write. Identity comes from
 				// the authenticated session, for both this player and room peers.
 				merged.Fields.Fields["uid"] = &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: peer.userID}}
+				if peer.details != nil && peer.details.SessionID != "" {
+					rank := participantRank(peer)
+					for _, key := range []string{"ussid", "ucsid", "upcsid"} {
+						merged.Fields.Fields[key] = &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: rank}}
+					}
+				}
 			}
 			return merged, true
 		}
@@ -203,15 +223,7 @@ func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Doc
 // A peer-named update alone reaches the stream but is not the mailbox message
 // measured in the working relay capture.
 func (s *Server) peerMailboxDocument(recipientName string, peer *session, source *syncpb.Document) *syncpb.Document {
-	rank := int64(1)
-	if peer.details != nil {
-		for i, id := range peer.details.Players {
-			if id == peer.userID {
-				rank = int64(i + 1)
-				break
-			}
-		}
-	}
+	rank := participantRank(peer)
 	str := func(v string) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
 	}
@@ -251,9 +263,10 @@ func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb
 	case "docs/__us/" + id, "docs/__pgn/All/__pus/" + id:
 		// The client's UserSession reader requires these typed fields in its
 		// first watch snapshot. Keep attributes empty: a mismatched type is fatal.
+		rank := participantRank(caller)
 		fields = map[string]*commonpb.Value{
-			"uid": str(caller.userID), "ussid": integer(1), "ucsid": integer(1),
-			"upcsid": integer(1), "pgn": str("All"), "st": integer(2),
+			"uid": str(caller.userID), "ussid": integer(rank), "ucsid": integer(rank),
+			"upcsid": integer(rank), "pgn": str("All"), "st": integer(2),
 			"tn": str(""), "att": emptyMap(), "ltc": emptyMap(),
 		}
 	case "docs/__pgn/All/__stu/" + id:
