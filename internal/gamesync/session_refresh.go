@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
 
@@ -20,7 +21,7 @@ type refreshTarget struct {
 // initial LISTED snapshot. Splatoon's client is a passive watcher while it
 // finishes NAT setup; if these synthetic documents are only sent once, the
 // room operation can remain pending until its communication-error timeout.
-func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber) []*syncpb.KeepUserSessionResponse {
+func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber, last map[string]*commonpb.MapValue) []*syncpb.KeepUserSessionResponse {
 	sub.mu.Lock()
 	var targets []refreshTarget
 	for name, documents := range sub.documents {
@@ -60,6 +61,15 @@ func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber) []*sy
 				name != "docs/__gs/m" && name != "docs/__gs/r" && name != "docs/__gs/s" {
 				continue
 			}
+			// Keep the periodic sweep for roster changes, but never send the
+			// same Pia/session state every three seconds. The working server's
+			// stream is mostly quiet between actual client writes; repeating
+			// these documents can starve the peer connection on the same socket.
+			key := id + "\x00" + name + "\x00" + doc.GetFields().GetFields()["susid"].GetStringValue()
+			if proto.Equal(last[key], doc.GetFields()) {
+				continue
+			}
+			last[key] = proto.Clone(doc.GetFields()).(*commonpb.MapValue)
 			fresh := proto.Clone(doc).(*syncpb.Document)
 			fresh.UpdateTime = timestamppb.New(s.now())
 			kind := syncpb.DocumentChange_UPDATED

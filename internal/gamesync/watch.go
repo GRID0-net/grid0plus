@@ -16,7 +16,8 @@ type watchers struct {
 
 // subscriber is one open KeepUserSession stream and what it is watching.
 type subscriber struct {
-	userID string
+	userID      string
+	userSession string
 	// The referee-result collection is shared by name across matches. A
 	// subscriber must only see verdicts for its verified game session.
 	sessionID string
@@ -38,9 +39,10 @@ func newWatchers() *watchers {
 	return &watchers{subs: map[*subscriber]struct{}{}}
 }
 
-func (w *watchers) subscribe(userID, sessionID string) *subscriber {
+func (w *watchers) subscribe(userID, userSession, sessionID string) *subscriber {
 	sub := &subscriber{
 		userID:      userID,
+		userSession: userSession,
 		sessionID:   sessionID,
 		changes:     make(chan *syncpb.DocumentChange, 64),
 		documents:   map[string][]string{},
@@ -116,6 +118,47 @@ func (w *watchers) publish(changes []*syncpb.DocumentChange) {
 				select {
 				case sub.changes <- out:
 				default:
+				}
+			}
+		}
+	}
+}
+
+// publishPeerMailbox delivers a console's newly written Pia payload on each
+// peer's own watched __stu name. A periodic snapshot can miss a short-lived
+// 251-byte contact payload if the writer replaces it before the next tick.
+func (s *Server) publishPeerMailbox(caller *session, changes []*syncpb.DocumentChange) {
+	if caller.details == nil || caller.details.SessionID == "" {
+		return
+	}
+	s.watch.mu.Lock()
+	subs := make([]*subscriber, 0, len(s.watch.subs))
+	for sub := range s.watch.subs {
+		if sub.sessionID == caller.details.SessionID && sub.userID != caller.userID {
+			subs = append(subs, sub)
+		}
+	}
+	s.watch.mu.Unlock()
+	for _, change := range changes {
+		name := change.GetDocument().GetName()
+		if !strings.HasPrefix(name, "docs/__pgn/All/__stu/") ||
+			sessionID(name) != sessionID(caller.userSession) ||
+			change.GetDocumentChangeType() == syncpb.DocumentChange_DELETED {
+			continue
+		}
+		pl := change.GetDocument().GetFields().GetFields()["pl"]
+		if pl == nil || len(pl.GetBytesValue()) == 0 {
+			continue
+		}
+		for _, sub := range subs {
+			recipient := "docs/__pgn/All/__stu/" + sessionID(sub.userSession)
+			for _, target := range sub.targetIDsFor(recipient) {
+				mail := s.peerMailboxDocument(recipient, caller, change.GetDocument())
+				select {
+				case sub.changes <- &syncpb.DocumentChange{TargetId: target,
+					DocumentChangeType: syncpb.DocumentChange_UPDATED, Document: mail}:
+				default:
+					s.log.Warn("gamesync: peer mailbox queue full", "room", sub.sessionID)
 				}
 			}
 		}

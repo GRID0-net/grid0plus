@@ -6,8 +6,42 @@ import (
 	"testing"
 	"time"
 
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
+
+func TestRoomRefreshOnlySendsChangedDocuments(t *testing.T) {
+	h := newHarness(t)
+	var participants atomic.Int32
+	participants.Store(1)
+	h.srv.liveParticipants = func(room, user string) (int, bool) {
+		return int(participants.Load()), room == "room" && user == "alice"
+	}
+	caller, err := h.srv.newSession("alice", "userSessions/us-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller.details = &SessionDetails{UserID: "alice", SessionID: "room", UserSessionID: "us-alice",
+		Tenant: "t-dce9377b-lp1", Host: "example.invalid", Port: 7575, CreatedAt: h.now}
+	sub := h.srv.watch.subscribe("alice", "userSessions/us-alice", "room")
+	defer h.srv.watch.unsubscribe(sub)
+	h.srv.watch.addTarget(sub, &syncpb.Target{Name: "targets/6", TargetType: &syncpb.Target_Collection{
+		Collection: &syncpb.CollectionTarget{Collection: "docs/__gs"},
+	}})
+	last := map[string]*commonpb.MapValue{}
+	if first := h.srv.refreshSessionDocuments(caller, sub, last); len(first) == 0 {
+		t.Fatal("initial mutable room state was not sent")
+	}
+	if repeated := h.srv.refreshSessionDocuments(caller, sub, last); len(repeated) != 0 {
+		t.Fatalf("unchanged room state produced %d redundant messages", len(repeated))
+	}
+	participants.Store(2)
+	changed := h.srv.refreshSessionDocuments(caller, sub, last)
+	if len(changed) != 2 || changed[0].GetDocumentChange().GetDocument().GetName() != "docs/__gs/r" ||
+		changed[0].GetDocumentChange().GetDocument().GetFields().GetFields()["ipc"].GetIntegerValue() != 2 {
+		t.Fatalf("roster change did not reach the client: %v", changed)
+	}
+}
 
 func TestTheRoomWatchRepublishesMutableSessionDocumentsAfterListing(t *testing.T) {
 	h := newHarness(t)

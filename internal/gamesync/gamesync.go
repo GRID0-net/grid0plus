@@ -541,6 +541,7 @@ func (s *Server) WriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
+	s.publishPeerMailbox(caller, commit.changes)
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
@@ -589,6 +590,7 @@ func (s *Server) LazyWriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
+	s.publishPeerMailbox(caller, commit.changes)
 	s.publishRefereeVerdicts(ctx, ops)
 	s.observeRefereeReports(ctx, ops)
 
@@ -648,6 +650,7 @@ func (s *Server) CommitTransaction(
 		return nil, err
 	}
 	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
+	s.publishPeerMailbox(caller, commit.changes)
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 
@@ -720,8 +723,9 @@ func (s *Server) KeepUserSession(
 	if caller.details != nil {
 		sessionID = caller.details.SessionID
 	}
-	sub := s.watch.subscribe(caller.userID, sessionID)
+	sub := s.watch.subscribe(caller.userID, caller.userSession, sessionID)
 	refresh := time.NewTicker(s.refreshEvery)
+	lastRefresh := make(map[string]*commonpb.MapValue)
 	defer refresh.Stop()
 	refreshLogged := false
 	caller.mu.Lock()
@@ -762,7 +766,7 @@ func (s *Server) KeepUserSession(
 			// stream.
 			return nil
 		case <-refresh.C:
-			messages := s.refreshSessionDocuments(caller, sub)
+			messages := s.refreshSessionDocuments(caller, sub, lastRefresh)
 			if len(messages) > 0 && !refreshLogged {
 				s.log.Info("gamesync: live session refresh started", "user", caller.userID,
 					"session", sessionID, "messages", len(messages))
