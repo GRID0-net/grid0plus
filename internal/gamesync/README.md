@@ -142,6 +142,20 @@ committed request and report; storing the writes without publishing the result
 leaves the game waiting even though matchmaking already succeeded. Results are
 scoped to the authenticated game session on both reads and watches.
 
+## Pia inboxes: `docs/__pgn/All/__stu/<usid>`
+
+Before a match, the consoles exchange Pia packets through gamesync. Each user
+session watches **its own** `__stu/<usid>` document, which is its *inbox*. A peer
+writes a packet into the *recipient's* document and stamps `suid`/`susid`/
+`suscid`/`sussid` with its own identity. The server delivers that write to the
+recipient as written and adds nothing.
+
+Do not relabel. An earlier version read each peer's document as that peer's
+outbox and renamed it onto the caller's inbox. A peer's inbox holds the
+caller's *own* outgoing packets, so each console got its own packets back
+stamped "from the peer". From then on the joiner addressed its packets to
+itself, and the private room's "ready" step ended in a communication error.
+
 ## Not implemented, and why
 
 | RPC | Why |

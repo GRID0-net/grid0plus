@@ -541,7 +541,6 @@ func (s *Server) WriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
-	s.publishPeerMailbox(caller, commit.changes)
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
@@ -590,7 +589,6 @@ func (s *Server) LazyWriteDocuments(
 		return nil, err
 	}
 	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
-	s.publishPeerMailbox(caller, commit.changes)
 	s.publishRefereeVerdicts(ctx, ops)
 	s.observeRefereeReports(ctx, ops)
 
@@ -650,7 +648,6 @@ func (s *Server) CommitTransaction(
 		return nil, err
 	}
 	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
-	s.publishPeerMailbox(caller, commit.changes)
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 

@@ -160,7 +160,7 @@ func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
 	}
 }
 
-func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
+func TestAPiaInboxWatchNeverCarriesThePeersInbox(t *testing.T) {
 	h := newHarness(t)
 	host, err := h.srv.newSession("alice", "userSessions/us-alice")
 	if err != nil {
@@ -170,20 +170,13 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outsider, err := h.srv.newSession("mallory", "userSessions/us-mallory")
-	if err != nil {
-		t.Fatal(err)
-	}
 	host.details = &SessionDetails{SessionID: "room-1", Mode: "private_match_config", Players: []string{"alice", "bob"}}
 	joiner.details = &SessionDetails{SessionID: "room-1", Mode: "private_match_config", Players: []string{"alice", "bob"}}
-	outsider.details = &SessionDetails{SessionID: "room-2"}
-	write := func(name string, blob []byte) {
+	write := func(name string, fields map[string]*commonpb.Value) {
 		t.Helper()
 		_, _, err := h.srv.docs.apply([]*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_MergeDocument{
 			MergeDocument: &syncpb.MergeDocumentRequest{Document: &syncpb.Document{
-				Name: name, Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-					"pl": {ValueType: &commonpb.Value_BytesValue{BytesValue: blob}},
-				}},
+				Name: name, Fields: &commonpb.MapValue{Fields: fields},
 			}},
 		}}})
 		if err != nil {
@@ -191,58 +184,50 @@ func TestRoomStateWatchRelaysOnlyPeersRealConsoleBlobs(t *testing.T) {
 		}
 	}
 	const prefix = "docs/__pgn/All/__stu/"
-	write(prefix+"us-alice", []byte{1, 2, 3})
-	write(prefix+"us-mallory", []byte{9, 9, 9})
+
 	docs := h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
-	if len(docs) != 2 || docs[0].GetName() != prefix+"us-bob" || docs[1].GetName() != prefix+"us-bob" {
-		t.Fatalf("joiner's state watch = %v, want only its own state and a peer mailbox under the watched name", docs)
+	if len(docs) != 1 || docs[0].GetName() != prefix+"us-bob" {
+		t.Fatalf("joiner's inbox watch = %v, want exactly its own inbox", docs)
 	}
 	initial := docs[0].GetFields().GetFields()
 	if initial["pl"].GetMapValue() == nil || initial["mp"].GetMapValue() == nil ||
 		initial["susid"].GetStringValue() != "us-bob" ||
 		initial["sussid"].GetStringValue() != "us-bob" ||
 		initial["suscid"].GetStringValue() != "1" {
-		t.Fatalf("initial player state differs from the private-room capture: %v", initial)
+		t.Fatalf("initial inbox differs from the private-room capture: %v", initial)
 	}
-	mailbox := docs[1].GetFields().GetFields()
-	if mailbox["suid"].GetStringValue() != "alice" || mailbox["susid"].GetStringValue() != "us-alice" ||
-		mailbox["sussid"].GetIntegerValue() != 1 || mailbox["suscid"].GetIntegerValue() != 10001 || len(mailbox) != 5 ||
-		!reflect.DeepEqual(mailbox["pl"].GetBytesValue(), []byte{1, 2, 3}) {
-		t.Fatalf("joiner's own document did not carry the host's Pia mailbox: %v", mailbox)
-	}
-	write(prefix+"us-bob", []byte{4, 5})
-	hostDocs := h.srv.watchedDocuments(host, []string{prefix + "us-alice"})
-	if len(hostDocs) != 2 || hostDocs[1].GetName() != prefix+"us-alice" {
-		t.Fatalf("host did not receive a mailbox on its own document: %v", hostDocs)
-	}
-	guestMailbox := hostDocs[1].GetFields().GetFields()
-	if guestMailbox["suid"].GetStringValue() != "bob" || guestMailbox["sussid"].GetIntegerValue() != 2 ||
-		guestMailbox["suscid"].GetIntegerValue() != 10002 || len(guestMailbox) != 5 || !reflect.DeepEqual(guestMailbox["pl"].GetBytesValue(), []byte{4, 5}) {
-		t.Fatalf("host's mailbox did not identify the second player: %v", guestMailbox)
-	}
-	privateMode := host.details.Mode
-	host.details.Mode = "regular_match_config"
-	publicMailbox := h.srv.peerMailboxDocument(prefix+"us-bob", host, &syncpb.Document{
-		Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-			"pl": {ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{1, 2, 3}}},
-		}},
+
+	// The joiner's packet to the host sits in the host's inbox. It must never
+	// come back to the joiner: that is the joiner's own packet, and stamping
+	// it "from the host" made the joiner address its packets to itself.
+	own := []byte{4, 5}
+	write(prefix+"us-alice", map[string]*commonpb.Value{
+		"pl":    {ValueType: &commonpb.Value_BytesValue{BytesValue: own}},
+		"suid":  stringValue("bob"),
+		"susid": stringValue("us-bob"),
 	})
-	host.details.Mode = privateMode
-	if got := publicMailbox.GetFields().GetFields()["suscid"].GetIntegerValue(); got != 1 {
-		t.Fatalf("public-match mailbox suscid = %d, want captured rank 1", got)
+	for _, doc := range h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"}) {
+		if reflect.DeepEqual(doc.GetFields().GetFields()["pl"].GetBytesValue(), own) {
+			t.Fatalf("joiner received its own Pia packet back: %v", doc)
+		}
 	}
-	live, ok := h.srv.watchDocument(joiner, prefix+"us-bob")
-	if !ok {
-		t.Fatal("joiner's written Pia document is missing")
-	}
-	liveFields := live.GetFields().GetFields()
-	if len(liveFields) != 5 || liveFields["mp"] != nil ||
-		!reflect.DeepEqual(liveFields["pl"].GetBytesValue(), []byte{4, 5}) {
-		t.Fatalf("live Pia document has fields absent from the working capture: %v", liveFields)
-	}
-	write(prefix+"us-alice", nil)
+
+	// The host's packet to the joiner arrives exactly as the host wrote it.
+	write(prefix+"us-bob", map[string]*commonpb.Value{
+		"pl":     {ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{1, 2, 3}}},
+		"suid":   stringValue("alice"),
+		"susid":  stringValue("us-alice"),
+		"suscid": intValue(1),
+		"sussid": intValue(1),
+	})
 	docs = h.srv.watchedDocuments(joiner, []string{prefix + "us-bob"})
-	if len(docs) != 1 || docs[0].GetName() != prefix+"us-bob" {
-		t.Fatalf("empty peer blob leaked into state watch: %v", docs)
+	if len(docs) != 1 {
+		t.Fatalf("joiner's inbox watch = %v, want one document", docs)
+	}
+	got := docs[0].GetFields().GetFields()
+	if len(got) != 5 || got["mp"] != nil || got["suid"].GetStringValue() != "alice" ||
+		got["susid"].GetStringValue() != "us-alice" || got["suscid"].GetIntegerValue() != 1 ||
+		!reflect.DeepEqual(got["pl"].GetBytesValue(), []byte{1, 2, 3}) {
+		t.Fatalf("joiner's inbox does not carry the host's packet as written: %v", got)
 	}
 }

@@ -180,84 +180,32 @@ func (s *Server) roomPeerForDocument(caller *session, name string) *session {
 	return nil
 }
 
-// The client asks target 9 for its own __stu document, but the game uses that
-// same target to learn every room peer's P2P state. Only relay a peer's real
-// console-written pl blob; a synthetic empty blob cannot identify a peer.
+// watchedDocuments answers a documents target with exactly the documents it
+// names.
+//
+// docs/__pgn/All/__stu/<usid> is that user session's Pia *inbox*: a peer writes
+// its packet into the recipient's document and stamps suid/susid/suscid/sussid
+// with its own identity (Nextendo capture: session 63790481 writes into
+// __stu/b55e6b1f with its own susid, and the server delivers it as written). An
+// earlier reading treated it as the writer's outbox and renamed every peer's
+// document onto the caller's inbox. A peer's inbox holds the caller's own
+// outgoing packets, so the caller got its own Pia packets back stamped "from
+// the peer", and from then on addressed its packets to itself: the private
+// room's ready step timed out with a communication error
+// (docs/CAPTURES/raw/grid0-private-ready-analysis-20261002.md).
 func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Document {
 	var docs []*syncpb.Document
 	seen := map[string]bool{}
-	add := func(name string) {
+	for _, name := range names {
 		if seen[name] {
-			return
+			continue
 		}
 		if doc, ok := s.watchDocument(caller, name); ok {
 			docs = append(docs, doc)
 			seen[name] = true
 		}
 	}
-	for _, name := range names {
-		add(name)
-		if name != "docs/__pgn/All/__stu/"+sessionID(caller.userSession) ||
-			caller.details == nil || caller.details.SessionID == "" {
-			continue
-		}
-		var peers []string
-		s.mu.Lock()
-		for _, peer := range s.sessions {
-			if peer.details != nil && peer.details.SessionID == caller.details.SessionID &&
-				peer.userSession != caller.userSession && s.now().Before(peer.expiresAt) {
-				peers = append(peers, "docs/__pgn/All/__stu/"+sessionID(peer.userSession))
-			}
-		}
-		s.mu.Unlock()
-		sort.Strings(peers)
-		for _, peerName := range peers {
-			stored, ok := s.docs.get(peerName)
-			if !ok || len(stored.GetFields().GetFields()["pl"].GetBytesValue()) == 0 {
-				continue
-			}
-			// Target 9 names only the recipient's document. A peer-named
-			// document on that target is not part of the watch the console
-			// requested; peer identity belongs in the mailbox fields instead.
-			if peer := s.roomPeerForDocument(caller, peerName); peer != nil {
-				docs = append(docs, s.peerMailboxDocument(name, peer, stored))
-			}
-		}
-	}
 	return docs
-}
-
-// Pia reads peer payloads from the local player's watched __stu document.
-// The document name remains the recipient's; the fields identify the peer.
-// A peer-named update alone reaches the stream but is not the mailbox message
-// measured in the working relay capture.
-func (s *Server) peerMailboxDocument(recipientName string, peer *session, source *syncpb.Document) *syncpb.Document {
-	rank := participantRank(peer)
-	connectionID := rank
-	if peer.details != nil && strings.Contains(peer.details.Mode, "private_match") {
-		// Nintendo's captured private-room relay mailbox uses a separate
-		// connection-id namespace. The working public-match stream uses rank
-		// directly, so keep that behavior outside private rooms.
-		connectionID += 10000
-	}
-	str := func(v string) *commonpb.Value {
-		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
-	}
-	integer := func(v int64) *commonpb.Value {
-		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}}
-	}
-	return &syncpb.Document{
-		Name: recipientName,
-		Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-			"suid":   str(peer.userID),
-			"susid":  str(sessionID(peer.userSession)),
-			"sussid": integer(rank),
-			"suscid": integer(connectionID),
-			"pl":     proto.Clone(source.GetFields().GetFields()["pl"]).(*commonpb.Value),
-		}},
-		CreateTime: source.GetCreateTime(),
-		UpdateTime: source.GetUpdateTime(),
-	}
 }
 
 func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb.Document, bool) {
