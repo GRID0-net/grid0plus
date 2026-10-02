@@ -363,6 +363,15 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	reward := coopRewardForShift(r.RewardGearID, r.StartAt)
 	switch r.Kind {
 	case "big_run":
+		// TODO(capture-needed): Splatoon 3 v11.3.0's CoopSchedule parser
+		// (main+0x32a28d0) reads attributes.BigRunParams.RewardBorders.{Gold,
+		// Silver,Bronze} as protobuf integer_value fields; all three being
+		// positive is one condition for accepting this variant. It also reads
+		// BigRunParams.IsSpecial as a boolean; absence defaults to false. No
+		// preserved working response or local parameter file gives the real
+		// event thresholds, so do not fabricate them here. A known-working
+		// Big Run SelectCoopSchedules response settles the values; change this
+		// builder, coopScheduleProto, then.
 		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
 			Stage:        r.StageID,
 			Boss:         r.Boss,

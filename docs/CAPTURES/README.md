@@ -54,6 +54,44 @@ in the list or the module yields 2122-0002. The provided working Splatoon 3
 fest cache uses regional names (`eu-default`, `us-default`, `jp-default`,
 `ap-default`), while the earlier VM seed exposed only `fesdata`.
 
+### Big Run `CoopSchedule` attributes (`internal/toyohr/coop_schedule.go`)
+
+Decompiling Splatoon 3 v11.3.0 (`main` build
+`28C4287AEE36F7499DA60F3E68B54C70DA382D75`) settled a client-side gate in
+`main+0x32a28d0`, its `CoopSchedule` parser. For the Big Run variant, it reads
+`attributes.BigRunParams.RewardBorders.Gold`, `.Silver`, and `.Bronze` as
+protobuf `integer_value`s. If any value is missing, has another value type, or
+is zero/negative, the parser takes its invalid path instead of accepting the
+schedule. The same branch also requires exactly four `main_weapons`; GRID0+
+already sends four and `CoopShift.Validate` enforces that count. It reads
+`BigRunParams.IsSpecial` as a boolean; the client defaults that flag to false
+when absent, and it is not part of this gate. The `Rewards` list is parsed
+separately; its count and values do not feed this branch's acceptance flag,
+though whether it needs meaningful entries for later gameplay remains unknown.
+The downstream accumulator at `main+0xa711b0` reads all three borders and the
+special flag into its record aggregates; it does not reveal a required ordering
+between the thresholds.
+
+GRID0+ currently emits neither `BigRunParams` nor these borders. The local
+v11.3.0 parameter files contain Big Run reward-meter items, but no border
+thresholds. The two preserved working hall captures contain normal Coop
+rotations only. Nextendo's checked-in server replays its ignored
+`SelectCoopSchedules` capture and has no authored Big Run response builder;
+that local checkout does not include the ignored capture payload. Therefore
+the exact event-specific numbers remain unconfirmed. `reward_type`,
+`reward_gear_id`, and the later gameplay requirements for `rewards` also need
+confirmation even though the parser reads them.
+
+**What a reference capture would settle:** capture the plaintext
+`Schedule/SelectCoopSchedules` response while a known-working server has an
+active Big Run. Record the nested map keys and protobuf value types as well as
+the three numbers, `IsSpecial`, and the accompanying Big Run fields. Then
+map the wire response in `internal/toyohr/coop_schedule.go`'s
+`coopScheduleProto`. The current `CoopShift` store and dashboard request have
+no fields for the borders or flag, so operator control will also need those
+values carried through the domain type, persistence, and dashboard authoring
+path. Do not substitute invented defaults.
+
 ### 1. `GET /2.0.0/users/<id>/friends` — ~~the response shape~~ **CAPTURED**
 
 See [baas-2.0.0-friends.md](baas-2.0.0-friends.md).
