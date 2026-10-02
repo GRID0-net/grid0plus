@@ -470,6 +470,13 @@ this version deliberately names no number to keep stale).
 
 ### What is already guessed
 
+- **The session token's `gamesync.pid`**
+  (`internal/npln/auth.go`, `sessionTokenPID`): Nextendo's tokens carry a
+  10-digit number that is the same for one user on every token. GRID0+ sends a
+  stable per-user value below 2^31 rather than nothing. A working server's
+  tokens for two different players would show whether it has to match
+  anything else, such as a NEX principal id (see
+  [`npln-session-token-2026-09-23.md`](npln-session-token-2026-09-23.md#update-grid0s-own-capture-of-a-working-server-2026-09-30)).
 - **Squad/delegated matchmaking tickets**
   (`internal/npln/matchmaking.go:42`, `CreateMatchmakingTicket`): whether
   Splatoon 3 ever sends more than one `UserDefinition` in a ticket. NPLN
