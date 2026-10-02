@@ -40,8 +40,12 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 	if got := len(fixed.GetFields().GetFields()["rs"].GetBytesValue()); got != 32 {
 		t.Errorf("fixed rs length = %d, want captured 32", got)
 	}
-	if got := fixed.GetFields().GetFields()["maxu"].GetIntegerValue(); got != 8 {
-		t.Errorf("fixed maxu = %d, want captured 8", got)
+	// Ryujinx private room on Nextendo, 2026-10-02: the room's real capacity and config name.
+	if got := fixed.GetFields().GetFields()["maxu"].GetIntegerValue(); got != 10 {
+		t.Errorf("fixed maxu = %d, want captured 10", got)
+	}
+	if got := fixed.GetFields().GetFields()["mcn"].GetStringValue(); got != "private_match_config" {
+		t.Errorf("fixed mcn = %q, want captured private_match_config", got)
 	}
 	if got := fixed.GetFields().GetFields()["tid"].GetStringValue(); got != caller.details.Tenant {
 		t.Errorf("fixed tid = %q, want tenant", got)
@@ -51,8 +55,8 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 		t.Fatal("missing mutable room document")
 	}
 	rs := mutable.GetFields().GetFields()["rs"].GetMapValue().GetFields()
-	if got := rs["bfmax"].GetIntegerValue(); got != 8 {
-		t.Errorf("mutable bfmax = %d, want captured 8", got)
+	if got := rs["bfmax"].GetIntegerValue(); got != 10 {
+		t.Errorf("mutable bfmax = %d, want captured 10", got)
 	}
 	if len(rs["prp"].GetMapValue().GetFields()) != 0 {
 		t.Errorf("mutable properties = %v, want empty map", rs["prp"])
@@ -67,8 +71,19 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 		master[0].GetFields().GetFields()["id"].GetStringValue() != "" {
 		t.Fatalf("room's MasterCollection snapshot = %v", master)
 	}
-	if got := settings.GetFields().GetFields()["bfmax"].GetIntegerValue(); got != 5 {
-		t.Errorf("__gs/m bfmax = %d, want captured 5", got)
+	if got := settings.GetFields().GetFields()["bfmax"].GetIntegerValue(); got != 7 {
+		t.Errorf("__gs/m bfmax = %d, want captured 7", got)
+	}
+	inbox, ok := s.syntheticSessionDocument(caller, "docs/__pgn/All/__stu/us-alice")
+	if !ok {
+		t.Fatal("missing private-battle Pia inbox")
+	}
+	in := inbox.GetFields().GetFields()
+	wantKeys("__stu", in, []string{"pl", "suid", "suscid", "susid", "sussid"})
+	if in["pl"].GetBytesValue() == nil || len(in["pl"].GetBytesValue()) != 0 ||
+		in["suscid"].GetIntegerValue() != 10001 || in["sussid"].GetIntegerValue() != 1 ||
+		in["susid"].GetStringValue() != "us-alice" {
+		t.Errorf("private-battle inbox = %v, want captured empty bytes and 10001/1", in)
 	}
 	status, _ := s.roomDocument(caller, "docs/__gs/s")
 	wantKeys("__gs/s", status.GetFields().GetFields(), []string{"att", "ltc", "pgn", "st", "tn", "ucsid", "uid", "upcsid", "ussid"})

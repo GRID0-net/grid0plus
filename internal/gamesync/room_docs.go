@@ -2,6 +2,7 @@ package gamesync
 
 import (
 	"crypto/sha256"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -19,6 +20,21 @@ type SessionDetails struct {
 	Capacity, ParticipantCount                                     int
 	CreatedAt                                                      time.Time
 	Properties                                                     *commonpb.MapValue
+}
+
+const privateBattleConfig = "private_match_config"
+
+// isPrivateBattle reports a private battle room, the one room mode with a
+// current capture of a working server (see roomDocument).
+func isPrivateBattle(d *SessionDetails) bool {
+	if d == nil || d.Capacity <= 0 {
+		return false
+	}
+	mode := d.Mode
+	if i := strings.LastIndex(mode, "/"); i >= 0 {
+		mode = mode[i+1:]
+	}
+	return mode == privateBattleConfig
 }
 
 func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, bool) {
@@ -42,10 +58,19 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	// join-room, and Coop private) publish the same Gamesync format capacity of
 	// eight, even though their NPLN tickets advertise 10/4/4 respectively.
 	// The game reads these documents after the ticket succeeds.
-	const wireCapacity = 8
+	//
+	// Nextendo's server has since changed for private battles: a Ryujinx
+	// private room on 2026-10-02 got maxu 10, mcn "private_match_config", and
+	// bfmax 7 (capacity minus three) / 10 in __stg, i.e. the room's real
+	// capacity and config name. Other modes keep the earlier shape until a
+	// capture shows them too.
+	wireCapacity, mcn := 8, ""
+	if isPrivateBattle(d) {
+		wireCapacity, mcn = d.Capacity, privateBattleConfig
+	}
 	settings := func() map[string]*commonpb.Value {
 		return map[string]*commonpb.Value{
-			"bfmax": integer(wireCapacity - 3), "bfmin": integer(1),
+			"bfmax": integer(int64(wireCapacity - 3)), "bfmin": integer(1),
 			"cp": boolean(true), "ebf": boolean(false), "ip": boolean(true),
 			"prp": mapValue(nil), "pw": str(d.Password),
 		}
@@ -56,7 +81,7 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 		secret := sha256.Sum256([]byte("switchnet-room:" + d.SessionID))
 		fields = map[string]*commonpb.Value{
 			"addr": str(d.Host), "gsid": str(d.SessionID),
-			"maxu": integer(wireCapacity), "mcn": str(""),
+			"maxu": integer(int64(wireCapacity)), "mcn": str(mcn),
 			"p": integer(int64(d.Port)), "tid": str(d.Tenant),
 			"rs": &commonpb.Value{ValueType: &commonpb.Value_BytesValue{BytesValue: secret[:]}},
 		}
@@ -105,11 +130,11 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	case "docs/__stg/All":
 		mutable := settings()
 		mutable["cp"] = boolean(false)
-		mutable["bfmax"] = integer(wireCapacity)
+		mutable["bfmax"] = integer(int64(wireCapacity))
 		mutable["prp"] = mapValue(nil)
 		fields = map[string]*commonpb.Value{
 			"gsid": str(d.SessionID), "addr": str(d.Host), "p": integer(int64(d.Port)),
-			"mcn": str(""), "maxu": integer(wireCapacity), "rs": mapValue(mutable),
+			"mcn": str(mcn), "maxu": integer(int64(wireCapacity)), "rs": mapValue(mutable),
 		}
 	default:
 		return nil, false

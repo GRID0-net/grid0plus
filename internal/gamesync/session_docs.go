@@ -234,7 +234,22 @@ func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb
 			"tn": str(""), "att": emptyMap(), "ltc": emptyMap(),
 		}
 	case "docs/__pgn/All/__stu/" + id:
-		// The working private-room capture starts this watch with empty pl/mp
+		if isPrivateBattle(caller.details) {
+			// A Ryujinx private room on Nextendo, 2026-10-02: empty pl bytes,
+			// integer ids, the private connection-id namespace (10000 + rank),
+			// and no mp. Splatoon's Pia closed its session 0.3 s after reading
+			// the older map-typed shape below, before the room was created.
+			rank := participantRank(caller)
+			fields = map[string]*commonpb.Value{
+				"pl":     {ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{}}},
+				"suid":   str(caller.userID),
+				"suscid": integer(10000 + rank),
+				"susid":  str(id),
+				"sussid": integer(rank),
+			}
+			break
+		}
+		// The working public-match capture starts this watch with empty pl/mp
 		// maps and string session IDs. Once a console writes its own P2P pl
 		// bytes, the stored document takes precedence over these defaults.
 		fields = map[string]*commonpb.Value{
