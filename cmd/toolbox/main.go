@@ -1,5 +1,5 @@
 // Command toolbox answers the public, unauthenticated API the GRID0+
-// Toolbox homebrew app (github.com/n-popescu/grid0plus-toolbox) talks to. See
+// Toolbox homebrew app (net-GRID0/cfw-GRID0plus, toolbox/) talks to. See
 // internal/toolbox for why this is its own service rather than a route on
 // stubs or dashboard.
 package main

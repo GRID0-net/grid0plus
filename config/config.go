@@ -642,7 +642,7 @@ type Stubs struct {
 }
 
 // Toolbox configures the public API the GRID0+ Toolbox homebrew app
-// (github.com/n-popescu/grid0plus-toolbox) talks to. See internal/toolbox's
+// (net-GRID0/cfw-GRID0plus, toolbox/) talks to. See internal/toolbox's
 // package comment for why this exists as its own service rather than a
 // route on stubs or dashboard: it is the one service any console reaches
 // with no credential at all, and it holds a GitHub token specifically so
@@ -655,8 +655,8 @@ type Toolbox struct {
 	// not belong in internal/nintendo/hosts.go's redirect list.
 	Listen string `yaml:"listen"`
 
-	// GitHubOwner and GitHubRepo identify the private grid0plus-toolbox
-	// repository /updates/* reads releases from. Leave both empty to serve
+	// GitHubOwner and GitHubRepo identify the private repository whose
+	// releases carry the Toolbox .nro /updates/* reads releases from. Leave both empty to serve
 	// /status only and have /updates/* answer 503.
 	GitHubOwner string `yaml:"github_owner"`
 	GitHubRepo  string `yaml:"github_repo"`

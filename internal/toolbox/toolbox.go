@@ -11,7 +11,7 @@
 // learn.
 //
 // The GitHub token this package holds is the whole reason it exists rather
-// than the console calling GitHub directly: grid0plus-toolbox's source repo is
+// than the console calling GitHub directly: the Toolbox's source repo is
 // private, so an unauthenticated request from the console gets a 404, and
 // embedding a credential in a binary that ships to every console is the
 // exact thing this avoids. The token stays on this box and is never returned
