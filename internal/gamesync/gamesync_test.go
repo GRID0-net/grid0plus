@@ -996,6 +996,87 @@ func TestADefermentIsAcknowledgedAndRunsWhenTheUserSessionCloses(t *testing.T) {
 	}
 }
 
+// A player who drops and rejoins a room gets the same user-session name back,
+// because it is derived from (game session, user). The first connection's
+// stream can close after the rejoined console has already written its room
+// documents; its cleanup must not delete them.
+func TestARejoinedUserSessionKeepsItsDocumentsWhenTheOldStreamCloses(t *testing.T) {
+	h := newHarness(t)
+	open := func(ctx context.Context) syncpb.Gamesync_KeepUserSessionClient {
+		t.Helper()
+		stream, err := h.client.KeepUserSession(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.Send(&syncpb.KeepUserSessionRequest{
+			RequestType: &syncpb.KeepUserSessionRequest_Echo{Echo: "ready"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := stream.Recv(); err != nil {
+			t.Fatal(err)
+		}
+		return stream
+	}
+	closeStream := func(stream syncpb.Gamesync_KeepUserSessionClient) {
+		t.Helper()
+		if err := stream.CloseSend(); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			if _, err := stream.Recv(); err != nil {
+				return
+			}
+		}
+	}
+	register := func(ctx context.Context) {
+		t.Helper()
+		if _, err := h.client.WriteDocuments(ctx, &syncpb.WriteDocumentsRequest{
+			WriteOperations: []*syncpb.WriteOperation{merge(doc("docs/__us/token-alice",
+				map[string]*commonpb.Value{"att": intValue(1)}))},
+			DefermentOperations: []*syncpb.DefermentOperation{{
+				OperationType: &syncpb.DefermentOperation_UpdateDeferment{
+					UpdateDeferment: &syncpb.UpdateDefermentRequest{Deferment: &syncpb.Deferment{
+						Name: "userSessions/current/deferments/__us/token-alice",
+						WriteOperations: []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_DeleteDocument{
+							DeleteDocument: &syncpb.DeleteDocumentRequest{Name: "docs/__us/token-alice"},
+						}}},
+					}},
+				},
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	present := func() bool {
+		// A missing own __us document is synthesized on read, so look for the
+		// written field rather than for NotFound.
+		got, err := h.client.GetDocument(h.session("token-alice"), &syncpb.GetDocumentRequest{Name: "docs/__us/token-alice"})
+		return err == nil && got.GetFields().GetFields()["att"].GetIntegerValue() == 1
+	}
+
+	first := h.session("token-alice")
+	old := open(first)
+	register(first)
+
+	rejoined := h.session("token-alice")
+	current := open(rejoined)
+	register(rejoined)
+
+	closeStream(old)
+	if !present() {
+		t.Fatal("the old connection's cleanup deleted the rejoined session's document")
+	}
+	closeStream(current)
+	deadline := time.Now().Add(time.Second)
+	for present() {
+		if time.Now().After(deadline) {
+			t.Fatal("cleanup never ran after the last stream closed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestOwnUserSessionArrivesBeforeWatchSnapshotCompletes(t *testing.T) {
 	h := newHarness(t)
 	alice := h.session("token-alice")

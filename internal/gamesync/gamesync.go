@@ -120,6 +120,11 @@ type Server struct {
 	// read/merge/write so simultaneous reports cannot discard one another.
 	refereeMu sync.Mutex
 
+	// cleanups holds deferments and open watch streams per user-session
+	// name, not per token: see userSessionCleanup.
+	cleanupMu sync.Mutex
+	cleanups  map[string]*userSessionCleanup
+
 	mu       sync.Mutex
 	sessions map[string]*session
 	// txns are the open transactions, by their opaque token.
@@ -130,16 +135,14 @@ type Server struct {
 
 // session is one console's authenticated gamesync session.
 type session struct {
-	mu            sync.Mutex
-	userID        string
-	userSession   string
-	accessToken   string
-	refreshToken  string
-	createdAt     time.Time
-	expiresAt     time.Time
-	activeStreams int
-	deferments    map[string][]*syncpb.WriteOperation
-	details       *SessionDetails
+	mu           sync.Mutex
+	userID       string
+	userSession  string
+	accessToken  string
+	refreshToken string
+	createdAt    time.Time
+	expiresAt    time.Time
+	details      *SessionDetails
 }
 
 // New builds the service.
@@ -173,6 +176,7 @@ func New(opts Options) (*Server, error) {
 		docs:             newStore(opts.Now),
 		watch:            newWatchers(),
 		sessions:         map[string]*session{},
+		cleanups:         map[string]*userSessionCleanup{},
 		txns:             map[string]*transaction{},
 	}
 	s.grpc = grpc.NewServer(
@@ -725,9 +729,7 @@ func (s *Server) KeepUserSession(
 	lastRefresh := make(map[string]*commonpb.MapValue)
 	defer refresh.Stop()
 	refreshLogged := false
-	caller.mu.Lock()
-	caller.activeStreams++
-	caller.mu.Unlock()
+	s.beginSessionStream(caller)
 	defer func() {
 		s.watch.unsubscribe(sub)
 		s.endSessionStream(caller)

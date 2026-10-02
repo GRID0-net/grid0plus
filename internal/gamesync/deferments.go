@@ -31,12 +31,35 @@ func validateDeferments(ops []*syncpb.DefermentOperation) error {
 	return nil
 }
 
-func (s *Server) stageDeferments(caller *session, ops []*syncpb.DefermentOperation) {
-	caller.mu.Lock()
-	defer caller.mu.Unlock()
-	if caller.deferments == nil {
-		caller.deferments = make(map[string][]*syncpb.WriteOperation)
+// userSessionCleanup is a user session's registered cleanup and its open
+// KeepUserSession streams.
+//
+// Keyed by the user-session name rather than by the gamesync token. A
+// refreshed token is a new session object for the same user session, and so
+// is a rejoin: user-session ids are derived from (game session, user), so a
+// player who drops and rejoins a room gets the same name back. Per token, the
+// old stream closing late ran its deferred deletes against the documents the
+// rejoined console had just written, and a refresh started with no
+// deferments at all. Here the cleanup runs only when the last stream for the
+// name closes, with whatever the latest registration was.
+type userSessionCleanup struct {
+	streams    int
+	deferments map[string][]*syncpb.WriteOperation
+}
+
+func (s *Server) cleanupFor(userSession string) *userSessionCleanup {
+	c := s.cleanups[userSession]
+	if c == nil {
+		c = &userSessionCleanup{deferments: map[string][]*syncpb.WriteOperation{}}
+		s.cleanups[userSession] = c
 	}
+	return c
+}
+
+func (s *Server) stageDeferments(caller *session, ops []*syncpb.DefermentOperation) {
+	s.cleanupMu.Lock()
+	defer s.cleanupMu.Unlock()
+	c := s.cleanupFor(caller.userSession)
 	for _, op := range ops {
 		if update := op.GetUpdateDeferment(); update != nil {
 			d := update.GetDeferment()
@@ -44,26 +67,37 @@ func (s *Server) stageDeferments(caller *session, ops []*syncpb.DefermentOperati
 			for _, write := range d.GetWriteOperations() {
 				writes = append(writes, proto.Clone(write).(*syncpb.WriteOperation))
 			}
-			caller.deferments[d.GetName()] = writes
+			c.deferments[d.GetName()] = writes
 		} else if del := op.GetDeleteDeferment(); del != nil {
-			delete(caller.deferments, del.GetName())
+			delete(c.deferments, del.GetName())
 		}
 	}
 	// Log names, not fields or values: the former identify the cleanup being
 	// registered without recording a player's room state.
-	s.log.Info("gamesync: deferments staged", "user", caller.userID, "count", len(caller.deferments))
+	s.log.Info("gamesync: deferments staged", "user", caller.userID, "count", len(c.deferments))
+}
+
+func (s *Server) beginSessionStream(caller *session) {
+	s.cleanupMu.Lock()
+	defer s.cleanupMu.Unlock()
+	s.cleanupFor(caller.userSession).streams++
 }
 
 func (s *Server) endSessionStream(caller *session) {
-	caller.mu.Lock()
-	caller.activeStreams--
-	if caller.activeStreams > 0 {
-		caller.mu.Unlock()
+	s.cleanupMu.Lock()
+	c := s.cleanups[caller.userSession]
+	if c == nil {
+		s.cleanupMu.Unlock()
 		return
 	}
-	deferred := caller.deferments
-	caller.deferments = nil
-	caller.mu.Unlock()
+	c.streams--
+	if c.streams > 0 {
+		s.cleanupMu.Unlock()
+		return
+	}
+	deferred := c.deferments
+	delete(s.cleanups, caller.userSession)
+	s.cleanupMu.Unlock()
 
 	names := make([]string, 0, len(deferred))
 	for name := range deferred {
