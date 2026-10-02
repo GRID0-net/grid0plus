@@ -62,3 +62,24 @@ empty field was.
 - `internal/jwt/ec.go`, `SignSessionToken` — the two-member header.
 - `internal/npln/session_token_test.go` — the shape, asserted on the wire and
   decoded by hand.
+
+## Update: GRID0+'s own capture of a working server (2026-09-30)
+
+A decrypted Ryujinx session against Nextendo (`docs/CAPTURES/raw/
+nextendo-ryujinx-match-20260930` and `nextendo-private-room-20260930`, not
+committed) shows a larger `gamesync` block than the second-hand one above, in
+this order:
+
+```
+attr friend_room gsid ltcy mcn pid relay_host relay_port team tid typ uid usid
+```
+
+- `mcn`: the matchmaking config's last segment (`private_match_config`,
+  `regular_match_config`, `coop_private_config`, ...).
+- `relay_host` / `relay_port`: the session host and gamesync port (7575).
+- `friend_room: true` on every room token. Absent on matched-session tokens.
+- `pid`: a 10-digit number that stays the same for one user across tokens.
+  Its meaning is unknown, so it is `TODO(capture-needed)` in `sessionTokenPID`.
+
+GRID0+ sent none of these until 2026-10-02. Rooms got as far as the match-start
+barrier without them, so no single one is known to be required.

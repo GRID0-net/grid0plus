@@ -114,10 +114,22 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 			t.Fatalf("%s: session token carries no gamesync object, which is the part the client reads: %v",
 				userID, payload["gamesync"])
 		}
-		for _, field := range []string{"attr", "gsid", "ltcy", "team", "tid", "typ", "uid", "usid"} {
+		for _, field := range []string{"attr", "gsid", "ltcy", "mcn", "pid", "relay_host", "relay_port",
+			"team", "tid", "typ", "uid", "usid"} {
 			if _, present := gs[field]; !present {
 				t.Errorf("%s: gamesync object has no %q: %v", userID, field, gs)
 			}
+		}
+		// Nextendo's matched-session tokens carry no friend_room at all; only
+		// room tokens do, set to true.
+		if _, present := gs["friend_room"]; present {
+			t.Errorf("%s: a matched session's token claims friend_room: %v", userID, gs)
+		}
+		if gs["mcn"] != "turf-war" {
+			t.Errorf("%s: gamesync.mcn = %v, want the matchmaking config's last segment", userID, gs["mcn"])
+		}
+		if pid, _ := gs["pid"].(float64); pid <= 0 || pid >= 1<<31 {
+			t.Errorf("%s: gamesync.pid = %v, want a positive 31-bit number", userID, gs["pid"])
 		}
 		if gs["gsid"] != sessionID {
 			t.Errorf("%s: gamesync.gsid = %v, want the session id %q", userID, gs["gsid"], sessionID)

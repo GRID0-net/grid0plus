@@ -113,6 +113,10 @@ func TestOpeningARoomNoLongerFailsWith2321_4224(t *testing.T) {
 	if gs["gsid"] != lastSegment(room.GetName()) || payload["iss"] != "gss" {
 		t.Errorf("host session token does not name the room for gamesync: %v", payload)
 	}
+	// Every room token in the working Nextendo capture says so.
+	if gs["friend_room"] != true {
+		t.Errorf("room session token friend_room = %v, want true", gs["friend_room"])
+	}
 }
 
 // TestAFriendJoinsARoomByItsName is the second half: a friend who was never

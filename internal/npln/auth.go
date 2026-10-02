@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"strings"
 	"time"
@@ -129,15 +130,39 @@ type nplnAuthorization struct {
 	NSORestricted bool     `json:"nso_restricted"`
 }
 
+// The block a working server sends, in its order, from GRID0+'s own decrypted
+// Ryujinx capture of Nextendo on 2026-09-30 (docs/CAPTURES/raw/
+// nextendo-ryujinx-match-20260930, nextendo-private-room-20260930). The
+// 2026-09-23 notes had only attr..usid; that source was second-hand and older.
+// friend_room is present, true, on every room token and absent on matched ones.
 type gamesyncClaim struct {
-	Attr string `json:"attr"`
-	GSID string `json:"gsid"`
-	LTCY string `json:"ltcy"`
-	Team string `json:"team"`
-	TID  string `json:"tid"`
-	Typ  int    `json:"typ"`
-	UID  string `json:"uid"`
-	USID string `json:"usid"`
+	Attr       string `json:"attr"`
+	FriendRoom bool   `json:"friend_room,omitempty"`
+	GSID       string `json:"gsid"`
+	LTCY       string `json:"ltcy"`
+	MCN        string `json:"mcn"`
+	PID        uint32 `json:"pid"`
+	RelayHost  string `json:"relay_host"`
+	RelayPort  int32  `json:"relay_port"`
+	Team       string `json:"team"`
+	TID        string `json:"tid"`
+	Typ        int    `json:"typ"`
+	UID        string `json:"uid"`
+	USID       string `json:"usid"`
+}
+
+// sessionTokenPID fills the token's pid. Nextendo's is a 10-digit number that
+// is the same on every token for one user, NEX principal-id shaped.
+//
+// TODO(capture-needed): what the client uses pid for. This is a stable
+// per-user value below 2^31, so it parses as any integer width and differs
+// between players; a capture of two players' tokens from a working server would
+// settle whether it must match anything else (the NEX PID, rendezvous'
+// PIDForUserID, which is 64-bit here).
+func sessionTokenPID(userID string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(userID))
+	return 0x40000000 | h.Sum32()&0x3fffffff
 }
 
 func (c nplnClaims) GetExpirationTime() (*gojwt.NumericDate, error) {
@@ -458,6 +483,11 @@ func (s *Server) issueSessionTokenForDefinition(userID, sessionID string, def *m
 	if err != nil {
 		return "", errInternal()
 	}
+	var mcn string
+	var room bool
+	if sess, ok := s.queue.Session(sessionID); ok {
+		mcn, room = lastSegment(sess.Mode), sess.Room
+	}
 	now := s.now()
 	tok, err := s.issuer.SignSessionToken(nplnClaims{
 		Subject:  userID,
@@ -465,9 +495,16 @@ func (s *Server) issueSessionTokenForDefinition(userID, sessionID string, def *m
 		IssuedAt: now.Unix(),
 		Expires:  now.Add(sessionTokenTTL).Unix(),
 		Gamesync: &gamesyncClaim{
-			Attr: attr,
-			GSID: sessionID,
-			LTCY: ltcy,
+			Attr:       attr,
+			FriendRoom: room,
+			GSID:       sessionID,
+			LTCY:       ltcy,
+			MCN:        mcn,
+			PID:        sessionTokenPID(userID),
+			// The Pia relay is gamesync itself, on the session host: the same
+			// address and port as docs/__gs/f's addr and p.
+			RelayHost: s.sessionHost,
+			RelayPort: s.sessionPort,
 			// Carry the team's value as submitted by this player's console.
 			Team: def.GetTeam(),
 			TID:  s.tenant,
