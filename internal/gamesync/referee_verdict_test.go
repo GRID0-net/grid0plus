@@ -89,7 +89,7 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 	}
 	f := got.GetFields().GetFields()
 	if f["status"].GetIntegerValue() != 0 || f["request_id"].GetStringValue() != battle ||
-		f["stage"].GetIntegerValue() != 14 || f["trace_id"].GetStringValue() == "" || f["battle_id"] != nil {
+		f["stage"].GetIntegerValue() != 14 || f["trace_id"].GetStringValue() != refereeTraceID(battle) || f["battle_id"] != nil {
 		t.Fatalf("kickoff verdict has wrong wire fields: status=%d request_id=%q stage=%d trace_id_empty=%v battle_id_present=%v",
 			f["status"].GetIntegerValue(), f["request_id"].GetStringValue(), f["stage"].GetIntegerValue(),
 			f["trace_id"].GetStringValue() == "", f["battle_id"] != nil)
@@ -206,5 +206,13 @@ func TestARefereeRequestForAnotherSessionDoesNotPublishAVerdict(t *testing.T) {
 	}
 	if _, ok := h.srv.docs.snapshot(refereeResultPrefix + battle); ok {
 		t.Fatal("another session's request created a verdict")
+	}
+}
+
+func TestTheRefereeTraceIDIsTheSessionIDWithoutDashes(t *testing.T) {
+	// The working Nextendo verdict for this battle carries exactly this trace_id.
+	got := refereeTraceID("20260930T153234_bc0ffe09-6aa4-443b-aaeb-463be2e7e135")
+	if got != "bc0ffe096aa4443baaeb463be2e7e135" {
+		t.Fatalf("trace_id = %q", got)
 	}
 }

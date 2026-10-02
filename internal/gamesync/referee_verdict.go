@@ -2,8 +2,6 @@ package gamesync
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
@@ -57,6 +55,19 @@ const (
 	refereeReportPrefix  = "docs/@@RefereeReport/"
 	refereeResultPrefix  = "docs/@@RefereeResult/"
 )
+
+// refereeTraceID is the game-session id with its dashes removed: the working
+// Nextendo verdict for battle 20260930T153234_bc0ffe09-6aa4-443b-aaeb-
+// 463be2e7e135 carries trace_id bc0ffe096aa4443baaeb463be2e7e135. Every console
+// in the match reads it, so a random value is one more thing that could
+// disagree with the session it joined.
+func refereeTraceID(battleID string) string {
+	sessionID := battleID
+	if i := strings.Index(battleID, "_"); i >= 0 {
+		sessionID = battleID[i+1:]
+	}
+	return strings.ReplaceAll(sessionID, "-", "")
+}
 
 func verdictString(v string) *commonpb.Value {
 	return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
@@ -138,12 +149,8 @@ func (s *Server) publishRefereeVerdict(battleID, sourceName string, final bool) 
 			}
 			fields[k] = proto.Clone(v).(*commonpb.Value)
 		}
-		trace := make([]byte, 16)
-		if _, err := rand.Read(trace); err != nil {
-			return err
-		}
 		fields["request_id"] = verdictString(battleID)
-		fields["trace_id"] = verdictString(hex.EncodeToString(trace))
+		fields["trace_id"] = verdictString(refereeTraceID(battleID))
 		fields["status"] = verdictInt(0)
 		if fields["shift_id"] == nil { // The captured VS verdict carries this empty field; Coop does not.
 			fields["tournament_id"] = verdictString("")
