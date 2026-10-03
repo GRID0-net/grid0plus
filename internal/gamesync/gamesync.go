@@ -93,8 +93,9 @@ type RefereeReport struct {
 	Coop    bool
 	Players []string
 	Fields  *commonpb.MapValue
-	// Verdict is the referee result as published after this report, which
-	// carries the request's shift_id/shift_time next to the team result.
+	// Verdict is the referee result as published after this report: the
+	// referee request's fields (stage, rule, mode, shift...) next to the
+	// team result.
 	Verdict *commonpb.MapValue
 	// SessionUsers maps each live user-session id of this game session to
 	// its user: a coop personal_result is keyed by user session.

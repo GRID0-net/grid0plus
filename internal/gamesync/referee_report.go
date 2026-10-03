@@ -57,10 +57,10 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 			UserID: caller.userID, Players: append([]string(nil), d.Players...),
 			Fields: fields, Coop: coop,
 		}
+		if verdict, ok := s.docsFor(caller).snapshot(refereeResultPrefix + battleID); ok {
+			report.Verdict = verdict.GetFields()
+		}
 		if coop {
-			if verdict, ok := s.docsFor(caller).snapshot(refereeResultPrefix + battleID); ok {
-				report.Verdict = verdict.GetFields()
-			}
 			report.SessionUsers = s.sessionUsers(d.SessionID)
 		}
 		if err := s.onRefereeReport(ctx, report); err != nil {

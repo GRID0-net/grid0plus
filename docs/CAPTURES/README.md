@@ -516,14 +516,11 @@ this version deliberately names no number to keep stale).
   team delivered plus 50 for a cleared job, NextendoNetwork/splatoon-3's
   fit over seventeen captured jobs, six points off on average. A capture
   with more jobs, ideally with hazard levels, would settle it.
-- **The battle-history document's full field set**
-  (`internal/ugcstore/vsresults.go`, `RecordVsResults`): GRID0+ writes
-  `battle_id`, `npln_user_id`, `team_result` and `personal_data_team1..3`, the
-  fields NextendoNetwork/splatoon-3 builds from its capture of an official
-  Splatfest. Nintendo's document carries more (power ratings, its own ink
-  ratios, timing) that nothing here computes. A capture of a working server's
-  `RunQuery` answer over `VsResults` would show which of those the history
-  screen needs.
+- **The battle-history document's remaining fields**
+  (`internal/ugcstore/vsresults.go`, `historyFields`): the history reader
+  (raw code at `0x7103dc3684`) is now matched for its top-level fields; it
+  also reads `mmr_before`/`mmr_after`/`rate` in some modes, which nothing
+  here computes.
 - **The session token's `gamesync.pid`**
   (`internal/npln/auth.go`, `sessionTokenPID`): Nextendo's tokens carry a
   10-digit number that is the same for one user on every token. GRID0+ sends a

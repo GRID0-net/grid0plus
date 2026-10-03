@@ -24,14 +24,16 @@ import (
 // Nintendo's document is. Values only Nintendo computes (power ratings, its
 // own ink ratios) are left out rather than invented.
 //
-// TODO(capture-needed): the full VsResults field set the history screen
-// reads. If an entry is listed but its detail page is empty or errors, this
-// function's field list is what to extend.
+// The top-level fields the history screen reads are in historyFields.
+// TODO(capture-needed): mmr_before/mmr_after/rate, which the same reader
+// looks for in some modes, and any value Nintendo computes that the report
+// does not carry. Change historyFields.
 func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID string,
-	players []string, report *commonpb.MapValue, now time.Time) error {
+	players []string, report, verdict *commonpb.MapValue, now time.Time) error {
 	if battleID == "" || strings.Contains(battleID, "/") || report == nil {
 		return nil
 	}
+	top := historyFields(report, verdict)
 	teams := map[string][]*commonpb.Value{
 		"personal_data_team1": nil, "personal_data_team2": nil, "personal_data_team3": nil,
 	}
@@ -59,6 +61,9 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 		if tr := report.GetFields()["team_result"]; tr != nil {
 			fields["team_result"] = tr
 		}
+		for k, v := range top {
+			fields[k] = v
+		}
 		for k, v := range teams {
 			fields[k] = &commonpb.Value{ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{Values: v}}}
 		}
@@ -74,4 +79,37 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 		}
 	}
 	return nil
+}
+
+// historyFields are the battle's top-level fields as the history screen
+// reads them. Its reader (raw code at 0x7103dc3684, which Ghidra leaves
+// undefined) takes game_mode, game_rule, stage, elapsed_time, winner and
+// score_team%d as integers, battle_id, npln_user_id and color_pattern as
+// strings, started_at as a timestamp, est_mmr_team%d and paint_ratio%d as
+// doubles, then the personal_data_team%d arrays, all from the document's
+// top level; the history query also orders on a top-level started_at
+// (FUN_7103280c00). With them only inside team_result the screen showed
+// 1/1/1970, 0p for both teams and a win for everyone. The console reports
+// the team values in team_result; the rest are the referee request's,
+// carried by the verdict.
+func historyFields(report, verdict *commonpb.MapValue) map[string]*commonpb.Value {
+	out := map[string]*commonpb.Value{}
+	for _, k := range []string{"game_mode", "game_rule", "stage", "color_pattern",
+		"est_mmr_team1", "est_mmr_team2", "est_mmr_team3"} {
+		if v := verdict.GetFields()[k]; v != nil {
+			out[k] = v
+		}
+	}
+	team := report.GetFields()["team_result"].GetMapValue().GetFields()
+	if team == nil {
+		team = verdict.GetFields()["team_result"].GetMapValue().GetFields()
+	}
+	for _, k := range []string{"started_at", "elapsed_time", "winner",
+		"score_team1", "score_team2", "score_team3",
+		"paint_ratio1", "paint_ratio2", "paint_ratio3"} {
+		if v := team[k]; v != nil {
+			out[k] = v
+		}
+	}
+	return out
 }
