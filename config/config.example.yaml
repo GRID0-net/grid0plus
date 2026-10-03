@@ -656,9 +656,8 @@ natcheck:
   alternate_listen: "192.168.1.51:10025"
 
   # Answer type 102 from the port it was sent to (10025), as a working
-  # Nextendo server does. False answers from 10125 instead, which a home
-  # router drops: Pia's NAT check then never completes and Splatoon 3 fails
-  # to create a room with a communication error.
+  # Nextendo server does. False answers from 10125 instead, which a
+  # port-restricted home router drops.
   type102_same_port: true
 
   # Answers STUN (RFC 5389) Binding requests -- a different protocol from NCS

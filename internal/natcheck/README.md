@@ -38,8 +38,9 @@ Message layout, big-endian:
 
 Type 102 is answered from the port it was sent to. A capture of Nextendo's
 working server (2026-10-02) shows its replies coming from 10025, not 10125.
-Answered from 10125, the reply is dropped by a port-restricted home router,
-Pia's NAT check never completes, and Splatoon 3 fails to create a room.
+Answered from 10125, the reply is dropped by a port-restricted home router.
+That alone was not the cause of the emulator's room-creation error: it
+persisted after the change.
 
 ## The two-address requirement
 

@@ -704,7 +704,7 @@ type NATCheck struct {
 	AlternateListen string `yaml:"alternate_listen"`
 	// Type102SamePort answers type 102 from the port it was sent to, as
 	// Nextendo's working server does (capture of 2026-10-02). From 10125 a
-	// home router drops the reply and Pia's NAT check never completes.
+	// port-restricted home router drops the reply.
 	Type102SamePort bool `yaml:"type102_same_port"`
 	// StunListen answers STUN (RFC 5389) Binding requests -- a different
 	// protocol from the NCS one above, but the same kind of lightweight UDP
