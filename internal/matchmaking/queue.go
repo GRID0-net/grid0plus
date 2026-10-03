@@ -195,13 +195,13 @@ type Config struct {
 //
 // The grace periods are the operator's own choice for this deployment rather
 // than anything measured -- there is no real server to capture a lobby-fill
-// grace period from. Versus is 20 seconds, coop 30.
+// grace period from. Versus is 20 seconds, coop 20.
 var DefaultConfig = Config{
 	PlayersPerMatch:   8,
 	TicketTTL:         3 * time.Minute,
 	SessionTTL:        30 * time.Minute,
 	VersusGracePeriod: 20 * time.Second,
-	CoopGracePeriod:   30 * time.Second,
+	CoopGracePeriod:   20 * time.Second,
 }
 
 // Queue forms matches from waiting tickets.

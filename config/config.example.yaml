@@ -428,7 +428,7 @@ npln:
   # lone player is never on this clock: matchmaking waits for a second player
   # however long that takes, same as always. Zero forms the instant two
   # players are present.
-  coop_grace_period: 30
+  coop_grace_period: 20
 
   # Experimental: advertise seven measured latency regions, all mapped to
   # the first reachable STUN endpoint (or network.public_ip:3478). Leave

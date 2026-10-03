@@ -810,7 +810,7 @@ func Default() Config {
 			// period. See the field comments.
 			PlayersPerMatch:   8,
 			VersusGracePeriod: 20,
-			CoopGracePeriod:   30,
+			CoopGracePeriod:   20,
 			TicketTTL:         180,
 			// fro-3 because that is the member the reference server resolves
 			// the frontline to. Any of fro-1..4 is redirected and carries a
