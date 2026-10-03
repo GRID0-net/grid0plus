@@ -54,6 +54,7 @@ func (s *Service) loadSave(ctx context.Context, uid string) (*toyohrpb.SaveRecor
 	if data.Fields == nil {
 		data.Fields = map[string]*common.Value{}
 	}
+	clearOnlinePlayPenalty(data)
 	return &toyohrpb.SaveRecord{
 		Name:       d.Name,
 		SaveData:   data,
@@ -88,6 +89,28 @@ func nextSaveVersion(now time.Time, prev *timestamppb.Timestamp) *timestamppb.Ti
 		}
 	}
 	return timestamppb.New(t)
+}
+
+// clearOnlinePlayPenalty zeroes every counter and flag under the
+// OnlinePlayPenalty key, keeping the keys themselves.
+//
+// The game records a yellow or red card (ApplyYellowCard, ApplyRedCard,
+// PenaltyBeforeMatch) whenever a match drops, and a card means a wait of
+// several minutes before the next match. On GRID0+ a drop is far more often
+// the server's or the network's fault than the player's, so the penalty is
+// never kept: the console reads it back as zero. The keys stay because the
+// game wrote them itself and a missing key is a shape it has never been
+// served.
+func clearOnlinePlayPenalty(data *common.MapValue) {
+	penalty := data.GetFields()["OnlinePlayPenalty"].GetMapValue()
+	for k, v := range penalty.GetFields() {
+		switch v.GetValueType().(type) {
+		case *common.Value_IntegerValue:
+			penalty.Fields[k] = &common.Value{ValueType: &common.Value_IntegerValue{}}
+		case *common.Value_BooleanValue:
+			penalty.Fields[k] = &common.Value{ValueType: &common.Value_BooleanValue{}}
+		}
+	}
 }
 
 // mergeSaveDelta applies a WriteSaveRecord delta to stored save_data, using

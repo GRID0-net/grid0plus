@@ -230,6 +230,7 @@ func (s *Service) WriteSaveRecord(
 		}
 	}
 	mergeSaveDelta(rec.SaveData, req.GetSaveRecord().GetSaveData())
+	clearOnlinePlayPenalty(rec.SaveData)
 	rec.UpdateTime = nextSaveVersion(s.now(), rec.GetUpdateTime())
 	if err := s.putSave(ctx, uid, rec); err != nil {
 		s.log.Error("toyohr: store cloud save", "user", uid, "error", err)

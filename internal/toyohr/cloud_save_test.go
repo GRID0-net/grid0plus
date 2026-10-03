@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/n-popescu/grid0plus/proto/common"
+
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
@@ -80,5 +82,55 @@ func TestWriteSaveRecordRefusesAnUnauthenticatedCaller(t *testing.T) {
 	_, err := svc.WriteSaveRecord(context.Background(), &toyohrpb.WriteSaveRecordRequest{})
 	if err == nil {
 		t.Fatal("WriteSaveRecord succeeded with no authenticated caller")
+	}
+}
+
+func TestADroppedMatchPenaltyIsNeverKept(t *testing.T) {
+	as(t, "aaaaaaaaaaaaaaaa")
+	svc, _ := newService(t, time.Now())
+	integer := func(n int64) *common.Value {
+		return &common.Value{ValueType: &common.Value_IntegerValue{IntegerValue: n}}
+	}
+	boolean := func(b bool) *common.Value {
+		return &common.Value{ValueType: &common.Value_BooleanValue{BooleanValue: b}}
+	}
+
+	_, err := svc.WriteSaveRecord(context.Background(), &toyohrpb.WriteSaveRecordRequest{
+		Name:          "tenants/" + testTenant + "/saveRecords/aaaaaaaaaaaaaaaa",
+		SaveEventType: "tenants/current/saveEventTypes/ApplyRedCard",
+		SaveRecord: &toyohrpb.SaveRecord{SaveData: &common.MapValue{Fields: map[string]*common.Value{
+			"PlayerRankExp": integer(500),
+			"OnlinePlayPenalty": {ValueType: &common.Value_MapValue{MapValue: &common.MapValue{
+				Fields: map[string]*common.Value{
+					"YellowCardNum":     integer(1),
+					"TotalPenaltyCount": integer(2),
+					"PenaltyBitFlag":    integer(43),
+					"IsRedCard":         boolean(true),
+				},
+			}}},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("WriteSaveRecord: %v", err)
+	}
+
+	got, err := svc.GetSaveRecord(context.Background(), &toyohrpb.GetSaveRecordRequest{
+		Name: "tenants/" + testTenant + "/users/aaaaaaaaaaaaaaaa/saveRecord",
+	})
+	if err != nil {
+		t.Fatalf("GetSaveRecord: %v", err)
+	}
+	fields := got.GetSaveData().GetFields()
+	if fields["PlayerRankExp"].GetIntegerValue() != 500 {
+		t.Error("progression written alongside the penalty was lost")
+	}
+	penalty := fields["OnlinePlayPenalty"].GetMapValue().GetFields()
+	for _, k := range []string{"YellowCardNum", "TotalPenaltyCount", "PenaltyBitFlag"} {
+		if v, ok := penalty[k]; !ok || v.GetIntegerValue() != 0 {
+			t.Errorf("%s = %v, want a present 0 -- a kept card is a several-minute wait", k, v)
+		}
+	}
+	if v, ok := penalty["IsRedCard"]; !ok || v.GetBooleanValue() {
+		t.Errorf("IsRedCard = %v, want a present false", v)
 	}
 }
