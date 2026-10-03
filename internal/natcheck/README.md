@@ -34,7 +34,12 @@ Message layout, big-endian:
 | 3 | the regular address, a different port |
 | 4, 5 | the regular address and port (mapping probes) |
 | 101, 103 | like 1 |
-| 102 | like 3 |
+| 102 | the regular address and port by default (`type102_same_port`); like 3 when off |
+
+Type 102 is answered from the port it was sent to. A capture of Nextendo's
+working server (2026-10-02) shows its replies coming from 10025, not 10125.
+Answered from 10125, the reply is dropped by a port-restricted home router,
+Pia's NAT check never completes, and Splatoon 3 fails to create a room.
 
 ## The two-address requirement
 

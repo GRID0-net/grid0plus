@@ -702,8 +702,9 @@ type NATCheck struct {
 	// AlternateListen is a socket on a DIFFERENT ADDRESS, used for message
 	// type 2. Leave empty if you only have one address.
 	AlternateListen string `yaml:"alternate_listen"`
-	// Type102SamePort is a reversible compatibility mode for clients that
-	// repeat type 101/102 probes without completing NAT detection.
+	// Type102SamePort answers type 102 from the port it was sent to, as
+	// Nextendo's working server does (capture of 2026-10-02). From 10125 a
+	// home router drops the reply and Pia's NAT check never completes.
 	Type102SamePort bool `yaml:"type102_same_port"`
 	// StunListen answers STUN (RFC 5389) Binding requests -- a different
 	// protocol from the NCS one above, but the same kind of lightweight UDP
@@ -836,6 +837,7 @@ func Default() Config {
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",
 			SecondaryListen: ":10125",
+			Type102SamePort: true,
 			StunListen:      ":3478",
 		},
 		Log: Log{

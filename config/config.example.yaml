@@ -655,10 +655,11 @@ natcheck:
   # NAT than the router really has.
   alternate_listen: "192.168.1.51:10025"
 
-  # Compatibility probe for a Switch that repeats type 101/102 and never
-  # reaches nncs2. False preserves the documented different-port reply.
-  # Enable only while comparing against a real packet capture.
-  type102_same_port: false
+  # Answer type 102 from the port it was sent to (10025), as a working
+  # Nextendo server does. False answers from 10125 instead, which a home
+  # router drops: Pia's NAT check then never completes and Splatoon 3 fails
+  # to create a room with a communication error.
+  type102_same_port: true
 
   # Answers STUN (RFC 5389) Binding requests -- a different protocol from NCS
   # above, but the same kind of lightweight UDP connectivity responder.
