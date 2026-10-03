@@ -548,6 +548,7 @@ func (s *Server) WriteDocuments(
 	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
+	s.resendKickoffVerdictAfterProfile(caller, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
 		caller, _ := callerFrom(ctx)
 		s.stageDeferments(caller, req.GetDefermentOperations())

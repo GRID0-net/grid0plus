@@ -218,3 +218,78 @@ func TestTheRefereeTraceIDIsTheSessionIDWithoutDashes(t *testing.T) {
 		t.Fatalf("trace_id = %q", got)
 	}
 }
+
+// The game ignores the kickoff verdict until it has queued its @@Profile write,
+// so a verdict sent only at kickoff leaves every console waiting until its
+// 30-second referee timeout.
+func TestTheKickoffVerdictIsSentAgainAfterAConsoleWritesItsProfile(t *testing.T) {
+	h := newHarness(t)
+	alice := h.session("token-alice")
+	h.srv.mu.Lock()
+	for _, sess := range h.srv.sessions {
+		sess.details = &SessionDetails{UserID: sess.userID, SessionID: "match-1"}
+	}
+	h.srv.mu.Unlock()
+
+	const battle = "20261003T112420_match-1"
+	const resultName = refereeResultPrefix + battle
+	ctx, cancel := context.WithTimeout(alice, 3*time.Second)
+	defer cancel()
+	stream, err := h.client.KeepUserSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&syncpb.KeepUserSessionRequest{
+		RequestType: &syncpb.KeepUserSessionRequest_UpdateTarget{
+			UpdateTarget: &syncpb.UpdateTargetRequest{Target: &syncpb.Target{
+				Name: "userSessions/current/targets/8",
+				TargetType: &syncpb.Target_Collection{Collection: &syncpb.CollectionTarget{
+					Collection: "docs/@@RefereeResult",
+				}},
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.GetTargetChange().GetTargetChangeType() == syncpb.TargetChange_LISTED {
+			break
+		}
+	}
+	verdict := func(after string) {
+		t.Helper()
+		for {
+			msg, err := stream.Recv()
+			if err != nil {
+				t.Fatalf("no kickoff verdict after %s: %v", after, err)
+			}
+			if d := msg.GetDocumentChange(); d != nil && d.GetDocument().GetName() == resultName {
+				if d.GetDocument().GetFields().GetFields()["status"].GetIntegerValue() != 0 {
+					t.Fatalf("verdict after %s does not carry status 0", after)
+				}
+				return
+			}
+		}
+	}
+	write := func(name string) {
+		t.Helper()
+		if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{
+			WriteOperations: []*syncpb.WriteOperation{merge(doc(name, map[string]*commonpb.Value{
+				"battle_id": verdictString(battle),
+				"users": {ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{
+					Values: []*commonpb.Value{verdictString("alice")},
+				}}},
+			}))},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(refereeRequestPrefix + battle)
+	verdict("the kickoff request")
+	write(refereeProfilePrefix + battle + "/User/us-alice")
+	verdict("@@Profile")
+}

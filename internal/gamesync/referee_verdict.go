@@ -54,7 +54,52 @@ const (
 	refereeRequestPrefix = "docs/@@RefereeRequest/"
 	refereeReportPrefix  = "docs/@@RefereeReport/"
 	refereeResultPrefix  = "docs/@@RefereeResult/"
+	refereeProfilePrefix = "docs/@@Profile/"
 )
+
+// resendKickoffVerdictAfterProfile re-delivers a battle's @@RefereeResult once
+// a console has written its @@Profile for that battle.
+//
+// The game only accepts the kickoff verdict (status 0) once its referee is in
+// the state it enters when it queues the @@Profile write (Splatoon 3's
+// FUN_71014ff540 sets state 3 there; FUN_71014fe4b0 moves 3 -> 4 only on a
+// status-0 change). The verdict is published at kickoff, about 15 s earlier,
+// while the console is still in an earlier state and ignores it. Without a
+// later copy it waits 1800 frames (FUN_7103898e98) and leaves the match with
+// GamesyncRefereeTimeoutVs: the private-battle drop 30 s after loading.
+// Nextendo's server re-sends the verdict repeatedly, which is why it never
+// hits this.
+func (s *Server) resendKickoffVerdictAfterProfile(caller *session, ops []*syncpb.WriteOperation) {
+	if caller.details == nil || caller.details.SessionID == "" {
+		return
+	}
+	sent := map[string]bool{}
+	for _, op := range ops {
+		var name string
+		if v := op.GetUpdateDocument(); v != nil {
+			name = v.GetDocument().GetName()
+		} else if v := op.GetMergeDocument(); v != nil {
+			name = v.GetDocument().GetName()
+		}
+		if !strings.HasPrefix(name, refereeProfilePrefix) {
+			continue
+		}
+		battleID := strings.SplitN(strings.TrimPrefix(name, refereeProfilePrefix), "/", 2)[0]
+		if battleID == "" || sent[battleID] || !strings.HasSuffix(battleID, "_"+caller.details.SessionID) {
+			continue
+		}
+		sent[battleID] = true
+		verdict, ok := s.docsFor(caller).snapshot(refereeResultPrefix + battleID)
+		if !ok {
+			continue
+		}
+		verdict.UpdateTime = timestamppb.New(s.now())
+		s.watch.publish(scopeOf(caller), []*syncpb.DocumentChange{{
+			DocumentChangeType: syncpb.DocumentChange_UPDATED,
+			Document:           verdict,
+		}})
+	}
+}
 
 // refereeTraceID is the game-session id with its dashes removed: the working
 // Nextendo verdict for battle 20260930T153234_bc0ffe09-6aa4-443b-aaeb-
