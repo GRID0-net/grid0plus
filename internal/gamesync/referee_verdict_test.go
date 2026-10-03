@@ -344,3 +344,26 @@ func TestAnUnchangedVerdictIsStillRefreshed(t *testing.T) {
 		}
 	}
 }
+
+func TestADisconnectResultIsScoredAsALossNotADisconnect(t *testing.T) {
+	integer := func(n int64) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
+	}
+	player := func(fields map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: fields}}}
+	}
+	in := player(map[string]*commonpb.Value{
+		"dropped": player(map[string]*commonpb.Value{"team": integer(1), "deemed_result": integer(2)}),
+		"flagged": player(map[string]*commonpb.Value{"team": integer(1),
+			"disconnected": {ValueType: &commonpb.Value_BooleanValue{BooleanValue: true}}}),
+		"winner": player(map[string]*commonpb.Value{"team": integer(1)}),
+	})
+	teams := player(map[string]*commonpb.Value{"winner": integer(1)})
+
+	got := completePersonalResults(in, teams).GetMapValue().GetFields()
+	for id, want := range map[string]int64{"dropped": 1, "flagged": 1, "winner": 0} {
+		if d := got[id].GetMapValue().GetFields()["deemed_result"].GetIntegerValue(); d != want {
+			t.Errorf("%s: deemed_result = %d, want %d -- 2 is what earns the penalty card", id, d, want)
+		}
+	}
+}

@@ -254,6 +254,16 @@ func mergePersonalResults(previous, incoming *commonpb.Value) *commonpb.Value {
 	return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: out}}}
 }
 
+func reportsDisconnect(v *commonpb.Value) bool {
+	switch x := v.GetValueType().(type) {
+	case *commonpb.Value_BooleanValue:
+		return x.BooleanValue
+	case *commonpb.Value_IntegerValue:
+		return x.IntegerValue != 0
+	}
+	return false
+}
+
 // The captured final verdict has a fixed per-player shape even when an
 // individual console omitted fields from its report. The neutral values below
 // were measured on the working capture; supplied player values take priority.
@@ -298,7 +308,12 @@ func completePersonalResults(in, teamResult *commonpb.Value) *commonpb.Value {
 				"unity2_tag": verdictString(""), "property_tag": verdictString(""), "group_tag": verdictString(""),
 			}}}}
 		}
-		if fields["deemed_result"] == nil {
+		if reportsDisconnect(fields["disconnected"]) || fields["deemed_result"].GetIntegerValue() == 2 {
+			// deemed_result 2 is the disconnect result, and the game hands out
+			// its penalty card for it. A drop on GRID0+ is usually the network's
+			// fault, so it is scored as a plain loss, as Nextendo's server does.
+			fields["deemed_result"] = verdictInt(1)
+		} else if fields["deemed_result"] == nil {
 			deemed := int64(1)
 			if winner != 0 && fields["team"].GetIntegerValue() == winner {
 				deemed = 0
