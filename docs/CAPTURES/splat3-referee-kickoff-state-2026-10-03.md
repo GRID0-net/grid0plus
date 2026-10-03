@@ -23,14 +23,19 @@ The gamesync referee object keeps a state at `+0x440`:
 The kickoff verdict (`status 0`) is published when the first console writes
 `@@RefereeRequest`, about 15 s before `@@Profile`. At that point the console is
 not in state 3 and drops it. GRID0+ never sent it again, so every console sat in
-state 3 until the 30 s timeout. Nextendo's server re-sends `@@RefereeResult`
-repeatedly (104 deliveries in one regular match), which hides the ordering.
+state 3 until the 30 s timeout.
+
+Nextendo's server (regular match, 2026-09-30) re-sends the unchanged verdict
+with a fresh `updateTime` every 3 s (15:32:40.34, 43.34, 46.34, ...), and also
+sends one at 15:32:53.8168, right after that console's `@@Profile` committed at
+15:32:53.8167. Either copy moves a waiting console to state 4.
 
 ## What GRID0+ does
 
 `resendKickoffVerdictAfterProfile` in `internal/gamesync/referee_verdict.go`
 re-publishes the battle's `@@RefereeResult` after a console writes its
 `@@Profile`. The console sets state 3 when it queues that write, so a copy sent
-after the write commits always lands in state 3.
+after the write commits always lands in state 3. The 3 s session refresh also
+re-sends the verdict even when it has not changed, as Nextendo does.
 
 Not yet confirmed on hardware.

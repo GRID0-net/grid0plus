@@ -293,3 +293,54 @@ func TestTheKickoffVerdictIsSentAgainAfterAConsoleWritesItsProfile(t *testing.T)
 	write(refereeProfilePrefix + battle + "/User/us-alice")
 	verdict("@@Profile")
 }
+
+// Nextendo re-sends an unchanged verdict every refresh; a console that ignored
+// an earlier copy must get another without having to write anything.
+func TestAnUnchangedVerdictIsStillRefreshed(t *testing.T) {
+	h := newHarness(t)
+	h.srv.refreshEvery = 20 * time.Millisecond
+	alice := h.session("token-alice")
+	h.srv.mu.Lock()
+	for _, sess := range h.srv.sessions {
+		sess.details = &SessionDetails{UserID: sess.userID, SessionID: "match-1"}
+	}
+	h.srv.mu.Unlock()
+	const battle = "20261003T112420_match-1"
+	if _, err := h.client.WriteDocuments(alice, &syncpb.WriteDocumentsRequest{
+		WriteOperations: []*syncpb.WriteOperation{merge(doc(refereeRequestPrefix+battle, map[string]*commonpb.Value{
+			"users": {ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{
+				Values: []*commonpb.Value{verdictString("alice")},
+			}}},
+		}))},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(alice, 3*time.Second)
+	defer cancel()
+	stream, err := h.client.KeepUserSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.Send(&syncpb.KeepUserSessionRequest{
+		RequestType: &syncpb.KeepUserSessionRequest_UpdateTarget{
+			UpdateTarget: &syncpb.UpdateTargetRequest{Target: &syncpb.Target{
+				Name: "userSessions/current/targets/8",
+				TargetType: &syncpb.Target_Collection{Collection: &syncpb.CollectionTarget{
+					Collection: "docs/@@RefereeResult",
+				}},
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	copies := 0
+	for copies < 3 {
+		msg, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("only %d copies of the verdict: %v", copies, err)
+		}
+		if d := msg.GetDocumentChange(); d != nil && d.GetDocument().GetName() == refereeResultPrefix+battle {
+			copies++
+		}
+	}
+}

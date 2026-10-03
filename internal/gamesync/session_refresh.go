@@ -35,7 +35,7 @@ func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber, last 
 	}
 	for name, collection := range sub.collections {
 		switch collection {
-		case "docs/__gs", "docs/__us", "docs/__pgn/All/__pus":
+		case "docs/__gs", "docs/__us", "docs/__pgn/All/__pus", "docs/@@RefereeResult":
 			targets = append(targets, refreshTarget{name: name, collection: collection})
 		}
 	}
@@ -66,7 +66,10 @@ func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber, last 
 			// stream is mostly quiet between actual client writes; repeating
 			// these documents can starve the peer connection on the same socket.
 			key := id + "\x00" + name + "\x00" + doc.GetFields().GetFields()["susid"].GetStringValue()
-			if proto.Equal(last[key], doc.GetFields()) {
+			// The referee verdict is the exception: Nextendo re-sends it every
+			// 3 s unchanged, and the game ignores a copy that arrives before it
+			// is waiting for it (see resendKickoffVerdictAfterProfile).
+			if target.collection != "docs/@@RefereeResult" && proto.Equal(last[key], doc.GetFields()) {
 				continue
 			}
 			last[key] = proto.Clone(doc.GetFields()).(*commonpb.MapValue)
