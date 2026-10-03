@@ -126,8 +126,8 @@ func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
-	joiner.details = &SessionDetails{SessionID: "room-1", Players: []string{"alice", "bob"}}
+	host.details = &SessionDetails{SessionID: "room-1", Mode: privateBattleConfig, Capacity: 10, Players: []string{"alice", "bob"}}
+	joiner.details = &SessionDetails{SessionID: "room-1", Mode: privateBattleConfig, Capacity: 10, Players: []string{"alice", "bob"}}
 	outsider.details = &SessionDetails{SessionID: "room-2"}
 	for _, name := range []string{"docs/__us/us-bob", "docs/__pgn/All/__pus/us-bob"} {
 		member, ok := h.srv.watchDocument(joiner, name)
@@ -284,5 +284,33 @@ func TestAMaskedRoomUpdateKeepsTheFieldsItDidNotName(t *testing.T) {
 	}
 	if !stored.GetCreateTime().AsTime().Equal(time.Unix(1000, 0)) {
 		t.Errorf("createTime = %v, want the room's", stored.GetCreateTime().AsTime())
+	}
+}
+
+func TestEveryPlayerOfAMatchmadeGameReadsTheSameHost(t *testing.T) {
+	h := newHarness(t)
+	first, err := h.srv.newSession("alice", "userSessions/us-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.details = &SessionDetails{UserID: "alice", SessionID: "match-1", Mode: "regular_match_config", Players: []string{"alice", "bob"}}
+	second.details = &SessionDetails{UserID: "bob", SessionID: "match-1", Mode: "regular_match_config", Players: []string{"alice", "bob"}}
+	for _, caller := range []*session{first, second} {
+		status, ok := h.srv.roomDocument(caller, "docs/__gs/s")
+		if !ok {
+			t.Fatalf("%s: no __gs/s", caller.userID)
+		}
+		fields := status.GetFields().GetFields()
+		// Pia hosts when this names itself; two hosts never connect across networks.
+		if got := fields["uid"].GetStringValue(); got != "alice" {
+			t.Errorf("%s reads host %q, want alice for everyone", caller.userID, got)
+		}
+		if got := fields["ussid"].GetIntegerValue(); got != 1 {
+			t.Errorf("%s reads host rank %d, want 1", caller.userID, got)
+		}
 	}
 }
