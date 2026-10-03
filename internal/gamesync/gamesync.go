@@ -539,6 +539,7 @@ func (s *Server) WriteDocuments(
 		}
 	}
 
+	s.seedRoomDocuments(caller, req.GetWriteOperations())
 	results, commit, err := s.docsFor(caller).apply(req.GetWriteOperations())
 	if err != nil {
 		s.log.Warn("gamesync: write rejected", "writes", len(req.GetWriteOperations()),
@@ -649,6 +650,7 @@ func (s *Server) CommitTransaction(
 		return nil, err
 	}
 
+	s.seedRoomDocuments(caller, req.GetWriteOperations())
 	results, commit, err := s.docsFor(caller).apply(req.GetWriteOperations())
 	if err != nil {
 		return nil, err

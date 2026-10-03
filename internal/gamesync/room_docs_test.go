@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
+
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
@@ -244,5 +246,43 @@ func TestAPiaInboxWatchNeverCarriesThePeersInbox(t *testing.T) {
 		got["susid"].GetStringValue() != "us-alice" || got["suscid"].GetIntegerValue() != 1 ||
 		!reflect.DeepEqual(got["pl"].GetBytesValue(), []byte{1, 2, 3}) {
 		t.Fatalf("joiner's inbox does not carry the host's packet as written: %v", got)
+	}
+}
+
+func TestAMaskedRoomUpdateKeepsTheFieldsItDidNotName(t *testing.T) {
+	s := &Server{docs: newStoreSet(time.Now)}
+	caller := &session{details: &SessionDetails{
+		UserID: "alice", SessionID: "room-id", Tenant: "t-dce9377b-lp1",
+		Host: "example.invalid", Port: 443, ParticipantCount: 2, CreatedAt: time.Unix(1000, 0),
+	}, userSession: "gameSessions/room-id/userSessions/us-alice"}
+	boolean := func(b bool) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: b}}
+	}
+	// What the console sends when the room locks (gamesync capture, 2026-10-03).
+	ops := []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_UpdateDocument{
+		UpdateDocument: &syncpb.UpdateDocumentRequest{
+			Document: &syncpb.Document{Name: "docs/__gs/m", Fields: &commonpb.MapValue{
+				Fields: map[string]*commonpb.Value{"cp": boolean(false), "ebf": boolean(false), "ip": boolean(false)}}},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"`ip`", "`ebf`", "`cp`"}},
+		}}}}
+	s.seedRoomDocuments(caller, ops)
+	if _, _, err := s.docsFor(caller).apply(ops); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	stored, ok := s.docsFor(caller).get("docs/__gs/m")
+	if !ok {
+		t.Fatal("__gs/m was not stored")
+	}
+	fields := stored.GetFields().GetFields()
+	for _, k := range []string{"bfmax", "bfmin", "prp", "pw"} {
+		if fields[k] == nil {
+			t.Errorf("%s was dropped by an update that did not name it", k)
+		}
+	}
+	if fields["cp"].GetBooleanValue() || fields["ip"].GetBooleanValue() {
+		t.Error("the masked fields were not applied")
+	}
+	if !stored.GetCreateTime().AsTime().Equal(time.Unix(1000, 0)) {
+		t.Errorf("createTime = %v, want the room's", stored.GetCreateTime().AsTime())
 	}
 }

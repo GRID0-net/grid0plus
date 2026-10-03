@@ -161,3 +161,41 @@ func (s *Server) roomCollectionDocuments(caller *session, collection string) []*
 	}
 	return docs
 }
+
+// seedRoomDocuments stores the generated version of each room document a
+// write is about to change, before the write applies.
+//
+// Room documents such as docs/__gs/m are generated on read and not stored.
+// The console changes them with masked updates -- __gs/m gets only cp, ebf
+// and ip when the room locks -- and without a stored document to merge into,
+// that update created a document holding just those three fields, which
+// then replaced the generated one for every reader: bfmax, bfmin, prp and pw
+// were gone and createTime moved. A masked update has to land on the
+// document the console was shown.
+//
+// docs/__gs/r is left out: its counts are live and a stored copy would
+// freeze them.
+func (s *Server) seedRoomDocuments(caller *session, ops []*syncpb.WriteOperation) {
+	for _, op := range ops {
+		var name string
+		switch o := op.GetOperationType().(type) {
+		case *syncpb.WriteOperation_UpdateDocument:
+			if len(o.UpdateDocument.GetUpdateMask().GetPaths()) == 0 {
+				continue // a full replacement does not need the old fields
+			}
+			name = o.UpdateDocument.GetDocument().GetName()
+		case *syncpb.WriteOperation_MergeDocument:
+			name = o.MergeDocument.GetDocument().GetName()
+		case *syncpb.WriteOperation_TransformDocument:
+			name = o.TransformDocument.GetName()
+		default:
+			continue
+		}
+		if name == "docs/__gs/r" {
+			continue
+		}
+		if doc, ok := s.roomDocument(caller, name); ok {
+			s.docsFor(caller).seed(doc)
+		}
+	}
+}

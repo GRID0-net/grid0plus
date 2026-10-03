@@ -72,6 +72,15 @@ func (s *store) get(name string) (*syncpb.Document, bool) {
 	return doc, true
 }
 
+// seed stores doc unless a document by that name already exists.
+func (s *store) seed(doc *syncpb.Document) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.docs[doc.GetName()]; !ok {
+		s.docs[doc.GetName()] = proto.Clone(doc).(*syncpb.Document)
+	}
+}
+
 // snapshot returns a safe copy for post-commit observers. A report may arrive
 // as several masked writes, so examining only the last operation misses fields
 // that were already present in the committed document.
