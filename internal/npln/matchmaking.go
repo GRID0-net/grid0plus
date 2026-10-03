@@ -246,26 +246,22 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 				return err
 			}
 			if t.State == matchmaking.StateSucceeded {
-				// Do NOT return here. A real-hardware finding (Nextendo,
-				// 2026-08-13, cited in this project's own Nextendo-vs-
-				// GRID0+ comparison pass) found that closing this stream
-				// server-side the instant SUCCEEDED is sent races the
-				// console's own gRPC transport: its poll loop had nothing
-				// queued to send yet (still read-only) when the server hung
-				// up, so IssueToken/KeepUserSession -- whatever the console
-				// was about to send on this same session -- never left the
-				// transport before the socket was torn down roughly 1.2s
-				// later. Same symptom class as matchedUserSessions' own
-				// empty-MatchmakingIdToken bug this project already fixed
-				// (2321-4992): the console's session-channel request dies
-				// before it is ever sent. Blocking here until the CONSOLE
-				// closes its end, instead of the server closing it first,
-				// is what Nextendo's fix does. TIMED_OUT and CANCELLED keep
-				// the old eager-close behaviour below -- Nextendo's finding
-				// was specific to SUCCEEDED, and nothing confirms the same
-				// race applies to a ticket that never matched.
-				<-ctx.Done()
-				return ctx.Err()
+				// End the stream with OK shortly after SUCCEEDED. The console
+				// waits for that close before it calls gamesync IssueToken: in
+				// all six rounds of the Nextendo regular-match capture
+				// (2026-09-30) the server closed the stream with grpc-status 0
+				// and IssueToken followed 30-50 ms later. Holding it open
+				// until the console hung up (the previous behaviour, from an
+				// earlier reading of a 2026-08-13 Nextendo note) left regular
+				// matches searching forever with the cancel button still up.
+				// Closing a moment after SUCCEEDED rather than instantly keeps
+				// that note's concern about racing the console's transport.
+				select {
+				case <-time.After(m.s.succeededCloseAfter):
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
 			if terminal(t.State) {
 				return nil

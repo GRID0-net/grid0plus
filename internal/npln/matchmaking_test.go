@@ -835,62 +835,52 @@ func ticketFor(mode string) *mmpb.CreateMatchmakingTicketRequest {
 // Bounded by the test's own deadline rather than looping forever: a stream that
 // never delivers is exactly the bug this is here to catch, and a hung test
 // reports it far less clearly than a failed one.
-// TestTrackMatchmakingTicketStaysOpenAfterSucceeded is the regression test
-// for a real-hardware finding this project's own Nextendo-vs-GRID0+
-// comparison pass surfaced: closing this stream server-side the instant a
-// SUCCEEDED ticket is sent was found (Nextendo, 2026-08-13) to race the
-// console's own gRPC transport, dropping whatever it was about to send next
-// on that same stream. The fix is to keep the stream open until the CLIENT
-// closes it. This asserts the server-side half of that: Recv on a succeeded
-// ticket's stream must not return (server has not closed it) until this
-// test cancels its own context, at which point it must return promptly.
-func TestTrackMatchmakingTicketStaysOpenAfterSucceeded(t *testing.T) {
+// TestTrackMatchmakingTicketEndsWithOKShortlyAfterSucceeded pins what the
+// console waits for: Splatoon 3 only calls gamesync IssueToken once the server
+// has ended this stream with OK (Nextendo regular-match capture, 2026-09-30:
+// IssueToken 30-50 ms after every close). Held open, a regular match never
+// leaves the search screen. Not closed instantly either: a short hold keeps a
+// 2026-08-13 Nextendo note's concern about racing the console's transport.
+func TestTrackMatchmakingTicketEndsWithOKShortlyAfterSucceeded(t *testing.T) {
 	h := newHarness(t)
+	h.srv.succeededCloseAfter = 300 * time.Millisecond
 	h.createUser("player-one", "device-one")
 	h.createUser("player-two", "device-two")
 
-	oneCtx, cancelOne := context.WithCancel(h.ctx(h.sessionFor(t, "player-one", "device-one"), ""))
-	defer cancelOne()
+	one := h.ctx(h.sessionFor(t, "player-one", "device-one"), "")
 	two := h.ctx(h.sessionFor(t, "player-two", "device-two"), "")
-
 	client := mmpb.NewMatchmakerClient(h.conn)
 
-	first, err := client.CreateMatchmakingTicket(oneCtx, ticketFor("turf-war"))
+	first, err := client.CreateMatchmakingTicket(one, ticketFor("turf-war"))
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (one): %v", err)
 	}
-	streamOne, err := client.TrackMatchmakingTicket(oneCtx,
+	stream, err := client.TrackMatchmakingTicket(one,
 		&mmpb.TrackMatchmakingTicketRequest{Name: first.GetName()})
 	if err != nil {
 		t.Fatalf("TrackMatchmakingTicket (one): %v", err)
 	}
-
 	if _, err := client.CreateMatchmakingTicket(two, ticketFor("turf-war")); err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
+	awaitSucceeded(t, stream)
+	sentAt := time.Now()
 
-	awaitSucceeded(t, streamOne)
-
-	// The server must not have closed its end: a further Recv should not
-	// return within a short window.
-	recvDone := make(chan error, 1)
+	done := make(chan error, 1)
 	go func() {
-		_, err := streamOne.Recv()
-		recvDone <- err
+		_, err := stream.Recv()
+		done <- err
 	}()
 	select {
-	case err := <-recvDone:
-		t.Fatalf("stream closed itself right after SUCCEEDED (Recv returned %v), want it held open", err)
-	case <-time.After(200 * time.Millisecond):
-		// Expected: still open.
-	}
-
-	// Now the client closes its end -- the stream must end promptly.
-	cancelOne()
-	select {
-	case <-recvDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("stream did not close after the client cancelled its context")
+	case err := <-done:
+		if err != io.EOF {
+			t.Fatalf("stream ended with %v, want a clean OK (io.EOF)", err)
+		}
+		if held := time.Since(sentAt); held < 200*time.Millisecond {
+			t.Fatalf("stream closed %v after SUCCEEDED, want a short hold first", held)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream stayed open after SUCCEEDED; the console waits for it to end")
 	}
 }
 
