@@ -175,9 +175,13 @@ func main() {
 		IssueAccessToken: gamesyncProbeSigner,
 		OnRefereeReport: func(ctx context.Context, report gamesync.RefereeReport) error {
 			now := time.Now().UTC()
-			if err := ugcstore.RecordVsResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
-				report.Players, report.Fields, now); err != nil {
-				return err
+			if !report.Coop {
+				// Salmon Run history is a separate collection (CoopResults)
+				// whose shape nothing here has captured.
+				if err := ugcstore.RecordVsResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
+					report.Players, report.Fields, now); err != nil {
+					return err
+				}
 			}
 			return toyohr.RecordFestReport(ctx, store, report, now)
 		},

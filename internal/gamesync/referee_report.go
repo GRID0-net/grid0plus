@@ -47,15 +47,27 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 		// console's raw report, so the battle history shows the same outcome
 		// the game was told.
 		fields := proto.Clone(committed.GetFields()).(*commonpb.MapValue)
-		fields.Fields["personal_result"] = completePersonalResults(
-			fields.Fields["personal_result"], fields.Fields["team_result"])
+		coop := isCoopReport(fields) || strings.Contains(d.Mode, "coop")
+		if !coop {
+			fields.Fields["personal_result"] = completePersonalResults(
+				fields.Fields["personal_result"], fields.Fields["team_result"])
+		}
 		report := RefereeReport{
 			BattleID: battleID, SessionID: d.SessionID, Mode: d.Mode,
 			UserID: caller.userID, Players: append([]string(nil), d.Players...),
-			Fields: fields,
+			Fields: fields, Coop: coop,
 		}
 		if err := s.onRefereeReport(ctx, report); err != nil {
 			s.log.Warn("gamesync: could not record completed match", "battle", battleID, "error", err)
 		}
 	}
+}
+
+// isCoopReport tells a Salmon Run report from a versus one by its content:
+// only coop carries shift_id or scenario, the same test publishRefereeVerdict
+// uses. Its per-player results have their own shape, with report_score a
+// map, and the versus completion would add fields the game does not expect.
+func isCoopReport(fields *commonpb.MapValue) bool {
+	f := fields.GetFields()
+	return f["shift_id"] != nil || f["scenario"] != nil
 }

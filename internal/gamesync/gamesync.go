@@ -89,8 +89,10 @@ type Options struct {
 // report. Its user and session IDs come from the verified gamesync token.
 type RefereeReport struct {
 	BattleID, SessionID, Mode, UserID string
-	Players                           []string
-	Fields                            *commonpb.MapValue
+	// Coop is true for a Salmon Run report (see isCoopReport).
+	Coop    bool
+	Players []string
+	Fields  *commonpb.MapValue
 }
 
 // defaultSessionTTL is how long a gamesync session lasts.
