@@ -20,7 +20,7 @@ func TestSessionInfoWriteReachesBothCollectionTargets(t *testing.T) {
 			}},
 		})
 	}
-	w.publish([]*syncpb.DocumentChange{{
+	w.publish("room", []*syncpb.DocumentChange{{
 		DocumentChangeType: syncpb.DocumentChange_UPDATED,
 		Document:           &syncpb.Document{Name: "docs/SessionInfo/bob"},
 	}})

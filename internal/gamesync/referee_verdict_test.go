@@ -204,8 +204,10 @@ func TestARefereeRequestForAnotherSessionDoesNotPublishAVerdict(t *testing.T) {
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unauthenticated read = %v", err)
 	}
-	if _, ok := h.srv.docs.snapshot(refereeResultPrefix + battle); ok {
-		t.Fatal("another session's request created a verdict")
+	for scope, st := range h.srv.docs.stores {
+		if _, ok := st.snapshot(refereeResultPrefix + battle); ok {
+			t.Fatalf("another session's request created a verdict in %q", scope)
+		}
 	}
 }
 

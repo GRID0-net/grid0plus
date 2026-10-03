@@ -1404,3 +1404,54 @@ func TestCreateRoundEchoesTheClientsRoundWithoutInventingFields(t *testing.T) {
 func fieldMask(paths ...string) *fieldmaskpb.FieldMask {
 	return &fieldmaskpb.FieldMask{Paths: paths}
 }
+
+func TestTwoRoomsDoNotShareDocuments(t *testing.T) {
+	h := newHarness(t)
+	rooms := map[string]string{"token-alice": "room-a", "token-bob": "room-b"}
+	h.srv.resolveSession = func(token string) (SessionDetails, error) {
+		user := idTokens[token]
+		return SessionDetails{UserID: user, UserSessionID: token, SessionID: rooms[token], Players: []string{user}}, nil
+	}
+	alice := h.session("token-alice")
+	bob := h.session("token-bob")
+
+	const name = "docs/Event/shared"
+	write := func(ctx context.Context, field string) {
+		t.Helper()
+		_, err := h.client.WriteDocuments(ctx, &syncpb.WriteDocumentsRequest{
+			WriteOperations: []*syncpb.WriteOperation{merge(doc(name, map[string]*commonpb.Value{field: intValue(1)}))},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(alice, "from_a")
+	write(bob, "from_b")
+
+	got, err := h.client.GetDocument(alice, &syncpb.GetDocumentRequest{Name: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := got.GetFields().GetFields()
+	if fields["from_b"] != nil || fields["from_a"] == nil {
+		t.Errorf("room A's %s = %v; room B's write leaked into it", name, fields)
+	}
+}
+
+func TestAChangeReachesOnlyItsOwnRoomsWatchers(t *testing.T) {
+	w := newWatchers()
+	same := w.subscribe("alice", "us-alice", "room-a")
+	other := w.subscribe("bob", "us-bob", "room-b")
+	for _, sub := range []*subscriber{same, other} {
+		w.addTarget(sub, &syncpb.Target{Name: "userSessions/current/targets/1",
+			TargetType: &syncpb.Target_Collection{Collection: &syncpb.CollectionTarget{Collection: "docs/MasterCollection"}}})
+	}
+	w.publish("room-a", []*syncpb.DocumentChange{{
+		DocumentChangeType: syncpb.DocumentChange_UPDATED,
+		Document:           &syncpb.Document{Name: "docs/MasterCollection/Session"},
+	}})
+	if len(same.changes) != 1 || len(other.changes) != 0 {
+		t.Errorf("room-a change delivered %d to room-a, %d to room-b; want 1 and 0",
+			len(same.changes), len(other.changes))
+	}
+}

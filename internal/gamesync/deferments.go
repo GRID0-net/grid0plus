@@ -105,11 +105,11 @@ func (s *Server) endSessionStream(caller *session) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		_, commit, err := s.docs.apply(deferred[name])
+		_, commit, err := s.docsFor(caller).apply(deferred[name])
 		if err != nil {
 			s.log.Warn("gamesync: deferred cleanup failed", "name", name, "error", err)
 			continue
 		}
-		s.watch.publish(commit.changes)
+		s.watch.publish(scopeOf(caller), commit.changes)
 	}
 }

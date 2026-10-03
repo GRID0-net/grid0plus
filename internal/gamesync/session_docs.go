@@ -35,7 +35,7 @@ func participantRank(caller *session) int64 {
 }
 
 func (s *Server) collectionSnapshot(caller *session, collection string) []*syncpb.Document {
-	docs := s.docs.list(collection)
+	docs := s.docsFor(caller).list(collection)
 	visible := docs[:0]
 	for _, doc := range docs {
 		if normalized, ok := s.watchDocument(caller, doc.GetName()); ok {
@@ -101,7 +101,7 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 	if isPlayerSessionDocument(name) && peer == nil {
 		return nil, false
 	}
-	if doc, ok := s.docs.get(name); ok {
+	if doc, ok := s.docsFor(caller).get(name); ok {
 		if peer != nil || (name == "docs/MasterCollection/Session" && caller.details != nil) {
 			var defaults *syncpb.Document
 			if name == "docs/MasterCollection/Session" {
@@ -277,3 +277,13 @@ func (s *Server) normalizeSessionChanges(caller *session, changes []*syncpb.Docu
 	}
 	return changes
 }
+
+// scopeOf is the game session a caller's documents belong to.
+func scopeOf(caller *session) string {
+	if caller == nil || caller.details == nil {
+		return ""
+	}
+	return caller.details.SessionID
+}
+
+func (s *Server) docsFor(caller *session) *store { return s.docs.in(scopeOf(caller)) }

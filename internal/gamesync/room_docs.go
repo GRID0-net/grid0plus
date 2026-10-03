@@ -98,7 +98,7 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 			"tn": str(""), "att": mapValue(nil), "ltc": mapValue(nil),
 		}
 		if s.docs != nil {
-			if userSession, ok := s.docs.snapshot("docs/__us/" + sessionID(caller.userSession)); ok {
+			if userSession, ok := s.docsFor(caller).snapshot("docs/__us/" + sessionID(caller.userSession)); ok {
 				for _, key := range []string{"att", "ltc", "pgn", "st", "tn"} {
 					if value := userSession.GetFields().GetFields()[key]; value != nil {
 						fields[key] = value

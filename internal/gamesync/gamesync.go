@@ -114,7 +114,7 @@ type Server struct {
 	refreshEvery     time.Duration
 	now              func() time.Time
 
-	docs  *store
+	docs  *storeSet
 	watch *watchers
 	// A report from any player may update the same battle verdict. Serialize
 	// read/merge/write so simultaneous reports cannot discard one another.
@@ -173,7 +173,7 @@ func New(opts Options) (*Server, error) {
 		sessionTTL:       opts.SessionTTL,
 		refreshEvery:     3 * time.Second,
 		now:              opts.Now,
-		docs:             newStore(opts.Now),
+		docs:             newStoreSet(opts.Now),
 		watch:            newWatchers(),
 		sessions:         map[string]*session{},
 		cleanups:         map[string]*userSessionCleanup{},
@@ -506,11 +506,12 @@ func (s *Server) ListDocuments(
 func (s *Server) QueryCollectionIds(
 	ctx context.Context, req *syncpb.QueryCollectionIdsRequest,
 ) (*syncpb.QueryCollectionIdsResponse, error) {
-	if _, ok := callerFrom(ctx); !ok {
+	caller, ok := callerFrom(ctx)
+	if !ok {
 		return nil, errUnauthenticated
 	}
 	return &syncpb.QueryCollectionIdsResponse{
-		CollectionIds: s.docs.collections(req.GetDocument()),
+		CollectionIds: s.docsFor(caller).collections(req.GetDocument()),
 	}, nil
 }
 
@@ -538,13 +539,13 @@ func (s *Server) WriteDocuments(
 		}
 	}
 
-	results, commit, err := s.docs.apply(req.GetWriteOperations())
+	results, commit, err := s.docsFor(caller).apply(req.GetWriteOperations())
 	if err != nil {
 		s.log.Warn("gamesync: write rejected", "writes", len(req.GetWriteOperations()),
 			"error", err)
 		return nil, err
 	}
-	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
+	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
@@ -588,11 +589,11 @@ func (s *Server) LazyWriteDocuments(
 		}
 	}
 
-	_, commit, err := s.docs.apply(ops)
+	_, commit, err := s.docsFor(caller).apply(ops)
 	if err != nil {
 		return nil, err
 	}
-	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
+	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, ops)
 	s.observeRefereeReports(ctx, ops)
 
@@ -647,11 +648,11 @@ func (s *Server) CommitTransaction(
 		return nil, err
 	}
 
-	results, commit, err := s.docs.apply(req.GetWriteOperations())
+	results, commit, err := s.docsFor(caller).apply(req.GetWriteOperations())
 	if err != nil {
 		return nil, err
 	}
-	s.watch.publish(s.normalizeSessionChanges(caller, commit.changes))
+	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 

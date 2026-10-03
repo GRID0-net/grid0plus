@@ -33,7 +33,7 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 			continue
 		}
 		battleID := strings.SplitN(strings.TrimPrefix(doc.GetName(), prefix), "/", 2)[0]
-		committed, ok := s.docs.snapshot(doc.GetName())
+		committed, ok := s.docsFor(caller).snapshot(doc.GetName())
 		if !ok || battleID == "" || committed.GetFields().GetFields()["team_result"] == nil ||
 			committed.GetFields().GetFields()["personal_result"] == nil {
 			continue

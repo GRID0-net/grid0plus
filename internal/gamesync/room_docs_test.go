@@ -11,7 +11,7 @@ import (
 )
 
 func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
-	s := &Server{docs: newStore(time.Now)}
+	s := &Server{docs: newStoreSet(time.Now)}
 	caller := &session{details: &SessionDetails{
 		UserID: "alice", SessionID: "room-id", Tenant: "t-dce9377b-lp1", Mode: "private_match_config",
 		Host: "example.invalid", Port: 443, Capacity: 10, ParticipantCount: 1,
@@ -90,7 +90,7 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 	if got := status.GetFields().GetFields()["uid"].GetStringValue(); got != "alice" {
 		t.Errorf("__gs/s uid = %q", got)
 	}
-	_, _, err := s.docs.apply([]*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_MergeDocument{
+	_, _, err := s.docsFor(caller).apply([]*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_MergeDocument{
 		MergeDocument: &syncpb.MergeDocumentRequest{Document: &syncpb.Document{
 			Name: "docs/__us/us-alice", Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 				"uid":   {ValueType: &commonpb.Value_StringValue{StringValue: "mallory"}},
@@ -150,7 +150,7 @@ func TestRoomJoinerSeesCompletePeerSessionDocuments(t *testing.T) {
 			}},
 		}}
 	}
-	_, _, err = h.srv.docs.apply([]*syncpb.WriteOperation{
+	_, _, err = h.srv.docsFor(host).apply([]*syncpb.WriteOperation{
 		partial("docs/__us/us-alice", map[string]*commonpb.Value{"att": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{}}}}),
 		partial("docs/__pgn/All/__pus/us-alice", map[string]*commonpb.Value{"pgn": stringValue("All"), "uid": stringValue("forged")}),
 		partial("docs/__us/us-mallory", map[string]*commonpb.Value{"uid": stringValue("mallory")}),
@@ -189,7 +189,7 @@ func TestAPiaInboxWatchNeverCarriesThePeersInbox(t *testing.T) {
 	joiner.details = &SessionDetails{SessionID: "room-1", Mode: "private_match_config", Players: []string{"alice", "bob"}}
 	write := func(name string, fields map[string]*commonpb.Value) {
 		t.Helper()
-		_, _, err := h.srv.docs.apply([]*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_MergeDocument{
+		_, _, err := h.srv.docsFor(host).apply([]*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_MergeDocument{
 			MergeDocument: &syncpb.MergeDocumentRequest{Document: &syncpb.Document{
 				Name: name, Fields: &commonpb.MapValue{Fields: fields},
 			}},

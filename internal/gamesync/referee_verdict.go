@@ -33,11 +33,11 @@ func (s *Server) duplicateRefereeKickoff(caller *session, req *syncpb.WriteDocum
 	if !strings.HasPrefix(name, refereeRequestPrefix) || !strings.HasSuffix(name, "_"+caller.details.SessionID) {
 		return nil, false
 	}
-	stored, exists := s.docs.snapshot(name)
+	stored, exists := s.docsFor(caller).snapshot(name)
 	if !exists {
 		return nil, false
 	}
-	if _, ready := s.docs.snapshot(refereeResultPrefix + strings.TrimPrefix(name, refereeRequestPrefix)); !ready {
+	if _, ready := s.docsFor(caller).snapshot(refereeResultPrefix + strings.TrimPrefix(name, refereeRequestPrefix)); !ready {
 		return nil, false
 	}
 	commitTime := stored.GetUpdateTime()
@@ -113,24 +113,25 @@ func (s *Server) publishRefereeVerdicts(ctx context.Context, ops []*syncpb.Write
 		if !strings.HasSuffix(battleID, "_"+caller.details.SessionID) {
 			continue
 		}
-		if err := s.publishRefereeVerdict(battleID, name, final); err != nil {
+		if err := s.publishRefereeVerdict(caller.details.SessionID, battleID, name, final); err != nil {
 			s.log.Warn("gamesync: could not publish referee verdict", "battle", battleID, "error", err)
 		}
 	}
 }
 
-func (s *Server) publishRefereeVerdict(battleID, sourceName string, final bool) error {
+func (s *Server) publishRefereeVerdict(scope, battleID, sourceName string, final bool) error {
+	docs := s.docs.in(scope)
 	s.refereeMu.Lock()
 	defer s.refereeMu.Unlock()
 
-	source, ok := s.docs.snapshot(sourceName)
+	source, ok := docs.snapshot(sourceName)
 	if !ok {
 		return nil
 	}
 	resultName := refereeResultPrefix + battleID
 	var fields map[string]*commonpb.Value
 	if !final {
-		if previous, ok := s.docs.snapshot(resultName); ok && previous.GetFields().GetFields()["status"] != nil {
+		if previous, ok := docs.snapshot(resultName); ok && previous.GetFields().GetFields()["status"] != nil {
 			// A retried kickoff must not replace a final verdict or rotate its
 			// trace ID while clients are already watching it.
 			return nil
@@ -156,7 +157,7 @@ func (s *Server) publishRefereeVerdict(battleID, sourceName string, final bool) 
 			fields["tournament_id"] = verdictString("")
 		}
 	} else {
-		previous, ok := s.docs.snapshot(resultName)
+		previous, ok := docs.snapshot(resultName)
 		if !ok || source.GetFields().GetFields()["team_result"] == nil ||
 			source.GetFields().GetFields()["personal_result"] == nil {
 			return nil
@@ -178,7 +179,7 @@ func (s *Server) publishRefereeVerdict(battleID, sourceName string, final bool) 
 	}
 
 	doc := &syncpb.Document{Name: resultName, Fields: &commonpb.MapValue{Fields: fields}}
-	_, commit, err := s.docs.apply([]*syncpb.WriteOperation{{
+	_, commit, err := docs.apply([]*syncpb.WriteOperation{{
 		OperationType: &syncpb.WriteOperation_MergeDocument{
 			MergeDocument: &syncpb.MergeDocumentRequest{Document: doc},
 		},
@@ -186,7 +187,7 @@ func (s *Server) publishRefereeVerdict(battleID, sourceName string, final bool) 
 	if err != nil {
 		return err
 	}
-	s.watch.publish(commit.changes)
+	s.watch.publish(scope, commit.changes)
 	return nil
 }
 

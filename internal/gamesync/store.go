@@ -29,6 +29,35 @@ type store struct {
 	nextSeq int64
 }
 
+// storeSet holds one store per game session.
+//
+// Every room's documents share names -- docs/MasterCollection/Session,
+// docs/__gs/f, docs/__pgn/All/__pus/... -- so one store for the whole server
+// let one room's writes land in another's documents. On 2026-10-03 an emulator
+// failing to open a private room disconnected every Switch in a different
+// room. Nextendo keys its store the same way (cleStore(gsid, name)).
+type storeSet struct {
+	now    func() time.Time
+	mu     sync.Mutex
+	stores map[string]*store
+}
+
+func newStoreSet(now func() time.Time) *storeSet {
+	return &storeSet{now: now, stores: map[string]*store{}}
+}
+
+// in returns the store for one game session, creating it on first use.
+func (ss *storeSet) in(scope string) *store {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	st := ss.stores[scope]
+	if st == nil {
+		st = newStore(ss.now)
+		ss.stores[scope] = st
+	}
+	return st
+}
+
 func newStore(now func() time.Time) *store {
 	return &store{now: now, docs: map[string]*syncpb.Document{}, globals: map[string]*commonpb.Value{}}
 }

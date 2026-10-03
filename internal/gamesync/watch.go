@@ -93,7 +93,9 @@ func (w *watchers) removeTarget(sub *subscriber, name string) {
 // The target id is stamped per subscriber, because the same document can be
 // watched under different target names by different consoles — and the client
 // matches a change to the target it asked for.
-func (w *watchers) publish(changes []*syncpb.DocumentChange) {
+// Only subscribers in the same game session see a change: the stores are
+// per session, and two rooms use the same document names.
+func (w *watchers) publish(scope string, changes []*syncpb.DocumentChange) {
 	if len(changes) == 0 {
 		return
 	}
@@ -101,6 +103,9 @@ func (w *watchers) publish(changes []*syncpb.DocumentChange) {
 	w.mu.Lock()
 	subs := make([]*subscriber, 0, len(w.subs))
 	for sub := range w.subs {
+		if sub.sessionID != scope {
+			continue
+		}
 		subs = append(subs, sub)
 	}
 	w.mu.Unlock()
