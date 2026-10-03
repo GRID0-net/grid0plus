@@ -287,3 +287,38 @@ func scopeOf(caller *session) string {
 }
 
 func (s *Server) docsFor(caller *session) *store { return s.docs.in(scopeOf(caller)) }
+
+// rankSessionCounter answers the console's increment of its own upcsid with
+// its rank in the game session.
+//
+// Each console joins the session by writing its __pus document and then
+// transforming upcsid: load the global __upcsidn, maximum 20000, increment
+// 1, store the global back. It keeps the increment's result as its own
+// upcsid, and Pia then finds itself, and the host, among the __pus documents
+// by upcsid (the loop at 0x7100a33040 compares each player's upcsid with its
+// own and with the host's). grid0 delivers those documents with upcsid set
+// to the rank, as Nextendo's server does, but answered the increment with
+// the raw counter, 20001 and up. No console found itself, and each one
+// hosted a mesh of its own: across networks that is SessionAlone.
+// Nextendo's server answers the same increment with 1 (capture of
+// 2026-09-30), so the result is the rank, the same number the documents
+// carry.
+func rankSessionCounter(caller *session, ops []*syncpb.WriteOperation, results []*syncpb.WriteResult) {
+	if caller == nil || caller.details == nil || caller.details.SessionID == "" {
+		return
+	}
+	own := "docs/__pgn/All/__pus/" + sessionID(caller.userSession)
+	rank := participantRank(caller)
+	for i, op := range ops {
+		t := op.GetTransformDocument()
+		if t == nil || t.GetName() != own || i >= len(results) {
+			continue
+		}
+		values := results[i].GetTransformResult().GetResults()
+		for j, ft := range t.GetFieldTransforms() {
+			if j < len(values) && maskTopLevel(ft.GetFieldPath()) == "upcsid" && ft.GetIncrement() != nil {
+				values[j] = &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: rank}}
+			}
+		}
+	}
+}

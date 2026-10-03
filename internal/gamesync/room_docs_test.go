@@ -286,3 +286,34 @@ func TestAMaskedRoomUpdateKeepsTheFieldsItDidNotName(t *testing.T) {
 		t.Errorf("createTime = %v, want the room's", stored.GetCreateTime().AsTime())
 	}
 }
+
+func TestAConsolesOwnUpcsidIncrementAnswersWithItsRank(t *testing.T) {
+	h := newHarness(t)
+	second, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.details = &SessionDetails{UserID: "bob", SessionID: "m", Players: []string{"alice", "bob"}}
+	iv := func(n int64) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
+	}
+	// The console's own write when it joins (gamesync capture, 2026-10-03).
+	name := "docs/__pgn/All/__pus/us-bob"
+	ops := []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_TransformDocument{
+		TransformDocument: &syncpb.TransformDocumentRequest{Name: name, FieldTransforms: []*syncpb.FieldTransform{
+			{FieldPath: "`upcsid`", TransformType: &syncpb.FieldTransform_LoadGlobalValue{LoadGlobalValue: "__upcsidn"}},
+			{FieldPath: "`upcsid`", TransformType: &syncpb.FieldTransform_Maximum{Maximum: iv(20000)}},
+			{FieldPath: "`upcsid`", TransformType: &syncpb.FieldTransform_Increment{Increment: iv(1)}},
+			{FieldPath: "`upcsid`", TransformType: &syncpb.FieldTransform_StoreGlobalValue{StoreGlobalValue: "__upcsidn"}},
+		}}}}}
+	results, _, err := h.srv.docsFor(second).apply(ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rankSessionCounter(second, ops, results)
+	// Pia keeps this as its own upcsid and looks for itself among the __pus
+	// documents, which carry the rank: anything else and it hosts alone.
+	if got := results[0].GetTransformResult().GetResults()[2].GetIntegerValue(); got != 2 {
+		t.Errorf("increment result = %d, want bob's rank 2", got)
+	}
+}
