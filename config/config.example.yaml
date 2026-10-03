@@ -396,21 +396,24 @@ npln:
   # Per-mode overrides of the above.
   #
   # Keyed on the mode name the game sends in a ticket's matchmaking_config.
-  # Nothing public documents those strings, so this starts empty and every mode
-  # that arrives without an entry is logged once -- that log line is how you
-  # learn the names to put here. For reference when you do: Turf War and
-  # Anarchy are 4v4 (eight players), Salmon Run is four, Tricolour is 4v2v2.
-  mode_players: {}
-  #  regular: 8
+  # Any mode that arrives without an entry is logged once. Turf War and
+  # Anarchy are 4v4 (eight players, the default above), Salmon Run is four,
+  # Tricolour is 4v2v2.
+  mode_players:
+    "tenants/current/matchmakingConfigs/coop_regular_config": 4
+    "tenants/current/matchmakingConfigs/coop_bigrun_config": 4
+    "tenants/current/matchmakingConfigs/coop_team_contest_config": 4
 
   # Modes formed like Salmon Run -- one team, no even split -- rather than
-  # like Turf War/Anarchy. Same rule as mode_players: real strings from a
-  # capture, none known yet, so this starts empty and everything is
-  # versus-shaped until you add one from the "unknown mode" log. Give each one
-  # its size in mode_players too (Salmon Run is 4); otherwise it takes up to
-  # players_per_match.
-  coop_modes: []
-  #  - coop
+  # like Turf War/Anarchy. Give each one its size in mode_players too;
+  # otherwise it takes up to players_per_match. These are the three Salmon
+  # Run configs in Splatoon 3's own table: regular, Big Run, and Eggstra
+  # Work (coop_team_contest_config). coop_regular_config is seen on hardware;
+  # the other two come from the game binary.
+  coop_modes:
+    - "tenants/current/matchmakingConfigs/coop_regular_config"
+    - "tenants/current/matchmakingConfigs/coop_bigrun_config"
+    - "tenants/current/matchmakingConfigs/coop_team_contest_config"
 
   # How long, in seconds, a versus-shaped match below players_per_match waits
   # with an even number of players before starting anyway. Anyone arriving or
