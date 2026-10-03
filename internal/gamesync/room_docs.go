@@ -88,36 +88,17 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	case "docs/__gs/m":
 		fields = settings()
 	case "docs/__gs/s":
-		// A nine-field __us document, including its live session counters.
-		// Returning room settings at this path gives the game an entirely
-		// different value type.
-		//
-		// Whose __us it is decides who hosts a matchmade game. Pia's
-		// AttachMeshJob creates the mesh when the host it reads here is
-		// itself and joins otherwise (the comparison is FUN_710093b204,
-		// caught on hardware 2026-10-03). Mirroring each caller's own
-		// session made every console the host: on one network they still
-		// found each other by LAN discovery, but across networks each ended
-		// up alone (SessionAlone). Nextendo's capture shows the caller's own
-		// session here, but it is one console's view, so it cannot tell
-		// "the caller" from "the host" apart. A matchmade game now names the
-		// first player for everyone; a private room keeps the caller, which
-		// works on hardware.
-		owner, uid, rank := caller, d.UserID, participantRank(caller)
-		if !isPrivateBattle(d) && len(d.Players) > 0 {
-			// The first player hosts whether or not they are connected yet:
-			// a joiner that reads this before the host has a gamesync session
-			// must still not name itself.
-			uid, rank = d.Players[0], 1
-			owner = s.sessionHost(caller)
-		}
+		// The working server mirrors the caller's nine-field __us document
+		// here, including its live session counters. Returning room settings
+		// at this path gives the game an entirely different value type.
+		rank := participantRank(caller)
 		fields = map[string]*commonpb.Value{
-			"uid": str(uid), "ussid": integer(rank), "ucsid": integer(rank),
+			"uid": str(d.UserID), "ussid": integer(rank), "ucsid": integer(rank),
 			"upcsid": integer(rank), "pgn": str("All"), "st": integer(2),
 			"tn": str(""), "att": mapValue(nil), "ltc": mapValue(nil),
 		}
 		if s.docs != nil {
-			if userSession, ok := s.docsFor(caller).snapshot("docs/__us/" + sessionID(owner.userSession)); ok {
+			if userSession, ok := s.docsFor(caller).snapshot("docs/__us/" + sessionID(caller.userSession)); ok {
 				for _, key := range []string{"att", "ltc", "pgn", "st", "tn"} {
 					if value := userSession.GetFields().GetFields()[key]; value != nil {
 						fields[key] = value
@@ -217,23 +198,4 @@ func (s *Server) seedRoomDocuments(caller *session, ops []*syncpb.WriteOperation
 			s.docsFor(caller).seed(doc)
 		}
 	}
-}
-
-// sessionHost returns the live session of the game session's first player,
-// or caller when that player is not connected; it only picks whose stored
-// __us fields (att, ltc, ...) __gs/s carries.
-func (s *Server) sessionHost(caller *session) *session {
-	d := caller.details
-	if d == nil || len(d.Players) == 0 || d.Players[0] == caller.userID {
-		return caller
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, peer := range s.sessions {
-		if peer.details != nil && peer.details.SessionID == d.SessionID &&
-			peer.userID == d.Players[0] && s.now().Before(peer.expiresAt) {
-			return peer
-		}
-	}
-	return caller
 }
