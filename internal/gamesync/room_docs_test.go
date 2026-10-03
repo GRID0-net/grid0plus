@@ -317,3 +317,23 @@ func TestAConsolesOwnUpcsidIncrementAnswersWithItsRank(t *testing.T) {
 		t.Errorf("increment result = %d, want bob's rank 2", got)
 	}
 }
+
+func TestAPrivateSalmonRunRoomGetsTheRoomShapeNotTheMatchmadeOne(t *testing.T) {
+	s := &Server{docs: newStoreSet(time.Now)}
+	caller := &session{details: &SessionDetails{
+		UserID: "alice", SessionID: "room-id", Tenant: "t-dce9377b-lp1",
+		Mode: "tenants/current/matchmakingConfigs/coop_private_config", Room: true,
+		Host: "example.invalid", Port: 443, Capacity: 4, ParticipantCount: 1, CreatedAt: time.Unix(1000, 0),
+	}, userSession: "gameSessions/room-id/userSessions/us-alice"}
+	fixed, ok := s.roomDocument(caller, "docs/__gs/f")
+	if !ok {
+		t.Fatal("missing fixed room document")
+	}
+	f := fixed.GetFields().GetFields()
+	if got := f["maxu"].GetIntegerValue(); got != 4 {
+		t.Errorf("maxu = %d, want the room's own 4, not the matchmade 8", got)
+	}
+	if got := f["mcn"].GetStringValue(); got != "coop_private_config" {
+		t.Errorf("mcn = %q, want the room's config name", got)
+	}
+}

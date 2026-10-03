@@ -20,21 +20,40 @@ type SessionDetails struct {
 	Capacity, ParticipantCount                                     int
 	CreatedAt                                                      time.Time
 	Properties                                                     *commonpb.MapValue
+	// Room is true for a room a host opened directly (a private battle, a
+	// private Salmon Run, a room friends join), false for a matchmade game.
+	Room bool
 }
 
 const privateBattleConfig = "private_match_config"
 
-// isPrivateBattle reports a private battle room, the one room mode with a
-// current capture of a working server (see roomDocument).
+// isPrivateBattle reports a room a host opened directly rather than a
+// matchmade game.
+//
+// Only the private battle has a capture of a working server (see
+// roomDocument): its room documents carry the room's own capacity and config
+// name, and its __stu the private shape. Private Salmon Run
+// (coop_private_config) and the rooms friends join
+// (join_room_4_no_referee_config) are opened through the same room API and
+// are given the same shape, a reading rather than a capture: before the
+// private-battle fix every room got the matchmade shape, and that is what
+// broke private battles.
 func isPrivateBattle(d *SessionDetails) bool {
 	if d == nil || d.Capacity <= 0 {
 		return false
 	}
+	if d.Room {
+		return true
+	}
+	return roomConfig(d) == privateBattleConfig
+}
+
+func roomConfig(d *SessionDetails) string {
 	mode := d.Mode
 	if i := strings.LastIndex(mode, "/"); i >= 0 {
 		mode = mode[i+1:]
 	}
-	return mode == privateBattleConfig
+	return mode
 }
 
 func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, bool) {
@@ -66,7 +85,7 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	// capture shows them too.
 	wireCapacity, mcn := 8, ""
 	if isPrivateBattle(d) {
-		wireCapacity, mcn = d.Capacity, privateBattleConfig
+		wireCapacity, mcn = d.Capacity, roomConfig(d)
 	}
 	settings := func() map[string]*commonpb.Value {
 		return map[string]*commonpb.Value{

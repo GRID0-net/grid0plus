@@ -598,6 +598,7 @@ func (s *Server) ResolveGamesyncSession(idToken string) (gamesync.SessionDetails
 		Players: append([]string(nil), sess.Players...),
 		Tenant:  s.tenant, Mode: sess.Mode, Host: s.sessionHost, Port: s.sessionPort,
 		Capacity: sess.MaxPlayers, ParticipantCount: len(sess.Players), CreatedAt: sess.CreatedAt,
+		Room: sess.Room,
 	}
 	if sess.Room {
 		if meta, ok := s.roomMetaFor(sess.ID); ok {
