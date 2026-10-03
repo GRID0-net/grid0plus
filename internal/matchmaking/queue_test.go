@@ -1,6 +1,7 @@
 package matchmaking
 
 import (
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -804,4 +805,40 @@ func TestEveryPlayerInABigMatchHasTheirTicketMarkedMatched(t *testing.T) {
 	if left := q.liveWaitingLocked("turf_war"); len(left) != 0 {
 		t.Errorf("%d tickets still waiting after everyone was matched", len(left))
 	}
+}
+
+// TestASquadIsNeverSplitAcrossMatches: three solo players and a squad of two
+// queue for a 4-player Salmon Run; the first match takes the solos plus
+// nobody from the squad rather than one of its two members.
+func TestASquadIsNeverSplitAcrossMatches(t *testing.T) {
+	q, clock := testGraceQueue(t, 4, 0, 20*time.Second, "coop")
+	q.Enqueue("solo1", "coop")
+	q.Enqueue("solo2", "coop")
+	q.Enqueue("solo3", "coop")
+	squad, formed, err := q.EnqueueSquad("leader", []string{"member"}, "coop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(formed) != 0 {
+		t.Fatalf("formed %v: the only full match would split the squad", formed)
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, formed = q.Sweep()
+	if len(formed) != 1 {
+		t.Fatalf("formed %d matches after the wait, want 1", len(formed))
+	}
+	players := formed[0].Players
+	if slices.Contains(players, "leader") != slices.Contains(players, "member") {
+		t.Fatalf("squad split: %v", players)
+	}
+
+	// A squad leaves together.
+	other, _, _ := q.EnqueueSquad("leader2", []string{"member2"}, "coop", "")
+	q.Cancel(other.ID)
+	for _, id := range q.liveWaitingLocked("coop") {
+		if u := q.tickets[id].UserID; u == "member2" {
+			t.Errorf("member2 is still queued after the squad's ticket was cancelled")
+		}
+	}
+	_ = squad
 }

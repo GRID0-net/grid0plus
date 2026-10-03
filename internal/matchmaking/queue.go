@@ -80,6 +80,14 @@ type Ticket struct {
 	Mode string
 	// FestTeam comes from the account's stored fest entry, never ticket metadata.
 	FestTeam string
+	// Members are the other players of a squad this ticket queues for, each
+	// proved by a delegation naming the ticket's player. Each has a ticket of
+	// its own in the queue (Party set to this ticket) so it counts as a
+	// player, and the squad is only ever placed whole.
+	Members []string
+	// Party is, on a squad member's ticket, the ID of the ticket its squad
+	// queued with. Members follow that ticket, never their own.
+	Party string
 
 	State     State
 	CreatedAt time.Time
@@ -296,6 +304,12 @@ func (q *Queue) Enqueue(userID, mode string) (Ticket, []Session, error) {
 }
 
 func (q *Queue) EnqueueWithFestTeam(userID, mode, team string) (Ticket, []Session, error) {
+	return q.EnqueueSquad(userID, nil, mode, team)
+}
+
+// EnqueueSquad queues userID together with members, who must be matched in
+// the same session. The returned ticket is userID's; every member follows it.
+func (q *Queue) EnqueueSquad(userID string, members []string, mode, team string) (Ticket, []Session, error) {
 	if userID == "" {
 		return Ticket{}, nil, fmt.Errorf("matchmaking: no user")
 	}
@@ -307,17 +321,29 @@ func (q *Queue) EnqueueWithFestTeam(userID, mode, team string) (Ticket, []Sessio
 	defer q.mu.Unlock()
 
 	q.cancelUserTicketsLocked(userID)
+	for _, m := range members {
+		q.cancelUserTicketsLocked(m)
+	}
 
 	t := &Ticket{
 		ID:        uuid.NewString(),
 		UserID:    userID,
 		Mode:      mode,
 		FestTeam:  team,
+		Members:   slices.Clone(members),
 		State:     StateSearching,
 		CreatedAt: q.now(),
 	}
 	q.tickets[t.ID] = t
 	q.waiting[mode] = append(q.waiting[mode], t.ID)
+	for _, m := range members {
+		mt := &Ticket{
+			ID: uuid.NewString(), UserID: m, Mode: mode, FestTeam: team,
+			Party: t.ID, State: StateSearching, CreatedAt: t.CreatedAt,
+		}
+		q.tickets[mt.ID] = mt
+		q.waiting[mode] = append(q.waiting[mode], mt.ID)
+	}
 
 	sessions := q.formMatchesLocked()
 	return *q.tickets[t.ID], sessions, nil
@@ -339,6 +365,13 @@ func (q *Queue) Cancel(ticketID string) bool {
 	mode := t.Mode
 	q.setStateLocked(t, StateCancelled)
 	q.removeFromWaitingLocked(t)
+	// A squad leaves together: its members' tickets go with the one it queued.
+	for _, other := range q.tickets {
+		if other.Party == t.ID && other.State.waiting() {
+			q.setStateLocked(other, StateCancelled)
+			q.removeFromWaitingLocked(other)
+		}
+	}
 	// The rest of the mode's grace period, if one was running, was counting
 	// down to include this ticket. Re-evaluate rather than leave a stale
 	// countdown (or the rest of the mode's tickets stuck in StatePlacing).
@@ -874,12 +907,21 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 		ids = q.selectFestPlayersLocked(ids, size)
 	}
 	for len(ids) >= size {
+		chosen := q.wholeSquadsLocked(ids, size)
+		if len(chosen) < size {
+			break
+		}
 		delete(q.grace, mode)
-		formed = append(formed, q.formSessionLocked(mode, ids[:size]))
+		formed = append(formed, q.formSessionLocked(mode, chosen))
 		ids = q.liveWaitingLocked(mode)
 		if isFestMode(mode) {
 			ids = q.selectFestPlayersLocked(ids, size)
 		}
+	}
+	if len(ids) > size {
+		// Squads that cannot fill a match exactly wait on the clock below
+		// with a set that fits.
+		ids = q.wholeSquadsLocked(ids, size)
 	}
 
 	n := len(ids)
@@ -955,8 +997,11 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 		q.cancelGraceLocked(mode)
 		return nil
 	case len(ids) >= size:
-		delete(q.grace, mode)
-		return []Session{q.formSessionLocked(mode, ids[:size])}
+		if chosen := q.wholeSquadsLocked(ids, size); len(chosen) == size {
+			delete(q.grace, mode)
+			return []Session{q.formSessionLocked(mode, chosen)}
+		}
+		ids = q.wholeSquadsLocked(ids, size)
 	}
 
 	if q.cfg.CoopGracePeriod <= 0 {
@@ -1128,5 +1173,33 @@ func sortedKeys(m map[string][]string) []string {
 	// each run, which makes a failure that depends on ordering impossible to
 	// reproduce.
 	sort.Strings(out)
+	return out
+}
+
+// wholeSquadsLocked picks, in queue order, up to size waiting tickets
+// without splitting a squad: a squad that does not fit in what is left is
+// skipped for a later match.
+func (q *Queue) wholeSquadsLocked(ids []string, size int) []string {
+	group := func(id string) string {
+		if p := q.tickets[id].Party; p != "" {
+			return p
+		}
+		return id
+	}
+	members := map[string][]string{}
+	var order []string
+	for _, id := range ids {
+		g := group(id)
+		if _, seen := members[g]; !seen {
+			order = append(order, g)
+		}
+		members[g] = append(members[g], id)
+	}
+	out := make([]string, 0, size)
+	for _, g := range order {
+		if len(out)+len(members[g]) <= size {
+			out = append(out, members[g]...)
+		}
+	}
 	return out
 }

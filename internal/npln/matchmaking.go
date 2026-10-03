@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,22 +42,13 @@ type matchmakerService struct {
 // any authenticated console queue as anybody else, which is the same class of
 // bug as the device-account fallback internal/baas is shaped around.
 //
-// TODO(capture-needed): whether Splatoon 3 ever sends more than one
-// UserDefinition here. NPLN supports delegation -- one console queuing on
-// behalf of a party, carrying UserDelegationTokens -- and if the game uses it
-// for a squad, everyone but the leader is currently dropped. GRID0+ now
-// issues delegation tokens (delegation.go) but does not yet read them here:
-// nothing shows how a squad's ticket carries its members, and placing players
-// on one team from a guess is how a squad ends up split or stuck. A capture
-// of a squad entering matchmaking would settle it.
-//
-// A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main confirms
-// GameSessionService.IssueUserDelegationToken is a real, compiled-in RPC the
-// client links against (see internal/npln/README.md's "confirmed RPC
-// surface" table) -- so the mechanism this TODO worries about does exist on
-// the wire. That is not proof the game calls it outside a squad flow; only a
-// capture of one would be.
-// Change: this function, and Queue.Enqueue's one-ticket-per-player rule.
+// A squad queues on one ticket. Seen on hardware on 2026-10-03 (a Salmon Run
+// room, host and one guest): the guest calls IssueUserDelegationToken naming
+// the host, the host's CreateMatchmakingTicket carries that token in
+// user_delegation_tokens, and the guest then tracks the HOST's ticket. Each
+// valid delegation made to the caller adds its delegator to the ticket
+// (squadMembers); the queue keeps the squad whole, and every member may
+// track and cancel the ticket. Refusing the guest's Track was 2321-1536.
 func (m *matchmakerService) CreateMatchmakingTicket(
 	ctx context.Context, req *mmpb.CreateMatchmakingTicketRequest,
 ) (*mmpb.MatchmakingTicket, error) {
@@ -105,13 +97,23 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 			return nil, ErrNotFound
 		}
 	}
-	ticket, sessions, err := m.s.queue.EnqueueWithFestTeam(caller.UserID, mode, team)
+	members := m.s.squadMembers(caller.UserID, req.GetUserDelegationTokens())
+	ticket, sessions, err := m.s.queue.EnqueueSquad(caller.UserID, members, mode, team)
 	if err != nil {
 		m.s.log.Error("npln: enqueue", "user", caller.UserID, "error", err)
 		return nil, errMalformed(m.s.env)
 	}
-	if uds := req.GetMatchmakingTicket().GetUserDefinitions(); len(uds) > 0 {
-		m.s.ticketDefs.Store(ticket.ID, uds[0])
+	if len(members) > 0 {
+		m.s.log.Info("npln: squad queued", "ticket", ticket.ID, "leader", caller.UserID, "members", members)
+	}
+	// One definition per player of the ticket, keyed by player: the leader's
+	// own and each member's, as the console sent them.
+	for _, ud := range req.GetMatchmakingTicket().GetUserDefinitions() {
+		user := lastSegment(ud.GetUser())
+		if user == "current" || user == "" {
+			user = caller.UserID
+		}
+		m.s.ticketDefs.Store(ticket.ID+"/"+user, ud)
 	}
 	for _, sess := range sessions {
 		m.s.log.Info("npln: match formed",
@@ -172,7 +174,7 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 	// Somebody else's ticket is NotFound rather than PermissionDenied: whether
 	// a given ticket exists is not this caller's to learn. Same rule as
 	// internal/baas's requireSelf.
-	if ticket.UserID != caller.UserID {
+	if !ticketPlayer(ticket, caller.UserID) {
 		m.s.log.Warn("npln: ticket tracked by another user",
 			"ticket", id, "owner", ticket.UserID, "caller", caller.UserID)
 		return ErrNotFound
@@ -289,7 +291,7 @@ func (m *matchmakerService) CancelMatchmakingTicket(
 	if !found {
 		return nil, ErrNotFound
 	}
-	if ticket.UserID != caller.UserID {
+	if !ticketPlayer(ticket, caller.UserID) {
 		m.s.log.Warn("npln: ticket cancelled by another user",
 			"ticket", id, "owner", ticket.UserID, "caller", caller.UserID)
 		return nil, ErrNotFound
@@ -834,12 +836,16 @@ var ticketPlacedMark = protoreflect.RawFields{0x48, 0x01}
 // package would otherwise cost a cosmetic mismatch instead of a broken Track
 // or Cancel -- this confirmation does not change that defensive choice.
 func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, error) {
-	def := &mmpb.UserDefinition{User: s.userResourceName(t.UserID)}
-	if v, ok := s.ticketDefs.Load(t.ID); ok {
-		sent := v.(*mmpb.UserDefinition)
-		def.Attributes = sent.GetAttributes()
-		def.LatencyData = sent.GetLatencyData()
-		def.Team = sent.GetTeam()
+	players := append([]string{t.UserID}, t.Members...)
+	defs := make([]*mmpb.UserDefinition, len(players))
+	for i, p := range players {
+		defs[i] = &mmpb.UserDefinition{User: s.userResourceName(p)}
+		if v, ok := s.ticketDefs.Load(t.ID + "/" + p); ok {
+			sent := v.(*mmpb.UserDefinition)
+			defs[i].Attributes = sent.GetAttributes()
+			defs[i].LatencyData = sent.GetLatencyData()
+			defs[i].Team = sent.GetTeam()
+		}
 	}
 	out := &mmpb.MatchmakingTicket{
 		Name: s.tenantPath() + "/matchmakingTickets/" + t.ID,
@@ -847,7 +853,7 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		// concrete tenant, and its stream carries no "tenants/current" anywhere.
 		MatchmakingConfig: s.configName(t.Mode),
 		State:             ticketState(t.State),
-		UserDefinitions:   []*mmpb.UserDefinition{def},
+		UserDefinitions:   defs,
 	}
 	if t.State == matchmaking.StatePlacing || t.State == matchmaking.StateSucceeded {
 		// Field 9, unnamed in every reconstructed .proto: a varint 1 that
@@ -865,8 +871,10 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		// it rather than failing the stream.
 		return out, nil
 	}
-	if slot := sess.TeamSlots[t.UserID]; slot != "" {
-		def.Team = slot
+	for i, p := range players {
+		if slot := sess.TeamSlots[p]; slot != "" {
+			defs[i].Team = slot
+		}
 	}
 	out.GameSession = s.sessionProto(sess)
 	if !sess.Room {
@@ -875,14 +883,18 @@ func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, err
 		// user_sessions here; GetGameSession supplies the roster separately.
 		out.GameSession.UserSessions = nil
 	}
-	matched, err := s.matchedUserSessions(sess, t.UserID, def)
-	if err != nil {
-		// The session exists and is named, but no player can open it without a
-		// token. Sending the ticket without them would be the 2321-4992 shape
-		// with extra steps, so the call fails instead.
-		return nil, err
+	// One entry per user definition: a squad's ticket carries every member,
+	// and each console picks its own entry out of the same frame.
+	for i, p := range players {
+		matched, err := s.matchedUserSessions(sess, p, defs[i])
+		if err != nil {
+			// The session exists and is named, but no player can open it
+			// without a token. Sending the ticket without them would be the
+			// 2321-4992 shape with extra steps, so the call fails instead.
+			return nil, err
+		}
+		out.MatchedUserSessions = append(out.MatchedUserSessions, matched...)
 	}
-	out.MatchedUserSessions = matched
 	return out, nil
 }
 
@@ -1139,4 +1151,10 @@ func queueConfig(c config.NPLN) matchmaking.Config {
 		}
 	}
 	return cfg
+}
+
+// ticketPlayer reports whether user is the ticket's own player or a member of
+// the squad it queued: every console of a squad follows the one ticket.
+func ticketPlayer(t matchmaking.Ticket, user string) bool {
+	return t.UserID == user || slices.Contains(t.Members, user)
 }

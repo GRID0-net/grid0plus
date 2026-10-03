@@ -34,12 +34,8 @@ const delegationTokenTTL = time.Hour
 // names: a delegation is the caller vouching for itself, never for somebody
 // else. The mandatary must be a real account.
 //
-// TODO(capture-needed): what the matchmaker does with the token. Matchmaking
-// still queues each ticket for its own caller only (see
-// CreateMatchmakingTicket), so a squad is not yet placed on one team; this
-// answers the call the squad cannot proceed without. The token is this
-// server's own format -- nothing shows the client reading inside it.
-// Change: CreateMatchmakingTicket, once a capture shows a squad's ticket.
+// The leader's ticket then carries the token (squadMembers). The token is
+// this server's own format; nothing shows the client reading inside it.
 func (g *gameSessionService) IssueUserDelegationToken(
 	ctx context.Context, req *mmpb.IssueUserDelegationTokenRequest,
 ) (*mmpb.IssueUserDelegationTokenResponse, error) {
@@ -85,4 +81,32 @@ func (g *gameSessionService) IssueUserDelegationToken(
 			Ttl:                 durationpb.New(delegationTokenTTL),
 		},
 	}, nil
+}
+
+// squadMembers returns the players a squad ticket may queue together with
+// leader: one per delegation token that this server signed, that is still
+// valid, and that a member issued naming leader as its mandatary.
+// IssueUserDelegationToken signs the member as subject and the leader as
+// audience, and a member calls it before the leader creates the ticket
+// (hardware, 2026-10-03: a Salmon Run room's guest delegated to its host,
+// whose ticket then carried the token). Anything else is dropped rather than
+// failing the ticket: the leader still queues, alone.
+func (s *Server) squadMembers(leader string, tokens []string) []string {
+	var out []string
+	seen := map[string]bool{leader: true}
+	for _, raw := range tokens {
+		var c nplnClaims
+		if err := s.tokens.Verify(raw, &c); err != nil {
+			s.log.Warn("npln: squad ticket carried an invalid delegation", "leader", leader, "error", err)
+			continue
+		}
+		if c.Issuer != delegationTokenIssuer || c.Audience != leader || c.Subject == "" || seen[c.Subject] {
+			s.log.Warn("npln: squad ticket carried a delegation not made to its leader",
+				"leader", leader, "delegator", c.Subject, "mandatary", c.Audience)
+			continue
+		}
+		seen[c.Subject] = true
+		out = append(out, c.Subject)
+	}
+	return out
 }
