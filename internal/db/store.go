@@ -458,6 +458,11 @@ type CoopShift struct {
 	RewardGearID int32
 	// Rewards are a Big Run's scale-tier reward values; empty for "normal".
 	Rewards []int64
+	// RewardBorders are a Big Run's gold, silver and bronze high-score
+	// borders, in that order; empty for every other kind.
+	RewardBorders []int64
+	// IsSpecial is a Big Run's BigRunParams.IsSpecial flag.
+	IsSpecial bool
 	// StartAt is when the shift opens; EndAt is when it closes. Both must
 	// land on Splatoon 3's two-hour slot boundary -- enforced in
 	// internal/toyohr, where the reason can be explained.

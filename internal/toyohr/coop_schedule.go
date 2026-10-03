@@ -95,6 +95,19 @@ type CoopShift struct {
 	// meaning is unconfirmed -- see docs/QUESTIONS.md -- so nothing here
 	// validates their contents, only that a Normal shift has none.
 	Rewards []int64
+
+	// RewardBorders are a Big Run's gold, silver and bronze high-score
+	// borders: golden eggs a team delivers in one job. The game's
+	// CoopSchedule parser (main+0x32a28d0) reads them from
+	// attributes.BigRunParams.RewardBorders.{Gold,Silver,Bronze} and
+	// invalidates the shift unless all three are positive, so a Big Run
+	// needs them; at the end of the event the console compares its
+	// PointCardBigRun best_golden_ikura_num with them and writes its own
+	// trophy. Zero for every other kind. The real events' numbers are not
+	// known here: the operator sets them.
+	RewardBorders [3]int64
+	// IsSpecial is BigRunParams.IsSpecial; the game defaults it to false.
+	IsSpecial bool
 }
 
 // ID derives a stable identifier from the shift's kind and start time, the
@@ -141,6 +154,13 @@ func (c CoopShift) Validate() error {
 			return fmt.Errorf("coop shift is big_run but stage %d (%s) is not a Big Run stage",
 				c.StageID, stage.Name)
 		}
+		for i, b := range c.RewardBorders {
+			if b <= 0 {
+				return fmt.Errorf("coop shift is big_run but its %s reward border is %d; "+
+					"the game drops a Big Run shift unless all three are positive",
+					[]string{"gold", "silver", "bronze"}[i], b)
+			}
+		}
 	case CoopShiftNormal:
 		if stage.BigRun {
 			return fmt.Errorf("coop shift is normal but stage %d (%s) is a Big Run stage",
@@ -173,6 +193,11 @@ func (c CoopShift) Validate() error {
 	default:
 		return fmt.Errorf("coop shift kind %d is none of CoopShiftNormal, CoopShiftBigRun "+
 			"or CoopShiftTeamContest", c.Kind)
+	}
+
+	if c.Kind != CoopShiftBigRun && (c.RewardBorders != [3]int64{} || c.IsSpecial) {
+		return fmt.Errorf("coop shift is %s but has Big Run reward borders or IsSpecial; "+
+			"only a big_run shift carries BigRunParams", c.Kind)
 	}
 
 	if !CoopBossValid(c.Boss) {
@@ -282,7 +307,7 @@ func (s *Service) GenerateAndSaveCoopShifts(
 
 // RowFromCoopShift converts a shift into a storable row.
 func RowFromCoopShift(c CoopShift) db.CoopShift {
-	return db.CoopShift{
+	row := db.CoopShift{
 		ID:           c.ID(),
 		Kind:         c.Kind.String(),
 		StageID:      c.StageID,
@@ -291,9 +316,14 @@ func RowFromCoopShift(c CoopShift) db.CoopShift {
 		KumaWeaponID: c.KumaWeaponID,
 		RewardGearID: c.RewardGearID,
 		Rewards:      append([]int64(nil), c.Rewards...),
+		IsSpecial:    c.IsSpecial,
 		StartAt:      c.Start.UTC(),
 		EndAt:        c.End.UTC(),
 	}
+	if c.RewardBorders != [3]int64{} {
+		row.RewardBorders = c.RewardBorders[:]
+	}
+	return row
 }
 
 // coopShiftFromRow converts a stored row into the domain type. Malformed
@@ -312,8 +342,10 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 		KumaWeaponID: r.KumaWeaponID,
 		RewardGearID: r.RewardGearID,
 		Rewards:      append([]int64(nil), r.Rewards...),
+		IsSpecial:    r.IsSpecial,
 	}
 	copy(c.Weapons[:], r.Weapons)
+	copy(c.RewardBorders[:], r.RewardBorders)
 	return c
 }
 
@@ -363,15 +395,7 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	reward := coopRewardForShift(r.RewardGearID, r.StartAt)
 	switch r.Kind {
 	case "big_run":
-		// TODO(capture-needed): Splatoon 3 v11.3.0's CoopSchedule parser
-		// (main+0x32a28d0) reads attributes.BigRunParams.RewardBorders.{Gold,
-		// Silver,Bronze} as protobuf integer_value fields; all three being
-		// positive is one condition for accepting this variant. It also reads
-		// BigRunParams.IsSpecial as a boolean; absence defaults to false. No
-		// preserved working response or local parameter file gives the real
-		// event thresholds, so do not fabricate them here. A known-working
-		// Big Run SelectCoopSchedules response settles the values; change this
-		// builder, coopScheduleProto, then.
+		attrs.Fields["BigRunParams"] = bigRunParams(r)
 		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
 			Stage:        r.StageID,
 			Boss:         r.Boss,
@@ -460,4 +484,23 @@ func coopScheduleEtag(schedules []*toyohrpb.CoopSchedule) (string, error) {
 		h.Write(encoded)
 	}
 	return quotedScheduleEtag(h.Sum(nil)), nil
+}
+
+// bigRunParams is attributes.BigRunParams, the map the CoopSchedule parser
+// (main+0x32a28d0) reads for a Big Run: RewardBorders.{Gold,Silver,Bronze}
+// as integer_value, each positive or the shift is dropped, and IsSpecial as
+// a boolean.
+func bigRunParams(r db.CoopShift) *common.Value {
+	var b [3]int64
+	copy(b[:], r.RewardBorders)
+	integer := func(n int64) *common.Value {
+		return &common.Value{ValueType: &common.Value_IntegerValue{IntegerValue: n}}
+	}
+	borders := &common.MapValue{Fields: map[string]*common.Value{
+		"Gold": integer(b[0]), "Silver": integer(b[1]), "Bronze": integer(b[2]),
+	}}
+	return &common.Value{ValueType: &common.Value_MapValue{MapValue: &common.MapValue{Fields: map[string]*common.Value{
+		"RewardBorders": {ValueType: &common.Value_MapValue{MapValue: borders}},
+		"IsSpecial":     {ValueType: &common.Value_BooleanValue{BooleanValue: r.IsSpecial}},
+	}}}}
 }

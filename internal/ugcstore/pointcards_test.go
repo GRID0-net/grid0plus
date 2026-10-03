@@ -35,7 +35,7 @@ func TestAFinishedSalmonRunJobFillsTheBonusMeterOnce(t *testing.T) {
 
 	// Every console reports the same job; it must count once.
 	for i := 0; i < 3; i++ {
-		if err := RecordCoopPointCards(ctx, store, "dce9377b", "20261003T160000_job", verdict, users, now); err != nil {
+		if err := RecordCoopPointCards(ctx, store, "dce9377b", "20261003T160000_job", "coop_regular_config", verdict, users, now); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -72,5 +72,38 @@ func TestAFinishedSalmonRunJobFillsTheBonusMeterOnce(t *testing.T) {
 	}
 	if got := shift["rescue_total"].GetIntegerValue(); got != 2 {
 		t.Errorf("bob's rescue_total = %d, want 2", got)
+	}
+}
+
+// TestABigRunJobGoesOnTheBigRunCardWithTheTeamsHighScore: the game reads a
+// Big Run card only when it holds best_golden_ikura_num (the server's) and
+// trophy (the console's own write), and compares the first with the
+// shift's reward borders.
+func TestABigRunJobGoesOnTheBigRunCardWithTheTeamsHighScore(t *testing.T) {
+	store := db.NewMemory()
+	ctx := context.Background()
+	m := func(f map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: f}}}
+	}
+	verdict := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"shift_id":        str("20261004000000"),
+		"team_result":     m(map[string]*commonpb.Value{"final_wave": integer(2), "delivered_golden_ikura_num": integer(87)}),
+		"personal_result": m(map[string]*commonpb.Value{"us-alice": m(map[string]*commonpb.Value{"golden_ikura_num": integer(30)})}),
+	}}
+	if err := RecordCoopPointCards(ctx, store, "dce9377b", "20261004T010000_job", "tenants/current/matchmakingConfigs/coop_bigrun_config",
+		verdict, map[string]string{"us-alice": "alice"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	prefix := "tenants/dce9377b/documents/services/GameRecord/users/alice/"
+	if _, err := store.GetUGCDocument(ctx, prefix+"PointCardRegular/20261004000000"); err == nil {
+		t.Error("a Big Run job was filed on the regular card")
+	}
+	d, err := store.GetUGCDocument(ctx, prefix+"PointCardBigRun/20261004000000")
+	if err != nil {
+		t.Fatalf("no Big Run card: %v", err)
+	}
+	f, _ := decodeFields(d.Fields)
+	if got := f.GetFields()["best_golden_ikura_num"].GetIntegerValue(); got != 87 {
+		t.Errorf("best_golden_ikura_num = %d, want the team's 87", got)
 	}
 }

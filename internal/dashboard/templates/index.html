@@ -596,6 +596,15 @@
           <span>Scale-tier rewards <em>optional</em></span>
           <input type="text" name="rewards" id="coop-rewards" placeholder="100, 200, 300" autocapitalize="off" spellcheck="false">
         </label>
+        <label id="coop-borders-field" hidden>
+          <span>Reward borders <em>gold, silver, bronze</em></span>
+          <input type="text" name="rewardBorders" id="coop-borders" placeholder="160, 140, 110" autocapitalize="off" spellcheck="false">
+          <small>Team golden eggs in one job for each trophy. Splatoon 3 drops a Big Run unless all three are above 0.</small>
+        </label>
+        <label id="coop-special-field" class="checkbox" hidden>
+          <input type="checkbox" name="isSpecial" id="coop-special">
+          <span>Special Big Run (BigRunParams.IsSpecial)</span>
+        </label>
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Schedule shift</button>
         </div>

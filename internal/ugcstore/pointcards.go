@@ -36,6 +36,25 @@ import (
 // jobPoints.
 const pointCardVersion = 131072
 
+// shiftCard names the per-shift point card a job is credited to. Splatoon 3
+// builds three document names under services/GameRecord/users/<uid>/ (the
+// strings at 0x7104f46d02, 0x7104f50845 and 0x7104fe73c8): PointCardRegular,
+// PointCardBigRun and PointCardLimited (Eggstra Work), each keyed by the
+// shift's start as YYYYMMDDHH0000. For the Big Run and Eggstra Work cards
+// the game reads best_golden_ikura_num and trophy together and ignores the
+// card unless both are there (FUN_7103281354): the console writes trophy
+// itself at the end of the event (FUN_7103286ae0, FUN_7103287030), so the
+// server supplies best_golden_ikura_num.
+func shiftCard(mode string) string {
+	switch {
+	case strings.Contains(mode, "bigrun"):
+		return "PointCardBigRun"
+	case strings.Contains(mode, "team_contest"):
+		return "PointCardLimited"
+	}
+	return "PointCardRegular"
+}
+
 func jobPoints(deliveredGolden, finalWave int64) int64 {
 	p := 2 * deliveredGolden
 	if finalWave >= 2 {
@@ -48,7 +67,7 @@ func jobPoints(deliveredGolden, finalWave int64) int64 {
 // point cards, once per player per job however many consoles report it.
 // verdict is the published referee result; sessionUsers maps the user
 // sessions personal_result is keyed by to their users.
-func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID string,
+func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID, mode string,
 	verdict *commonpb.MapValue, sessionUsers map[string]string, now time.Time) error {
 	f := verdict.GetFields()
 	personal := f["personal_result"].GetMapValue()
@@ -64,8 +83,11 @@ func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID 
 	if gradePoint == 0 {
 		gradePoint = f["challenge_grade_point"].GetIntegerValue()
 	}
+	delivered := sumNamed(team, "delivered_golden_ikura_num")
 	shared := job{
-		points:     jobPoints(sumNamed(team, "delivered_golden_ikura_num"), finalWave),
+		card:       shiftCard(mode),
+		teamGolden: delivered,
+		points:     jobPoints(delivered, finalWave),
 		finalWave:  finalWave,
 		gradePoint: gradePoint,
 		grade:      firstNamed(team, "grade"),
@@ -118,6 +140,9 @@ func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID 
 }
 
 type job struct {
+	// card is the per-shift document this job goes on; see shiftCard.
+	card                                       string
+	teamGolden                                 int64
 	points, finalWave, gradePoint, grade, boss int64
 	golden, eggs, rescues                      int64
 	shiftID, shiftTime, jobType                string
@@ -145,7 +170,7 @@ func creditPointCards(ctx context.Context, store db.Store, prefix, uid string, j
 	if j.shiftID == "" {
 		return nil
 	}
-	name := prefix + "PointCardRegular/" + j.shiftID
+	name := prefix + j.card + "/" + j.shiftID
 	shift, err := loadCard(ctx, store, name)
 	if err != nil {
 		return err
@@ -164,8 +189,14 @@ func creditPointCards(ctx context.Context, store db.Store, prefix, uid string, j
 	} else if shift["best_grade_point"] == nil {
 		shift["best_grade_point"] = integer(0)
 	}
-	if j.golden > shift["best_golden_ikura_num"].GetIntegerValue() {
-		shift["best_golden_ikura_num"] = integer(j.golden)
+	best := j.golden
+	if j.card != "PointCardRegular" {
+		// A Big Run or Eggstra Work high score is the team's golden eggs in
+		// one job; the game compares it with the shift's reward borders.
+		best = j.teamGolden
+	}
+	if best > shift["best_golden_ikura_num"].GetIntegerValue() {
+		shift["best_golden_ikura_num"] = integer(best)
 	} else if shift["best_golden_ikura_num"] == nil {
 		shift["best_golden_ikura_num"] = integer(0)
 	}

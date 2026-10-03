@@ -1599,7 +1599,8 @@ func testCoopShifts(t *testing.T, s Store) {
 		ID: "big_run-1", Kind: "big_run", StageID: 100, Boss: "SakeRope",
 		Weapons:      []int64{21000, 21010, 21020, 21030},
 		KumaWeaponID: 21900, RewardGearID: 7,
-		Rewards: []int64{100, 200, 300},
+		Rewards:       []int64{100, 200, 300},
+		RewardBorders: []int64{160, 140, 110}, IsSpecial: true,
 		StartAt: oct, EndAt: oct.Add(48 * time.Hour),
 	}
 
@@ -1634,6 +1635,9 @@ func testCoopShifts(t *testing.T, s Store) {
 	}
 	if len(gotBigRun.Rewards) != 3 || gotBigRun.Rewards[0] != 100 {
 		t.Errorf("rewards = %v, want [100 200 300] in order", gotBigRun.Rewards)
+	}
+	if len(gotBigRun.RewardBorders) != 3 || gotBigRun.RewardBorders[0] != 160 || !gotBigRun.IsSpecial {
+		t.Errorf("borders = %v special = %v, want [160 140 110] true", gotBigRun.RewardBorders, gotBigRun.IsSpecial)
 	}
 
 	// Soonest first.

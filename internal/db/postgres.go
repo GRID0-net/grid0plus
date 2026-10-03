@@ -1491,7 +1491,7 @@ func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 
 // ---- Salmon Run / Big Run schedule ---------------------------------------
 
-const coopShiftColumns = `id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, start_at, end_at, created_at, updated_at`
+const coopShiftColumns = `id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, reward_borders, is_special, start_at, end_at, created_at, updated_at`
 
 func (p *Postgres) UpsertCoopShift(ctx context.Context, c CoopShift) error {
 	// Same normalisation UpsertFest applies to Regions/PackKeys: a nil slice
@@ -1503,10 +1503,13 @@ func (p *Postgres) UpsertCoopShift(ctx context.Context, c CoopShift) error {
 	if c.Rewards == nil {
 		c.Rewards = []int64{}
 	}
+	if c.RewardBorders == nil {
+		c.RewardBorders = []int64{}
+	}
 
 	_, err := p.pool.Exec(ctx,
-		`INSERT INTO npln_coop_shifts (id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, start_at, end_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`INSERT INTO npln_coop_shifts (id, kind, stage_id, boss, weapons, kuma_weapon_id, reward_gear_id, rewards, reward_borders, is_special, start_at, end_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		 ON CONFLICT (id) DO UPDATE SET
 		     kind           = EXCLUDED.kind,
 		     stage_id       = EXCLUDED.stage_id,
@@ -1515,10 +1518,12 @@ func (p *Postgres) UpsertCoopShift(ctx context.Context, c CoopShift) error {
 		     kuma_weapon_id = EXCLUDED.kuma_weapon_id,
 		     reward_gear_id = EXCLUDED.reward_gear_id,
 		     rewards        = EXCLUDED.rewards,
+		     reward_borders = EXCLUDED.reward_borders,
+		     is_special     = EXCLUDED.is_special,
 		     start_at       = EXCLUDED.start_at,
 		     end_at         = EXCLUDED.end_at,
 		     updated_at     = now()`,
-		c.ID, c.Kind, c.StageID, c.Boss, c.Weapons, c.KumaWeaponID, c.RewardGearID, c.Rewards, c.StartAt, c.EndAt)
+		c.ID, c.Kind, c.StageID, c.Boss, c.Weapons, c.KumaWeaponID, c.RewardGearID, c.Rewards, c.RewardBorders, c.IsSpecial, c.StartAt, c.EndAt)
 	return mapErr(err)
 }
 
@@ -1556,7 +1561,7 @@ func (p *Postgres) DeleteCoopShift(ctx context.Context, id string) error {
 func scanCoopShift(row interface{ Scan(...any) error }) (CoopShift, error) {
 	var c CoopShift
 	err := row.Scan(&c.ID, &c.Kind, &c.StageID, &c.Boss, &c.Weapons, &c.KumaWeaponID,
-		&c.RewardGearID, &c.Rewards, &c.StartAt, &c.EndAt, &c.CreatedAt, &c.UpdatedAt)
+		&c.RewardGearID, &c.Rewards, &c.RewardBorders, &c.IsSpecial, &c.StartAt, &c.EndAt, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return CoopShift{}, mapErr(err)
 	}

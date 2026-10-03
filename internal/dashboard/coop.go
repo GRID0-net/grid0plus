@@ -35,6 +35,8 @@ type coopShiftRow struct {
 	KumaWeaponName string   `json:"kumaWeaponName"`
 	RewardGearID   int32    `json:"rewardGearId"`
 	Rewards        []int64  `json:"rewards"`
+	RewardBorders  []int64  `json:"rewardBorders,omitempty"`
+	IsSpecial      bool     `json:"isSpecial,omitempty"`
 	StartAt        string   `json:"startAt"`
 	EndAt          string   `json:"endAt"`
 	// Status is "upcoming", "live" or "ended" -- ended shifts are still
@@ -120,6 +122,8 @@ func (s *Server) coopShiftRows(ctx context.Context) ([]coopShiftRow, error) {
 			KumaWeaponName: kuma.Name,
 			RewardGearID:   c.RewardGearID,
 			Rewards:        append([]int64(nil), c.Rewards...),
+			RewardBorders:  borderList(c.RewardBorders),
+			IsSpecial:      c.IsSpecial,
 			StartAt:        c.Start.UTC().Format(time.RFC3339),
 			EndAt:          c.End.UTC().Format(time.RFC3339),
 			Status:         status,
@@ -148,6 +152,9 @@ func (s *Server) handleCreateCoopShift(w http.ResponseWriter, r *http.Request) {
 		KumaWeaponID int64   `json:"kumaWeaponId"`
 		RewardGearID int32   `json:"rewardGearId"`
 		Rewards      []int64 `json:"rewards"`
+		// RewardBorders is gold, silver, bronze; required for a Big Run.
+		RewardBorders []int64 `json:"rewardBorders"`
+		IsSpecial     bool    `json:"isSpecial"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -205,9 +212,14 @@ func (s *Server) handleCreateCoopShift(w http.ResponseWriter, r *http.Request) {
 	shift := toyohr.CoopShift{
 		Kind: kind, StageID: body.StageID, Boss: body.Boss,
 		KumaWeaponID: body.KumaWeaponID, RewardGearID: body.RewardGearID,
-		Rewards: body.Rewards,
-		Start:   toyohr.AlignToSlot(start), End: toyohr.AlignToSlot(end),
+		Rewards: body.Rewards, IsSpecial: body.IsSpecial,
+		Start: toyohr.AlignToSlot(start), End: toyohr.AlignToSlot(end),
 	}
+	if len(body.RewardBorders) > 3 {
+		http.Error(w, "rewardBorders is gold, silver, bronze: at most three values", http.StatusBadRequest)
+		return
+	}
+	copy(shift.RewardBorders[:], body.RewardBorders)
 	// Left short of four rather than rejected here: a wrong count still
 	// reaches Validate, whose "not a real Salmon Run weapon" message (for
 	// the zero-value slots this leaves behind) explains the problem exactly
@@ -311,4 +323,11 @@ func (s *Server) handleCoopReference(w http.ResponseWriter, r *http.Request) {
 		"kumaWeapons": kumaWeapons,
 		"bosses":      toyohr.CoopBosses,
 	})
+}
+
+func borderList(b [3]int64) []int64 {
+	if b == [3]int64{} {
+		return nil
+	}
+	return b[:]
 }

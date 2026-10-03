@@ -124,6 +124,7 @@ func TestACoopShiftCanBeScheduledAndDeleted(t *testing.T) {
 		"weapons": [21000, 21010, 21020, 21030],
 		"kumaWeaponId": 21900,
 		"rewards": [100, 200, 300],
+		"rewardBorders": [160, 140, 110],
 		"startAt": "` + start.Format(time.RFC3339) + `"
 	}`
 

@@ -177,7 +177,7 @@ func main() {
 			now := time.Now().UTC()
 			if report.Coop && report.Verdict != nil {
 				if err := ugcstore.RecordCoopPointCards(ctx, store, cfg.NPLN.Tenant, report.BattleID,
-					report.Verdict, report.SessionUsers, now); err != nil {
+					report.Mode, report.Verdict, report.SessionUsers, now); err != nil {
 					return err
 				}
 			}

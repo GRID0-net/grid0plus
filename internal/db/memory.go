@@ -1603,6 +1603,7 @@ func (m *Memory) UpsertCoopShift(_ context.Context, c CoopShift) error {
 	// it mutate stored state by accident in a way PostgreSQL cannot.
 	c.Weapons = append([]int64(nil), c.Weapons...)
 	c.Rewards = append([]int64(nil), c.Rewards...)
+	c.RewardBorders = append([]int64(nil), c.RewardBorders...)
 	m.coopShifts[c.ID] = c
 	return nil
 }
@@ -1617,6 +1618,7 @@ func (m *Memory) GetCoopShift(_ context.Context, id string) (CoopShift, error) {
 	}
 	c.Weapons = append([]int64(nil), c.Weapons...)
 	c.Rewards = append([]int64(nil), c.Rewards...)
+	c.RewardBorders = append([]int64(nil), c.RewardBorders...)
 	return c, nil
 }
 
@@ -1628,6 +1630,7 @@ func (m *Memory) ListCoopShifts(_ context.Context) ([]CoopShift, error) {
 	for _, c := range m.coopShifts {
 		c.Weapons = append([]int64(nil), c.Weapons...)
 		c.Rewards = append([]int64(nil), c.Rewards...)
+		c.RewardBorders = append([]int64(nil), c.RewardBorders...)
 		out = append(out, c)
 	}
 	// Soonest first, id as the tiebreak, the same total-order reasoning as

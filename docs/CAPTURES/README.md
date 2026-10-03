@@ -72,25 +72,28 @@ The downstream accumulator at `main+0xa711b0` reads all three borders and the
 special flag into its record aggregates; it does not reveal a required ordering
 between the thresholds.
 
-GRID0+ currently emits neither `BigRunParams` nor these borders. The local
-v11.3.0 parameter files contain Big Run reward-meter items, but no border
-thresholds. The two preserved working hall captures contain normal Coop
-rotations only. Nextendo's checked-in server replays its ignored
-`SelectCoopSchedules` capture and has no authored Big Run response builder;
-that local checkout does not include the ignored capture payload. Therefore
-the exact event-specific numbers remain unconfirmed. `reward_type`,
-`reward_gear_id`, and the later gameplay requirements for `rewards` also need
-confirmation even though the parser reads them.
+GRID0+ now sends `BigRunParams` (`RewardBorders.{Gold,Silver,Bronze}` and
+`IsSpecial`) for a Big Run shift, with the borders the operator sets on the
+dashboard; a Big Run is refused without all three positive. What the game
+does with them, from the same binary:
 
-**What a reference capture would settle:** capture the plaintext
-`Schedule/SelectCoopSchedules` response while a known-working server has an
-active Big Run. Record the nested map keys and protobuf value types as well as
-the three numbers, `IsSpecial`, and the accompanying Big Run fields. Then
-map the wire response in `internal/toyohr/coop_schedule.go`'s
-`coopScheduleProto`. The current `CoopShift` store and dashboard request have
-no fields for the borders or flag, so operator control will also need those
-values carried through the domain type, persistence, and dashboard authoring
-path. Do not substitute invented defaults.
+- Each job is credited to `services/GameRecord/users/<uid>/PointCardBigRun/<start>`
+  (`<start>` is the shift's start as `YYYYMMDDHH0000`). The game reads that
+  card's `best_golden_ikura_num` and `trophy` together and ignores the card
+  unless both are present (`FUN_7103281354`). The server supplies
+  `best_golden_ikura_num` (GRID0+ uses the team's delivered golden eggs);
+  the console writes `trophy` itself at the end of the event
+  (`FUN_7103286ae0`). Eggstra Work works the same way on
+  `PointCardLimited/<start>` (`FUN_7103287030`).
+- `gold_trophy_num`/`silver_trophy_num`/`bronze_trophy_num`/`none_trophy_num`
+  are play-report fields the console sends (`nn::prepo`), not server data.
+- There is no Big Run RPC: `SelectCoopSchedules` and the documents above are
+  the whole server side.
+
+**Still unknown:** the real events' border values (Nintendo's are per event,
+and nothing preserved shows one), and what `Rewards` must hold for the
+reward meter. A capture of `SelectCoopSchedules` during a real Big Run would
+settle both.
 
 ### 1. `GET /2.0.0/users/<id>/friends` — ~~the response shape~~ **CAPTURED**
 

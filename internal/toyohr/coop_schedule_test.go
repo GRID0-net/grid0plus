@@ -26,6 +26,7 @@ func validBigRunShift() CoopShift {
 	s.Kind = CoopShiftBigRun
 	s.StageID = 100 // Wahoo World, a Big Run stage
 	s.Rewards = []int64{100, 200, 300}
+	s.RewardBorders = [3]int64{160, 140, 110}
 	return s
 }
 
@@ -405,5 +406,37 @@ func TestCoopSchedulesShareOneSetWithoutShiftIDs(t *testing.T) {
 		if schedule.GetShiftId() != "" || schedule.GetScheduleSetId() != setID {
 			t.Errorf("shift_id=%q, set_id=%q; want absent shift id and shared set %q", schedule.GetShiftId(), schedule.GetScheduleSetId(), setID)
 		}
+	}
+}
+
+// TestABigRunShiftCarriesTheBordersTheGameRequires: the CoopSchedule parser
+// (main+0x32a28d0) drops a Big Run shift unless
+// attributes.BigRunParams.RewardBorders.{Gold,Silver,Bronze} are positive
+// integer_values.
+func TestABigRunShiftCarriesTheBordersTheGameRequires(t *testing.T) {
+	shift := validBigRunShift()
+	shift.IsSpecial = true
+	svc, _ := newService(t, time.Now())
+	got := svc.coopScheduleProto(RowFromCoopShift(shift), "current")
+	params := got.GetBigRun().GetAttributes().GetFields()["BigRunParams"].GetMapValue().GetFields()
+	borders := params["RewardBorders"].GetMapValue().GetFields()
+	for name, want := range map[string]int64{"Gold": 160, "Silver": 140, "Bronze": 110} {
+		v, ok := borders[name]
+		if !ok || v.GetIntegerValue() != want {
+			t.Errorf("RewardBorders.%s = %v, want integer %d", name, v, want)
+		}
+	}
+	if !params["IsSpecial"].GetBooleanValue() {
+		t.Error("IsSpecial not carried")
+	}
+
+	shift.RewardBorders[2] = 0
+	if err := shift.Validate(); err == nil {
+		t.Error("a Big Run with a zero bronze border validated; the game would drop it")
+	}
+	normal := validNormalShift()
+	normal.RewardBorders = [3]int64{1, 1, 1}
+	if err := normal.Validate(); err == nil {
+		t.Error("a normal shift with Big Run borders validated")
 	}
 }

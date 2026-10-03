@@ -410,6 +410,8 @@ function populateCoopStageSelect() {
 function updateCoopKindFields() {
   const kind = $('input[name="coop-kind"]:checked').value;
   $("#coop-rewards-field").hidden = kind !== "big_run" && kind !== "team_contest";
+  $("#coop-borders-field").hidden = kind !== "big_run";
+  $("#coop-special-field").hidden = kind !== "big_run";
   $("#coop-boss-field").hidden = kind === "team_contest";
   $("#coop-reward-gear-field").hidden = kind === "team_contest";
   populateCoopStart();
@@ -559,6 +561,8 @@ $("#coop-form").addEventListener("submit", async (e) => {
   const startAt = $("#coop-start").value;
   const kind = $('input[name="coop-kind"]:checked').value;
   const rewardsRaw = $("#coop-rewards").value.trim();
+  const bigRun = kind === "big_run";
+  const borders = $("#coop-borders").value.split(",").map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n) && n !== 0);
 
   // team_contest carries neither on the wire (CoopSchedule_TeamContest has no
   // boss or reward_gear_id field), so a value left over from switching Kind
@@ -580,11 +584,15 @@ $("#coop-form").addEventListener("submit", async (e) => {
         rewards: rewardsRaw
           ? rewardsRaw.split(",").map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n))
           : [],
+        rewardBorders: bigRun ? borders : [],
+        isSpecial: bigRun && $("#coop-special").checked,
         startAt,
       }),
     });
     $("#coop-reward-gear").value = "";
     $("#coop-rewards").value = "";
+    $("#coop-borders").value = "";
+    $("#coop-special").checked = false;
     await refresh();
   } catch (e2) {
     err.textContent = e2.message;
