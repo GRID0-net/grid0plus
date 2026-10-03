@@ -34,6 +34,7 @@ import (
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 	"github.com/n-popescu/grid0plus/internal/service"
 	"github.com/n-popescu/grid0plus/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
 )
 
 func main() {
@@ -173,7 +174,12 @@ func main() {
 		LiveParticipants: srv.GamesyncRoomParticipants,
 		IssueAccessToken: gamesyncProbeSigner,
 		OnRefereeReport: func(ctx context.Context, report gamesync.RefereeReport) error {
-			return toyohr.RecordFestReport(ctx, store, report, time.Now().UTC())
+			now := time.Now().UTC()
+			if err := ugcstore.RecordVsResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
+				report.Players, report.Fields, now); err != nil {
+				return err
+			}
+			return toyohr.RecordFestReport(ctx, store, report, now)
 		},
 	})
 	if err != nil {

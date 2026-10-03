@@ -765,6 +765,22 @@ func (m *Memory) PutUGCDocument(_ context.Context, d UGCDocument) error {
 	return nil
 }
 
+// ListUGCDocuments returns every document whose name starts with prefix,
+// newest name first.
+func (m *Memory) ListUGCDocuments(_ context.Context, prefix string) ([]UGCDocument, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []UGCDocument
+	for name, d := range m.ugcDocuments {
+		if strings.HasPrefix(name, prefix) {
+			d.Fields = append([]byte(nil), d.Fields...)
+			out = append(out, d)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	return out, nil
+}
+
 // DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
 func (m *Memory) DeleteUGCDocument(_ context.Context, name string) error {
 	m.mu.Lock()

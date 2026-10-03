@@ -810,6 +810,9 @@ type Store interface {
 	GetUGCDocument(ctx context.Context, name string) (UGCDocument, error)
 	// PutUGCDocument creates or replaces a Ugcstore document.
 	PutUGCDocument(ctx context.Context, d UGCDocument) error
+	// ListUGCDocuments returns every Ugcstore document whose name starts with
+	// prefix, newest name first.
+	ListUGCDocuments(ctx context.Context, prefix string) ([]UGCDocument, error)
 	// DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
 	DeleteUGCDocument(ctx context.Context, name string) error
 

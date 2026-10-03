@@ -187,20 +187,82 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 	return doc, nil
 }
 
-// RunQuery currently answers the captured empty-query shape: one read_time
-// message, rather than Unimplemented (which broke hall entry on hardware).
-// This is incomplete for a nonempty collection. CommitDocuments persists
-// documents, but RunQuery does not enumerate them yet; a results query after
-// a match would therefore incorrectly look empty. See the 2026-09-27 audit.
+// RunQuery lists the documents in the requested collections under parent,
+// newest name first.
+//
+// The in-game battle history is this query: the console asks for
+// services/GameRecord/users/<uid> with collection VsResults and shows what
+// comes back. It never writes those documents itself; the server does, after
+// each match (VsResultsDocument). Only documents directly in a named
+// collection are returned -- answering a battle query with the player's
+// VsUserAttribute document makes the console abort with 2162-0001
+// (NextendoNetwork/splatoon-3's measurement).
+//
+// With no match the answer keeps its captured empty shape: one message with
+// only read_time. A brand-new account depends on it.
 func (s *Service) RunQuery(
 	req *ugcpb.RunQueryRequest, stream grpc.ServerStreamingServer[ugcpb.RunQueryResponse],
 ) error {
 	if _, err := s.caller(stream.Context()); err != nil {
 		return err
 	}
-	return stream.Send(&ugcpb.RunQueryResponse{
-		ReadTime: timestamppb.New(s.now()),
-	})
+	readTime := timestamppb.New(s.now())
+	docs, err := s.queryDocuments(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	if len(docs) == 0 {
+		return stream.Send(&ugcpb.RunQueryResponse{ReadTime: readTime})
+	}
+	for _, d := range docs {
+		if err := stream.Send(&ugcpb.RunQueryResponse{Document: d, ReadTime: readTime}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) queryDocuments(ctx context.Context, req *ugcpb.RunQueryRequest) ([]*ugcpb.Document, error) {
+	parent, ok := s.canonicalName(strings.TrimSuffix(req.GetParent(), "/"))
+	if !ok {
+		return nil, nil
+	}
+	collections := map[string]bool{}
+	for _, c := range req.GetStructuredQuery().GetFrom() {
+		if c.GetCollectionId() != "" {
+			collections[c.GetCollectionId()] = true
+		}
+	}
+	if len(collections) == 0 {
+		return nil, nil
+	}
+	rows, err := s.store.ListUGCDocuments(ctx, parent+"/")
+	if err != nil {
+		s.log.Error("ugcstore: list documents", "parent", parent, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	limit := -1
+	if l := req.GetStructuredQuery().GetLimit(); l != nil && l.GetValue() > 0 {
+		limit = int(l.GetValue())
+	}
+	var out []*ugcpb.Document
+	for _, row := range rows {
+		// <parent>/<collection>/<id>, and nothing deeper.
+		parts := strings.Split(strings.TrimPrefix(row.Name, parent+"/"), "/")
+		if len(parts) != 2 || !collections[parts[0]] {
+			continue
+		}
+		doc, err := toProto(row, row.Name)
+		if err != nil {
+			s.log.Error("ugcstore: decode document", "name", row.Name, "error", err)
+			continue
+		}
+		out = append(out, doc)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 // pending is one document's state while a commit is being applied.

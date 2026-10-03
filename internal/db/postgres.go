@@ -808,6 +808,28 @@ func (p *Postgres) GetUGCDocument(ctx context.Context, name string) (UGCDocument
 	return d, mapErr(err)
 }
 
+// ListUGCDocuments returns every document whose name starts with prefix,
+// newest name first. The prefix is matched with starts_with rather than LIKE so
+// an underscore or percent sign in a name is never a wildcard.
+func (p *Postgres) ListUGCDocuments(ctx context.Context, prefix string) ([]UGCDocument, error) {
+	rows, err := p.pool.Query(ctx, `
+		SELECT name, owner, fields, create_time, update_time
+		FROM ugc_documents WHERE starts_with(name, $1) ORDER BY name DESC`, prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UGCDocument
+	for rows.Next() {
+		var d UGCDocument
+		if err := rows.Scan(&d.Name, &d.Owner, &d.Fields, &d.CreateTime, &d.UpdateTime); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // PutUGCDocument creates or replaces a Ugcstore document.
 func (p *Postgres) PutUGCDocument(ctx context.Context, d UGCDocument) error {
 	if d.Fields == nil {

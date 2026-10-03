@@ -2072,6 +2072,21 @@ func testUGCDocuments(t *testing.T, s Store) {
 		t.Errorf("empty document: %+v, %v", got, err)
 	}
 
+	// Listing is by name prefix, newest name first, and a prefix character
+	// that is a LIKE wildcard must not match anything else.
+	for _, n := range []string{"t/a_x/1", "t/a_x/2", "t/abx/3"} {
+		if err := s.PutUGCDocument(ctx, UGCDocument{Name: n, Owner: "u1", CreateTime: now, UpdateTime: now}); err != nil {
+			t.Fatalf("put %s: %v", n, err)
+		}
+	}
+	listed, err := s.ListUGCDocuments(ctx, "t/a_x/")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(listed) != 2 || listed[0].Name != "t/a_x/2" || listed[1].Name != "t/a_x/1" {
+		t.Errorf("list t/a_x/ = %+v, want t/a_x/2 then t/a_x/1 only", listed)
+	}
+
 	if err := s.DeleteUGCDocument(ctx, name); err != nil {
 		t.Fatalf("delete: %v", err)
 	}

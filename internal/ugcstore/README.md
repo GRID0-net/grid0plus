@@ -39,7 +39,7 @@ Fields are stored as the encoded `MapValue`, so value types survive exactly.
 | --- | --- |
 | `GetDocument` | yes |
 | `CommitDocuments` | update (with or without a field mask, with preconditions), delete, field transforms (`increment`, `maximum`, `minimum`, `set_server_value: REQUEST_TIME`); attachment operations refuse the batch |
-| `RunQuery` | the captured empty-query response only; it does not yet enumerate matching stored documents (see `docs/SPLATOON3_NEXTENDO_AUDIT.md`) |
+| `RunQuery` | lists the documents directly in the requested collections under `parent`, newest name first; with no match, the captured one-message `read_time` answer. The in-game battle history is this query over `VsResults`, which the server writes after each match (`RecordVsResults`) |
 | `BulkGetDocuments`, attachments, short aliases, `IssueUploadUri` | **no** — `Unimplemented`, logged once by the gateway when a console asks |
 
 **`RunQuery` used to be Unimplemented too, and that broke the lobby.** It is
