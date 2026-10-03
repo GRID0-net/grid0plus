@@ -337,3 +337,29 @@ func TestAPrivateSalmonRunRoomGetsTheRoomShapeNotTheMatchmadeOne(t *testing.T) {
 		t.Errorf("mcn = %q, want the room's config name", got)
 	}
 }
+
+func TestTheFirstPlayerSnapshotListsAPlayerWhoHasNotConnectedYet(t *testing.T) {
+	h := newHarness(t)
+	fast, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fast.details = &SessionDetails{
+		UserID: "bob", SessionID: "m", Mode: "regular_match_config", Players: []string{"alice", "bob"},
+		PlayerSessions: map[string]string{"alice": "us-alice", "bob": "us-bob"},
+	}
+	// alice is matched but slower: no gamesync session yet.
+	docs := h.srv.collectionSnapshot(fast, "docs/__pgn/All/__pus")
+	upcsid := map[string]int64{}
+	for _, d := range docs {
+		upcsid[d.GetName()] = d.GetFields().GetFields()["upcsid"].GetIntegerValue()
+	}
+	// Pia hosts when its own upcsid is the lowest it can see. Seeing only
+	// itself, bob would host too.
+	if got, ok := upcsid["docs/__pgn/All/__pus/us-alice"]; !ok || got != 1 {
+		t.Errorf("alice's __pus = %d (present %v), want listed with rank 1 before she connects", got, ok)
+	}
+	if got := upcsid["docs/__pgn/All/__pus/us-bob"]; got != 2 {
+		t.Errorf("bob's own upcsid = %d, want 2", got)
+	}
+}

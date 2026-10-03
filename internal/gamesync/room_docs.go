@@ -23,6 +23,10 @@ type SessionDetails struct {
 	// Room is true for a room a host opened directly (a private battle, a
 	// private Salmon Run, a room friends join), false for a matchmade game.
 	Room bool
+	// PlayerSessions maps each player of the game session to the user-session
+	// id they will join it with. Known as soon as the match forms, before
+	// the players connect: see matchedPlayerDocuments.
+	PlayerSessions map[string]string
 }
 
 const privateBattleConfig = "private_match_config"

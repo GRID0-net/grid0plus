@@ -68,6 +68,13 @@ func (s *Server) collectionSnapshot(caller *session, collection string) []*syncp
 	}
 	if own := s.syntheticCollectionMember(caller, collection); own != nil && !seen[own.GetName()] {
 		docs = append(docs, own)
+		seen[own.GetName()] = true
+	}
+	for _, doc := range s.matchedPlayerDocuments(caller, collection) {
+		if !seen[doc.GetName()] {
+			docs = append(docs, doc)
+			seen[doc.GetName()] = true
+		}
 	}
 	sort.Slice(docs, func(i, j int) bool { return docs[i].GetName() < docs[j].GetName() })
 	return docs
@@ -321,4 +328,46 @@ func rankSessionCounter(caller *session, ops []*syncpb.WriteOperation, results [
 			}
 		}
 	}
+}
+
+// matchedPlayerDocuments lists every matched player's session document,
+// including players whose console has not connected to gamesync yet.
+//
+// Pia picks the host the moment it has a player list: the lowest upcsid among
+// the __pus documents it holds (FUN_7100a32b10), compared with its own
+// (0x7100a32fb8). Caught with the debugger on hardware, 2026-10-03: the
+// faster console received only its own __pus, made itself host, and the
+// other player's document arrived after the decision. The slower console
+// did the same, so both hosted and, across networks, each ended up alone.
+// The match's players and their user-session ids are known when it forms,
+// so every player is listed from the first snapshot with its rank.
+func (s *Server) matchedPlayerDocuments(caller *session, collection string) []*syncpb.Document {
+	if collection != "docs/__us" && collection != "docs/__pgn/All/__pus" {
+		return nil
+	}
+	d := caller.details
+	if d == nil || d.SessionID == "" || len(d.PlayerSessions) == 0 {
+		return nil
+	}
+	var out []*syncpb.Document
+	for _, userID := range d.Players {
+		usid := d.PlayerSessions[userID]
+		if usid == "" || userID == caller.userID {
+			continue
+		}
+		name := collection + "/" + usid
+		if live := s.roomPeerForDocument(caller, name); live != nil {
+			if doc, ok := s.watchDocument(caller, name); ok {
+				out = append(out, doc)
+			}
+			continue
+		}
+		details := *d
+		details.UserID = userID
+		stub := &session{userID: userID, userSession: "userSessions/" + usid, details: &details, createdAt: caller.createdAt}
+		if doc, ok := s.syntheticSessionDocument(stub, name); ok {
+			out = append(out, doc)
+		}
+	}
+	return out
 }
