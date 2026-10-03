@@ -4,6 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
 
@@ -39,10 +42,17 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 			continue
 		}
 		d := caller.details
+		// The consumers see the personal results as the verdict scores them
+		// (deemed_result filled in, a disconnect scored as a loss), not the
+		// console's raw report, so the battle history shows the same outcome
+		// the game was told.
+		fields := proto.Clone(committed.GetFields()).(*commonpb.MapValue)
+		fields.Fields["personal_result"] = completePersonalResults(
+			fields.Fields["personal_result"], fields.Fields["team_result"])
 		report := RefereeReport{
 			BattleID: battleID, SessionID: d.SessionID, Mode: d.Mode,
 			UserID: caller.userID, Players: append([]string(nil), d.Players...),
-			Fields: committed.GetFields(),
+			Fields: fields,
 		}
 		if err := s.onRefereeReport(ctx, report); err != nil {
 			s.log.Warn("gamesync: could not record completed match", "battle", battleID, "error", err)

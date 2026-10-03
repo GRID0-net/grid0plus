@@ -508,6 +508,14 @@ this version deliberately names no number to keep stale).
 
 ### What is already guessed
 
+- **The battle-history document's full field set**
+  (`internal/ugcstore/vsresults.go`, `RecordVsResults`): GRID0+ writes
+  `battle_id`, `npln_user_id`, `team_result` and `personal_data_team1..3`, the
+  fields NextendoNetwork/splatoon-3 builds from its capture of an official
+  Splatfest. Nintendo's document carries more (power ratings, its own ink
+  ratios, timing) that nothing here computes. A capture of a working server's
+  `RunQuery` answer over `VsResults` would show which of those the history
+  screen needs.
 - **The session token's `gamesync.pid`**
   (`internal/npln/auth.go`, `sessionTokenPID`): Nextendo's tokens carry a
   10-digit number that is the same for one user on every token. GRID0+ sends a
