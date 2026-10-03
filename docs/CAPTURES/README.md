@@ -508,6 +508,11 @@ this version deliberately names no number to keep stale).
 
 ### What is already guessed
 
+- **Salmon Run's Grizzco points rule**
+  (`internal/ugcstore/pointcards.go`, `jobPoints`): 2 per golden egg the
+  team delivered plus 50 for a cleared job, NextendoNetwork/splatoon-3's
+  fit over seventeen captured jobs, six points off on average. A capture
+  with more jobs, ideally with hazard levels, would settle it.
 - **The battle-history document's full field set**
   (`internal/ugcstore/vsresults.go`, `RecordVsResults`): GRID0+ writes
   `battle_id`, `npln_user_id`, `team_result` and `personal_data_team1..3`, the

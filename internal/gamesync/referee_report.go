@@ -57,6 +57,12 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 			UserID: caller.userID, Players: append([]string(nil), d.Players...),
 			Fields: fields, Coop: coop,
 		}
+		if coop {
+			if verdict, ok := s.docsFor(caller).snapshot(refereeResultPrefix + battleID); ok {
+				report.Verdict = verdict.GetFields()
+			}
+			report.SessionUsers = s.sessionUsers(d.SessionID)
+		}
 		if err := s.onRefereeReport(ctx, report); err != nil {
 			s.log.Warn("gamesync: could not record completed match", "battle", battleID, "error", err)
 		}
@@ -70,4 +76,17 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 func isCoopReport(fields *commonpb.MapValue) bool {
 	f := fields.GetFields()
 	return f["shift_id"] != nil || f["scenario"] != nil
+}
+
+// sessionUsers maps the live user sessions of one game session to their users.
+func (s *Server) sessionUsers(gameSession string) map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	for _, peer := range s.sessions {
+		if peer.details != nil && peer.details.SessionID == gameSession {
+			out[sessionID(peer.userSession)] = peer.userID
+		}
+	}
+	return out
 }

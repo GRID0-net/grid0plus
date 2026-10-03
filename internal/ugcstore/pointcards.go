@@ -1,0 +1,257 @@
+package ugcstore
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/n-popescu/grid0plus/internal/db"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
+)
+
+// Salmon Run's point card -- the in-game Bonus Meter and Grizzco points --
+// lives in two documents per player that the console only ever reads:
+//
+//	services/GameRecord/users/<uid>/PointCardTotal/Data
+//	services/GameRecord/users/<uid>/PointCardRegular/<shift_id>
+//
+// The server keeps them from each finished job. Without this the meter stays
+// at zero whatever the player does. Everything below, the field sets, the
+// version and the points rule, is NextendoNetwork/splatoon-3's reading of
+// its captures of Nintendo's server (facts only, not its code):
+//
+//   - PointCardTotal/Data has eight fields: job_num, golden_ikura_total,
+//     ikura_total, rescue_total, boss_total, kuma_point, limited_kuma_point
+//     and version 131072.
+//   - PointCardRegular/<shift_id> adds the shift's grade, total and best grade
+//     points, best golden eggs, total cleared waves, job_type_string,
+//     shift_id and shift_time.
+//   - kuma_point never comes from the console. Fitted over seventeen captured
+//     jobs: 2 per golden egg the team delivered, plus 50 when the job is
+//     cleared (final_wave 2), the same for all four players.
+//
+// TODO(capture-needed): the exact kuma_point rule. The fit is off by six
+// points on average; a capture with more jobs would settle it. Change
+// jobPoints.
+const pointCardVersion = 131072
+
+func jobPoints(deliveredGolden, finalWave int64) int64 {
+	p := 2 * deliveredGolden
+	if finalWave >= 2 {
+		p += 50
+	}
+	return p
+}
+
+// RecordCoopPointCards credits one finished Salmon Run job to each player's
+// point cards, once per player per job however many consoles report it.
+// verdict is the published referee result; sessionUsers maps the user
+// sessions personal_result is keyed by to their users.
+func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID string,
+	verdict *commonpb.MapValue, sessionUsers map[string]string, now time.Time) error {
+	f := verdict.GetFields()
+	personal := f["personal_result"].GetMapValue()
+	if battleID == "" || strings.Contains(battleID, "/") || personal == nil {
+		return nil
+	}
+	team := f["team_result"]
+	finalWave := firstNamed(team, "final_wave")
+	if finalWave == 0 {
+		finalWave = firstNamed(team, "total_clear_wave")
+	}
+	gradePoint := firstNamed(team, "total_grade_point")
+	if gradePoint == 0 {
+		gradePoint = f["challenge_grade_point"].GetIntegerValue()
+	}
+	shared := job{
+		points:     jobPoints(sumNamed(team, "delivered_golden_ikura_num"), finalWave),
+		finalWave:  finalWave,
+		gradePoint: gradePoint,
+		grade:      firstNamed(team, "grade"),
+		boss:       firstNamed(team, "did_defeat_boss"),
+		shiftID:    f["shift_id"].GetStringValue(),
+		shiftTime:  f["shift_time"].GetStringValue(),
+		jobType:    f["job_type_string"].GetStringValue(),
+	}
+	// A shift_id can arrive as its whole range; the card is filed under its start.
+	if i := strings.Index(shared.shiftID, "-"); i > 0 {
+		shared.shiftID = shared.shiftID[:i]
+	}
+	if shared.shiftID == "" {
+		if i := strings.Index(shared.shiftTime, "-"); i > 0 {
+			shared.shiftID = shared.shiftTime[:i]
+		}
+	}
+
+	root := "tenants/" + tenant + documentsSegment
+	for key, entry := range personal.GetFields() {
+		uid := sessionUsers[key]
+		if uid == "" {
+			uid = entry.GetMapValue().GetFields()["npln_user_id"].GetStringValue()
+		}
+		if uid == "" || strings.Contains(uid, "/") {
+			continue
+		}
+		// The marker lives outside services/GameRecord, so no query the
+		// console makes can return it.
+		marker := root + "grid0/coopCredits/" + battleID + "_" + uid
+		if _, err := store.GetUGCDocument(ctx, marker); err == nil {
+			continue
+		} else if !errors.Is(err, db.ErrNotFound) {
+			return err
+		}
+		j := shared
+		j.golden = sumNamed(entry, "golden_ikura_num")
+		j.eggs = sumNamed(entry, "ikura_num")
+		j.rescues = sumNamed(entry, "rescue_num")
+		if err := creditPointCards(ctx, store, root+"services/GameRecord/users/"+uid+"/", uid, j, now); err != nil {
+			return err
+		}
+		if err := store.PutUGCDocument(ctx, db.UGCDocument{
+			Name: marker, Owner: uid, Fields: []byte{}, CreateTime: now, UpdateTime: now,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type job struct {
+	points, finalWave, gradePoint, grade, boss int64
+	golden, eggs, rescues                      int64
+	shiftID, shiftTime, jobType                string
+}
+
+func creditPointCards(ctx context.Context, store db.Store, prefix, uid string, j job, now time.Time) error {
+	total, err := loadCard(ctx, store, prefix+"PointCardTotal/Data")
+	if err != nil {
+		return err
+	}
+	add := func(m map[string]*commonpb.Value, k string, n int64) { m[k] = integer(m[k].GetIntegerValue() + n) }
+	add(total, "job_num", 1)
+	add(total, "golden_ikura_total", j.golden)
+	add(total, "ikura_total", j.eggs)
+	add(total, "rescue_total", j.rescues)
+	add(total, "boss_total", j.boss)
+	add(total, "kuma_point", j.points)
+	add(total, "limited_kuma_point", 0)
+	total["version"] = integer(pointCardVersion)
+	if err := saveCard(ctx, store, prefix+"PointCardTotal/Data", uid, total, now); err != nil {
+		return err
+	}
+
+	// Without a shift there is no name the game would look the card up by.
+	if j.shiftID == "" {
+		return nil
+	}
+	name := prefix + "PointCardRegular/" + j.shiftID
+	shift, err := loadCard(ctx, store, name)
+	if err != nil {
+		return err
+	}
+	add(shift, "job_num", 1)
+	add(shift, "golden_ikura_total", j.golden)
+	add(shift, "ikura_total", j.eggs)
+	add(shift, "rescue_total", j.rescues)
+	add(shift, "boss_total", j.boss)
+	add(shift, "kuma_point", j.points)
+	add(shift, "total_clear_wave", j.finalWave)
+	shift["total_grade_point"] = integer(j.gradePoint)
+	shift["grade"] = integer(j.grade)
+	if j.gradePoint > shift["best_grade_point"].GetIntegerValue() {
+		shift["best_grade_point"] = integer(j.gradePoint)
+	} else if shift["best_grade_point"] == nil {
+		shift["best_grade_point"] = integer(0)
+	}
+	if j.golden > shift["best_golden_ikura_num"].GetIntegerValue() {
+		shift["best_golden_ikura_num"] = integer(j.golden)
+	} else if shift["best_golden_ikura_num"] == nil {
+		shift["best_golden_ikura_num"] = integer(0)
+	}
+	shift["shift_id"] = str(j.shiftID)
+	if j.shiftTime != "" {
+		shift["shift_time"] = str(j.shiftTime)
+	}
+	if j.jobType != "" {
+		shift["job_type_string"] = str(j.jobType)
+	}
+	shift["version"] = integer(pointCardVersion)
+	return saveCard(ctx, store, name, uid, shift, now)
+}
+
+func loadCard(ctx context.Context, store db.Store, name string) (map[string]*commonpb.Value, error) {
+	d, err := store.GetUGCDocument(ctx, name)
+	if errors.Is(err, db.ErrNotFound) {
+		return map[string]*commonpb.Value{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	m, err := decodeFields(d.Fields)
+	if err != nil {
+		return nil, err
+	}
+	if m.Fields == nil {
+		m.Fields = map[string]*commonpb.Value{}
+	}
+	return m.Fields, nil
+}
+
+func saveCard(ctx context.Context, store db.Store, name, uid string, fields map[string]*commonpb.Value, now time.Time) error {
+	encoded, err := encodeFields(&commonpb.MapValue{Fields: fields})
+	if err != nil {
+		return err
+	}
+	created := now
+	if d, err := store.GetUGCDocument(ctx, name); err == nil {
+		created = d.CreateTime
+	}
+	return store.PutUGCDocument(ctx, db.UGCDocument{
+		Name: name, Owner: uid, Fields: encoded, CreateTime: created, UpdateTime: now,
+	})
+}
+
+// sumNamed adds every integer field called name at any depth: a player's
+// counters sit in per-wave sub-messages whose nesting no capture pins down.
+func sumNamed(v *commonpb.Value, name string) int64 {
+	var total int64
+	for k, sv := range v.GetMapValue().GetFields() {
+		if k == name {
+			total += sv.GetIntegerValue() + int64(sv.GetDoubleValue())
+			continue
+		}
+		total += sumNamed(sv, name)
+	}
+	for _, e := range v.GetArrayValue().GetValues() {
+		total += sumNamed(e, name)
+	}
+	return total
+}
+
+// firstNamed returns the first nonzero integer field called name, at any depth.
+func firstNamed(v *commonpb.Value, name string) int64 {
+	fields := v.GetMapValue().GetFields()
+	if sv, ok := fields[name]; ok {
+		return sv.GetIntegerValue() + int64(sv.GetDoubleValue())
+	}
+	for _, sv := range fields {
+		if n := firstNamed(sv, name); n != 0 {
+			return n
+		}
+	}
+	for _, e := range v.GetArrayValue().GetValues() {
+		if n := firstNamed(e, name); n != 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+func integer(n int64) *commonpb.Value {
+	return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
+}
+
+func str(s string) *commonpb.Value {
+	return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: s}}
+}
