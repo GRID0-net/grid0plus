@@ -418,6 +418,17 @@ func TestABigRunShiftCarriesTheBordersTheGameRequires(t *testing.T) {
 	shift.IsSpecial = true
 	svc, _ := newService(t, time.Now())
 	got := svc.coopScheduleProto(RowFromCoopShift(shift), "current")
+	// Field 2 is the kind the game parses by; 1 makes it read a Big Run as
+	// a regular shift and never look at its borders.
+	if got.GetUnk() != 2 {
+		t.Errorf("field 2 = %d, want 2 (Big Run)", got.GetUnk())
+	}
+	if k := svc.coopScheduleProto(RowFromCoopShift(validNormalShift()), "current").GetUnk(); k != 1 {
+		t.Errorf("regular shift field 2 = %d, want 1", k)
+	}
+	if k := svc.coopScheduleProto(RowFromCoopShift(validTeamContestShift()), "current").GetUnk(); k != 3 {
+		t.Errorf("Eggstra Work field 2 = %d, want 3", k)
+	}
 	params := got.GetBigRun().GetAttributes().GetFields()["BigRunParams"].GetMapValue().GetFields()
 	borders := params["RewardBorders"].GetMapValue().GetFields()
 	for name, want := range map[string]int64{"Gold": 160, "Silver": 140, "Bronze": 110} {

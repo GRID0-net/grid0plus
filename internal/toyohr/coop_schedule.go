@@ -377,11 +377,14 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	// Both working hall captures use one schedule-set id for the whole
 	// current Coop window and leave ShiftId absent. The resource Name keeps
 	// each shift distinct without inventing another wire identifier.
-	// Every populated Coop entry in both working hall captures carries
-	// protobuf field 2 as 1; its semantic name is still unknown.
+	// Field 2 is the shift's kind, and the only thing the game decides it
+	// by: the schedule parser (main+0x32a28d0) maps it through
+	// main+0x32b90e0, 1 to a regular shift, 2 to a Big Run and 3 to Eggstra
+	// Work, and reads the Normal, BigRun or TeamContest sub-message that kind
+	// names. Both working hall captures only had regular shifts, hence 1.
 	out := &toyohrpb.CoopSchedule{
 		Name:          name,
-		Unk:           1,
+		Unk:           coopScheduleKind(r.Kind),
 		ScheduleSetId: rotationSetID("coop", AlignToSlot(s.now())),
 		StartTime:     timestamppb.New(r.StartAt),
 		EndTime:       timestamppb.New(r.EndAt),
@@ -484,6 +487,18 @@ func coopScheduleEtag(schedules []*toyohrpb.CoopSchedule) (string, error) {
 		h.Write(encoded)
 	}
 	return quotedScheduleEtag(h.Sum(nil)), nil
+}
+
+// coopScheduleKind is CoopSchedule field 2 for a shift kind; see
+// coopScheduleProto.
+func coopScheduleKind(kind string) int32 {
+	switch kind {
+	case "big_run":
+		return 2
+	case "team_contest":
+		return 3
+	}
+	return 1
 }
 
 // bigRunParams is attributes.BigRunParams, the map the CoopSchedule parser
