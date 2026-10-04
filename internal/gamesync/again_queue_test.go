@@ -42,15 +42,22 @@ func TestAgainReopensTheSessionAndLocksItAfterTheGraceWindow(t *testing.T) {
 	}
 	s.noteAgain(caller, ops)
 
-	m, _ := s.docsFor(caller).get("docs/__gs/m")
+	time.Sleep(10 * time.Millisecond)
+	m, _ := s.docsFor(caller).snapshot("docs/__gs/m")
 	if !m.GetFields().GetFields()["cp"].GetBooleanValue() {
 		t.Fatal("the session was locked before the grace window ran out")
 	}
+	if got := m.GetFields().GetFields()["bfmin"].GetIntegerValue(); got != 0 {
+		t.Errorf("reopened __gs/m bfmin = %d, want 0 (the backfill experiment)", got)
+	}
 	time.Sleep(100 * time.Millisecond)
-	m, _ = s.docsFor(caller).get("docs/__gs/m")
+	m, _ = s.docsFor(caller).snapshot("docs/__gs/m")
 	f := m.GetFields().GetFields()
 	if f["cp"].GetBooleanValue() || f["ebf"].GetBooleanValue() {
 		t.Errorf("after the grace window __gs/m = %v, want cp and ebf false", f)
+	}
+	if f["bfmin"].GetIntegerValue() != 1 {
+		t.Errorf("locking left bfmin = %v, want it restored to 1", f["bfmin"])
 	}
 	if f["bfmax"] == nil {
 		t.Error("locking dropped the fields it did not name")

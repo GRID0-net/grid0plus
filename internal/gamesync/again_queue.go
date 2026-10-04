@@ -21,6 +21,11 @@ import (
 // restarts it, and when it runs out the session is locked again (cp and ebf
 // false), the same shape the console itself writes when a fresh match locks.
 //
+// Experiment (2026-10-04, untested): every reopen also sets bfmin 0 in
+// __gs/m, on the reading that bfmin 1 makes the host wait for at least one
+// backfilled stranger; the lock restores bfmin 1. Remove if a test shows no
+// change.
+//
 // TODO(capture-needed): the lock did not change anything on hardware. The
 // host's State::ActivateBackFill runs a session-join operation and gives it
 // ~32 s to complete before falling back to ordinary matchmaking (see
@@ -53,6 +58,7 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 	if !reopened {
 		return
 	}
+	s.writeSessionMeta(caller, map[string]*commonpb.Value{"bfmin": integer(0)}, "gamesync: Again! reopen; bfmin 0 published")
 	s.again.mu.Lock()
 	defer s.again.mu.Unlock()
 	if s.again.timers == nil {
@@ -72,21 +78,37 @@ func (s *Server) lockAfterAgain(caller *session) {
 	delete(s.again.timers, scope)
 	s.again.mu.Unlock()
 
-	boolean := func(b bool) *commonpb.Value {
-		return &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: b}}
+	s.writeSessionMeta(caller, map[string]*commonpb.Value{
+		"cp": boolean(false), "ebf": boolean(false), "bfmin": integer(1),
+	}, "gamesync: Again! grace window over; session locked")
+}
+
+// writeSessionMeta applies a server-side masked update to docs/__gs/m and
+// publishes it to the session, as if a member had written it.
+func (s *Server) writeSessionMeta(caller *session, fields map[string]*commonpb.Value, done string) {
+	scope := scopeOf(caller)
+	paths := make([]string, 0, len(fields))
+	for k := range fields {
+		paths = append(paths, "`"+k+"`")
 	}
 	ops := []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_UpdateDocument{UpdateDocument: &syncpb.UpdateDocumentRequest{
-		Document: &syncpb.Document{Name: "docs/__gs/m", Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-			"cp": boolean(false), "ebf": boolean(false),
-		}}},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"`cp`", "`ebf`"}},
+		Document:   &syncpb.Document{Name: "docs/__gs/m", Fields: &commonpb.MapValue{Fields: fields}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: paths},
 	}}}}
 	s.seedRoomDocuments(caller, ops)
 	_, commit, err := s.docsFor(caller).apply(ops)
 	if err != nil {
-		s.log.Warn("gamesync: could not lock the session after Again!", "session", scope, "error", err)
+		s.log.Warn("gamesync: could not update the session meta", "session", scope, "error", err)
 		return
 	}
-	s.log.Info("gamesync: Again! grace window over; session locked", "session", scope)
+	s.log.Info(done, "session", scope)
 	s.watch.publish(scope, s.normalizeSessionChanges(caller, commit.changes))
+}
+
+func boolean(b bool) *commonpb.Value {
+	return &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: b}}
+}
+
+func integer(v int64) *commonpb.Value {
+	return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}}
 }
