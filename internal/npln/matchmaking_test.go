@@ -83,6 +83,15 @@ func TestFestTicketCarriesTheServerAssignedTeamSlot(t *testing.T) {
 	if got := proto.GetUserDefinitions()[0].GetTeam(); got != "team2" {
 		t.Fatalf("matched fest ticket team = %q, want team2", got)
 	}
+	// The roster GetGameSession sends must say the same thing.
+	sess, _ := h.srv.queue.Session(second.SessionID)
+	teams := map[string]string{}
+	for _, us := range h.srv.userSessions(sess) {
+		teams[us.GetUser()] = us.GetTeam()
+	}
+	if teams[h.srv.userResourceName("alice")] != "team1" || teams[h.srv.userResourceName("bob")] != "team2" {
+		t.Errorf("fest roster teams = %v, want alice team1 and bob team2", teams)
+	}
 }
 
 func TestFestMatchmakingUsesStoredVotesInsteadOfClientTeamClaims(t *testing.T) {

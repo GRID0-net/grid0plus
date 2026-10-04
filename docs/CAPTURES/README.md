@@ -1433,3 +1433,13 @@ No captured schedule content or player identifiers were copied into source.
 The fix needs a fresh hardware boot test; a crash at the same generic abort
 address would require another wire comparison, not an assumption that the
 Versus name remains wrong.
+
+### Splatfest match: where the team slot travels
+
+`internal/npln/matchmaking.go`, `userSessions`. A 2-player fest match
+(`fest_match_regular_normal_config`, different teams) formed, both consoles
+joined gamesync, and both timed out with `MatchGsReadyTimeout` ~30 s later
+(2026-10-04, hardware). The team slot was only on the ticket's user
+definitions; the roster's `UserSession.team` is now set too. A capture of a
+fest match's `GetGameSession`/`TrackMatchmakingTicket` would settle which
+messages carry it.

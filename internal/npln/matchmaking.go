@@ -983,6 +983,13 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 			User:       s.userResourceName(userID),
 			State:      mmpb.UserSession_ACTIVE,
 			CreateTime: timestamppb.New(sess.CreatedAt),
+			// A Splatfest match's roster says which side each player is on, as
+			// the ticket already does. Empty for every other mode.
+			// TODO(capture-needed): Nextendo's official-fest capture shows the
+			// server placing players in team1/team2/team3, not which message
+			// carries it; a 1v1 fest match timed out waiting for members to be
+			// ready (MatchGsReadyTimeout) with the roster's team empty.
+			Team: sess.TeamSlots[userID],
 		})
 	}
 	return out
