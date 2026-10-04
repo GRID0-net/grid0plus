@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"google.golang.org/protobuf/encoding/protojson"
 	"slices"
 	"strings"
 	"time"
@@ -60,6 +61,11 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	// The mode is the one thing here that IS the client's to choose: it is what
 	// they want to play, not who they are.
 	mode := req.GetMatchmakingTicket().GetMatchmakingConfig()
+	// The whole request, so the shape of a ticket the game sends in a
+	// particular situation (Salmon Run's "Again!", a squad, a fest) can be read
+	// from the log instead of guessed at.
+	m.s.log.Info("npln: matchmaking ticket requested", "user", caller.UserID,
+		"request", protojson.Format(req))
 	if mode == "" {
 		// A ticket with no mode would match against every other modeless
 		// ticket, which is every mode at once. Refusing is better than forming
