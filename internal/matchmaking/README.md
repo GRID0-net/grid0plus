@@ -89,6 +89,10 @@ midterm leader against the other two teams at 2:1:1 -- 4 v 2 v 2 when full,
 `team2`/`team3` (see `docs/CAPTURES/README.md` for the unmeasured part); npln
 tells the queue who defends with `SetTricolorDefender`.
 
+The operator's view lists every playable matchmaking config the game links
+(`internal/npln/modes.go`, read out of main's string table), waiting or not,
+so a size can be set before anyone queues for it.
+
 **Those sizes are not hardcoded here, on purpose.** The key is the mode name the
 game puts in a ticket's `matchmaking_config`, and nothing public documents those
 strings. A built-in table of plausible-looking names would be an invented

@@ -1161,6 +1161,7 @@ func queueConfig(c config.NPLN) matchmaking.Config {
 		TicketTTL:         time.Duration(c.TicketTTL) * time.Second,
 		VersusGracePeriod: time.Duration(c.VersusGracePeriod) * time.Second,
 		CoopGracePeriod:   time.Duration(c.CoopGracePeriod) * time.Second,
+		KnownModes:        knownModes,
 	}
 	if len(c.ModePlayers) > 0 {
 		cfg.ModeSizes = make(map[string]int, len(c.ModePlayers))

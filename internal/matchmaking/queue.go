@@ -152,6 +152,10 @@ type Config struct {
 	// settable without a code change.
 	ModeSizes map[string]int
 
+	// KnownModes are modes the operator's view always lists, waiting or not,
+	// so a size can be set before anyone queues.
+	KnownModes []string
+
 	// CoopModes names the modes formed like Salmon Run -- one team, not two --
 	// rather than like Turf War/Anarchy. A set because mode strings come from
 	// the game and this project has not captured Salmon Run's yet; empty by
@@ -688,6 +692,9 @@ func (q *Queue) Snapshot() Snapshot {
 		}
 	}
 	for mode := range q.modeSizes {
+		modes[mode] = true
+	}
+	for _, mode := range q.cfg.KnownModes {
 		modes[mode] = true
 	}
 

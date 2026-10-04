@@ -282,13 +282,21 @@ func TestTheSnapshotShowsWaitsInSecondsNotDurationStrings(t *testing.T) {
 	if body.DefaultSize == 0 {
 		t.Error("defaultSize is missing")
 	}
-	if len(body.Modes) != 1 || len(body.Modes[0].Waiting) != 1 {
+	// Every known mode is listed, waiting or not; exactly one has alice.
+	var waiting []struct {
+		UserID            string `json:"userId"`
+		WaitingForSeconds int    `json:"waitingForSeconds"`
+	}
+	for _, m := range body.Modes {
+		waiting = append(waiting, m.Waiting...)
+	}
+	if len(waiting) != 1 {
 		t.Fatalf("expected one waiting ticket, got %+v", body.Modes)
 	}
-	if got := body.Modes[0].Waiting[0].WaitingForSeconds; got != 90 {
+	if got := waiting[0].WaitingForSeconds; got != 90 {
 		t.Errorf("waitingForSeconds = %d, want 90", got)
 	}
-	if body.Modes[0].Waiting[0].UserID != "alice" {
-		t.Errorf("userId = %q", body.Modes[0].Waiting[0].UserID)
+	if waiting[0].UserID != "alice" {
+		t.Errorf("userId = %q", waiting[0].UserID)
 	}
 }
