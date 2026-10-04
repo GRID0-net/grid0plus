@@ -229,7 +229,7 @@ type Queue struct {
 	modeSizes map[string]int
 	// tricolorDefender is each Tricolor mode's defending fest team.
 	tricolorDefender map[string]string
-	tickets   map[string]*Ticket
+	tickets          map[string]*Ticket
 	// waiting is the queue order per mode, holding ticket ids. A slice rather
 	// than a heap: it is FIFO, it is short, and the order has to be readable
 	// when something goes wrong.
