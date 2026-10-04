@@ -37,12 +37,11 @@ func (s *Server) register() {
 
 	// GlobalCounterService answers GetSeason only, which a special Big Run
 	// reads its community golden-egg total from (see globalcounter.go); every
-	// other method stays Unimplemented. LeaderboardService is registered for
-	// log visibility only (see this function's own doc comment): a 2026-09-20
-	// decompile of Splatoon 3 v11.3.0 confirms it is real and linked, and the
-	// game calls BrowseLeaderboard, but no capture shows what it expects.
+	// other method stays Unimplemented. LeaderboardService answers
+	// BrowseLeaderboard with an empty board (see leaderboard.go); the rest of
+	// it stays Unimplemented.
 	globalcounterpb.RegisterGlobalCounterServiceServer(s.grpc, &globalCounterService{s: s})
-	leaderboardpb.RegisterLeaderboardServiceServer(s.grpc, &leaderboardpb.UnimplementedLeaderboardServiceServer{})
+	leaderboardpb.RegisterLeaderboardServiceServer(s.grpc, &leaderboardService{s: s})
 
 	callerID := func(ctx context.Context) (string, bool) {
 		c, ok := CallerFrom(ctx)

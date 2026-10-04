@@ -158,10 +158,11 @@ one:
   implemented (`globalcounter.go`): a special Big Run reads its community
   golden-egg total from it, kept by `internal/ugcstore/bigrun_eggs.go`. Every
   other method stays `Unimplemented`.
-- `nn.npln.leaderboard.v1.LeaderboardService` -- confirmed real and linked,
-  left `Unimplemented` (registered, so a real call is logged). The game calls
-  `BrowseLeaderboard`; nothing visibly breaks on the error.
-  TODO(capture-needed): what it expects from `BrowseLeaderboard`.
+- `nn.npln.leaderboard.v1.LeaderboardService` -- `BrowseLeaderboard` answers
+  an empty board for the season asked about (`leaderboard.go`), since GRID0+
+  keeps no rankings; every request is logged in full so the season names can
+  be read off the log. The rest stays `Unimplemented`.
+  TODO(capture-needed): what a real board looks like.
 
 `nn.npln.hydro.v1.Datastore`, also on the wiki's general-services list, does
 not appear anywhere in Splatoon 3's binary and stays unregistered -- no
