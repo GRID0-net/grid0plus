@@ -564,7 +564,7 @@
           <small>The list is filtered to Big Run stages, or normal-rotation stages, to match Kind above -- a real console never sees Big Run running on an ordinary stage. Team Contest uses the normal-rotation stages too.</small>
         </label>
         <label>
-          <span>Main weapons <em>four, in order</em></span>
+          <span>Main weapons <em>four, in order; "Random" slots are dealt when the job starts</em></span>
           <div class="coop-weapon-row">
             <select name="weapon0" class="coop-weapon"></select>
             <select name="weapon1" class="coop-weapon"></select>
@@ -585,12 +585,12 @@
         <label>
           <span>Rotation to replace</span>
           <select name="startAt" id="coop-start"></select>
-          <small id="coop-window-note">Normal keeps the selected rotation's end. Big Run and Team Contest run for 48 hours from an upcoming rotation boundary.</small>
+          <small id="coop-window-note">Normal keeps the selected rotation's end. Big Run and Team Contest run for 48 hours from the selected rotation's start, the current one included. Consoles only see a change to the running schedule after restarting the game.</small>
         </label>
         <label id="coop-reward-gear-field">
           <span>Reward gear id <em>optional</em></span>
           <input type="number" name="rewardGearId" id="coop-reward-gear" min="0" placeholder="0">
-          <small>Not checked against a real gear table -- see internal/toyohr/coop_ids.go.</small>
+          <small>Leave at 0 to have one picked from the captured Grizzco reward gear. A Big Run always needs one: the hall refuses a Big Run without a Head/Clothes/Shoes reward gear.</small>
         </label>
         <label id="coop-rewards-field" hidden>
           <span>Scale-tier rewards <em>optional</em></span>
@@ -610,6 +610,14 @@
         </div>
         <p class="form-error" id="coop-error" hidden></p>
       </form>
+    </div>
+
+    <div class="panel">
+      <h2>Special Big Run egg total</h2>
+      <p>What a special Big Run shows against its 700,000,000 golden-egg goal
+        (GlobalCounterService/GetSeason): every Big Run job's delivered golden
+        eggs, counted once per job, starting again at each Big Run.</p>
+      <p id="bigrun-eggs">&ndash;</p>
     </div>
 
     <div class="panel">

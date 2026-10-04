@@ -371,6 +371,16 @@ function renderFests(fests) {
 let coopReference = null;
 let coopShifts = [];
 
+async function loadBigRunEggs() {
+  try {
+    const t = await api("/api/coop-bigrun-eggs");
+    $("#bigrun-eggs").textContent =
+      `${t.count.toLocaleString()} of ${t.goal.toLocaleString()} golden eggs, from ${t.jobs} job${t.jobs === 1 ? "" : "s"}`;
+  } catch (e) {
+    $("#bigrun-eggs").textContent = "Could not read the total.";
+  }
+}
+
 async function loadCoopReference() {
   coopReference = await api("/api/coop-reference");
   populateCoopStageSelect();
@@ -1921,6 +1931,7 @@ async function refresh() {
 })();
 
 loadCoopReference();
+loadBigRunEggs();
 refresh();
 
 // Health is loaded SEPARATELY from refresh(), and never inside its try.

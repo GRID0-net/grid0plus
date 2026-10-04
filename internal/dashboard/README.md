@@ -188,10 +188,19 @@ way `festRow`'s `Phase` is: from the server's clock against the shift's own
 
 The scheduling form selects a current or upcoming Normal rotation rather than
 accepting arbitrary dates. A Normal override keeps that rotation's start and
-end, including when only a little time remains. Big Run and Team Contest may
-start only at an upcoming Normal rotation boundary and run for 48 hours; the
-server derives the end, then resumes Normal rotations at the event's end.
-Overlapping stored shifts must be removed explicitly before scheduling an event.
+end, including when only a little time remains. Big Run and Team Contest start
+at the selected Normal rotation's start -- the current one included, so an
+event can be tested straight away -- and run for 48 hours; the server derives
+the end, then resumes Normal rotations at the event's end. Consoles keep the
+schedule they loaded, so a change to the running schedule only shows after a
+game restart. Overlapping stored shifts must be removed explicitly before
+scheduling an event.
+
+The weapon dropdowns start with the two random slots, -1 (green ?) and -2
+(gold ?, Grizzco weapons only), both confirmed on hardware; a shift with one
+lists the whole Grizzco pool in its KumaWeapons. The "Special Big Run egg
+total" panel (`GET /api/coop-bigrun-eggs`) shows the running total a special
+Big Run reads through `GlobalCounterService/GetSeason`.
 
 ## "Auto-fill" is additive, not authoritative
 

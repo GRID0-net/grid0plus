@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/n-popescu/grid0plus/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
 )
 
 // ---- Salmon Run / Big Run schedule -----------------------------------------
@@ -89,6 +90,10 @@ func (s *Server) coopShiftRows(ctx context.Context) ([]coopShiftRow, error) {
 		weaponNames := make([]string, 0, len(c.Weapons))
 		for _, id := range c.Weapons {
 			if id == 0 {
+				continue
+			}
+			if name, ok := coopRandomSlotNames[id]; ok {
+				weaponNames = append(weaponNames, name)
 				continue
 			}
 			if w, ok := toyohr.CoopWeaponByID(id); ok {
@@ -190,11 +195,14 @@ func (s *Server) handleCreateCoopShift(w http.ResponseWriter, r *http.Request) {
 	}
 	end := slot.End
 	if kind != toyohr.CoopShiftNormal {
-		if start.Before(now) {
-			http.Error(w, "Big Run and Team Contest must start at an upcoming rotation boundary", http.StatusBadRequest)
+		// The current rotation is allowed as well as an upcoming one: an
+		// operator testing a Big Run wants it now. The console only picks it
+		// up after a game restart (it keeps the schedule it loaded).
+		end = start.Add(48 * time.Hour)
+		if !end.After(now) {
+			http.Error(w, "that rotation would put the event entirely in the past", http.StatusBadRequest)
 			return
 		}
-		end = start.Add(48 * time.Hour)
 	}
 	stored, err := s.fests.ListCoopShiftsForOperator(r.Context())
 	if err != nil {
@@ -309,7 +317,10 @@ func (s *Server) handleCoopReference(w http.ResponseWriter, r *http.Request) {
 	for _, st := range toyohr.CoopStages {
 		stages = append(stages, coopReferenceEntry{ID: int64(st.ID), Name: st.Name, BigRun: st.BigRun})
 	}
-	weapons := make([]coopReferenceEntry, 0, len(toyohr.CoopWeapons))
+	weapons := make([]coopReferenceEntry, 0, len(toyohr.CoopWeapons)+2)
+	for _, id := range []int64{toyohr.CoopRandomWeapon, toyohr.CoopRandomGrizzcoWeapon} {
+		weapons = append(weapons, coopReferenceEntry{ID: id, Name: coopRandomSlotNames[id]})
+	}
 	for _, wp := range toyohr.CoopWeapons {
 		weapons = append(weapons, coopReferenceEntry{ID: wp.ID, Name: wp.Name})
 	}
@@ -323,6 +334,24 @@ func (s *Server) handleCoopReference(w http.ResponseWriter, r *http.Request) {
 		"kumaWeapons": kumaWeapons,
 		"bosses":      toyohr.CoopBosses,
 	})
+}
+
+// coopRandomSlotNames names the two random main-weapon slots (see
+// toyohr.CoopRandomWeapon); both confirmed on hardware on 2026-10-04.
+var coopRandomSlotNames = map[int64]string{
+	toyohr.CoopRandomWeapon:        "Random (green ?)",
+	toyohr.CoopRandomGrizzcoWeapon: "Random Grizzco (gold ?)",
+}
+
+// handleBigRunEggs reports the special Big Run's community golden-egg total,
+// the number GlobalCounterService/GetSeason hands the game.
+func (s *Server) handleBigRunEggs(w http.ResponseWriter, r *http.Request) {
+	count, jobs, err := ugcstore.BigRunEggs(r.Context(), s.store, s.tenant)
+	if err != nil {
+		s.fail(w, "read the Big Run egg total", err)
+		return
+	}
+	writeJSON(w, map[string]any{"count": count, "jobs": jobs, "goal": 700000000})
 }
 
 func borderList(b [3]int64) []int64 {

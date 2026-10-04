@@ -201,6 +201,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/coop-shifts/generate", s.guard(s.handleGenerateCoopShifts))
 	mux.HandleFunc("DELETE /api/coop-shifts/{id}", s.guard(s.handleDeleteCoopShift))
 	mux.HandleFunc("GET /api/coop-reference", s.guard(s.handleCoopReference))
+	mux.HandleFunc("GET /api/coop-bigrun-eggs", s.guard(s.handleBigRunEggs))
 	mux.HandleFunc("GET /api/schedule-viewer", s.guard(s.handleScheduleViewer))
 	mux.HandleFunc("GET /api/health", s.guard(s.handleHealth))
 	mux.HandleFunc("GET /api/matchmaking", s.guard(s.handleMatchmaking))

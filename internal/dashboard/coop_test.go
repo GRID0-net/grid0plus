@@ -386,8 +386,12 @@ func TestCoopReferenceServesTheRealTables(t *testing.T) {
 	if len(resp.Stages) != len(toyohr.CoopStages) {
 		t.Errorf("got %d stages, want %d", len(resp.Stages), len(toyohr.CoopStages))
 	}
-	if len(resp.Weapons) != len(toyohr.CoopWeapons) {
-		t.Errorf("got %d weapons, want %d", len(resp.Weapons), len(toyohr.CoopWeapons))
+	// The two random slots (green and gold ?) come first, then every weapon.
+	if len(resp.Weapons) != len(toyohr.CoopWeapons)+2 {
+		t.Errorf("got %d weapons, want %d", len(resp.Weapons), len(toyohr.CoopWeapons)+2)
+	}
+	if len(resp.Weapons) > 1 && (resp.Weapons[0].ID != -1 || resp.Weapons[1].ID != -2) {
+		t.Errorf("first two weapons = %v, want the green and gold random slots", resp.Weapons[:2])
 	}
 	if len(resp.KumaWeapons) != len(toyohr.CoopKumaWeapons) {
 		t.Errorf("got %d kuma weapons, want %d", len(resp.KumaWeapons), len(toyohr.CoopKumaWeapons))
