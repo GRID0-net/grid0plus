@@ -451,3 +451,23 @@ func TestABigRunShiftCarriesTheBordersTheGameRequires(t *testing.T) {
 		t.Error("a normal shift with Big Run borders validated")
 	}
 }
+
+// TestARandomGrizzcoBigRunListsTheWholeGrizzcoPool: random slots are -1/-2
+// in main_weapons, and the shift's KumaWeapons must then name every Grizzco
+// weapon the game can deal, as the captured shift with a -1 slot did.
+func TestARandomGrizzcoBigRunListsTheWholeGrizzcoPool(t *testing.T) {
+	shift := validBigRunShift()
+	shift.Weapons = [4]int64{CoopRandomGrizzcoWeapon, CoopRandomGrizzcoWeapon, CoopRandomGrizzcoWeapon, CoopRandomGrizzcoWeapon}
+	if err := shift.Validate(); err != nil {
+		t.Fatalf("four gold random slots refused: %v", err)
+	}
+	svc, _ := newService(t, time.Now())
+	got := svc.coopScheduleProto(RowFromCoopShift(shift), "current").GetBigRun()
+	if w := got.GetMainWeapons(); len(w) != 4 || w[0] != -2 {
+		t.Errorf("main_weapons = %v, want four -2", w)
+	}
+	kuma := got.GetAttributes().GetFields()["KumaWeapons"].GetArrayValue().GetValues()
+	if len(kuma) != len(CoopKumaWeapons) {
+		t.Errorf("KumaWeapons has %d entries, want the %d Grizzco weapons", len(kuma), len(CoopKumaWeapons))
+	}
+}

@@ -207,6 +207,9 @@ func (c CoopShift) Validate() error {
 
 	seen := make(map[int64]bool, len(c.Weapons))
 	for i, id := range c.Weapons {
+		if coopRandomSlot(id) {
+			continue
+		}
 		_, normal := CoopWeaponByID(id)
 		_, grizzco := CoopKumaWeaponByID(id)
 		if !normal && !grizzco {
@@ -394,7 +397,7 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 		// different on every poll while its ETag stayed the same.
 		Timestamp: timestamppb.New(r.StartAt.Add(-7 * 24 * time.Hour)),
 	}
-	attrs := coopKumaWeaponsAttribute(r.KumaWeaponID)
+	attrs := coopKumaWeaponsAttribute(r.KumaWeaponID, r.Weapons)
 	reward := coopRewardForShift(r.RewardGearID, r.StartAt)
 	switch r.Kind {
 	case "big_run":
@@ -450,7 +453,19 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 //     GameRecord-document-read phase that follows a schedule fetch in both
 //     working captures; its absence was a candidate for why. Per-shift
 //     variation remains unmodelled.
-func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
+func coopKumaWeaponsAttribute(kumaWeaponID int64, weapons []int64) *common.MapValue {
+	kuma := []*common.Value{{ValueType: &common.Value_IntegerValue{IntegerValue: kumaWeaponID}}}
+	// A shift with a random slot lists the whole Grizzco pool, as the one
+	// captured shift with a -1 slot did.
+	for _, id := range weapons {
+		if coopRandomSlot(id) {
+			kuma = kuma[:0]
+			for _, w := range CoopKumaWeapons {
+				kuma = append(kuma, &common.Value{ValueType: &common.Value_IntegerValue{IntegerValue: w.ID}})
+			}
+			break
+		}
+	}
 	gears := coopUsedRewardGears[:min(coopScheduleRewardGearCount, len(coopUsedRewardGears))]
 	gearValues := make([]*common.Value, len(gears))
 	for i, g := range gears {
@@ -463,9 +478,7 @@ func coopKumaWeaponsAttribute(kumaWeaponID int64) *common.MapValue {
 	}
 	return &common.MapValue{Fields: map[string]*common.Value{
 		"KumaWeapons": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
-			Values: []*common.Value{
-				{ValueType: &common.Value_IntegerValue{IntegerValue: kumaWeaponID}},
-			},
+			Values: kuma,
 		}}},
 		"CoopUsedRewardGears": {ValueType: &common.Value_ArrayValue{ArrayValue: &common.ArrayValue{
 			Values: gearValues,

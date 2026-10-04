@@ -179,6 +179,21 @@ var CoopKumaWeapons = []CoopWeapon{
 	{ID: 28900, Name: "Grizzco Splatana"},
 }
 
+// Random main-weapon slots. A shift's main_weapons can hold these instead of
+// a weapon id, and the game deals each player a weapon when the job starts.
+// -1 is the green "?" (a capture of Nextendo's working server carries it as
+// ["20400","25000","24020","-1"], with that shift's KumaWeapons attribute
+// listing all eight Grizzco weapons); -2 is the gold "?", Grizzco weapons only.
+const (
+	CoopRandomWeapon        int64 = -1
+	CoopRandomGrizzcoWeapon int64 = -2
+)
+
+// coopRandomSlot reports whether id is one of the random slot values.
+func coopRandomSlot(id int64) bool {
+	return id == CoopRandomWeapon || id == CoopRandomGrizzcoWeapon
+}
+
 // CoopWeaponByID looks up a real main-weapon, or reports ok=false.
 func CoopWeaponByID(id int64) (weapon CoopWeapon, ok bool) {
 	for _, w := range CoopWeapons {
