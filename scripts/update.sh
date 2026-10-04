@@ -122,7 +122,7 @@ else
     fi
 
     # nginx serves generated configuration and static files rather than Go code.
-    if echo "$CHANGED" | grep -qE '^(deploy/|internal/nintendo/)'; then
+    if echo "$CHANGED" | grep -qE '^(deploy/|internal/nintendo/|cmd/switchnetctl/main\.go)'; then
         restart="$restart nginx"
         say "==> the host list or edge configuration changed; nginx is affected"
     fi
