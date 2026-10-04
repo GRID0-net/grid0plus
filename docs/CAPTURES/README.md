@@ -1480,3 +1480,19 @@ other teams (2 each), 2:1:1 below full size, from NextendoNetwork's notes on a
 capture of an official Tricolor battle. The defender is put in `team1`; the
 capture had team1/team2/team3 in equal numbers, so which slot Nintendo gives
 the defender is not measured. Not yet tried on a console.
+
+### Anarchy Battle (Series) and the GameRecord calls with unknown shapes
+
+`internal/toyohr/game_record.go`, `CreateBankaraChallenge`: answered like
+`CreateFestPowerMeasurement` -- the game's own fields stored under
+`GameRecord/users/<uid>/BankaraChallenges/<id>` with a GRID0+-chosen id. The
+id format and any fields Nintendo adds are unknown.
+
+Splatoon 3 also links `GameRecord/PrepareTag`, `PrepareBankaraPowerMeasurement`,
+`PrepareLeaguePowerMeasurement`, `PrepareWeaponPowerMeasurement` and
+`ResetUdemae` (found by listing every `/nn.npln.*` method name in main,
+2026-10-04). Their request and response messages are unknown even in
+NPLN-Protocols (commented `?` there), so none is registered and the game gets
+gRPC Unimplemented. None has been called on GRID0+ yet; the first Anarchy
+Open, Challenge or X Battle will show which ones matter. Static RE of the
+calling code would give the message shapes.

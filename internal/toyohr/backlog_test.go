@@ -81,10 +81,10 @@ func TestFulfillReservationsIsEmptyNotAnError(t *testing.T) {
 	}
 }
 
-// TestGameRecordIsEntirelyUnimplemented guards the boundary backlog.go's
-// package comment draws: real rank/power initialization data has no
-// defensible default, so none of GameRecord's three RPCs are overridden.
-func TestGameRecordIsEntirelyUnimplemented(t *testing.T) {
+// TestGameRecordWithoutADocumentStoreIsUnimplemented: every GameRecord call
+// that GRID0+ answers stores a document, so a service built without a
+// document store says Unimplemented rather than pretending.
+func TestGameRecordWithoutADocumentStoreIsUnimplemented(t *testing.T) {
 	svc, _ := newService(t, time.Now())
 	g := gameRecordService{Service: svc}
 

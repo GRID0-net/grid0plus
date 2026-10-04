@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -360,5 +361,34 @@ func TestAFestPowerMeasurementIsReadableRightAfterItIsCreated(t *testing.T) {
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Errorf("malformed fest id: %v, want InvalidArgument", err)
+	}
+}
+
+// TestAnAnarchySeriesChallengeIsReadableRightAfterItIsCreated: the game reads
+// BankaraChallenges/<id> back after starting a series, and a missing name
+// there aborts it (2162-0001, per NextendoNetwork's notes).
+func TestAnAnarchySeriesChallengeIsReadableRightAfterItIsCreated(t *testing.T) {
+	h, ctx, c := ugcHarness(t)
+	gr := toyohrpb.NewGameRecordClient(h.conn)
+
+	b, err := gr.CreateBankaraChallenge(ctx, &toyohrpb.CreateBankaraChallengeRequest{
+		Parent: "tenants/current/users/current",
+		BankaraChallenge: &toyohrpb.BankaraChallenge{Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"win_count": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 0}},
+		}}},
+	})
+	if err != nil {
+		t.Fatalf("CreateBankaraChallenge: %v", err)
+	}
+	prefix := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/BankaraChallenges/"
+	if !strings.HasPrefix(b.GetDocument(), prefix) || len(b.GetDocument()) == len(prefix) {
+		t.Fatalf("document = %q, want a named document under %s", b.GetDocument(), prefix)
+	}
+	if b.GetFields().GetFields()["win_count"] == nil {
+		t.Error("the game's own fields were not kept")
+	}
+	doc, err := c.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: b.GetDocument()})
+	if err != nil || doc.GetName() == "" {
+		t.Fatalf("reading the challenge back: %v, %v", doc, err)
 	}
 }

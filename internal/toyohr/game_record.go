@@ -2,6 +2,9 @@ package toyohr
 
 import (
 	"context"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"google.golang.org/protobuf/encoding/prototext"
 
@@ -226,6 +229,48 @@ func (s gameRecordService) CreateFestPowerMeasurement(
 	s.log.Info("toyohr: recorded a fest power measurement", "user", uid, "fest", festID)
 	return &toyohrpb.FestPowerMeasurement{
 		Name:       "tenants/" + s.tenant + "/users/" + uid + "/festPowerMeasurements/" + festID,
+		Fields:     doc.GetFields(),
+		CreateTime: doc.GetCreateTime(),
+		UpdateTime: doc.GetUpdateTime(),
+		Document:   doc.GetName(),
+	}, nil
+}
+
+// CreateBankaraChallenge starts an Anarchy Battle (Series) challenge.
+//
+// Shaped like CreateFestPowerMeasurement, the GameRecord call it sits beside:
+// the request carries the challenge's fields, and the answer is the stored
+// document under the player's GameRecord, named BankaraChallenges/<id> --
+// the collection NextendoNetwork/splatoon-3's notes show the game reading back
+// (and aborting with 2162-0001 when it came back with no name).
+//
+// TODO(capture-needed): the id Nintendo assigns and any fields it adds. The
+// fields here are the game's own, plus npln_user_id. Change: this function.
+func (s gameRecordService) CreateBankaraChallenge(
+	ctx context.Context, req *toyohrpb.CreateBankaraChallengeRequest,
+) (*toyohrpb.BankaraChallenge, error) {
+	if s.docs == nil {
+		return nil, status.Error(codes.Unimplemented, "not implemented")
+	}
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	fields := &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
+	for k, v := range req.GetBankaraChallenge().GetFields().GetFields() {
+		fields.Fields[k] = v
+	}
+	fields.Fields["npln_user_id"] = stringValue(uid)
+
+	id := strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "tenants/current/documents/services/GameRecord/users/" + uid + "/BankaraChallenges/" + id
+	doc, err := s.docs.Put(ctx, uid, name, fields)
+	if err != nil {
+		return nil, err
+	}
+	s.log.Info("toyohr: started an Anarchy Series challenge", "user", uid, "id", id)
+	return &toyohrpb.BankaraChallenge{
+		Name:       "tenants/" + s.tenant + "/users/" + uid + "/bankaraChallenges/" + id,
 		Fields:     doc.GetFields(),
 		CreateTime: doc.GetCreateTime(),
 		UpdateTime: doc.GetUpdateTime(),
