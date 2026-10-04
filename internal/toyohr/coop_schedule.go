@@ -403,9 +403,9 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 	case "big_run":
 		attrs.Fields["BigRunParams"] = bigRunParams(r)
 		out.BigRun = &toyohrpb.CoopSchedule_BigRun{
-			Stage:        r.StageID,
-			Boss:         r.Boss,
-			MainWeapons:  append([]int64(nil), r.Weapons...),
+			Stage:       r.StageID,
+			Boss:        r.Boss,
+			MainWeapons: append([]int64(nil), r.Weapons...),
 			// The hall refuses a Big Run without a Grizzco reward gear: a
 			// Head/Clothes/Shoes kind and an id in 21000-21999 that exists in
 			// the gear table (main+0x37e98f0, called from the hall's shift
