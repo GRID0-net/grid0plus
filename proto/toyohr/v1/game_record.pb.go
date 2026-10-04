@@ -10,6 +10,7 @@ import (
 	common "github.com/n-popescu/grid0plus/proto/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -646,6 +647,698 @@ func (*SelectTagsResponse) Descriptor() ([]byte, []int) {
 	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{9}
 }
 
+type PrepareTagRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tenant        string                 `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	Users         []string               `protobuf:"bytes,2,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareTagRequest) Reset() {
+	*x = PrepareTagRequest{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareTagRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareTagRequest) ProtoMessage() {}
+
+func (x *PrepareTagRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareTagRequest.ProtoReflect.Descriptor instead.
+func (*PrepareTagRequest) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PrepareTagRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *PrepareTagRequest) GetUsers() []string {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+type PreparedTag struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Unknown_1     string                 `protobuf:"bytes,1,opt,name=unknown_1,json=unknown1,proto3" json:"unknown_1,omitempty"`
+	Unknown_2     []string               `protobuf:"bytes,2,rep,name=unknown_2,json=unknown2,proto3" json:"unknown_2,omitempty"`
+	Unknown_3     string                 `protobuf:"bytes,3,opt,name=unknown_3,json=unknown3,proto3" json:"unknown_3,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreparedTag) Reset() {
+	*x = PreparedTag{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreparedTag) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreparedTag) ProtoMessage() {}
+
+func (x *PreparedTag) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreparedTag.ProtoReflect.Descriptor instead.
+func (*PreparedTag) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *PreparedTag) GetUnknown_1() string {
+	if x != nil {
+		return x.Unknown_1
+	}
+	return ""
+}
+
+func (x *PreparedTag) GetUnknown_2() []string {
+	if x != nil {
+		return x.Unknown_2
+	}
+	return nil
+}
+
+func (x *PreparedTag) GetUnknown_3() string {
+	if x != nil {
+		return x.Unknown_3
+	}
+	return ""
+}
+
+type PrepareTagResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tag           *PreparedTag           `protobuf:"bytes,1,opt,name=tag,proto3" json:"tag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareTagResponse) Reset() {
+	*x = PrepareTagResponse{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareTagResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareTagResponse) ProtoMessage() {}
+
+func (x *PrepareTagResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareTagResponse.ProtoReflect.Descriptor instead.
+func (*PrepareTagResponse) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PrepareTagResponse) GetTag() *PreparedTag {
+	if x != nil {
+		return x.Tag
+	}
+	return nil
+}
+
+type PrepareBankaraPowerMeasurementRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Parent        string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	Unknown_2     string                 `protobuf:"bytes,2,opt,name=unknown_2,json=unknown2,proto3" json:"unknown_2,omitempty"`
+	Unknown_3     int64                  `protobuf:"varint,3,opt,name=unknown_3,json=unknown3,proto3" json:"unknown_3,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareBankaraPowerMeasurementRequest) Reset() {
+	*x = PrepareBankaraPowerMeasurementRequest{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareBankaraPowerMeasurementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareBankaraPowerMeasurementRequest) ProtoMessage() {}
+
+func (x *PrepareBankaraPowerMeasurementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareBankaraPowerMeasurementRequest.ProtoReflect.Descriptor instead.
+func (*PrepareBankaraPowerMeasurementRequest) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PrepareBankaraPowerMeasurementRequest) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+func (x *PrepareBankaraPowerMeasurementRequest) GetUnknown_2() string {
+	if x != nil {
+		return x.Unknown_2
+	}
+	return ""
+}
+
+func (x *PrepareBankaraPowerMeasurementRequest) GetUnknown_3() int64 {
+	if x != nil {
+		return x.Unknown_3
+	}
+	return 0
+}
+
+type PrepareBankaraPowerMeasurementResponse struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	BankaraPowerMeasurement *PowerMeasurement      `protobuf:"bytes,1,opt,name=bankara_power_measurement,json=bankaraPowerMeasurement,proto3" json:"bankara_power_measurement,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *PrepareBankaraPowerMeasurementResponse) Reset() {
+	*x = PrepareBankaraPowerMeasurementResponse{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareBankaraPowerMeasurementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareBankaraPowerMeasurementResponse) ProtoMessage() {}
+
+func (x *PrepareBankaraPowerMeasurementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareBankaraPowerMeasurementResponse.ProtoReflect.Descriptor instead.
+func (*PrepareBankaraPowerMeasurementResponse) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *PrepareBankaraPowerMeasurementResponse) GetBankaraPowerMeasurement() *PowerMeasurement {
+	if x != nil {
+		return x.BankaraPowerMeasurement
+	}
+	return nil
+}
+
+type PrepareLeaguePowerMeasurementRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Target:
+	//
+	//	*PrepareLeaguePowerMeasurementRequest_Unknown_1
+	//	*PrepareLeaguePowerMeasurementRequest_Unknown_4
+	Target        isPrepareLeaguePowerMeasurementRequest_Target `protobuf_oneof:"target"`
+	Unknown_2     string                                        `protobuf:"bytes,2,opt,name=unknown_2,json=unknown2,proto3" json:"unknown_2,omitempty"`
+	Unknown_3     int64                                         `protobuf:"varint,3,opt,name=unknown_3,json=unknown3,proto3" json:"unknown_3,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) Reset() {
+	*x = PrepareLeaguePowerMeasurementRequest{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareLeaguePowerMeasurementRequest) ProtoMessage() {}
+
+func (x *PrepareLeaguePowerMeasurementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareLeaguePowerMeasurementRequest.ProtoReflect.Descriptor instead.
+func (*PrepareLeaguePowerMeasurementRequest) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) GetTarget() isPrepareLeaguePowerMeasurementRequest_Target {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) GetUnknown_1() string {
+	if x != nil {
+		if x, ok := x.Target.(*PrepareLeaguePowerMeasurementRequest_Unknown_1); ok {
+			return x.Unknown_1
+		}
+	}
+	return ""
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) GetUnknown_4() string {
+	if x != nil {
+		if x, ok := x.Target.(*PrepareLeaguePowerMeasurementRequest_Unknown_4); ok {
+			return x.Unknown_4
+		}
+	}
+	return ""
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) GetUnknown_2() string {
+	if x != nil {
+		return x.Unknown_2
+	}
+	return ""
+}
+
+func (x *PrepareLeaguePowerMeasurementRequest) GetUnknown_3() int64 {
+	if x != nil {
+		return x.Unknown_3
+	}
+	return 0
+}
+
+type isPrepareLeaguePowerMeasurementRequest_Target interface {
+	isPrepareLeaguePowerMeasurementRequest_Target()
+}
+
+type PrepareLeaguePowerMeasurementRequest_Unknown_1 struct {
+	Unknown_1 string `protobuf:"bytes,1,opt,name=unknown_1,json=unknown1,proto3,oneof"`
+}
+
+type PrepareLeaguePowerMeasurementRequest_Unknown_4 struct {
+	Unknown_4 string `protobuf:"bytes,4,opt,name=unknown_4,json=unknown4,proto3,oneof"`
+}
+
+func (*PrepareLeaguePowerMeasurementRequest_Unknown_1) isPrepareLeaguePowerMeasurementRequest_Target() {
+}
+
+func (*PrepareLeaguePowerMeasurementRequest_Unknown_4) isPrepareLeaguePowerMeasurementRequest_Target() {
+}
+
+type PrepareLeaguePowerMeasurementResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	LeaguePowerMeasurement *PowerMeasurement      `protobuf:"bytes,1,opt,name=league_power_measurement,json=leaguePowerMeasurement,proto3" json:"league_power_measurement,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *PrepareLeaguePowerMeasurementResponse) Reset() {
+	*x = PrepareLeaguePowerMeasurementResponse{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareLeaguePowerMeasurementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareLeaguePowerMeasurementResponse) ProtoMessage() {}
+
+func (x *PrepareLeaguePowerMeasurementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareLeaguePowerMeasurementResponse.ProtoReflect.Descriptor instead.
+func (*PrepareLeaguePowerMeasurementResponse) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *PrepareLeaguePowerMeasurementResponse) GetLeaguePowerMeasurement() *PowerMeasurement {
+	if x != nil {
+		return x.LeaguePowerMeasurement
+	}
+	return nil
+}
+
+type PrepareWeaponPowerMeasurementRequest struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Parent string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	// An integer, read as the weapon id because the game names these
+	// documents services/GameRecord/users/%s/WeaponPowerMeasurement/%d.
+	Weapon        int64 `protobuf:"varint,2,opt,name=weapon,proto3" json:"weapon,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareWeaponPowerMeasurementRequest) Reset() {
+	*x = PrepareWeaponPowerMeasurementRequest{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareWeaponPowerMeasurementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareWeaponPowerMeasurementRequest) ProtoMessage() {}
+
+func (x *PrepareWeaponPowerMeasurementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareWeaponPowerMeasurementRequest.ProtoReflect.Descriptor instead.
+func (*PrepareWeaponPowerMeasurementRequest) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *PrepareWeaponPowerMeasurementRequest) GetParent() string {
+	if x != nil {
+		return x.Parent
+	}
+	return ""
+}
+
+func (x *PrepareWeaponPowerMeasurementRequest) GetWeapon() int64 {
+	if x != nil {
+		return x.Weapon
+	}
+	return 0
+}
+
+type PrepareWeaponPowerMeasurementResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	WeaponPowerMeasurement *PowerMeasurement      `protobuf:"bytes,1,opt,name=weapon_power_measurement,json=weaponPowerMeasurement,proto3" json:"weapon_power_measurement,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *PrepareWeaponPowerMeasurementResponse) Reset() {
+	*x = PrepareWeaponPowerMeasurementResponse{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareWeaponPowerMeasurementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareWeaponPowerMeasurementResponse) ProtoMessage() {}
+
+func (x *PrepareWeaponPowerMeasurementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareWeaponPowerMeasurementResponse.ProtoReflect.Descriptor instead.
+func (*PrepareWeaponPowerMeasurementResponse) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *PrepareWeaponPowerMeasurementResponse) GetWeaponPowerMeasurement() *PowerMeasurement {
+	if x != nil {
+		return x.WeaponPowerMeasurement
+	}
+	return nil
+}
+
+// Same field numbers and types as FestPowerMeasurement in all three kinds the
+// game parses (Bankara, League, Weapon), so the names are taken from it.
+type PowerMeasurement struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Fields        *common.MapValue       `protobuf:"bytes,2,opt,name=fields,proto3" json:"fields,omitempty"`
+	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	Document      string                 `protobuf:"bytes,5,opt,name=document,proto3" json:"document,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PowerMeasurement) Reset() {
+	*x = PowerMeasurement{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PowerMeasurement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PowerMeasurement) ProtoMessage() {}
+
+func (x *PowerMeasurement) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PowerMeasurement.ProtoReflect.Descriptor instead.
+func (*PowerMeasurement) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PowerMeasurement) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PowerMeasurement) GetFields() *common.MapValue {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
+}
+
+func (x *PowerMeasurement) GetCreateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *PowerMeasurement) GetUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdateTime
+	}
+	return nil
+}
+
+func (x *PowerMeasurement) GetDocument() string {
+	if x != nil {
+		return x.Document
+	}
+	return ""
+}
+
+type ResetUdemaeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Unknown_1     string                 `protobuf:"bytes,1,opt,name=unknown_1,json=unknown1,proto3" json:"unknown_1,omitempty"`
+	Unknown_2     bool                   `protobuf:"varint,2,opt,name=unknown_2,json=unknown2,proto3" json:"unknown_2,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetUdemaeRequest) Reset() {
+	*x = ResetUdemaeRequest{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetUdemaeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetUdemaeRequest) ProtoMessage() {}
+
+func (x *ResetUdemaeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetUdemaeRequest.ProtoReflect.Descriptor instead.
+func (*ResetUdemaeRequest) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ResetUdemaeRequest) GetUnknown_1() string {
+	if x != nil {
+		return x.Unknown_1
+	}
+	return ""
+}
+
+func (x *ResetUdemaeRequest) GetUnknown_2() bool {
+	if x != nil {
+		return x.Unknown_2
+	}
+	return false
+}
+
+type ResetUdemaeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Unknown_1     int64                  `protobuf:"varint,1,opt,name=unknown_1,json=unknown1,proto3" json:"unknown_1,omitempty"`
+	Unknown_2     *common.MapValue       `protobuf:"bytes,2,opt,name=unknown_2,json=unknown2,proto3" json:"unknown_2,omitempty"`
+	Unknown_3     string                 `protobuf:"bytes,3,opt,name=unknown_3,json=unknown3,proto3" json:"unknown_3,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResetUdemaeResponse) Reset() {
+	*x = ResetUdemaeResponse{}
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResetUdemaeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResetUdemaeResponse) ProtoMessage() {}
+
+func (x *ResetUdemaeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResetUdemaeResponse.ProtoReflect.Descriptor instead.
+func (*ResetUdemaeResponse) Descriptor() ([]byte, []int) {
+	return file_proto_toyohr_v1_game_record_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ResetUdemaeResponse) GetUnknown_1() int64 {
+	if x != nil {
+		return x.Unknown_1
+	}
+	return 0
+}
+
+func (x *ResetUdemaeResponse) GetUnknown_2() *common.MapValue {
+	if x != nil {
+		return x.Unknown_2
+	}
+	return nil
+}
+
+func (x *ResetUdemaeResponse) GetUnknown_3() string {
+	if x != nil {
+		return x.Unknown_3
+	}
+	return ""
+}
+
 type InitializeAttributesRequest_InitialVs struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SeasonId      int32                  `protobuf:"varint,1,opt,name=season_id,json=seasonId,proto3" json:"season_id,omitempty"`
@@ -657,7 +1350,7 @@ type InitializeAttributesRequest_InitialVs struct {
 
 func (x *InitializeAttributesRequest_InitialVs) Reset() {
 	*x = InitializeAttributesRequest_InitialVs{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[10]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -669,7 +1362,7 @@ func (x *InitializeAttributesRequest_InitialVs) String() string {
 func (*InitializeAttributesRequest_InitialVs) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_InitialVs) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[10]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -714,7 +1407,7 @@ type InitializeAttributesRequest_Area struct {
 
 func (x *InitializeAttributesRequest_Area) Reset() {
 	*x = InitializeAttributesRequest_Area{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[11]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -726,7 +1419,7 @@ func (x *InitializeAttributesRequest_Area) String() string {
 func (*InitializeAttributesRequest_Area) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_Area) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[11]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -750,7 +1443,7 @@ type InitializeAttributesRequest_Lift struct {
 
 func (x *InitializeAttributesRequest_Lift) Reset() {
 	*x = InitializeAttributesRequest_Lift{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[12]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -762,7 +1455,7 @@ func (x *InitializeAttributesRequest_Lift) String() string {
 func (*InitializeAttributesRequest_Lift) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_Lift) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[12]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +1479,7 @@ type InitializeAttributesRequest_Goal struct {
 
 func (x *InitializeAttributesRequest_Goal) Reset() {
 	*x = InitializeAttributesRequest_Goal{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[13]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -798,7 +1491,7 @@ func (x *InitializeAttributesRequest_Goal) String() string {
 func (*InitializeAttributesRequest_Goal) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_Goal) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[13]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,7 +1515,7 @@ type InitializeAttributesRequest_Clam struct {
 
 func (x *InitializeAttributesRequest_Clam) Reset() {
 	*x = InitializeAttributesRequest_Clam{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[14]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -834,7 +1527,7 @@ func (x *InitializeAttributesRequest_Clam) String() string {
 func (*InitializeAttributesRequest_Clam) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_Clam) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[14]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,7 +1551,7 @@ type InitializeAttributesRequest_XPowerArea struct {
 
 func (x *InitializeAttributesRequest_XPowerArea) Reset() {
 	*x = InitializeAttributesRequest_XPowerArea{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[15]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1563,7 @@ func (x *InitializeAttributesRequest_XPowerArea) String() string {
 func (*InitializeAttributesRequest_XPowerArea) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_XPowerArea) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[15]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +1587,7 @@ type InitializeAttributesRequest_XPowerLift struct {
 
 func (x *InitializeAttributesRequest_XPowerLift) Reset() {
 	*x = InitializeAttributesRequest_XPowerLift{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[16]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -906,7 +1599,7 @@ func (x *InitializeAttributesRequest_XPowerLift) String() string {
 func (*InitializeAttributesRequest_XPowerLift) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_XPowerLift) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[16]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -930,7 +1623,7 @@ type InitializeAttributesRequest_XPowerGoal struct {
 
 func (x *InitializeAttributesRequest_XPowerGoal) Reset() {
 	*x = InitializeAttributesRequest_XPowerGoal{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[17]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -942,7 +1635,7 @@ func (x *InitializeAttributesRequest_XPowerGoal) String() string {
 func (*InitializeAttributesRequest_XPowerGoal) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_XPowerGoal) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[17]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -966,7 +1659,7 @@ type InitializeAttributesRequest_XPowerClam struct {
 
 func (x *InitializeAttributesRequest_XPowerClam) Reset() {
 	*x = InitializeAttributesRequest_XPowerClam{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[18]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -978,7 +1671,7 @@ func (x *InitializeAttributesRequest_XPowerClam) String() string {
 func (*InitializeAttributesRequest_XPowerClam) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_XPowerClam) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[18]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1002,7 +1695,7 @@ type InitializeAttributesRequest_InitialCoop struct {
 
 func (x *InitializeAttributesRequest_InitialCoop) Reset() {
 	*x = InitializeAttributesRequest_InitialCoop{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[19]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1707,7 @@ func (x *InitializeAttributesRequest_InitialCoop) String() string {
 func (*InitializeAttributesRequest_InitialCoop) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_InitialCoop) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[19]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1040,7 +1733,7 @@ type InitializeAttributesRequest_CoopShift struct {
 
 func (x *InitializeAttributesRequest_CoopShift) Reset() {
 	*x = InitializeAttributesRequest_CoopShift{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[20]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1745,7 @@ func (x *InitializeAttributesRequest_CoopShift) String() string {
 func (*InitializeAttributesRequest_CoopShift) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_CoopShift) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[20]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1784,7 @@ type InitializeAttributesRequest_CoopGrade struct {
 
 func (x *InitializeAttributesRequest_CoopGrade) Reset() {
 	*x = InitializeAttributesRequest_CoopGrade{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[21]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1103,7 +1796,7 @@ func (x *InitializeAttributesRequest_CoopGrade) String() string {
 func (*InitializeAttributesRequest_CoopGrade) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_CoopGrade) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[21]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1135,7 +1828,7 @@ type InitializeAttributesRequest_NewSeason struct {
 
 func (x *InitializeAttributesRequest_NewSeason) Reset() {
 	*x = InitializeAttributesRequest_NewSeason{}
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[22]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1147,7 +1840,7 @@ func (x *InitializeAttributesRequest_NewSeason) String() string {
 func (*InitializeAttributesRequest_NewSeason) ProtoMessage() {}
 
 func (x *InitializeAttributesRequest_NewSeason) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[22]
+	mi := &file_proto_toyohr_v1_game_record_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1174,7 +1867,7 @@ var File_proto_toyohr_v1_game_record_proto protoreflect.FileDescriptor
 
 const file_proto_toyohr_v1_game_record_proto_rawDesc = "" +
 	"\n" +
-	"!proto/toyohr/v1/game_record.proto\x12\x11nn.npln.toyohr.v1\x1a\x18proto/common/value.proto\x1a\x1fproto/toyohr/v1/resources.proto\"\x89\x01\n" +
+	"!proto/toyohr/v1/game_record.proto\x12\x11nn.npln.toyohr.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x18proto/common/value.proto\x1a\x1fproto/toyohr/v1/resources.proto\"\x89\x01\n" +
 	"\x1dCreateBankaraChallengeRequest\x12\x16\n" +
 	"\x06parent\x18\x01 \x01(\tR\x06parent\x12P\n" +
 	"\x11bankara_challenge\x18\x02 \x01(\v2#.nn.npln.toyohr.v1.BankaraChallengeR\x10bankaraChallenge\"\xf1\f\n" +
@@ -1253,16 +1946,65 @@ const file_proto_toyohr_v1_game_record_proto_rawDesc = "" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"\x14\n" +
-	"\x12SelectTagsResponse2\x81\x05\n" +
+	"\x12SelectTagsResponse\"A\n" +
+	"\x11PrepareTagRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x14\n" +
+	"\x05users\x18\x02 \x03(\tR\x05users\"d\n" +
+	"\vPreparedTag\x12\x1b\n" +
+	"\tunknown_1\x18\x01 \x01(\tR\bunknown1\x12\x1b\n" +
+	"\tunknown_2\x18\x02 \x03(\tR\bunknown2\x12\x1b\n" +
+	"\tunknown_3\x18\x03 \x01(\tR\bunknown3\"F\n" +
+	"\x12PrepareTagResponse\x120\n" +
+	"\x03tag\x18\x01 \x01(\v2\x1e.nn.npln.toyohr.v1.PreparedTagR\x03tag\"y\n" +
+	"%PrepareBankaraPowerMeasurementRequest\x12\x16\n" +
+	"\x06parent\x18\x01 \x01(\tR\x06parent\x12\x1b\n" +
+	"\tunknown_2\x18\x02 \x01(\tR\bunknown2\x12\x1b\n" +
+	"\tunknown_3\x18\x03 \x01(\x03R\bunknown3\"\x89\x01\n" +
+	"&PrepareBankaraPowerMeasurementResponse\x12_\n" +
+	"\x19bankara_power_measurement\x18\x01 \x01(\v2#.nn.npln.toyohr.v1.PowerMeasurementR\x17bankaraPowerMeasurement\"\xa8\x01\n" +
+	"$PrepareLeaguePowerMeasurementRequest\x12\x1d\n" +
+	"\tunknown_1\x18\x01 \x01(\tH\x00R\bunknown1\x12\x1d\n" +
+	"\tunknown_4\x18\x04 \x01(\tH\x00R\bunknown4\x12\x1b\n" +
+	"\tunknown_2\x18\x02 \x01(\tR\bunknown2\x12\x1b\n" +
+	"\tunknown_3\x18\x03 \x01(\x03R\bunknown3B\b\n" +
+	"\x06target\"\x86\x01\n" +
+	"%PrepareLeaguePowerMeasurementResponse\x12]\n" +
+	"\x18league_power_measurement\x18\x01 \x01(\v2#.nn.npln.toyohr.v1.PowerMeasurementR\x16leaguePowerMeasurement\"V\n" +
+	"$PrepareWeaponPowerMeasurementRequest\x12\x16\n" +
+	"\x06parent\x18\x01 \x01(\tR\x06parent\x12\x16\n" +
+	"\x06weapon\x18\x02 \x01(\x03R\x06weapon\"\x86\x01\n" +
+	"%PrepareWeaponPowerMeasurementResponse\x12]\n" +
+	"\x18weapon_power_measurement\x18\x01 \x01(\v2#.nn.npln.toyohr.v1.PowerMeasurementR\x16weaponPowerMeasurement\"\xee\x01\n" +
+	"\x10PowerMeasurement\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x120\n" +
+	"\x06fields\x18\x02 \x01(\v2\x18.nn.npln.common.MapValueR\x06fields\x12;\n" +
+	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"createTime\x12;\n" +
+	"\vupdate_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime\x12\x1a\n" +
+	"\bdocument\x18\x05 \x01(\tR\bdocument\"N\n" +
+	"\x12ResetUdemaeRequest\x12\x1b\n" +
+	"\tunknown_1\x18\x01 \x01(\tR\bunknown1\x12\x1b\n" +
+	"\tunknown_2\x18\x02 \x01(\bR\bunknown2\"\x86\x01\n" +
+	"\x13ResetUdemaeResponse\x12\x1b\n" +
+	"\tunknown_1\x18\x01 \x01(\x03R\bunknown1\x125\n" +
+	"\tunknown_2\x18\x02 \x01(\v2\x18.nn.npln.common.MapValueR\bunknown2\x12\x1b\n" +
+	"\tunknown_3\x18\x03 \x01(\tR\bunknown32\xfc\t\n" +
 	"\n" +
 	"GameRecord\x12o\n" +
 	"\x16CreateBankaraChallenge\x120.nn.npln.toyohr.v1.CreateBankaraChallengeRequest\x1a#.nn.npln.toyohr.v1.BankaraChallenge\x12w\n" +
 	"\x14InitializeAttributes\x12..nn.npln.toyohr.v1.InitializeAttributesRequest\x1a/.nn.npln.toyohr.v1.InitializeAttributesResponse\x12{\n" +
 	"\x1aCreateFestPowerMeasurement\x124.nn.npln.toyohr.v1.CreateFestPowerMeasurementRequest\x1a'.nn.npln.toyohr.v1.FestPowerMeasurement\x12b\n" +
-	"\rInitializeTag\x12'.nn.npln.toyohr.v1.InitializeTagRequest\x1a(.nn.npln.toyohr.v1.InitializeTagResponse\x12M\n" +
+	"\rInitializeTag\x12'.nn.npln.toyohr.v1.InitializeTagRequest\x1a(.nn.npln.toyohr.v1.InitializeTagResponse\x12Y\n" +
+	"\n" +
+	"PrepareTag\x12$.nn.npln.toyohr.v1.PrepareTagRequest\x1a%.nn.npln.toyohr.v1.PrepareTagResponse\x12M\n" +
 	"\x06GetTag\x12 .nn.npln.toyohr.v1.GetTagRequest\x1a!.nn.npln.toyohr.v1.GetTagResponse\x12Y\n" +
 	"\n" +
-	"SelectTags\x12$.nn.npln.toyohr.v1.SelectTagsRequest\x1a%.nn.npln.toyohr.v1.SelectTagsResponseB\xc8\x01\n" +
+	"SelectTags\x12$.nn.npln.toyohr.v1.SelectTagsRequest\x1a%.nn.npln.toyohr.v1.SelectTagsResponse\x12\x95\x01\n" +
+	"\x1ePrepareBankaraPowerMeasurement\x128.nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementRequest\x1a9.nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementResponse\x12\x92\x01\n" +
+	"\x1dPrepareLeaguePowerMeasurement\x127.nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementRequest\x1a8.nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementResponse\x12\\\n" +
+	"\vResetUdemae\x12%.nn.npln.toyohr.v1.ResetUdemaeRequest\x1a&.nn.npln.toyohr.v1.ResetUdemaeResponse\x12\x92\x01\n" +
+	"\x1dPrepareWeaponPowerMeasurement\x127.nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementRequest\x1a8.nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementResponseB\xc8\x01\n" +
 	"\x15com.nn.npln.toyohr.v1B\x0fGameRecordProtoP\x01Z7github.com/n-popescu/grid0plus/proto/toyohr/v1;toyohrv1\xa2\x02\x03NNT\xaa\x02\x11Nn.Npln.Toyohr.V1\xca\x02\x11Nn\\Npln\\Toyohr\\V1\xe2\x02\x1dNn\\Npln\\Toyohr\\V1\\GPBMetadata\xea\x02\x14Nn::Npln::Toyohr::V1b\x06proto3"
 
 var (
@@ -1277,7 +2019,7 @@ func file_proto_toyohr_v1_game_record_proto_rawDescGZIP() []byte {
 	return file_proto_toyohr_v1_game_record_proto_rawDescData
 }
 
-var file_proto_toyohr_v1_game_record_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_proto_toyohr_v1_game_record_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_proto_toyohr_v1_game_record_proto_goTypes = []any{
 	(*CreateBankaraChallengeRequest)(nil),           // 0: nn.npln.toyohr.v1.CreateBankaraChallengeRequest
 	(*InitializeAttributesRequest)(nil),             // 1: nn.npln.toyohr.v1.InitializeAttributesRequest
@@ -1289,57 +2031,88 @@ var file_proto_toyohr_v1_game_record_proto_goTypes = []any{
 	(*GetTagResponse)(nil),                          // 7: nn.npln.toyohr.v1.GetTagResponse
 	(*SelectTagsRequest)(nil),                       // 8: nn.npln.toyohr.v1.SelectTagsRequest
 	(*SelectTagsResponse)(nil),                      // 9: nn.npln.toyohr.v1.SelectTagsResponse
-	(*InitializeAttributesRequest_InitialVs)(nil),   // 10: nn.npln.toyohr.v1.InitializeAttributesRequest.InitialVs
-	(*InitializeAttributesRequest_Area)(nil),        // 11: nn.npln.toyohr.v1.InitializeAttributesRequest.Area
-	(*InitializeAttributesRequest_Lift)(nil),        // 12: nn.npln.toyohr.v1.InitializeAttributesRequest.Lift
-	(*InitializeAttributesRequest_Goal)(nil),        // 13: nn.npln.toyohr.v1.InitializeAttributesRequest.Goal
-	(*InitializeAttributesRequest_Clam)(nil),        // 14: nn.npln.toyohr.v1.InitializeAttributesRequest.Clam
-	(*InitializeAttributesRequest_XPowerArea)(nil),  // 15: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerArea
-	(*InitializeAttributesRequest_XPowerLift)(nil),  // 16: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerLift
-	(*InitializeAttributesRequest_XPowerGoal)(nil),  // 17: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerGoal
-	(*InitializeAttributesRequest_XPowerClam)(nil),  // 18: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerClam
-	(*InitializeAttributesRequest_InitialCoop)(nil), // 19: nn.npln.toyohr.v1.InitializeAttributesRequest.InitialCoop
-	(*InitializeAttributesRequest_CoopShift)(nil),   // 20: nn.npln.toyohr.v1.InitializeAttributesRequest.CoopShift
-	(*InitializeAttributesRequest_CoopGrade)(nil),   // 21: nn.npln.toyohr.v1.InitializeAttributesRequest.CoopGrade
-	(*InitializeAttributesRequest_NewSeason)(nil),   // 22: nn.npln.toyohr.v1.InitializeAttributesRequest.NewSeason
-	(*BankaraChallenge)(nil),                        // 23: nn.npln.toyohr.v1.BankaraChallenge
-	(*common.MapValue)(nil),                         // 24: nn.npln.common.MapValue
-	(*FestPowerMeasurement)(nil),                    // 25: nn.npln.toyohr.v1.FestPowerMeasurement
+	(*PrepareTagRequest)(nil),                       // 10: nn.npln.toyohr.v1.PrepareTagRequest
+	(*PreparedTag)(nil),                             // 11: nn.npln.toyohr.v1.PreparedTag
+	(*PrepareTagResponse)(nil),                      // 12: nn.npln.toyohr.v1.PrepareTagResponse
+	(*PrepareBankaraPowerMeasurementRequest)(nil),   // 13: nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementRequest
+	(*PrepareBankaraPowerMeasurementResponse)(nil),  // 14: nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementResponse
+	(*PrepareLeaguePowerMeasurementRequest)(nil),    // 15: nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementRequest
+	(*PrepareLeaguePowerMeasurementResponse)(nil),   // 16: nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementResponse
+	(*PrepareWeaponPowerMeasurementRequest)(nil),    // 17: nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementRequest
+	(*PrepareWeaponPowerMeasurementResponse)(nil),   // 18: nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementResponse
+	(*PowerMeasurement)(nil),                        // 19: nn.npln.toyohr.v1.PowerMeasurement
+	(*ResetUdemaeRequest)(nil),                      // 20: nn.npln.toyohr.v1.ResetUdemaeRequest
+	(*ResetUdemaeResponse)(nil),                     // 21: nn.npln.toyohr.v1.ResetUdemaeResponse
+	(*InitializeAttributesRequest_InitialVs)(nil),   // 22: nn.npln.toyohr.v1.InitializeAttributesRequest.InitialVs
+	(*InitializeAttributesRequest_Area)(nil),        // 23: nn.npln.toyohr.v1.InitializeAttributesRequest.Area
+	(*InitializeAttributesRequest_Lift)(nil),        // 24: nn.npln.toyohr.v1.InitializeAttributesRequest.Lift
+	(*InitializeAttributesRequest_Goal)(nil),        // 25: nn.npln.toyohr.v1.InitializeAttributesRequest.Goal
+	(*InitializeAttributesRequest_Clam)(nil),        // 26: nn.npln.toyohr.v1.InitializeAttributesRequest.Clam
+	(*InitializeAttributesRequest_XPowerArea)(nil),  // 27: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerArea
+	(*InitializeAttributesRequest_XPowerLift)(nil),  // 28: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerLift
+	(*InitializeAttributesRequest_XPowerGoal)(nil),  // 29: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerGoal
+	(*InitializeAttributesRequest_XPowerClam)(nil),  // 30: nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerClam
+	(*InitializeAttributesRequest_InitialCoop)(nil), // 31: nn.npln.toyohr.v1.InitializeAttributesRequest.InitialCoop
+	(*InitializeAttributesRequest_CoopShift)(nil),   // 32: nn.npln.toyohr.v1.InitializeAttributesRequest.CoopShift
+	(*InitializeAttributesRequest_CoopGrade)(nil),   // 33: nn.npln.toyohr.v1.InitializeAttributesRequest.CoopGrade
+	(*InitializeAttributesRequest_NewSeason)(nil),   // 34: nn.npln.toyohr.v1.InitializeAttributesRequest.NewSeason
+	(*BankaraChallenge)(nil),                        // 35: nn.npln.toyohr.v1.BankaraChallenge
+	(*common.MapValue)(nil),                         // 36: nn.npln.common.MapValue
+	(*FestPowerMeasurement)(nil),                    // 37: nn.npln.toyohr.v1.FestPowerMeasurement
+	(*timestamppb.Timestamp)(nil),                   // 38: google.protobuf.Timestamp
 }
 var file_proto_toyohr_v1_game_record_proto_depIdxs = []int32{
-	23, // 0: nn.npln.toyohr.v1.CreateBankaraChallengeRequest.bankara_challenge:type_name -> nn.npln.toyohr.v1.BankaraChallenge
-	10, // 1: nn.npln.toyohr.v1.InitializeAttributesRequest.initial_vs:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.InitialVs
-	11, // 2: nn.npln.toyohr.v1.InitializeAttributesRequest.area:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Area
-	12, // 3: nn.npln.toyohr.v1.InitializeAttributesRequest.lift:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Lift
-	13, // 4: nn.npln.toyohr.v1.InitializeAttributesRequest.goal:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Goal
-	14, // 5: nn.npln.toyohr.v1.InitializeAttributesRequest.clam:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Clam
-	15, // 6: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_area:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerArea
-	16, // 7: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_lift:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerLift
-	17, // 8: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_goal:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerGoal
-	18, // 9: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_clam:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerClam
-	19, // 10: nn.npln.toyohr.v1.InitializeAttributesRequest.initial_coop:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.InitialCoop
-	20, // 11: nn.npln.toyohr.v1.InitializeAttributesRequest.coop_shift:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.CoopShift
-	21, // 12: nn.npln.toyohr.v1.InitializeAttributesRequest.coop_grade:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.CoopGrade
-	22, // 13: nn.npln.toyohr.v1.InitializeAttributesRequest.new_season:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.NewSeason
-	24, // 14: nn.npln.toyohr.v1.InitializeAttributesResponse.attributes:type_name -> nn.npln.common.MapValue
-	25, // 15: nn.npln.toyohr.v1.CreateFestPowerMeasurementRequest.fest_power_measurement:type_name -> nn.npln.toyohr.v1.FestPowerMeasurement
-	0,  // 16: nn.npln.toyohr.v1.GameRecord.CreateBankaraChallenge:input_type -> nn.npln.toyohr.v1.CreateBankaraChallengeRequest
-	1,  // 17: nn.npln.toyohr.v1.GameRecord.InitializeAttributes:input_type -> nn.npln.toyohr.v1.InitializeAttributesRequest
-	3,  // 18: nn.npln.toyohr.v1.GameRecord.CreateFestPowerMeasurement:input_type -> nn.npln.toyohr.v1.CreateFestPowerMeasurementRequest
-	4,  // 19: nn.npln.toyohr.v1.GameRecord.InitializeTag:input_type -> nn.npln.toyohr.v1.InitializeTagRequest
-	6,  // 20: nn.npln.toyohr.v1.GameRecord.GetTag:input_type -> nn.npln.toyohr.v1.GetTagRequest
-	8,  // 21: nn.npln.toyohr.v1.GameRecord.SelectTags:input_type -> nn.npln.toyohr.v1.SelectTagsRequest
-	23, // 22: nn.npln.toyohr.v1.GameRecord.CreateBankaraChallenge:output_type -> nn.npln.toyohr.v1.BankaraChallenge
-	2,  // 23: nn.npln.toyohr.v1.GameRecord.InitializeAttributes:output_type -> nn.npln.toyohr.v1.InitializeAttributesResponse
-	25, // 24: nn.npln.toyohr.v1.GameRecord.CreateFestPowerMeasurement:output_type -> nn.npln.toyohr.v1.FestPowerMeasurement
-	5,  // 25: nn.npln.toyohr.v1.GameRecord.InitializeTag:output_type -> nn.npln.toyohr.v1.InitializeTagResponse
-	7,  // 26: nn.npln.toyohr.v1.GameRecord.GetTag:output_type -> nn.npln.toyohr.v1.GetTagResponse
-	9,  // 27: nn.npln.toyohr.v1.GameRecord.SelectTags:output_type -> nn.npln.toyohr.v1.SelectTagsResponse
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	35, // 0: nn.npln.toyohr.v1.CreateBankaraChallengeRequest.bankara_challenge:type_name -> nn.npln.toyohr.v1.BankaraChallenge
+	22, // 1: nn.npln.toyohr.v1.InitializeAttributesRequest.initial_vs:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.InitialVs
+	23, // 2: nn.npln.toyohr.v1.InitializeAttributesRequest.area:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Area
+	24, // 3: nn.npln.toyohr.v1.InitializeAttributesRequest.lift:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Lift
+	25, // 4: nn.npln.toyohr.v1.InitializeAttributesRequest.goal:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Goal
+	26, // 5: nn.npln.toyohr.v1.InitializeAttributesRequest.clam:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.Clam
+	27, // 6: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_area:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerArea
+	28, // 7: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_lift:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerLift
+	29, // 8: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_goal:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerGoal
+	30, // 9: nn.npln.toyohr.v1.InitializeAttributesRequest.x_power_clam:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.XPowerClam
+	31, // 10: nn.npln.toyohr.v1.InitializeAttributesRequest.initial_coop:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.InitialCoop
+	32, // 11: nn.npln.toyohr.v1.InitializeAttributesRequest.coop_shift:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.CoopShift
+	33, // 12: nn.npln.toyohr.v1.InitializeAttributesRequest.coop_grade:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.CoopGrade
+	34, // 13: nn.npln.toyohr.v1.InitializeAttributesRequest.new_season:type_name -> nn.npln.toyohr.v1.InitializeAttributesRequest.NewSeason
+	36, // 14: nn.npln.toyohr.v1.InitializeAttributesResponse.attributes:type_name -> nn.npln.common.MapValue
+	37, // 15: nn.npln.toyohr.v1.CreateFestPowerMeasurementRequest.fest_power_measurement:type_name -> nn.npln.toyohr.v1.FestPowerMeasurement
+	11, // 16: nn.npln.toyohr.v1.PrepareTagResponse.tag:type_name -> nn.npln.toyohr.v1.PreparedTag
+	19, // 17: nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementResponse.bankara_power_measurement:type_name -> nn.npln.toyohr.v1.PowerMeasurement
+	19, // 18: nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementResponse.league_power_measurement:type_name -> nn.npln.toyohr.v1.PowerMeasurement
+	19, // 19: nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementResponse.weapon_power_measurement:type_name -> nn.npln.toyohr.v1.PowerMeasurement
+	36, // 20: nn.npln.toyohr.v1.PowerMeasurement.fields:type_name -> nn.npln.common.MapValue
+	38, // 21: nn.npln.toyohr.v1.PowerMeasurement.create_time:type_name -> google.protobuf.Timestamp
+	38, // 22: nn.npln.toyohr.v1.PowerMeasurement.update_time:type_name -> google.protobuf.Timestamp
+	36, // 23: nn.npln.toyohr.v1.ResetUdemaeResponse.unknown_2:type_name -> nn.npln.common.MapValue
+	0,  // 24: nn.npln.toyohr.v1.GameRecord.CreateBankaraChallenge:input_type -> nn.npln.toyohr.v1.CreateBankaraChallengeRequest
+	1,  // 25: nn.npln.toyohr.v1.GameRecord.InitializeAttributes:input_type -> nn.npln.toyohr.v1.InitializeAttributesRequest
+	3,  // 26: nn.npln.toyohr.v1.GameRecord.CreateFestPowerMeasurement:input_type -> nn.npln.toyohr.v1.CreateFestPowerMeasurementRequest
+	4,  // 27: nn.npln.toyohr.v1.GameRecord.InitializeTag:input_type -> nn.npln.toyohr.v1.InitializeTagRequest
+	10, // 28: nn.npln.toyohr.v1.GameRecord.PrepareTag:input_type -> nn.npln.toyohr.v1.PrepareTagRequest
+	6,  // 29: nn.npln.toyohr.v1.GameRecord.GetTag:input_type -> nn.npln.toyohr.v1.GetTagRequest
+	8,  // 30: nn.npln.toyohr.v1.GameRecord.SelectTags:input_type -> nn.npln.toyohr.v1.SelectTagsRequest
+	13, // 31: nn.npln.toyohr.v1.GameRecord.PrepareBankaraPowerMeasurement:input_type -> nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementRequest
+	15, // 32: nn.npln.toyohr.v1.GameRecord.PrepareLeaguePowerMeasurement:input_type -> nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementRequest
+	20, // 33: nn.npln.toyohr.v1.GameRecord.ResetUdemae:input_type -> nn.npln.toyohr.v1.ResetUdemaeRequest
+	17, // 34: nn.npln.toyohr.v1.GameRecord.PrepareWeaponPowerMeasurement:input_type -> nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementRequest
+	35, // 35: nn.npln.toyohr.v1.GameRecord.CreateBankaraChallenge:output_type -> nn.npln.toyohr.v1.BankaraChallenge
+	2,  // 36: nn.npln.toyohr.v1.GameRecord.InitializeAttributes:output_type -> nn.npln.toyohr.v1.InitializeAttributesResponse
+	37, // 37: nn.npln.toyohr.v1.GameRecord.CreateFestPowerMeasurement:output_type -> nn.npln.toyohr.v1.FestPowerMeasurement
+	5,  // 38: nn.npln.toyohr.v1.GameRecord.InitializeTag:output_type -> nn.npln.toyohr.v1.InitializeTagResponse
+	12, // 39: nn.npln.toyohr.v1.GameRecord.PrepareTag:output_type -> nn.npln.toyohr.v1.PrepareTagResponse
+	7,  // 40: nn.npln.toyohr.v1.GameRecord.GetTag:output_type -> nn.npln.toyohr.v1.GetTagResponse
+	9,  // 41: nn.npln.toyohr.v1.GameRecord.SelectTags:output_type -> nn.npln.toyohr.v1.SelectTagsResponse
+	14, // 42: nn.npln.toyohr.v1.GameRecord.PrepareBankaraPowerMeasurement:output_type -> nn.npln.toyohr.v1.PrepareBankaraPowerMeasurementResponse
+	16, // 43: nn.npln.toyohr.v1.GameRecord.PrepareLeaguePowerMeasurement:output_type -> nn.npln.toyohr.v1.PrepareLeaguePowerMeasurementResponse
+	21, // 44: nn.npln.toyohr.v1.GameRecord.ResetUdemae:output_type -> nn.npln.toyohr.v1.ResetUdemaeResponse
+	18, // 45: nn.npln.toyohr.v1.GameRecord.PrepareWeaponPowerMeasurement:output_type -> nn.npln.toyohr.v1.PrepareWeaponPowerMeasurementResponse
+	35, // [35:46] is the sub-list for method output_type
+	24, // [24:35] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_proto_toyohr_v1_game_record_proto_init() }
@@ -1348,13 +2121,17 @@ func file_proto_toyohr_v1_game_record_proto_init() {
 		return
 	}
 	file_proto_toyohr_v1_resources_proto_init()
+	file_proto_toyohr_v1_game_record_proto_msgTypes[15].OneofWrappers = []any{
+		(*PrepareLeaguePowerMeasurementRequest_Unknown_1)(nil),
+		(*PrepareLeaguePowerMeasurementRequest_Unknown_4)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_toyohr_v1_game_record_proto_rawDesc), len(file_proto_toyohr_v1_game_record_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

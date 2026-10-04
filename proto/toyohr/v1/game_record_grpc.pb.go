@@ -19,12 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GameRecord_CreateBankaraChallenge_FullMethodName     = "/nn.npln.toyohr.v1.GameRecord/CreateBankaraChallenge"
-	GameRecord_InitializeAttributes_FullMethodName       = "/nn.npln.toyohr.v1.GameRecord/InitializeAttributes"
-	GameRecord_CreateFestPowerMeasurement_FullMethodName = "/nn.npln.toyohr.v1.GameRecord/CreateFestPowerMeasurement"
-	GameRecord_InitializeTag_FullMethodName              = "/nn.npln.toyohr.v1.GameRecord/InitializeTag"
-	GameRecord_GetTag_FullMethodName                     = "/nn.npln.toyohr.v1.GameRecord/GetTag"
-	GameRecord_SelectTags_FullMethodName                 = "/nn.npln.toyohr.v1.GameRecord/SelectTags"
+	GameRecord_CreateBankaraChallenge_FullMethodName         = "/nn.npln.toyohr.v1.GameRecord/CreateBankaraChallenge"
+	GameRecord_InitializeAttributes_FullMethodName           = "/nn.npln.toyohr.v1.GameRecord/InitializeAttributes"
+	GameRecord_CreateFestPowerMeasurement_FullMethodName     = "/nn.npln.toyohr.v1.GameRecord/CreateFestPowerMeasurement"
+	GameRecord_InitializeTag_FullMethodName                  = "/nn.npln.toyohr.v1.GameRecord/InitializeTag"
+	GameRecord_PrepareTag_FullMethodName                     = "/nn.npln.toyohr.v1.GameRecord/PrepareTag"
+	GameRecord_GetTag_FullMethodName                         = "/nn.npln.toyohr.v1.GameRecord/GetTag"
+	GameRecord_SelectTags_FullMethodName                     = "/nn.npln.toyohr.v1.GameRecord/SelectTags"
+	GameRecord_PrepareBankaraPowerMeasurement_FullMethodName = "/nn.npln.toyohr.v1.GameRecord/PrepareBankaraPowerMeasurement"
+	GameRecord_PrepareLeaguePowerMeasurement_FullMethodName  = "/nn.npln.toyohr.v1.GameRecord/PrepareLeaguePowerMeasurement"
+	GameRecord_ResetUdemae_FullMethodName                    = "/nn.npln.toyohr.v1.GameRecord/ResetUdemae"
+	GameRecord_PrepareWeaponPowerMeasurement_FullMethodName  = "/nn.npln.toyohr.v1.GameRecord/PrepareWeaponPowerMeasurement"
 )
 
 // GameRecordClient is the client API for GameRecord service.
@@ -35,9 +40,13 @@ type GameRecordClient interface {
 	InitializeAttributes(ctx context.Context, in *InitializeAttributesRequest, opts ...grpc.CallOption) (*InitializeAttributesResponse, error)
 	CreateFestPowerMeasurement(ctx context.Context, in *CreateFestPowerMeasurementRequest, opts ...grpc.CallOption) (*FestPowerMeasurement, error)
 	InitializeTag(ctx context.Context, in *InitializeTagRequest, opts ...grpc.CallOption) (*InitializeTagResponse, error)
-	// rpc PrepareTag(?) returns (?);
+	PrepareTag(ctx context.Context, in *PrepareTagRequest, opts ...grpc.CallOption) (*PrepareTagResponse, error)
 	GetTag(ctx context.Context, in *GetTagRequest, opts ...grpc.CallOption) (*GetTagResponse, error)
 	SelectTags(ctx context.Context, in *SelectTagsRequest, opts ...grpc.CallOption) (*SelectTagsResponse, error)
+	PrepareBankaraPowerMeasurement(ctx context.Context, in *PrepareBankaraPowerMeasurementRequest, opts ...grpc.CallOption) (*PrepareBankaraPowerMeasurementResponse, error)
+	PrepareLeaguePowerMeasurement(ctx context.Context, in *PrepareLeaguePowerMeasurementRequest, opts ...grpc.CallOption) (*PrepareLeaguePowerMeasurementResponse, error)
+	ResetUdemae(ctx context.Context, in *ResetUdemaeRequest, opts ...grpc.CallOption) (*ResetUdemaeResponse, error)
+	PrepareWeaponPowerMeasurement(ctx context.Context, in *PrepareWeaponPowerMeasurementRequest, opts ...grpc.CallOption) (*PrepareWeaponPowerMeasurementResponse, error)
 }
 
 type gameRecordClient struct {
@@ -88,6 +97,16 @@ func (c *gameRecordClient) InitializeTag(ctx context.Context, in *InitializeTagR
 	return out, nil
 }
 
+func (c *gameRecordClient) PrepareTag(ctx context.Context, in *PrepareTagRequest, opts ...grpc.CallOption) (*PrepareTagResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareTagResponse)
+	err := c.cc.Invoke(ctx, GameRecord_PrepareTag_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *gameRecordClient) GetTag(ctx context.Context, in *GetTagRequest, opts ...grpc.CallOption) (*GetTagResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTagResponse)
@@ -108,6 +127,46 @@ func (c *gameRecordClient) SelectTags(ctx context.Context, in *SelectTagsRequest
 	return out, nil
 }
 
+func (c *gameRecordClient) PrepareBankaraPowerMeasurement(ctx context.Context, in *PrepareBankaraPowerMeasurementRequest, opts ...grpc.CallOption) (*PrepareBankaraPowerMeasurementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareBankaraPowerMeasurementResponse)
+	err := c.cc.Invoke(ctx, GameRecord_PrepareBankaraPowerMeasurement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gameRecordClient) PrepareLeaguePowerMeasurement(ctx context.Context, in *PrepareLeaguePowerMeasurementRequest, opts ...grpc.CallOption) (*PrepareLeaguePowerMeasurementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareLeaguePowerMeasurementResponse)
+	err := c.cc.Invoke(ctx, GameRecord_PrepareLeaguePowerMeasurement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gameRecordClient) ResetUdemae(ctx context.Context, in *ResetUdemaeRequest, opts ...grpc.CallOption) (*ResetUdemaeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResetUdemaeResponse)
+	err := c.cc.Invoke(ctx, GameRecord_ResetUdemae_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gameRecordClient) PrepareWeaponPowerMeasurement(ctx context.Context, in *PrepareWeaponPowerMeasurementRequest, opts ...grpc.CallOption) (*PrepareWeaponPowerMeasurementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareWeaponPowerMeasurementResponse)
+	err := c.cc.Invoke(ctx, GameRecord_PrepareWeaponPowerMeasurement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GameRecordServer is the server API for GameRecord service.
 // All implementations should embed UnimplementedGameRecordServer
 // for forward compatibility.
@@ -116,9 +175,13 @@ type GameRecordServer interface {
 	InitializeAttributes(context.Context, *InitializeAttributesRequest) (*InitializeAttributesResponse, error)
 	CreateFestPowerMeasurement(context.Context, *CreateFestPowerMeasurementRequest) (*FestPowerMeasurement, error)
 	InitializeTag(context.Context, *InitializeTagRequest) (*InitializeTagResponse, error)
-	// rpc PrepareTag(?) returns (?);
+	PrepareTag(context.Context, *PrepareTagRequest) (*PrepareTagResponse, error)
 	GetTag(context.Context, *GetTagRequest) (*GetTagResponse, error)
 	SelectTags(context.Context, *SelectTagsRequest) (*SelectTagsResponse, error)
+	PrepareBankaraPowerMeasurement(context.Context, *PrepareBankaraPowerMeasurementRequest) (*PrepareBankaraPowerMeasurementResponse, error)
+	PrepareLeaguePowerMeasurement(context.Context, *PrepareLeaguePowerMeasurementRequest) (*PrepareLeaguePowerMeasurementResponse, error)
+	ResetUdemae(context.Context, *ResetUdemaeRequest) (*ResetUdemaeResponse, error)
+	PrepareWeaponPowerMeasurement(context.Context, *PrepareWeaponPowerMeasurementRequest) (*PrepareWeaponPowerMeasurementResponse, error)
 }
 
 // UnimplementedGameRecordServer should be embedded to have
@@ -140,11 +203,26 @@ func (UnimplementedGameRecordServer) CreateFestPowerMeasurement(context.Context,
 func (UnimplementedGameRecordServer) InitializeTag(context.Context, *InitializeTagRequest) (*InitializeTagResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InitializeTag not implemented")
 }
+func (UnimplementedGameRecordServer) PrepareTag(context.Context, *PrepareTagRequest) (*PrepareTagResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareTag not implemented")
+}
 func (UnimplementedGameRecordServer) GetTag(context.Context, *GetTagRequest) (*GetTagResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTag not implemented")
 }
 func (UnimplementedGameRecordServer) SelectTags(context.Context, *SelectTagsRequest) (*SelectTagsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SelectTags not implemented")
+}
+func (UnimplementedGameRecordServer) PrepareBankaraPowerMeasurement(context.Context, *PrepareBankaraPowerMeasurementRequest) (*PrepareBankaraPowerMeasurementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareBankaraPowerMeasurement not implemented")
+}
+func (UnimplementedGameRecordServer) PrepareLeaguePowerMeasurement(context.Context, *PrepareLeaguePowerMeasurementRequest) (*PrepareLeaguePowerMeasurementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareLeaguePowerMeasurement not implemented")
+}
+func (UnimplementedGameRecordServer) ResetUdemae(context.Context, *ResetUdemaeRequest) (*ResetUdemaeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResetUdemae not implemented")
+}
+func (UnimplementedGameRecordServer) PrepareWeaponPowerMeasurement(context.Context, *PrepareWeaponPowerMeasurementRequest) (*PrepareWeaponPowerMeasurementResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareWeaponPowerMeasurement not implemented")
 }
 func (UnimplementedGameRecordServer) testEmbeddedByValue() {}
 
@@ -238,6 +316,24 @@ func _GameRecord_InitializeTag_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GameRecord_PrepareTag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareTagRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameRecordServer).PrepareTag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameRecord_PrepareTag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameRecordServer).PrepareTag(ctx, req.(*PrepareTagRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GameRecord_GetTag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTagRequest)
 	if err := dec(in); err != nil {
@@ -274,6 +370,78 @@ func _GameRecord_SelectTags_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GameRecord_PrepareBankaraPowerMeasurement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareBankaraPowerMeasurementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameRecordServer).PrepareBankaraPowerMeasurement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameRecord_PrepareBankaraPowerMeasurement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameRecordServer).PrepareBankaraPowerMeasurement(ctx, req.(*PrepareBankaraPowerMeasurementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GameRecord_PrepareLeaguePowerMeasurement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareLeaguePowerMeasurementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameRecordServer).PrepareLeaguePowerMeasurement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameRecord_PrepareLeaguePowerMeasurement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameRecordServer).PrepareLeaguePowerMeasurement(ctx, req.(*PrepareLeaguePowerMeasurementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GameRecord_ResetUdemae_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResetUdemaeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameRecordServer).ResetUdemae(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameRecord_ResetUdemae_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameRecordServer).ResetUdemae(ctx, req.(*ResetUdemaeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GameRecord_PrepareWeaponPowerMeasurement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareWeaponPowerMeasurementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameRecordServer).PrepareWeaponPowerMeasurement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameRecord_PrepareWeaponPowerMeasurement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameRecordServer).PrepareWeaponPowerMeasurement(ctx, req.(*PrepareWeaponPowerMeasurementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GameRecord_ServiceDesc is the grpc.ServiceDesc for GameRecord service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -298,12 +466,32 @@ var GameRecord_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _GameRecord_InitializeTag_Handler,
 		},
 		{
+			MethodName: "PrepareTag",
+			Handler:    _GameRecord_PrepareTag_Handler,
+		},
+		{
 			MethodName: "GetTag",
 			Handler:    _GameRecord_GetTag_Handler,
 		},
 		{
 			MethodName: "SelectTags",
 			Handler:    _GameRecord_SelectTags_Handler,
+		},
+		{
+			MethodName: "PrepareBankaraPowerMeasurement",
+			Handler:    _GameRecord_PrepareBankaraPowerMeasurement_Handler,
+		},
+		{
+			MethodName: "PrepareLeaguePowerMeasurement",
+			Handler:    _GameRecord_PrepareLeaguePowerMeasurement_Handler,
+		},
+		{
+			MethodName: "ResetUdemae",
+			Handler:    _GameRecord_ResetUdemae_Handler,
+		},
+		{
+			MethodName: "PrepareWeaponPowerMeasurement",
+			Handler:    _GameRecord_PrepareWeaponPowerMeasurement_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

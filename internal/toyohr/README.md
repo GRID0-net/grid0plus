@@ -421,12 +421,26 @@ from kinnay/NPLN-Protocols' own `resources.proto` (it stops at field 7,
 `schedule_set_id`) as well as from what GRID0+ had been sending. This is
 the same target concept `VsSchedule`/`LeagueSchedule` already embed in their
 own resource names' `targets/default` segment, just carried as a dedicated
-field here instead. Patched locally into `.proto-upstream` (see
-`scripts/gen-proto.sh`'s own comment on why, and reapply if the upstream
-fetch is ever re-run) as `string target = 8`, and `SelectSeasonSchedules`
+field here instead. Added as `string target = 8` in
+`scripts/proto-patches/grid0plus.patch`, which `scripts/fetch-proto.sh`
+reapplies on every fetch, and `SelectSeasonSchedules`
 now sets it from the request's own `Target` field via the same
 `scheduleTarget` helper `SelectVsSchedules`/`SelectCoopSchedules` already
 use, rather than a bare hardcoded `"default"`.
+
+## GameRecord's `Prepare*` and `ResetUdemae`: shapes from the game's parsers
+
+`PrepareTag`, `PrepareBankaraPowerMeasurement`,
+`PrepareLeaguePowerMeasurement`, `PrepareWeaponPowerMeasurement` and
+`ResetUdemae` are commented out as unknown in NPLN-Protocols. Their field
+numbers and types were recovered from Splatoon 3's own generated parsers and
+added in `scripts/proto-patches/grid0plus.patch`; the names are ours. How,
+and the table of shapes: `docs/CAPTURES/README.md`, "GameRecord calls
+recovered from the game's parsers". The handlers
+(`game_record_prepare.go`) answer the measurements with the caller's own
+`GameRecord/users/<uid>/<Kind>PowerMeasurement/<id>` document, PrepareTag
+with an empty tag and ResetUdemae with an empty response, and log every
+request -- none has been seen from a console yet.
 
 ## `CloudSave`: each player's save record, stored
 

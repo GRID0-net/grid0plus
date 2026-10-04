@@ -1514,18 +1514,51 @@ capture of an official Tricolor battle. The defender is put in `team1`; the
 capture had team1/team2/team3 in equal numbers, so which slot Nintendo gives
 the defender is not measured. Not yet tried on a console.
 
-### Anarchy Battle (Series) and the GameRecord calls with unknown shapes
+### Anarchy Battle (Series)
 
 `internal/toyohr/game_record.go`, `CreateBankaraChallenge`: answered like
 `CreateFestPowerMeasurement` -- the game's own fields stored under
 `GameRecord/users/<uid>/BankaraChallenges/<id>` with a GRID0+-chosen id. The
 id format and any fields Nintendo adds are unknown.
 
-Splatoon 3 also links `GameRecord/PrepareTag`, `PrepareBankaraPowerMeasurement`,
-`PrepareLeaguePowerMeasurement`, `PrepareWeaponPowerMeasurement` and
-`ResetUdemae` (found by listing every `/nn.npln.*` method name in main,
-2026-10-04). Their request and response messages are unknown even in
-NPLN-Protocols (commented `?` there), so none is registered and the game gets
-gRPC Unimplemented. None has been called on GRID0+ yet; the first Anarchy
-Open, Challenge or X Battle will show which ones matter. Static RE of the
-calling code would give the message shapes.
+### GameRecord calls recovered from the game's parsers
+
+`internal/toyohr/game_record_prepare.go`. `PrepareTag`,
+`PrepareBankaraPowerMeasurement`, `PrepareLeaguePowerMeasurement`,
+`PrepareWeaponPowerMeasurement` and `ResetUdemae` are unknown even in
+NPLN-Protocols. Their wire shapes were recovered by static RE of Splatoon 3
+28C4287A (2026-10-04); the definitions are in
+`scripts/proto-patches/grid0plus.patch`.
+
+How: main has no protobuf descriptors, but each call has its own completion
+callback, found through the method-name table at main+0x5f6d948 (one
+function references each name). The callback builds the response class,
+whose generated parse function gives every field's number and type: the
+string-vs-bytes split from its UTF-8 check, and nested types from the parser
+each field calls. Each request class's constructor is called only from its
+own call's issuing code (PrepareTag main+0x751a44, Bankara +0x7569b4,
+League +0x75b6e4, ResetUdemae +0x760664, Weapon +0x765584), which pairs
+requests and responses. Calibration: the same reading of the neighbouring
+`CreateFestPowerMeasurementRequest` gives {1 string, 2 message} and of
+`FestPowerMeasurement` {1 string, 2 MapValue, 3/4 Timestamp, 5 string}, both
+matching NPLN-Protocols.
+
+| call | request | response |
+| --- | --- | --- |
+| PrepareTag | 1 string, 2 repeated string | 1 {1 string, 2 repeated string, 3 string} |
+| PrepareBankaraPowerMeasurement | 1 string, 2 string, 3 int64 | 1 measurement |
+| PrepareLeaguePowerMeasurement | oneof{1 string, 4 string}, 2 string, 3 int64 | 1 measurement |
+| PrepareWeaponPowerMeasurement | 1 string, 2 int64 | 1 measurement |
+| ResetUdemae | 1 string, 2 bool | 1 int64, 2 MapValue, 3 string |
+
+"measurement" is FestPowerMeasurement's shape (name, fields, create_time,
+update_time, document) in all three kinds. Only numbers and types are
+recovered; every field name is GRID0+'s choice (`unknown_N` where nothing
+suggests one). Varints stored in 8 bytes are written as int64.
+
+Open: what a server puts in each answer. None has been called on grid0
+yet; every handler logs its full request ("GameRecord call with a recovered
+shape"). The weapon measurement is answered with the document the game
+already reads (`WeaponPowerMeasurement/<field 2>`); the Bankara and League
+document names mirror it and are guesses; PrepareTag answers an empty tag
+and ResetUdemae an empty response. Not tried on a console.
