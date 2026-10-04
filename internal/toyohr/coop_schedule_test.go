@@ -429,6 +429,9 @@ func TestABigRunShiftCarriesTheBordersTheGameRequires(t *testing.T) {
 	if k := svc.coopScheduleProto(RowFromCoopShift(validTeamContestShift()), "current").GetUnk(); k != 3 {
 		t.Errorf("Eggstra Work field 2 = %d, want 3", k)
 	}
+	if g := got.GetBigRun(); g.GetRewardType() == "" || g.GetRewardGearId() < 21000 || g.GetRewardGearId() > 21999 {
+		t.Errorf("Big Run reward gear = %q %d; the hall needs a Grizzco gear kind and id", g.GetRewardType(), g.GetRewardGearId())
+	}
 	params := got.GetBigRun().GetAttributes().GetFields()["BigRunParams"].GetMapValue().GetFields()
 	borders := params["RewardBorders"].GetMapValue().GetFields()
 	for name, want := range map[string]int64{"Gold": 160, "Silver": 140, "Bronze": 110} {

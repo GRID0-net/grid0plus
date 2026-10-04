@@ -406,7 +406,12 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 			Stage:        r.StageID,
 			Boss:         r.Boss,
 			MainWeapons:  append([]int64(nil), r.Weapons...),
-			RewardGearId: r.RewardGearID,
+			// The hall refuses a Big Run without a Grizzco reward gear: a
+			// Head/Clothes/Shoes kind and an id in 21000-21999 that exists in
+			// the gear table (main+0x37e98f0, called from the hall's shift
+			// check at main+0x37e91a0); a zero id gave a communication error.
+			RewardType:   reward.Kind,
+			RewardGearId: reward.ID,
 			Rewards:      append([]int64(nil), r.Rewards...),
 			Attributes:   attrs,
 		}
