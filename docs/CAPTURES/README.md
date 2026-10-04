@@ -1450,6 +1450,15 @@ messages carry it.
 two consoles pressing "Again!" (2026-10-04) shows no matchmaking ticket, only
 a masked update of `docs/__gs/m` (`cp`, `ebf`, `ip` true, `pw` empty) into the
 session just played. GRID0+ now locks the session again (`cp`, `ebf` false)
-20 s after the last press. Whether that is what the host waits for, and
-whether new players should be backfilled into the reopened session
-(`bfmin`/`bfmax`), needs a capture of "Again!" against a working server.
+20 s after the last press; on hardware that changed nothing.
+
+Static RE since: the host's `State::ActivateBackFill` (state 0x14, update
+handler at main+0x38a5800) queues one online operation of type 5 through
+main+0x1507d54 on its first frame -- that operation is the `__gs/m` write
+above -- and then waits up to 1920 frames (~32 s, main+0x38a59b8) for players
+to be backfilled into the session before raising an error and falling back to
+ordinary matchmaking (observed: group kicked to a normal queue ~30 s after
+Again!, job ~75 s after it). So the server is expected to place other
+players' tickets into the reopened session (`MatchmakingTicket.backfill`:
+game_session, host, port). Open: what ends the wait early with no newcomers
+(an untested reading: `bfmin` 0 in `__gs/m`), and the backfill ticket shape.

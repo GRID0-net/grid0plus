@@ -21,11 +21,11 @@ import (
 // restarts it, and when it runs out the session is locked again (cp and ebf
 // false), the same shape the console itself writes when a fresh match locks.
 //
-// TODO(capture-needed): what the host waits for before it restarts the job.
-// Locking __gs/m is the reading closest to the console's own lock write; a
-// capture of "Again!" against a working server would settle it, and whether
-// new players are backfilled into the reopened session (bfmin/bfmax). Change:
-// lockAfterAgain.
+// TODO(capture-needed): the lock did not change anything on hardware. The
+// host's State::ActivateBackFill waits ~32 s for players to be backfilled
+// into the reopened session (see docs/CAPTURES/README.md, Salmon Run
+// "Again!"), then falls back to ordinary matchmaking. What GRID0+ should send
+// to end that wait with no newcomers is still open. Change: lockAfterAgain.
 var againGrace = 20 * time.Second
 
 type againQueue struct {
