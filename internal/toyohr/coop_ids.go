@@ -184,6 +184,8 @@ var CoopKumaWeapons = []CoopWeapon{
 // -1 is the green "?" (a capture of Nextendo's working server carries it as
 // ["20400","25000","24020","-1"], with that shift's KumaWeapons attribute
 // listing all eight Grizzco weapons); -2 is the gold "?", Grizzco weapons only.
+// Both shown on hardware on 2026-10-04. The game keeps the schedule it
+// loaded, so a change to a running shift only shows after a restart.
 const (
 	CoopRandomWeapon        int64 = -1
 	CoopRandomGrizzcoWeapon int64 = -2
