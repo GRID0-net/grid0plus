@@ -107,6 +107,11 @@ func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID,
 	}
 
 	root := "tenants/" + tenant + documentsSegment
+	if shared.card == "PointCardBigRun" {
+		if err := AddBigRunEggs(ctx, store, tenant, battleID, shared.shiftID, delivered, now); err != nil {
+			return err
+		}
+	}
 	for key, entry := range personal.GetFields() {
 		uid := sessionUsers[key]
 		if uid == "" {

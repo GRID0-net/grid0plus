@@ -35,14 +35,13 @@ func (s *Server) register() {
 	friendspb.RegisterPresenceServiceServer(s.grpc, &presenceService{s: s})
 	messagingpb.RegisterMessagingServer(s.grpc, &messagingService{s: s})
 
-	// Registered for log visibility only (see this function's own doc comment):
-	// a 2026-09-20 decompile of Splatoon 3 v11.3.0 confirms both are real,
-	// linked services, but each is a substantial subsystem (achievement-style
-	// counters and holders; leaderboard scores, charts and categories) with no
-	// capture or documentation to build real behaviour from. Implementing any
-	// method from the proto shape alone would be inventing the exact kind of
-	// plausible-looking Nintendo internal CLAUDE.md's first rule forbids.
-	globalcounterpb.RegisterGlobalCounterServiceServer(s.grpc, &globalcounterpb.UnimplementedGlobalCounterServiceServer{})
+	// GlobalCounterService answers GetSeason only, which a special Big Run
+	// reads its community golden-egg total from (see globalcounter.go); every
+	// other method stays Unimplemented. LeaderboardService is registered for
+	// log visibility only (see this function's own doc comment): a 2026-09-20
+	// decompile of Splatoon 3 v11.3.0 confirms it is real and linked, and the
+	// game calls BrowseLeaderboard, but no capture shows what it expects.
+	globalcounterpb.RegisterGlobalCounterServiceServer(s.grpc, &globalCounterService{s: s})
 	leaderboardpb.RegisterLeaderboardServiceServer(s.grpc, &leaderboardpb.UnimplementedLeaderboardServiceServer{})
 
 	callerID := func(ctx context.Context) (string, bool) {

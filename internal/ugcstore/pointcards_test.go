@@ -107,3 +107,29 @@ func TestABigRunJobGoesOnTheBigRunCardWithTheTeamsHighScore(t *testing.T) {
 		t.Errorf("best_golden_ikura_num = %d, want the team's 87", got)
 	}
 }
+
+// TestABigRunJobAddsItsTeamsEggsToTheCommunityTotalOnce: a special Big Run
+// reads one running total (GlobalCounterService/GetSeason); each job counts
+// once however many consoles report it, and a new Big Run starts from zero.
+func TestABigRunJobAddsItsTeamsEggsToTheCommunityTotalOnce(t *testing.T) {
+	store := db.NewMemory()
+	ctx := context.Background()
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		if err := AddBigRunEggs(ctx, store, "dce9377b", "job1", "20261004100000", 87, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := AddBigRunEggs(ctx, store, "dce9377b", "job2", "20261004100000", 13, now); err != nil {
+		t.Fatal(err)
+	}
+	if count, jobs, _ := BigRunEggs(ctx, store, "dce9377b"); count != 100 || jobs != 2 {
+		t.Fatalf("total = %d over %d jobs, want 100 over 2", count, jobs)
+	}
+	if err := AddBigRunEggs(ctx, store, "dce9377b", "job3", "20261011100000", 5, now); err != nil {
+		t.Fatal(err)
+	}
+	if count, _, _ := BigRunEggs(ctx, store, "dce9377b"); count != 5 {
+		t.Fatalf("total after a new Big Run = %d, want 5", count)
+	}
+}

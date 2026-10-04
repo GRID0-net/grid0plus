@@ -1462,3 +1462,12 @@ Again!, job ~75 s after it). So the server is expected to place other
 players' tickets into the reopened session (`MatchmakingTicket.backfill`:
 game_session, host, port). Open: what ends the wait early with no newcomers
 (an untested reading: `bfmin` 0 in `__gs/m`), and the backfill ticket shape.
+
+### Special Big Run: the community egg total
+
+`internal/ugcstore/bigrun_eggs.go`. With `BigRunParams.IsSpecial` the game
+shows a 700,000,000 golden-egg goal (hard-coded at main+0x3b2fc04) and reads
+the progress with `GlobalCounterService/GetSeason` (four calls on entering the
+hall, 2026-10-04). GRID0+ answers with one running total of every Big Run
+job's delivered golden eggs. Open: the counter/season names the game asks
+for, and whether the total also counts non-special Big Runs.

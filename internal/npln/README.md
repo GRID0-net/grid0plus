@@ -154,14 +154,14 @@ one:
   `QueryUserExternalIds`/`QueryUserShortIds` stay on the embedded
   `Unimplemented` default, since nothing in this server has a consumer for
   either id space they map onto.
-- `nn.npln.globalcounter.v1.GlobalCounterService` and
-  `nn.npln.leaderboard.v1.LeaderboardService` -- both confirmed real and
-  linked, both left entirely `Unimplemented` (now at least registered, so a
-  real call is logged). Each is a substantial subsystem — achievement-style
-  counters/holders, and leaderboard scores/charts/categories — with no
-  capture or documentation to build real behaviour from; implementing a
-  method from the proto shape alone would be inventing state, not reporting
-  it. TODO(capture-needed): what Splatoon 3 actually asks either for.
+- `nn.npln.globalcounter.v1.GlobalCounterService` -- `GetSeason` is
+  implemented (`globalcounter.go`): a special Big Run reads its community
+  golden-egg total from it, kept by `internal/ugcstore/bigrun_eggs.go`. Every
+  other method stays `Unimplemented`.
+- `nn.npln.leaderboard.v1.LeaderboardService` -- confirmed real and linked,
+  left `Unimplemented` (registered, so a real call is logged). The game calls
+  `BrowseLeaderboard`; nothing visibly breaks on the error.
+  TODO(capture-needed): what it expects from `BrowseLeaderboard`.
 
 `nn.npln.hydro.v1.Datastore`, also on the wiki's general-services list, does
 not appear anywhere in Splatoon 3's binary and stays unregistered -- no
