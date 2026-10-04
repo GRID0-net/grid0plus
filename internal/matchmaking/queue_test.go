@@ -842,3 +842,60 @@ func TestASquadIsNeverSplitAcrossMatches(t *testing.T) {
 	}
 	_ = squad
 }
+
+// TestATricolorMatchIsFourDefendersAgainstTwoPairs: the midterm leader
+// defends with four, the two other teams attack with two each, each team in
+// its own slot (an official Tricolor battle's shape, per NextendoNetwork's
+// capture notes).
+func TestATricolorMatchIsFourDefendersAgainstTwoPairs(t *testing.T) {
+	q, _ := testQueue(t, 8)
+	mode := "fest_match_tricolor_oneshot_config"
+	q.SetTricolorDefender(mode, "Bravo")
+	var formed []Session
+	for _, p := range []struct{ user, team string }{
+		{"b1", "Bravo"}, {"b2", "Bravo"}, {"b3", "Bravo"}, {"b4", "Bravo"}, {"b5", "Bravo"},
+		{"a1", "Alpha"}, {"a2", "Alpha"}, {"c1", "Charlie"}, {"c2", "Charlie"},
+	} {
+		_, f, err := q.EnqueueWithFestTeam(p.user, mode, p.team)
+		if err != nil {
+			t.Fatal(err)
+		}
+		formed = append(formed, f...)
+	}
+	if len(formed) != 1 || len(formed[0].Players) != 8 {
+		t.Fatalf("formed %v, want one 8-player Tricolor match", formed)
+	}
+	slots := formed[0].TeamSlots
+	count := map[string]int{}
+	for _, slot := range slots {
+		count[slot]++
+	}
+	if count["team1"] != 4 || count["team2"] != 2 || count["team3"] != 2 || slots["b1"] != "team1" ||
+		slots["a1"] != "team2" || slots["c1"] != "team3" || slots["b5"] != "" {
+		t.Fatalf("Tricolor slots = %v, want Bravo 4 in team1, Alpha 2 in team2, Charlie 2 in team3", slots)
+	}
+}
+
+// TestASmallTricolorGroupKeepsTheTwoToOneRatio: below full size a Tricolor
+// match still forms, 2 v 1 v 1, after the grace period.
+func TestASmallTricolorGroupKeepsTheTwoToOneRatio(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	mode := "fest_match_tricolor_oneshot_config"
+	q.SetTricolorDefender(mode, "Alpha")
+	for _, p := range []struct{ user, team string }{
+		{"a1", "Alpha"}, {"a2", "Alpha"}, {"b1", "Bravo"}, {"c1", "Charlie"},
+	} {
+		if _, f, err := q.EnqueueWithFestTeam(p.user, mode, p.team); err != nil || len(f) != 0 {
+			t.Fatalf("premature: %v %v", f, err)
+		}
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 4 {
+		t.Fatalf("formed %v, want one 2v1v1 Tricolor match", formed)
+	}
+	if s := formed[0].TeamSlots; s["a1"] != "team1" || s["a2"] != "team1" || s["b1"] != "team2" || s["c1"] != "team3" {
+		t.Fatalf("slots = %v", s)
+	}
+}

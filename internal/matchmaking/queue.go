@@ -227,6 +227,8 @@ type Queue struct {
 	// queue that will not fill needs to be able to shrink a mode without
 	// restarting the server and dropping every ticket on it.
 	modeSizes map[string]int
+	// tricolorDefender is each Tricolor mode's defending fest team.
+	tricolorDefender map[string]string
 	tickets   map[string]*Ticket
 	// waiting is the queue order per mode, holding ticket ids. A slice rather
 	// than a heap: it is FIFO, it is short, and the order has to be readable
@@ -945,10 +947,76 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 
 func isFestMode(mode string) bool { return strings.Contains(strings.ToLower(mode), "fest") }
 
+// isTricolorMode reports a Splatfest Tricolor Turf War config
+// (fest_match_tricolor_oneshot_config, fest_match_tricolor_team_config).
+func isTricolorMode(mode string) bool { return strings.Contains(strings.ToLower(mode), "tricolor") }
+
+func (q *Queue) modeOf(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	if t := q.tickets[ids[0]]; t != nil {
+		return t.Mode
+	}
+	return ""
+}
+
+// SetTricolorDefender records which fest team defends in a Tricolor mode: the
+// team that led at the midterm (see npln, which knows the fest).
+func (q *Queue) SetTricolorDefender(mode, team string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.tricolorDefender == nil {
+		q.tricolorDefender = map[string]string{}
+	}
+	q.tricolorDefender[mode] = team
+}
+
+// selectTricolorPlayersLocked forms a Tricolor match: the defending team
+// against two attacking teams with half as many players each -- 4 v 2 v 2 when
+// full. NextendoNetwork/splatoon-3's notes on a capture of an official
+// Tricolor battle (2026-08-22/23, facts only) show four defenders, all of
+// the midterm winner's team, against two pairs, and team1/team2/team3 slots.
+// Below full size the same 2:1:1 ratio is kept (2 v 1 v 1 at the least) so a
+// small group can play. Result grouped defender first, then each attacker.
+func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
+	mode := q.modeOf(ids)
+	defender := q.tricolorDefender[mode]
+	byTeam := map[string][]string{}
+	for _, id := range ids {
+		if team := q.tickets[id].FestTeam; team != "" {
+			byTeam[team] = append(byTeam[team], id)
+		}
+	}
+	if defender == "" || len(byTeam[defender]) < 2 {
+		return nil
+	}
+	attackers := make([]string, 0, 2)
+	for team := range byTeam {
+		if team != defender {
+			attackers = append(attackers, team)
+		}
+	}
+	if len(attackers) < 2 {
+		return nil
+	}
+	sort.Strings(attackers)
+	perAttacker := min(size/4, len(byTeam[defender])/2, len(byTeam[attackers[0]]), len(byTeam[attackers[1]]))
+	if perAttacker < 1 {
+		return nil
+	}
+	out := append([]string(nil), byTeam[defender][:2*perAttacker]...)
+	out = append(out, byTeam[attackers[0]][:perAttacker]...)
+	return append(out, byTeam[attackers[1]][:perAttacker]...)
+}
+
 // selectFestPlayersLocked requires two different fest teams with equal
 // numbers. The result is grouped by team so the session can assign stable
 // team1/team2 slots. Extra tickets remain queued for the next match.
 func (q *Queue) selectFestPlayersLocked(ids []string, size int) []string {
+	if isTricolorMode(q.modeOf(ids)) {
+		return q.selectTricolorPlayersLocked(ids, size)
+	}
 	byTeam := map[string][]string{}
 	for _, id := range ids {
 		if team := q.tickets[id].FestTeam; team != "" {
@@ -1064,7 +1132,29 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 	// early four-player versus match is full at four, and a latecomer is
 	// matched into the next one rather than squeezed into this.
 	s := q.newSessionLocked(mode, len(players), players, false)
-	if isFestMode(mode) && len(chosen) > 0 {
+	if isTricolorMode(mode) && len(chosen) > 0 {
+		// Grouped defender first, then the two attackers in name order (see
+		// selectTricolorPlayersLocked). Which slot Nintendo gives the defender
+		// is not measured; team1 follows NextendoNetwork's reading.
+		defender := q.tricolorDefender[mode]
+		var attackers []string
+		s.TeamSlots = map[string]string{}
+		for _, id := range chosen {
+			team := q.tickets[id].FestTeam
+			slot := "team1"
+			if team != defender {
+				if !slices.Contains(attackers, team) {
+					attackers = append(attackers, team)
+				}
+				slot = "team2"
+				if slices.Index(attackers, team) == 1 {
+					slot = "team3"
+				}
+			}
+			s.TeamSlots[q.tickets[id].UserID] = slot
+		}
+		q.sessions[s.ID].TeamSlots = s.TeamSlots
+	} else if isFestMode(mode) && len(chosen) > 0 {
 		firstTeam := q.tickets[chosen[0]].FestTeam
 		s.TeamSlots = map[string]string{}
 		for _, id := range chosen {

@@ -81,6 +81,14 @@ clock, a second starts `CoopGracePeriod`, every arrival restarts it, and a
 full team forms at once — and need their size set here, or they take up to
 eight.
 
+Splatfest modes pick players by fest team (the vote stored with the fest
+entry, not the ticket's claim). An ordinary fest match is two teams of equal
+size, `team1` and `team2`. A Tricolor mode (`fest_match_tricolor_*`) is the
+midterm leader against the other two teams at 2:1:1 -- 4 v 2 v 2 when full,
+2 v 1 v 1 at the least -- with the defender in `team1` and the attackers in
+`team2`/`team3` (see `docs/CAPTURES/README.md` for the unmeasured part); npln
+tells the queue who defends with `SetTricolorDefender`.
+
 **Those sizes are not hardcoded here, on purpose.** The key is the mode name the
 game puts in a ticket's `matchmaking_config`, and nothing public documents those
 strings. A built-in table of plausible-looking names would be an invented

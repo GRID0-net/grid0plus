@@ -1471,3 +1471,12 @@ the progress with `GlobalCounterService/GetSeason` (four calls on entering the
 hall, 2026-10-04). GRID0+ answers with one running total of every Big Run
 job's delivered golden eggs. Open: the counter/season names the game asks
 for, and whether the total also counts non-special Big Runs.
+
+### Tricolor Turf War: which slot the defender gets
+
+`internal/matchmaking/queue.go`, `formSessionLocked`. Tricolor configs
+(`fest_match_tricolor_*`) now form as the midterm leader (4) against the two
+other teams (2 each), 2:1:1 below full size, from NextendoNetwork's notes on a
+capture of an official Tricolor battle. The defender is put in `team1`; the
+capture had team1/team2/team3 in equal numbers, so which slot Nintendo gives
+the defender is not measured. Not yet tried on a console.

@@ -75,6 +75,7 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	}
 
 	team := ""
+	var festRow db.Fest
 	if strings.Contains(strings.ToLower(mode), "fest") {
 		fests, err := m.s.store.ListFests(ctx)
 		if err != nil {
@@ -97,10 +98,20 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 			}
 			if team == "" || row.StartAt.After(selectedStart) {
 				team, selectedStart = entry.Team, row.StartAt
+				festRow = row
 			}
 		}
 		if team == "" {
 			return nil, ErrNotFound
+		}
+		if strings.Contains(strings.ToLower(mode), "tricolor") {
+			defender, err := toyohr.FestDefender(ctx, m.s.store, festRow)
+			if err != nil {
+				m.s.log.Error("npln: find the Tricolor defender", "error", err)
+				return nil, errInternal()
+			}
+			m.s.queue.SetTricolorDefender(mode, defender)
+			m.s.log.Info("npln: Tricolor defender", "fest", festRow.ID, "team", defender)
 		}
 	}
 	members := m.s.squadMembers(caller.UserID, req.GetUserDelegationTokens())
