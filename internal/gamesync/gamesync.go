@@ -125,6 +125,8 @@ type Server struct {
 
 	docs  *storeSet
 	watch *watchers
+	// again holds each Salmon Run session's "Again!" grace window.
+	again againQueue
 	// A report from any player may update the same battle verdict. Serialize
 	// read/merge/write so simultaneous reports cannot discard one another.
 	refereeMu sync.Mutex
@@ -562,6 +564,7 @@ func (s *Server) WriteDocuments(
 	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
 	s.observeRefereeReports(ctx, req.GetWriteOperations())
 	s.resendKickoffVerdictAfterProfile(caller, req.GetWriteOperations())
+	s.noteAgain(caller, req.GetWriteOperations())
 	if len(req.GetDefermentOperations()) > 0 {
 		caller, _ := callerFrom(ctx)
 		s.stageDeferments(caller, req.GetDefermentOperations())

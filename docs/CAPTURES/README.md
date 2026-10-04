@@ -1443,3 +1443,13 @@ joined gamesync, and both timed out with `MatchGsReadyTimeout` ~30 s later
 definitions; the roster's `UserSession.team` is now set too. A capture of a
 fest match's `GetGameSession`/`TrackMatchmakingTicket` would settle which
 messages carry it.
+
+### Salmon Run "Again!": what restarts the job
+
+`internal/gamesync/again_queue.go`, `lockAfterAgain`. A loopback capture of
+two consoles pressing "Again!" (2026-10-04) shows no matchmaking ticket, only
+a masked update of `docs/__gs/m` (`cp`, `ebf`, `ip` true, `pw` empty) into the
+session just played. GRID0+ now locks the session again (`cp`, `ebf` false)
+20 s after the last press. Whether that is what the host waits for, and
+whether new players should be backfilled into the reopened session
+(`bfmin`/`bfmax`), needs a capture of "Again!" against a working server.
