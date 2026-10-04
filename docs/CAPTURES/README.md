@@ -1479,6 +1479,23 @@ before anything else), and the guest made no gamesync call in the window.
 `__gs/m` itself carries `cp`, `ip`, `pw`, `ebf`, `bfmin`, `bfmax`, `prp`
 (parser at main+0x4017d4).
 
+Further static RE: the online backend behind the op is Pia's NPLN session
+layer (methods Automatch / CreateSession / JoinSession / SearchSession, each
+with a Track poller; vtable at main+0x5ecaf68). JoinSession runs as command
+0x9aca788e through main+0x44e0ed0, which blocks on an async task built at
+main+0x560400. No console has ever called `GameSessionService/JoinGameSession`
+on grid0, so the rejoin stays inside the existing gamesync session.
+Nextendo's matchmade sessions publish `__gs/m` as bfmin 1, bfmax 5 (private
+rooms bfmax 7), which is what GRID0+ seeds. bfmin 1 suggests the host waits
+for at least one backfilled player, which would make the 32 s fallback
+Nintendo's own behaviour when no stranger is available. Not yet confirmed
+on hardware.
+
+In the 18:07 test the fallback worked: both consoles' fresh coop tickets
+arrived within 50 ms and were placed together, then both were dropped from
+the dashboard ("operator cancelled a ticket", 18:07:52 and :56, 4 s apart).
+That manual drop accounts for part of the ~75 s.
+
 ### Special Big Run: the community egg total
 
 `internal/ugcstore/bigrun_eggs.go`. With `BigRunParams.IsSpecial` the game
