@@ -29,7 +29,10 @@ Prepare game-ready assets in the `base`, `bh`, `wa`, `wb`, and (for a third
 team) `wc` subdirectories. See [internal/bcat/README.md](../internal/bcat/README.md)
 for required formats. Assets and the IV-derivation material are operator-local;
 do not commit either. Set `SWITCHNET_BCAT_KEY_MATERIAL` to the path of that
-local material before running the command.
+local material before running the command, or install it once at
+`/etc/switchnet/bcat-key-material` (`root:switchnet`, mode `0640`); the build
+reads that file when the variable is unset. Either way it stays on the server
+and out of this repository.
 
 From `/opt/switchnet` on the VM, use a new output directory and a two-hour
 aligned UTC start time. Substitute your own ID, resource, date, and asset path:
@@ -37,9 +40,7 @@ aligned UTC start time. Substitute your own ID, resource, date, and asset path:
 ```sh
 cd /opt/switchnet
 sudo install -d -o switchnet -g switchnet /opt/switchnet/data/fest-builds
-sudo -u switchnet env \
-  SWITCHNET_BCAT_KEY_MATERIAL=/path/to/operator-local/iv-material \
-  bin/switchnetctl -config config/config.yaml fest build \
+sudo -u switchnet bin/switchnetctl -config config/config.yaml fest build \
   -assets /path/to/game-ready/fest-assets \
   -out /opt/switchnet/data/fest-builds/NXTD-00042 \
   -id NXTD-00042 -resource nxtd-example \

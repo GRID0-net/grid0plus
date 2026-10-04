@@ -49,14 +49,22 @@ var (
 // not open.
 const KeyMaterialPath = "SWITCHNET_BCAT_KEY_MATERIAL"
 
+// DefaultKeyMaterialFile is read when KeyMaterialPath is unset, so a server
+// that holds the table there needs nothing set per command. The file lives on
+// the server only (root:switchnet 0640), never in this repository.
+var DefaultKeyMaterialFile = "/etc/switchnet/bcat-key-material"
+
 // loadKeyMaterial reads the IV-derivation table once.
 func loadKeyMaterial() (string, error) {
 	keyMaterialOnce.Do(func() {
 		path := os.Getenv(KeyMaterialPath)
 		if path == "" {
-			keyMaterialErr = fmt.Errorf("%w: set %s to a file containing the %d-character table",
-				ErrNoKeyMaterial, KeyMaterialPath, keyMaterialLen)
-			return
+			if _, err := os.Stat(DefaultKeyMaterialFile); err != nil {
+				keyMaterialErr = fmt.Errorf("%w: set %s, or install %s, with the %d-character table",
+					ErrNoKeyMaterial, KeyMaterialPath, DefaultKeyMaterialFile, keyMaterialLen)
+				return
+			}
+			path = DefaultKeyMaterialFile
 		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
