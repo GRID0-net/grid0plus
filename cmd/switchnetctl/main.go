@@ -605,6 +605,28 @@ func nginxConf(cfg config.Config) string {
 }
 `, cfg.Network.EdgeTLSPort)
 
+	b.WriteString("\n# ---- plain HTTP ----\n")
+	b.WriteString("# The hosts the console reaches without TLS (TLS: false in\n")
+	b.WriteString("# internal/nintendo/hosts.go) all belong to the stub server, the\n")
+	b.WriteString("# connection test first among them: ctest.cdn.nintendo.net over port\n")
+	b.WriteString("# 80, which the console must pass before any game goes online. With no\n")
+	b.WriteString("# block here the image's default page answered it instead (seen\n")
+	b.WriteString("# 2026-10-04, when a console reported error 2110-0101).\n")
+	b.WriteString(`server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    location / {
+        proxy_pass http://switchnet_stubs;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+`)
+
 	return b.String()
 }
 
