@@ -22,10 +22,10 @@ import (
 // false), the same shape the console itself writes when a fresh match locks.
 //
 // TODO(capture-needed): the lock did not change anything on hardware. The
-// host's State::ActivateBackFill waits ~32 s for players to be backfilled
-// into the reopened session (see docs/CAPTURES/README.md, Salmon Run
-// "Again!"), then falls back to ordinary matchmaking. What GRID0+ should send
-// to end that wait with no newcomers is still open. Change: lockAfterAgain.
+// host's State::ActivateBackFill runs a session-join operation and gives it
+// ~32 s to complete before falling back to ordinary matchmaking (see
+// docs/CAPTURES/README.md, Salmon Run "Again!"); what GRID0+ fails to deliver
+// for that join is still open. Change: lockAfterAgain.
 var againGrace = 20 * time.Second
 
 type againQueue struct {

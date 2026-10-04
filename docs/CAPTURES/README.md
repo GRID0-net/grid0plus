@@ -1454,14 +1454,30 @@ session just played. GRID0+ now locks the session again (`cp`, `ebf` false)
 
 Static RE since: the host's `State::ActivateBackFill` (state 0x14, update
 handler at main+0x38a5800) queues one online operation of type 5 through
-main+0x1507d54 on its first frame -- that operation is the `__gs/m` write
-above -- and then waits up to 1920 frames (~32 s, main+0x38a59b8) for players
-to be backfilled into the session before raising an error and falling back to
-ordinary matchmaking (observed: group kicked to a normal queue ~30 s after
-Again!, job ~75 s after it). So the server is expected to place other
-players' tickets into the reopened session (`MatchmakingTicket.backfill`:
-game_session, host, port). Open: what ends the wait early with no newcomers
-(an untested reading: `bfmin` 0 in `__gs/m`), and the backfill ticket shape.
+main+0x1507d54 on its first frame and keeps its id at state+0x300. Type 5 is
+the game's generic session-join operation: its parameters are `join_type`,
+`room_idx`, `user_id`, `session_id`, `password` and `voice_chat`, consumed at
+main+0x1504334, where join types 2-6 join by `session_id` through one of three
+backends (op+0x130: 1, 2, or 3 = online). The `__gs/m` write is part of it.
+
+Every later frame the state looks the op up (main+0x38a5af4: the active list
+at manager+0x150/+0x158, then the completed ring at manager+0x3a0..+0x3b0,
+12-byte entries). Status 3 is success and the state moves on
+(main+0x38a5bd8); status 4 raises an error; anything else keeps waiting until
+1920 frames (~32 s, main+0x38a59b8), then errors and falls back to ordinary
+matchmaking (observed: group kicked to a normal queue ~30 s after Again!, job
+~75 s after it).
+
+So the 32 s bounds **completion of the rejoin**, not a wait for newcomers:
+something GRID0+ should deliver for that join never arrives. Open: which
+backend event sets the op to status 3 (the poller that tests op+0x13c == 6
+after the backend's vtable+0x60 call is the next thing to read, or a GDB
+watch on the op's status). Two log oddities from the 18:07 test, 2026-10-04:
+both `__gs/m` reopen writes were attributed to the host's user, 2.1 s apart
+(a client retry, or the guest's write attributed to the wrong caller -- check
+before anything else), and the guest made no gamesync call in the window.
+`__gs/m` itself carries `cp`, `ip`, `pw`, `ebf`, `bfmin`, `bfmax`, `prp`
+(parser at main+0x4017d4).
 
 ### Special Big Run: the community egg total
 
