@@ -61,4 +61,13 @@ fi
 # in go.mod.
 rm -rf "${DEST}/${UPSTREAM_TREE}/google/protobuf"
 
+# Reapply GRID0+'s own additions: fields and messages settled by RE or
+# captures that upstream's reconstruction lacks. Kept as one tracked patch so a
+# re-fetch cannot silently drop them; see the patch's own comments and
+# docs/CAPTURES/README.md for where each came from.
+for patch in "${ROOT}"/scripts/proto-patches/*.patch; do
+    git -C "${DEST}" apply --whitespace=nowarn "${patch}"
+    echo "proto: applied $(basename "${patch}")"
+done
+
 echo "proto: $(find "${DEST}/${UPSTREAM_TREE}/proto" -name '*.proto' | wc -l) definitions in ${UPSTREAM_TREE}/"

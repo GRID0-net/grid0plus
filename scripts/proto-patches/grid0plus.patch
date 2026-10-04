@@ -1,0 +1,146 @@
+diff --git a/latest/proto/toyohr/v1/game_record.proto b/latest/proto/toyohr/v1/game_record.proto
+index e383d62..05b2283 100644
+--- a/latest/proto/toyohr/v1/game_record.proto
++++ b/latest/proto/toyohr/v1/game_record.proto
+@@ -3,6 +3,7 @@ syntax = "proto3";
+ 
+ package nn.npln.toyohr.v1;
+ 
++import "google/protobuf/timestamp.proto";
+ import "proto/common/value.proto";
+ import "proto/toyohr/v1/resources.proto";
+ 
+@@ -103,15 +104,92 @@ message SelectTagsResponse {
+ 	// [UNKNOWN]
+ }
+ 
++// The messages below were recovered by GRID0+ from Splatoon 3 28C4287A's
++// generated parsers (see docs/CAPTURES/README.md, "GameRecord calls recovered
++// from the game's parsers"). Field NUMBERS and TYPES are read from the binary;
++// the binary carries no descriptors, so every NAME here is GRID0+'s choice, and
++// unknown_N names a field whose meaning is not known.
++
++message PrepareTagRequest {
++	string tenant = 1;
++	repeated string users = 2;
++}
++
++message PreparedTag {
++	string unknown_1 = 1;
++	repeated string unknown_2 = 2;
++	string unknown_3 = 3;
++}
++
++message PrepareTagResponse {
++	PreparedTag tag = 1;
++}
++
++message PrepareBankaraPowerMeasurementRequest {
++	string parent = 1;
++	string unknown_2 = 2;
++	int64 unknown_3 = 3;
++}
++
++message PrepareBankaraPowerMeasurementResponse {
++	PowerMeasurement bankara_power_measurement = 1;
++}
++
++message PrepareLeaguePowerMeasurementRequest {
++	oneof target {
++		string unknown_1 = 1;
++		string unknown_4 = 4;
++	}
++	string unknown_2 = 2;
++	int64 unknown_3 = 3;
++}
++
++message PrepareLeaguePowerMeasurementResponse {
++	PowerMeasurement league_power_measurement = 1;
++}
++
++message PrepareWeaponPowerMeasurementRequest {
++	string parent = 1;
++	// An integer, read as the weapon id because the game names these
++	// documents services/GameRecord/users/%s/WeaponPowerMeasurement/%d.
++	int64 weapon = 2;
++}
++
++message PrepareWeaponPowerMeasurementResponse {
++	PowerMeasurement weapon_power_measurement = 1;
++}
++
++// Same field numbers and types as FestPowerMeasurement in all three kinds the
++// game parses (Bankara, League, Weapon), so the names are taken from it.
++message PowerMeasurement {
++	string name = 1;
++	nn.npln.common.MapValue fields = 2;
++	google.protobuf.Timestamp create_time = 3;
++	google.protobuf.Timestamp update_time = 4;
++	string document = 5;
++}
++
++message ResetUdemaeRequest {
++	string unknown_1 = 1;
++	bool unknown_2 = 2;
++}
++
++message ResetUdemaeResponse {
++	int64 unknown_1 = 1;
++	nn.npln.common.MapValue unknown_2 = 2;
++	string unknown_3 = 3;
++}
++
+ service GameRecord {
+ 	rpc CreateBankaraChallenge(CreateBankaraChallengeRequest) returns (BankaraChallenge);
+ 	rpc InitializeAttributes(InitializeAttributesRequest) returns (InitializeAttributesResponse);
+ 	rpc CreateFestPowerMeasurement(CreateFestPowerMeasurementRequest) returns (FestPowerMeasurement);
+ 	rpc InitializeTag(InitializeTagRequest) returns (InitializeTagResponse);
+-	// rpc PrepareTag(?) returns (?);
++	rpc PrepareTag(PrepareTagRequest) returns (PrepareTagResponse);
+ 	rpc GetTag(GetTagRequest) returns (GetTagResponse);
+ 	rpc SelectTags(SelectTagsRequest) returns (SelectTagsResponse);
+-	// rpc PrepareBankaraPowerMeasurement(?) returns (?);
+-	// rpc PrepareLeaguePowerMeasurement(?) returns (?);
+-	// rpc ResetUdemae(?) returns (?);
++	rpc PrepareBankaraPowerMeasurement(PrepareBankaraPowerMeasurementRequest) returns (PrepareBankaraPowerMeasurementResponse);
++	rpc PrepareLeaguePowerMeasurement(PrepareLeaguePowerMeasurementRequest) returns (PrepareLeaguePowerMeasurementResponse);
++	rpc ResetUdemae(ResetUdemaeRequest) returns (ResetUdemaeResponse);
++	rpc PrepareWeaponPowerMeasurement(PrepareWeaponPowerMeasurementRequest) returns (PrepareWeaponPowerMeasurementResponse);
+ }
+diff --git a/latest/proto/toyohr/v1/resources.proto b/latest/proto/toyohr/v1/resources.proto
+index 2ef8484..184d6ba 100644
+--- a/latest/proto/toyohr/v1/resources.proto
++++ b/latest/proto/toyohr/v1/resources.proto
+@@ -237,6 +237,13 @@ message SeasonSchedule {
+ 	google.protobuf.Timestamp end_time = 5;
+ 	nn.npln.common.MapValue attributes = 6;
+ 	string schedule_set_id = 7;
++	// Both preserved working hall captures carry an undocumented field 8 here
++	// -- absent from upstream's own reconstruction -- decoding to the raw
++	// string "default", the same target every other schedule message in this
++	// family (VsSchedule, LeagueSchedule) embeds in its own resource name's
++	// "targets/default" segment instead of a dedicated field. See
++	// internal/toyohr/README.md's SeasonSchedule section.
++	string target = 8;
+ }
+ 
+ message VsParams {
+diff --git a/latest/proto/toyohr/v1/userscreening.proto b/latest/proto/toyohr/v1/userscreening.proto
+index 4684b8f..8741ff1 100644
+--- a/latest/proto/toyohr/v1/userscreening.proto
++++ b/latest/proto/toyohr/v1/userscreening.proto
+@@ -15,7 +15,13 @@ message GetViolationRequest {
+ }
+ 
+ message GetViolationResponse {
+-	// [UNKNOWN]
++	// NextendoNetwork/splatoon-3 measured (facts only, not its code) that
++	// Splatoon 3's own client parses this response's own resource name and
++	// requires it to end in a "violations" segment -- an empty response
++	// (this field absent, field 1 defaulting to "") crashes the client at a
++	// hard abort in its resource-path parser. See
++	// internal/toyohr/messaging.go's GetViolation.
++	string name = 1;
+ }
+ 
+ message SelectSnapshotRequest {
