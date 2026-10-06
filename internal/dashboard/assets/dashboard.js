@@ -799,18 +799,23 @@ function renderMatchmaking(mm) {
     return;
   }
 
-  const modes = mm.modes || [];
+  // Every mode the game knows is listed so its size can be set before anyone
+  // queues, but the queue reads better showing only modes someone is in.
+  const showAll = $("#mm-show-all").checked;
+  const modes = (mm.modes || []).filter((m) => showAll || m.waiting.length > 0);
+  const queuing = (mm.modes || []).filter((m) => m.waiting.length > 0).length;
   const waiting = mm.waiting || 0;
 
   // The overview tile, finally showing a real number rather than admitting it
   // is not wired up.
   $("#stat-queue").textContent = waiting;
   $("#stat-queue-note").textContent =
-    modes.length === 0 ? "no modes queuing" : `across ${modes.length} mode${modes.length === 1 ? "" : "s"}`;
+    queuing === 0 ? "no modes queuing" : `across ${queuing} mode${queuing === 1 ? "" : "s"}`;
 
   $("#mm-summary").textContent =
     `${waiting} waiting · default ${mm.defaultSize} per match`;
   $("#mm-empty").hidden = modes.length > 0;
+  $("#mm-show-all").onchange = () => renderMatchmaking(matchmaking);
 
   $("#mm-modes").replaceChildren(
     ...modes.map((m) => {
