@@ -62,7 +62,7 @@ func (s *Server) handleSeedManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	root := filepath.Join(s.seedDir, "bcat-seed")
+	root := s.seedRoot()
 	manifest := seedManifest{Files: []seedFile{}}
 
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -95,7 +95,7 @@ func (s *Server) handleSeedManifest(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	if os.IsNotExist(err) {
+	if os.IsNotExist(err) || (err == nil && len(manifest.Files) == 0) {
 		http.Error(w, "no seed has been built yet", http.StatusNotFound)
 		return
 	}
@@ -129,7 +129,7 @@ func (s *Server) handleSeedFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	full := filepath.Join(s.seedDir, "bcat-seed", filepath.FromSlash(safe))
+	full := filepath.Join(s.seedRoot(), filepath.FromSlash(safe))
 	f, err := os.Open(full)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -200,13 +200,26 @@ func parseSummary(raw []byte) (festID, resourceID, revision string) {
 	return festID, resourceID, revision
 }
 
+// seedRoot is the folder holding the region directories. seed_dir may be a
+// `fest build -out` folder, with them under bcat-seed/, or the folder BAAS
+// serves consoles from (bcat-native/<title>), with them directly inside.
+// Pointing the dashboard at the served folder means it always shows the fest
+// consoles are actually getting, with nothing to update per fest.
+func (s *Server) seedRoot() string {
+	nested := filepath.Join(s.seedDir, "bcat-seed")
+	if info, err := os.Stat(nested); err == nil && info.IsDir() {
+		return nested
+	}
+	return s.seedDir
+}
+
 // seedStatus is what the dashboard's own panel shows: whether a seed has been
 // built, and which fest the files on disk actually belong to.
 func (s *Server) seedStatus() map[string]any {
 	if s.seedDir == "" {
 		return map[string]any{"configured": false}
 	}
-	root := filepath.Join(s.seedDir, "bcat-seed")
+	root := s.seedRoot()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return map[string]any{"configured": true, "built": false}

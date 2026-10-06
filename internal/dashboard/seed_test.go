@@ -191,3 +191,25 @@ func TestTheSeedEndpointsAreBehindTheToken(t *testing.T) {
 		t.Errorf("status = %d with the token, want 200", rec.Code)
 	}
 }
+
+func TestTheFolderConsolesAreServedFromWorksAsTheSeedDirectory(t *testing.T) {
+	// bcat-native/<title> holds the region folders directly, with no
+	// bcat-seed/ level. Pointing the dashboard there shows whichever fest is
+	// being served, with nothing to change when a new one is built.
+	h := newHarnessWithSeed(t, filepath.Join(writeSeed(t), "bcat-seed"))
+
+	rec := h.get(t, "/api/seed/manifest")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var manifest seedManifest
+	if err := json.Unmarshal(rec.Body.Bytes(), &manifest); err != nil {
+		t.Fatalf("decode manifest: %v", err)
+	}
+	if manifest.FestID != "NXTD-00042" || len(manifest.Files) != 4 {
+		t.Errorf("manifest = %+v, want the served fest's four files", manifest)
+	}
+	if rec := h.get(t, "/api/seed/file/eu-default/summary.yml"); rec.Code != http.StatusOK {
+		t.Errorf("file status = %d, want 200", rec.Code)
+	}
+}
