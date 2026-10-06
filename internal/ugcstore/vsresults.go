@@ -7,6 +7,7 @@ import (
 
 	"github.com/n-popescu/grid0plus/internal/db"
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // RecordVsResults stores one finished battle in every participant's in-game
@@ -34,6 +35,14 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 		return nil
 	}
 	top := historyFields(report, verdict)
+	if top["started_at"] == nil {
+		// The battle id starts with the match's own UTC start, YYYYMMDDTHHMMSS.
+		if ts, _, ok := strings.Cut(battleID, "_"); ok {
+			if t, err := time.ParseInLocation("20060102T150405", ts, time.UTC); err == nil {
+				top["started_at"] = &commonpb.Value{ValueType: &commonpb.Value_TimestampValue{TimestampValue: timestamppb.New(t)}}
+			}
+		}
+	}
 	teams := map[string][]*commonpb.Value{
 		"personal_data_team1": nil, "personal_data_team2": nil, "personal_data_team3": nil,
 	}
@@ -117,9 +126,16 @@ func withProfile(p *commonpb.Value, profiles map[string]*commonpb.Value) *common
 // carried by the verdict.
 func historyFields(report, verdict *commonpb.MapValue) map[string]*commonpb.Value {
 	out := map[string]*commonpb.Value{}
+	// The match context next to game_mode/game_rule/stage: Nextendo's server
+	// (NextendoNetwork/splatoon-3 1d6c062, facts only) copies these from the
+	// verdict so the history can name the season, the event and the Splatfest.
 	for _, k := range []string{"game_mode", "game_rule", "stage", "color_pattern",
-		"est_mmr_team1", "est_mmr_team2", "est_mmr_team3"} {
+		"est_mmr_team1", "est_mmr_team2", "est_mmr_team3",
+		"bankara_open_schedule_id", "event_parameter", "fest_id", "fest_region",
+		"fest_resource_id", "league_part_id", "mm_region", "mode", "season_id", "tournament_id"} {
 		if v := verdict.GetFields()[k]; v != nil {
+			out[k] = v
+		} else if v := report.GetFields()[k]; v != nil {
 			out[k] = v
 		}
 	}
