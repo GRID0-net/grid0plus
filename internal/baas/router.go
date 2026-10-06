@@ -82,6 +82,12 @@ type Config struct {
 	// tokens/passwords) to leave on. See internal/stubs.Config.LogBodies for
 	// the same pattern elsewhere in this codebase.
 	LogBodies bool
+
+	// BCATSeedDir is the native BCAT tree consoles are served from
+	// (<dir>/<title id>/<directory>/<file>, see internal/bcat.ReadNativeSeed).
+	// The emulator API hands the same files to emulators, which have no BCAT
+	// client of their own. Empty: emulators get no BCAT content.
+	BCATSeedDir string
 }
 
 // Server is the BAAS HTTP server.

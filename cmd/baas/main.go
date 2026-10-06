@@ -105,7 +105,8 @@ func main() {
 		LoginAttemptsPerWindow: cfg.BAAS.LoginAttemptsPerWindow,
 		LoginWindow:            time.Duration(cfg.BAAS.LoginWindowSeconds) * time.Second,
 
-		LogBodies: cfg.BAAS.LogBodies,
+		LogBodies:   cfg.BAAS.LogBodies,
+		BCATSeedDir: cfg.BCAT.SeedDir,
 	}, baas.Deps{
 		Store:          store,
 		Bus:            bus,

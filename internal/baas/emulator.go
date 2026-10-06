@@ -45,6 +45,8 @@ func (s *Server) registerEmulatorRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /emulator/v1/friend-requests", s.authenticated(s.emulatorSendFriendRequest))
 	mux.Handle("POST /emulator/v1/friend-requests/{id}/{action}", s.authenticated(s.emulatorSettleFriendRequest))
 	mux.Handle("DELETE /emulator/v1/friends/{id}", s.authenticated(s.emulatorRemoveFriend))
+	mux.Handle("GET /emulator/v1/bcat/{title}", s.authenticated(s.emulatorBCATList))
+	mux.Handle("GET /emulator/v1/bcat/{title}/{dir}/{file}", s.authenticated(s.emulatorBCATFile))
 }
 
 func (s *Server) emulatorUser(w http.ResponseWriter, r *http.Request, id string, p *db.Presence, visible bool) emulatorFriend {
