@@ -90,6 +90,7 @@ func (s *Server) resendKickoffVerdictAfterProfile(caller *session, ops []*syncpb
 		}
 		sent[battleID] = true
 		verdict, ok := s.docsFor(caller).snapshot(refereeResultPrefix + battleID)
+		s.log.Info("gamesync: referee profile", "battle", battleID, "user", caller.userID, "verdict_ready", ok)
 		if !ok {
 			continue
 		}
@@ -158,6 +159,9 @@ func (s *Server) publishRefereeVerdicts(ctx context.Context, ops []*syncpb.Write
 		if !strings.HasSuffix(battleID, "_"+caller.details.SessionID) {
 			continue
 		}
+		// One line per barrier, so the time a match takes to start can be
+		// read off the log: kickoff, each console's @@Profile, the report.
+		s.log.Info("gamesync: referee step", "battle", battleID, "user", caller.userID, "final", final)
 		if err := s.publishRefereeVerdict(caller.details.SessionID, battleID, name, final); err != nil {
 			s.log.Warn("gamesync: could not publish referee verdict", "battle", battleID, "error", err)
 		}
