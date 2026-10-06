@@ -29,7 +29,7 @@ import (
 // looks for in some modes, and any value Nintendo computes that the report
 // does not carry. Change historyFields.
 func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID string,
-	players []string, report, verdict *commonpb.MapValue, now time.Time) error {
+	players []string, report, verdict *commonpb.MapValue, profiles map[string]*commonpb.Value, now time.Time) error {
 	if battleID == "" || strings.Contains(battleID, "/") || report == nil {
 		return nil
 	}
@@ -38,6 +38,7 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 		"personal_data_team1": nil, "personal_data_team2": nil, "personal_data_team3": nil,
 	}
 	for _, p := range report.GetFields()["personal_result"].GetMapValue().GetFields() {
+		p = withProfile(p, profiles)
 		switch p.GetMapValue().GetFields()["team"].GetIntegerValue() {
 		case 1:
 			teams["personal_data_team1"] = append(teams["personal_data_team1"], p)
@@ -79,6 +80,28 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 		}
 	}
 	return nil
+}
+
+// withProfile adds the player's profile ({player_info: ...}) to one personal
+// result. The history reader (raw 0x7103dc4c10) takes each player's name,
+// weapon, gear and name plate from profile.player_info, parsed by
+// 0x71032ba410; without it every row showed no name and a default weapon.
+// The console writes player_info for each battle to @@Profile, not to its
+// report.
+func withProfile(p *commonpb.Value, profiles map[string]*commonpb.Value) *commonpb.Value {
+	f := p.GetMapValue().GetFields()
+	info := profiles[f["npln_user_id"].GetStringValue()]
+	if f == nil || info == nil || f["profile"] != nil {
+		return p
+	}
+	out := make(map[string]*commonpb.Value, len(f)+1)
+	for k, v := range f {
+		out[k] = v
+	}
+	out["profile"] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{
+		Fields: map[string]*commonpb.Value{"player_info": info},
+	}}}
+	return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: out}}}
 }
 
 // historyFields are the battle's top-level fields as the history screen

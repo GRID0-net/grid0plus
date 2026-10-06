@@ -63,6 +63,7 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 		if coop {
 			report.SessionUsers = s.sessionUsers(d.SessionID)
 		}
+		report.Profiles = battleProfiles(s.docsFor(caller), battleID)
 		if err := s.onRefereeReport(ctx, report); err != nil {
 			s.log.Warn("gamesync: could not record completed match", "battle", battleID, "error", err)
 		}
@@ -86,6 +87,22 @@ func (s *Server) sessionUsers(gameSession string) map[string]string {
 	for _, peer := range s.sessions {
 		if peer.details != nil && peer.details.SessionID == gameSession {
 			out[sessionID(peer.userSession)] = peer.userID
+		}
+	}
+	return out
+}
+
+// battleProfiles maps each player of one battle to the player_info their console
+// wrote at docs/@@Profile/<battle>/User/<user session>: name, weapon, gear,
+// name plate. The battle history reads it per player and shows a nameless
+// default player without it.
+func battleProfiles(st *store, battleID string) map[string]*commonpb.Value {
+	out := map[string]*commonpb.Value{}
+	for _, doc := range st.list("docs/@@Profile/" + battleID + "/User") {
+		f := doc.GetFields().GetFields()
+		uid, info := f["npln_user_id"].GetStringValue(), f["player_info"]
+		if uid != "" && info.GetMapValue() != nil {
+			out[uid] = proto.Clone(info).(*commonpb.Value)
 		}
 	}
 	return out

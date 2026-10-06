@@ -100,6 +100,9 @@ type RefereeReport struct {
 	// SessionUsers maps each live user-session id of this game session to
 	// its user: a coop personal_result is keyed by user session.
 	SessionUsers map[string]string
+	// Profiles maps each player's NPLN user id to the player_info their
+	// console wrote for this battle (see battleProfiles).
+	Profiles map[string]*commonpb.Value
 }
 
 // defaultSessionTTL is how long a gamesync session lasts.
