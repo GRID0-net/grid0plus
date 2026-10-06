@@ -181,9 +181,12 @@ func main() {
 					return err
 				}
 			}
-			if !report.Coop {
-				// Salmon Run history is a separate collection (CoopResults)
-				// whose shape nothing here has captured.
+			if report.Coop {
+				if err := ugcstore.RecordCoopResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
+					report.Fields, report.Verdict, report.SessionUsers, report.Profiles, now); err != nil {
+					return err
+				}
+			} else {
 				if err := ugcstore.RecordVsResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
 					report.Players, report.Fields, report.Verdict, report.Profiles, now); err != nil {
 					return err

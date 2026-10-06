@@ -41,7 +41,7 @@ Fields are stored as the encoded `MapValue`, so value types survive exactly.
 | `CommitDocuments` | update (with or without a field mask, with preconditions), delete, field transforms (`increment`, `maximum`, `minimum`, `set_server_value: REQUEST_TIME`); attachment operations refuse the batch |
 | `RunQuery` | lists the documents directly in the requested collections under `parent`, newest name first; with no match, the captured one-message `read_time` answer. The in-game battle history is this query over `VsResults`, which the server writes after each match (`RecordVsResults`) |
 
-The server also writes two kinds of `services/GameRecord` documents the console only reads: each player's `VsResults/<battle>` after a versus battle (`RecordVsResults`), and Salmon Run's point cards, `PointCardTotal/Data` and `PointCardRegular/<shift_id>`, after each job (`RecordCoopPointCards`). Without the point cards the Bonus Meter never moves.
+The server also writes two kinds of `services/GameRecord` documents the console only reads: each player's `VsResults/<battle>` after a versus battle (`RecordVsResults`) and `CoopResults/<job>` after a Salmon Run job (`RecordCoopResults`), each row carrying the player's `player_info` from the battle's `@@Profile` documents, and Salmon Run's point cards, `PointCardTotal/Data` and `PointCardRegular/<shift_id>`, after each job (`RecordCoopPointCards`). Without the point cards the Bonus Meter never moves.
 | `BulkGetDocuments`, attachments, short aliases, `IssueUploadUri` | **no** — `Unimplemented`, logged once by the gateway when a console asks |
 
 **`RunQuery` used to be Unimplemented too, and that broke the lobby.** It is
