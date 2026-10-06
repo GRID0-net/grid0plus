@@ -109,19 +109,42 @@ func TestOncePlayOpensTheChoiceIsLocked(t *testing.T) {
 	}
 }
 
-func TestAPlayerWhoNeverPickedCannotJoinAfterPlayOpens(t *testing.T) {
+func TestAPlayerWhoNeverPickedCanStillJoinWhilePlayIsOpen(t *testing.T) {
 	announced := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	svc, _, f := liveFest(t, announced)
 	svc.now = func() time.Time { return f.Start.Add(time.Hour) }
 
-	// A vote arriving after a ratio was published changes a number the players
-	// have already seen.
+	// The game asks a player who skipped the announcement to pick a team in
+	// the first half; refusing it is a communication error.
+	entry, err := svc.CreateFestEntry(context.Background(), &toyohrpb.CreateFestEntryRequest{
+		Parent:    "tenants/" + testTenant + "/fests/" + f.ID,
+		FestEntry: &toyohrpb.FestEntry{FestTeam: "alpha"},
+	})
+	if err != nil || entry.GetFestTeam() != "alpha" {
+		t.Fatalf("a late entry gave %v, %v; want the entry", entry, err)
+	}
+
+	svc.now = func() time.Time { return f.Timetable().End.Add(time.Minute) }
+	_, err = svc.CreateFestEntry(context.Background(), &toyohrpb.CreateFestEntryRequest{
+		Parent:    "tenants/" + testTenant + "/fests/" + f.ID,
+		FestEntry: &toyohrpb.FestEntry{FestTeam: "beta"},
+	})
+	if err != nil {
+		t.Fatalf("the existing entry should be returned after play: %v", err)
+	}
+}
+
+func TestAnEntryAfterPlayEndsIsRefused(t *testing.T) {
+	announced := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	svc, _, f := liveFest(t, announced)
+	svc.now = func() time.Time { return f.Timetable().End.Add(time.Minute) }
+
 	_, err := svc.CreateFestEntry(context.Background(), &toyohrpb.CreateFestEntryRequest{
 		Parent:    "tenants/" + testTenant + "/fests/" + f.ID,
 		FestEntry: &toyohrpb.FestEntry{FestTeam: "alpha"},
 	})
 	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("a late entry gave %v, want FailedPrecondition", err)
+		t.Errorf("an entry after play ended gave %v, want FailedPrecondition", err)
 	}
 }
 

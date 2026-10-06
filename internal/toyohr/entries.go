@@ -24,6 +24,8 @@ import (
 // the team, which is what a player who changes their mind in the lobby does;
 // after it, the fest is under way and letting somebody switch sides mid-fest
 // would move a vote that has already been counted into a published ratio.
+// A player with no entry can still pick one while play is open, as the game
+// expects; only after play ends is a new entry refused.
 func (s *Service) CreateFestEntry(
 	ctx context.Context, req *toyohrpb.CreateFestEntryRequest,
 ) (*toyohrpb.FestEntry, error) {
@@ -68,13 +70,17 @@ func (s *Service) CreateFestEntry(
 			s.log.Error("toyohr: load fest entry", "fest", festID, "error", err)
 			return nil, status.Error(codes.Internal, "")
 		}
-		// No entry, and play has started. Splatoon 3 makes players pick before
-		// a fest opens, so this is a console that did not — refused rather than
-		// admitted late, because a vote arriving after a ratio was published
-		// changes a number the players have already seen.
-		s.log.Info("toyohr: refused a fest entry after play opened",
-			"fest", festID, "user", userID, "phase", phase)
-		return nil, status.Error(codes.FailedPrecondition, "the fest has already started")
+		if phase != PhaseFirstHalf && phase != PhaseSecondHalf {
+			s.log.Info("toyohr: refused a fest entry after play ended",
+				"fest", festID, "user", userID, "phase", phase)
+			return nil, status.Error(codes.FailedPrecondition, "the fest is over")
+		}
+		// No entry, and play is open. Splatoon 3 lets a player who skipped the
+		// announcement pick a team when they first open the game during the
+		// fest, and Nextendo's server accepts entries through both halves; a
+		// refusal here is a communication error that locks them out of the
+		// whole fest. The late vote does move the vote ratio, which is the
+		// lesser harm.
 	}
 
 	region := strings.ToUpper(strings.TrimSpace(req.GetFestEntry().GetFestRegion()))
