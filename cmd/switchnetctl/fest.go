@@ -155,6 +155,16 @@ func festBuild(cfg config.Config, args []string) {
 		fail(err)
 	}
 
+	// 6. Serve it. Only an enabled fest: staging replaces whatever consoles
+	//    are being served, and a fest held back must not displace a live one.
+	staged := ""
+	if *enable && cfg.BCAT.SeedDir != "" {
+		staged, err = bcat.StageNativeSeed(*out, cfg.BCAT.SeedDir)
+		if err != nil {
+			fail(fmt.Errorf("serve the seed: %w", err))
+		}
+	}
+
 	tt := fest.Timetable()
 	fmt.Printf("built fest %s\n", fest.ID)
 	fmt.Printf("  resource:  %s\n", fest.Resource)
@@ -166,6 +176,11 @@ func festBuild(cfg config.Config, args []string) {
 		tt.Start.Format(time.RFC3339), tt.End.Format(time.RFC3339))
 	fmt.Printf("  results:   %s\n", tt.Close.Format(time.RFC3339))
 	fmt.Printf("  enabled:   %t\n", *enable)
+	if staged != "" {
+		fmt.Printf("  served:    %s\n", staged)
+	} else {
+		fmt.Printf("  served:    no (needs -enable and bcat.seed_dir)\n")
+	}
 	fmt.Println()
 	fmt.Println("Copy the seed folder onto each console's SD card, under Splatoon 3's")
 	fmt.Println("BCAT save data. The announced id, resource and revision above are")
@@ -241,7 +256,8 @@ communication error naming nothing.
   -start     when play opens, RFC3339. Must land on a two-hour boundary;
              a value that does not is moved down to one, with a notice
   -regions   comma-separated (default JP,US,EU,AP)
-  -enable    announce it immediately rather than leaving it scheduled and off
+  -enable    announce it immediately rather than leaving it scheduled and off,
+             and serve its packs from bcat.seed_dir in place of the current fest's
 
 The pack keys are generated, not asked for, for the same reason as above.
 They are written to the fest row so GetFestDecryptionKey can return them.

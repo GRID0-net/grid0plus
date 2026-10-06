@@ -295,9 +295,11 @@ bcat:
   # the build, and on the dashboard a request that never answers.
   converter_timeout: 120
 
-  # Where `switchnetctl fest build -out` writes its seed folders, and where the
-  # dashboard serves them from for the console-side installer
-  # (switch/bcat-installer/). Empty means those endpoints answer 404.
+  # The delivery cache served to consoles and emulators, laid out as
+  # <seed_dir>/<title id>/<directory>/<file>. `switchnetctl fest build -enable`
+  # stages the fest it builds here; the dashboard shows Splatoon 3's folder and
+  # serves it to the console-side installer (switch/bcat-installer/). Empty
+  # means nothing is served.
   seed_dir: ""
 
   # Rewrite {FEST} in an asset's in-pack path to the fest's own id.

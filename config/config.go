@@ -579,8 +579,10 @@ type BCAT struct {
 	// that never answers.
 	ConverterTimeout int `yaml:"converter_timeout"`
 
-	// SeedDir is where `switchnetctl fest build` writes its seed folders, and
-	// where the dashboard serves them from for the console-side installer.
+	// SeedDir is the delivery cache served to consoles and emulators, as
+	// <seed_dir>/<title id>/<directory>/<file>. `switchnetctl fest build
+	// -enable` stages the fest it builds there, and the dashboard shows and
+	// serves Splatoon 3's folder to the console-side installer.
 	//
 	// Empty means the seed endpoints answer 404. Doing the install by hand with
 	// JKSV works and does not scale past the second fest, which is why the

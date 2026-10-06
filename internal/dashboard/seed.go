@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/n-popescu/grid0plus/internal/bcat"
 )
 
 // Serving the BCAT delivery cache to the console-side installer.
@@ -202,13 +204,18 @@ func parseSummary(raw []byte) (festID, resourceID, revision string) {
 
 // seedRoot is the folder holding the region directories. seed_dir may be a
 // `fest build -out` folder, with them under bcat-seed/, or the folder BAAS
-// serves consoles from (bcat-native/<title>), with them directly inside.
+// serves consoles from: the root, with Splatoon 3's folder in it, or that
+// folder itself.
 // Pointing the dashboard at the served folder means it always shows the fest
 // consoles are actually getting, with nothing to update per fest.
 func (s *Server) seedRoot() string {
-	nested := filepath.Join(s.seedDir, "bcat-seed")
-	if info, err := os.Stat(nested); err == nil && info.IsDir() {
-		return nested
+	for _, nested := range []string{
+		filepath.Join(s.seedDir, "bcat-seed"),
+		filepath.Join(s.seedDir, bcat.Splatoon3TitleID),
+	} {
+		if info, err := os.Stat(nested); err == nil && info.IsDir() {
+			return nested
+		}
 	}
 	return s.seedDir
 }
