@@ -14,9 +14,9 @@
 //     read and it re-initialises forever;
 //   - a name that does not parse is never stored.
 //
-// GetDocument, CommitDocuments and RunQuery are served -- RunQuery always
-// with zero matches, see its own doc comment for why that is a real answer
-// and not a placeholder. Bulk reads and attachments stay Unimplemented
+// GetDocument, CommitDocuments and RunQuery are served. RunQuery lists stored
+// battle history and other matching documents; an empty query has the captured
+// read-time-only response. Bulk reads and attachments stay Unimplemented
 // until a console asks for them -- the gateway's "unimplemented" log is the
 // list.
 package ugcstore

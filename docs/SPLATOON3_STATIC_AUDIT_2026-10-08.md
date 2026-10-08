@@ -219,3 +219,38 @@ and readiness behavior before claiming the private-match startup issue is solved
   failed to bind test listeners, not an application assertion.
 - The raw capture folders were not changed. No successful private-match
   startup is claimed until consoles have exercised these changes together.
+
+
+## Wider server comparison and report-integrity follow-up
+
+The structural inventory now covers all **80 non-test Go source files outside
+Nextendo's generated proto tree**, including command helpers:
+`docs/audits/nextendo-s3-source-inventory-2026-10-08.json`. It records source
+hashes, functions and RPC literals against the fixed reference commit above.
+This is an index for auditing, not evidence that every line or every wire path
+has been independently validated.
+
+| Reference area | GRID0 counterpart and outcome |
+| --- | --- |
+| Auth, token JWTs, account identity, bans and client IP history | `internal/npln`, `internal/baas`: signed caller identity and persistent accounts; Nextendo account-service integration and operator tooling are architecture differences. Never import identity fallbacks. Anonymous/bootstrap method coverage still differs. |
+| Gateway, local transport, gRPC framing, capture replay and diagnostics | `internal/penne`, `internal/vermillion`, NPLN interceptors and `internal/splatdiag`: explicit live handlers rather than a generic capture-replay server. A replayed method in Nextendo is not automatically implemented in GRID0. |
+| Friends, presence and attributes | `internal/npln/friends.go`, `presence_service.go`, `presence_attributes.go`: shared BAAS graph, empty-selector friend enumeration, visibility checks and stream-based attributes already present. Keepalive pacing matches preserved hall captures. |
+| Matchmaking, parties, waiting thresholds, room/session addressing | `internal/matchmaking` and NPLN rooms/delegation: explicit party membership and configurable grace periods. Nextendo's relaxation policy is not the user's requested GRID0 policy. Successful startup/backfill/retirement still needs a complete multi-console trace. |
+| Gamesync document/transaction, Pia mailboxes and result delivery | `internal/gamesync`: fixes above plus authenticated report ownership on ordinary, lazy, transactional and deferred writes. Whole-roster personal results retain only the reporter's entry, stamp its verified account and reject contradictory identities. |
+| VS results and Coop point cards | `internal/ugcstore`: later individual reports now build history from accumulated verdict participants; durable report callbacks are serialized so stale snapshots cannot overwrite newer history. Individual report fields remain the input to scoring/deduplication. |
+| Ugcstore absence, RunQuery, drawings and public plaza | Core document/query/absence paths exist. `IssueUploadUri` is still unimplemented; Canola/Locker `SelectDocuments` still return empty. Nextendo reads publicly published locker/card documents, capped at 31/6, rather than treating private save contents as a source of lockers. These are real feature gaps, not established matchmaking blockers. |
+| Cloud saves, save administration and search | `internal/toyohr/cloud_save.go` and save store: live caller-owned delta merging and advancing versions exist. Both implementations receive a version timestamp but do not currently enforce optimistic concurrency; a reference comment alone is not proof of enforcement. Nextendo starter grants are operator policy, not protocol requirements. |
+| VS rotations, Challenge schedules and rotation APIs | GRID0 generates deterministic slot-based rotations. Nextendo additionally accepts a validated operator JSON file for timed Challenges; GRID0 does not expose equivalent event configuration. Empty schedules differ from an actively configured Challenge, not from a missing normal rotation. |
+| Fest schedule/keys, entries, teams, votes, midterm, final scoring, BCAT and news | GRID0 has separate event/BCAT publishing and scoring. The 90/45 vote, 70/35 popularity, 120/60 regular/challenge and 180/90 tricolor weights are already present. Nextendo's latest BCAT archive auto-discovery is a deployment mechanism, not permission to activate a cache-derived event. The removed fest remains disabled. |
+| Dashboard, flags, stats and source utilities | GRID0's own dashboard/configuration and DB-backed tooling replace Nextendo's file-backed operators and debug helpers. Capture/key-log helpers are diagnostic tooling, not gameplay dependencies. |
+
+The report regression tests reject another user's report through all four write
+paths, preserve a transaction after a refused write, reject a contradictory
+identity without a partial batch write, and verify that two successive personal
+reports retain both players in VS and Coop histories. Full checks and race tests
+passed; Gamesync/UGC race tests were repeated after the final regression was added.
+
+Remaining limits: no claim of complete behavioral parity, full decompilation or
+successful match startup. Missing upload/public-plaza/Challenge features need
+separate implementations and validation. Session retirement and peer readiness
+must be compared with a successful multi-console capture before changing them.
