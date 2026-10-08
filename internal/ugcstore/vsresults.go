@@ -46,7 +46,9 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 	teams := map[string][]*commonpb.Value{
 		"personal_data_team1": nil, "personal_data_team2": nil, "personal_data_team3": nil,
 	}
-	for _, p := range report.GetFields()["personal_result"].GetMapValue().GetFields() {
+	people, keys := resultPeople(report, verdict)
+	for _, key := range keys {
+		p := people[key]
 		p = withProfile(p, profiles)
 		switch p.GetMapValue().GetFields()["team"].GetIntegerValue() {
 		case 1:

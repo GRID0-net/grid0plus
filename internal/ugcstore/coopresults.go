@@ -68,7 +68,9 @@ func RecordCoopResults(ctx context.Context, store db.Store, tenant, battleID str
 
 	var players []string
 	var personal []*commonpb.Value
-	for key, entry := range rf["personal_result"].GetMapValue().GetFields() {
+	people, keys := resultPeople(report, verdict)
+	for _, key := range keys {
+		entry := people[key]
 		uid := entry.GetMapValue().GetFields()["npln_user_id"].GetStringValue()
 		if uid == "" {
 			uid = sessionUsers[key]
