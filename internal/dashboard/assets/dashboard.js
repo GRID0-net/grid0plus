@@ -959,8 +959,7 @@ $("#mm-modes").addEventListener("click", async (e) => {
       // Only ask when it is actually short. Confirming something that was going
       // to happen anyway is the kind of dialog people learn to click through.
       if (m && m.waiting.length < m.size &&
-          !confirm(`Start ${matchmakingModeName(mode)} with ${m.waiting.length} of ${m.size} players?\n\n` +
-                   `Whether the game accepts an undersized match is not known — that is what this finds out.`)) {
+          !confirm(`Start ${matchmakingModeName(mode)} with ${m.waiting.length} of ${m.size} players?`)) {
         return;
       }
       renderMatchmaking({ ...(await api(`/api/matchmaking/modes/${encodeURIComponent(mode)}/start`,
