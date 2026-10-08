@@ -3,7 +3,9 @@ package npln
 import (
 	"testing"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
@@ -29,8 +31,13 @@ func TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot(t *testing.T) {
 
 	// An established console only writes after seeing an existing, empty
 	// record (2026-09-24 hardware); zero messages made it write nothing.
-	if empty, err := saves.GetSaveRecord(ctx, get); err != nil || len(empty.GetSaveData().GetFields()) != 0 || empty.GetName() == "" {
+	var header metadata.MD
+	if empty, err := saves.GetSaveRecord(ctx, get, grpc.Header(&header)); err != nil || len(empty.GetSaveData().GetFields()) != 0 || empty.GetName() == "" {
 		t.Fatalf("first boot GetSaveRecord = %v, %v; want a named, empty record", empty, err)
+	}
+
+	if types := header.Get("npln-grpc-type"); len(types) != 1 || types[0] != "BidirectionalStreaming" {
+		t.Fatalf("GetSaveRecord header = %v, want captured BidirectionalStreaming", types)
 	}
 
 	first, err := saves.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{

@@ -537,6 +537,11 @@ func (s *Server) streamInterceptor(
 // on every one -- Unary, ServerStreaming or BidirectionalStreaming -- per
 // NextendoNetwork/splatoon-3's measurement (facts only, not its code).
 func grpcKind(info *grpc.StreamServerInfo) string {
+	// Both preserved Nextendo hall captures use this header for GetSaveRecord.
+	// Our stream registration is a framing workaround, not the wire contract.
+	if info.FullMethod == "/nn.npln.toyohr.v1.CloudSave/GetSaveRecord" {
+		return "BidirectionalStreaming"
+	}
 	switch {
 	case info.IsClientStream && info.IsServerStream:
 		return "BidirectionalStreaming"
