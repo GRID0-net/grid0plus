@@ -118,7 +118,7 @@ func (w *watchers) publish(scope string, changes []*syncpb.DocumentChange) {
 				out := &syncpb.DocumentChange{
 					TargetId:           targetID,
 					DocumentChangeType: change.GetDocumentChangeType(),
-					Document:           change.GetDocument(),
+					Document:           recipientVerdict(change.GetDocument(), sub.userID),
 				}
 				select {
 				case sub.changes <- out:

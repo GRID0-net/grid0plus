@@ -108,7 +108,7 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 		}}}},
 		"personal_result": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 			"alice": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-				"team": intValue(1), "kill_num": intValue(5),
+				"team": intValue(1), "kill_num": intValue(5), "npln_user_id": stringValue("alice"),
 			}}}},
 		}}}},
 	})
