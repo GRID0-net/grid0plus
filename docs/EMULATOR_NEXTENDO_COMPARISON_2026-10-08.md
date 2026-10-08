@@ -3,6 +3,8 @@
 This comparison uses fixed GitHub/source snapshots. Missing commit hashes do not
 prove missing behavior, and changed-file counts include branding and build files.
 No Nextendo implementation was copied and no emulator release was rebuilt here.
+The comparison below describes the initial snapshots; implemented follow-ups are
+listed at the end.
 
 | Repository | Compared main revision |
 | --- | --- |
@@ -100,3 +102,35 @@ these fixes resolves the current private-match startup problem.
 - citron: `577130598ff8` — sockets: never park a UDP socket the guest has shut down
 - citron: `1e267185d138` — Add the Xenoblade Chronicles X: Definitive Edition 2.0.0 NPLN certificate patch
 - citron: `74dfd6536bef` — Add Plants vs. Zombies: Battle for Neighborville online groundwork
+
+
+## Implemented follow-up
+
+- GRID0 Ryujinx `f742a32`: UDP errors no longer imply a stream hangup.
+  HLE Release build passed with zero warnings/errors. Five NUnit cases exercise
+  the real `ManagedSocketPollManager.Poll` and `SocketHelpers.Select` with an
+  error-reporting pollable socket: two UDP and three TCP connection/binding
+  combinations. All five passed. The tests do not establish macOS runtime parity.
+- GRID0 Citron `240147ee8`: LRU callbacks returning true now stop iteration.
+  The return-type query matches the actual lvalue callback/object invocation,
+  including callbacks taking mutable references. A new Catch2 regression is
+  included in the normal test target. A standalone program using the actual
+  cache header failed its early-stop assertion before the fix and passed after;
+  void callbacks still visit all eligible entries.
+- GRID0 Citron `1c48a20ee`: SSL certificate queries preserve the required size
+  and count, but write the chain only into an adequate output descriptor.
+  Focused C++ checks compiled the unchanged handler and serializer bodies from
+  the edited source with test IPC/backend objects. Missing, undersized, exact
+  and larger buffers passed, as did the single-certificate serialization option.
+  These checks are not a complete emulator build or a live guest TLS test.
+
+The isolated Citron checkout's required source submodules were fetched. CMake
+configuration then stopped because the local Boost headers/context dependency
+is absent. No complete Citron build or normal Catch2 target run is claimed.
+The fixes were committed and pushed to the two GRID0 repositories on main.
+No tag, release asset or CI release workflow was created; installed emulators
+will not gain these changes until an updated build is installed.
+
+Remaining comparison work includes macOS rumble behavior, Citron audio accounting,
+Vulkan descriptor continuity/scattered storage and Switch Sports HID/GPU support.
+Those retain the validation requirements above and are not presumed Splatoon fixes.
