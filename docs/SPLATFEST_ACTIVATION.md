@@ -42,12 +42,19 @@ cd /opt/switchnet
 sudo install -d -o switchnet -g switchnet /opt/switchnet/data/fest-builds
 sudo -u switchnet bin/switchnetctl -config config/config.yaml fest build \
   -assets /path/to/game-ready/fest-assets \
-  -out /opt/switchnet/data/fest-builds/NXTD-00042 \
-  -id NXTD-00042 -resource nxtd-example \
+  -out /opt/switchnet/data/fest-builds/JUEA-00042 \
+  -id JUEA-00042 -resource example \
   -start 2026-10-03T00:00:00Z -regions JP,US,EU,AP
 ```
 
-**Do not add `-enable` yet.** `fest build` writes the packs and their
+**The fest ID must contain the region letters `JUEA`** (Nintendo's own IDs
+are `JUEA-xxxxx`). The game checks the ID for the letter of the console's
+region (J, U, E or A; `FUN_7103531410` in v11.3.0) and treats a fest without
+it as invalid for that console, which shows as BcatInvalid. An ID such as
+`NXTD-00019` fails on every console.
+
+**Do not add `-enable` yet** unless you want it live now: `-enable` both
+announces the fest and stages its packs (step 3) in one go. `fest build` writes the packs and their
 `summary.yml` files, generates matching keys and revision, and registers a
 held fest in the database. Keep the command's printed ID, resource, revision,
 and phase times. The start is when play opens; the announcement phase begins
@@ -57,6 +64,10 @@ read the assets and key-material file; keep that file outside the repository.
 
 ## 3. Stage the files on the native BCAT server
 
+`fest build -enable` does this step itself when `bcat.seed_dir` is set,
+replacing the served fest in one swap. The manual procedure below is for a
+fest built held and announced later.
+
 The current VM's `switchnet-stubs` unit sets `SWITCHNET_BCAT_SEED_DIR` to
 `/opt/switchnet/data/bcat-native`. The native reader expects the Splatoon 3
 title ID *between* that root and the regional directories. For the example
@@ -65,7 +76,7 @@ build above:
 ```sh
 sudo install -d -o switchnet -g switchnet \
   /opt/switchnet/data/bcat-native/0100c2500fc20000
-sudo cp -a /opt/switchnet/data/fest-builds/NXTD-00042/bcat-seed/. \
+sudo cp -a /opt/switchnet/data/fest-builds/JUEA-00042/bcat-seed/. \
   /opt/switchnet/data/bcat-native/0100c2500fc20000/
 sudo chown -R switchnet:switchnet \
   /opt/switchnet/data/bcat-native/0100c2500fc20000
