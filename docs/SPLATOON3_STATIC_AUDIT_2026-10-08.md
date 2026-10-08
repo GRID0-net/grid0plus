@@ -378,3 +378,29 @@ one run. Existing Versus startup captures cannot settle this. No weapon
 assignment patch has been made from the observation alone. The preceding
 early-referee fix is already deployed but its visible timing benefit also
 awaits a hardware observation. Further deployment is explicitly on hold.
+
+## Follow-up: successful rematch bypasses its grace window
+
+Operator confirmed that rematching now works, but starts without the requested
+20-second wait. Live journal evidence for retained Coop session
+83ec2ee1-4a78-4fbb-9486-d7cb7d03e10d: reopening at
+2026-10-08T16:31:03.911Z, new referee request at 16:31:09.724Z and
+profiles at 16:31:09.794Z/.807Z. No grace-expiry log precedes this kickoff.
+`noteAgain` currently cancels the timer on a client cp=false/ebf=false lock.
+The two-player minimum patch permits the controller to progress after its
+120-stable-update check at 0x710389f870; keeping the timer alone does not
+enforce the open-lobby interval.
+
+Do not merely sleep in the referee handler or withhold profile readiness:
+that would delay startup after the client has already left its open lobby,
+without establishing that additional players can join. A safe client-side
+solution still needs the backend-state query at 0x710389f7b0 mapped to the
+open/locked session flags. Increasing the stable count globally would also
+change fresh-match behavior, and crossing its separate 600-update branch at
+0x710389f76c without understanding it is not a defensible timing patch.
+
+The live admin snapshot now excludes phase `results` without deleting the
+retained Gamesync/matchmaking session. A later rematch_waiting or starting
+phase makes it visible again. Wire tests verify disappearance and reappearance
+on the same retained session. These changes are local only: deployment is
+on hold while the operator plays.
