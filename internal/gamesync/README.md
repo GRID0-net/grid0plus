@@ -63,7 +63,7 @@ process's own map and there is nothing for a signature to buy. A refresh token i
 **single-use** — the old session is replaced, so a leaked one stops working the
 moment the legitimate console refreshes.
 
-## Writes are atomic, and that is the point
+## Rematches and observed phases
 
 Public rematches reuse a Gamesync session, not a waiting matchmaking ticket.
 An explicit `__gs/m` reopen (`cp` and `ebf` true) starts a 20-second window
@@ -79,6 +79,8 @@ The dashboard reads committed session events through `SessionPhase`: kickoff,
 each player's profile, results, and subsequent session reopening/locking.
 Receiving every profile is labelled "ready", not proof that gameplay began.
 No match duration or presence timeout drives these transitions.
+
+## Writes are atomic, and that is the point
 
 `apply` runs two passes: check every precondition against the current tree, then
 mutate. A batch that fails changes nothing.
