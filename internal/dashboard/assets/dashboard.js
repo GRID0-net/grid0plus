@@ -18,7 +18,7 @@ function matchmakingModeName(mode) {
   const names = {
     regular_match_config: "Regular Battle (Turf War)",
     bankara_match_open_oneshot_config: "Anarchy Battle (Open)",
-    coop_regular_config: "Salmon Run Next Wave",
+    coop_regular_config: "Salmon Run",
     coop_bigrun_config: "Big Run",
     coop_private_config: "Salmon Run — Private Job",
     coop_team_contest_config: "Eggstra Work",
@@ -37,7 +37,7 @@ function matchmakingModeName(mode) {
     x_match_lower_oneshot_config: "X Battle — Lower Power Bracket",
     x_match_upper_oneshot_config: "X Battle — Upper Power Bracket",
     regular: "Regular Battle (Turf War)", turf: "Regular Battle (Turf War)",
-    bankara: "Anarchy Battle", coop: "Salmon Run Next Wave",
+    bankara: "Anarchy Battle", coop: "Salmon Run",
     private: "Private Battle", join_room: "Join Friend’s Room",
   };
   if (names[key]) return names[key];
