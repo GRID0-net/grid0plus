@@ -346,3 +346,35 @@ initial snapshots and direct reads use the same projection. Profile submission
 re-publishes the verdict immediately; no timer or readiness bypass is added.
 Final report behavior remains status 1. Tests cover wire reads and live watches
 for two recipients with different readiness. Hardware timing is still pending.
+
+## Follow-up: Salmon Run lobby weapon versus wave-one assignment
+
+The dashboard now uses the short label Salmon Run; Next Wave was Nintendo's
+Splatoon 3 subtitle, not a distinct server mode. This presentation change is
+committed locally and held from deployment at the operator's request.
+
+No per-player wave weapon is synthesized by GRID0's referee path. The normal
+schedule advertises four `main_weapons`, matching the reference's schedule
+role; `publishRefereeVerdict` copies the client's job context. Normal uses
+schedule kind 1, Big Run 2 and Eggstra Work 3. Do not randomize the schedule
+per request: all players must see the same rotation. Eggstra Work permits
+weapon selection, unlike the suspected normal-job issue; Nintendo describes
+that exception at https://www.nintendo.com/au/news-and-articles/splatoon-3-the-first-eggstra-work-online-event-is-almost-here/.
+
+Direct reads from v11.3.0 found `SelectedWeaponIndex` at 0x7104fc0cc7,
+referenced at 0x7103505020, 0x71035051d4, 0x7103505240,
+0x71035076ec and 0x710368eca0. The first reader stores a parameter at
+object+0x3c; 0x710368eca0 registers a property at object+0x20. Neither is
+yet proof of wave-one assignment. `CoopMainWeaponArray` at 0x7104fb620d
+has readers at 0x7103301ef4/0x710330237c/0x710330295c. The `random_seed`
+string at 0x7104fa26d0 has a reader at 0x7103327fc8; its role in the
+specific normal-job assignment is not established. `job_id` is written by
+the client at 0x71032c045c. These landmarks must not be treated as evidence
+that changing one of these fields will safely shuffle wave weapons.
+
+Open: a normal-job startup trace needs to distinguish selected practice
+weapon, peer-agreed job state and the first-wave weapon, across more than
+one run. Existing Versus startup captures cannot settle this. No weapon
+assignment patch has been made from the observation alone. The preceding
+early-referee fix is already deployed but its visible timing benefit also
+awaits a hardware observation. Further deployment is explicitly on hold.
