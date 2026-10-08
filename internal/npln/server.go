@@ -106,6 +106,9 @@ type Server struct {
 	publicIP string
 	// adminToken guards the operator API. Empty means it is not served at all.
 	adminToken string
+	// Reads committed Gamesync events; queue membership alone cannot tell a
+	// post-match lobby from an active match in the same game session.
+	sessionPhase func(string, int) string
 
 	// messages is every user's mailbox for the Messaging service. In memory,
 	// like queue above -- see internal/messaging's package doc for why.

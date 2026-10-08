@@ -4,6 +4,45 @@ This audit is not a declaration that a particular hardware failure is solved.
 The follow-up implementation status below records changes separately. Findings below
 distinguish code defects, reference differences, and unconfirmed client paths.
 
+## Follow-up: retained lobby and rematch minimum
+
+The installed `s3smallmatch_bypass` originally patched only RVAs `0x38a420c`,
+`0x32c1c7c`, and `0x3898160`. Independent disassembly of the same v11.3.0
+flat image found another minimum in the lobby controller:
+
+- `0x389f4b4` loads 8, stored at controller+`0x214` by `0x389f4bc`.
+- `0x389f748` calls the same participant-count helper (`0x15173d0`) used
+  by the original three sites. `0x389f750` compares its result to that minimum;
+  the less-than branch resets the stable-count counter at +`0x21c`.
+- `0x389f75c` also requires the current count to equal the preceding count
+  at +`0x218`. That separate stability comparison is preserved.
+- `0x389f864` repeats the minimum check after an indirect backend query;
+  `0x389f870` requires 120 stable updates, and `0x389f8b4` requires that
+  backend count to agree with the participant-count helper before transition
+  to state `0x18`. Neither barrier is removed.
+
+Toolbox 0.8.1 changes the two minimum comparisons to `cmp w0, #2` and keeps
+the original three patch records. The identity of the indirect backend query
+and whether these sites are the live rematch blocker remain unverified on
+hardware. This patch does not fake asynchronous JoinSession success: the
+separate ActivateBackFill handler at `0x38a5800` still requires operation
+status 3 (`0x38a5bb8`) and retains its 1920-update timeout (`0x38a59b8`).
+
+Capture cross-check (original files unchanged): the preserved Nextendo
+`nxm.out.jsonl` has one eight-user kickoff; today's failed GRID0 capture has
+one one-user kickoff. The older `again.txt` has two two-user kickoffs. The
+successful retry today has both profiles in server logs, unlike the failed
+attempt. These observations do not establish that lowering lobby minima
+fixes the intermittent peer connection failure.
+
+GRID0's normal grace timer operates on waiting tickets. The rematch's
+retained session bypasses that queue; the dashboard does not control it.
+The separate Gamesync timer now handles public Versus too, deduplicates
+callers' retries, keeps the first Versus deadline, restarts for an additional
+Coop caller, and cancels on a client lock. The admin API now exposes a phase
+from committed battle/session events rather than labelling retained sessions
+as evidence of gameplay. End-to-end rematches need a later operator test.
+
 ## Inputs and reproducibility
 
 - GRID0+ local main: `68adecdd723f9881525039b44d273cbe475c0e20`.

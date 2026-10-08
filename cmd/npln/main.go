@@ -198,6 +198,7 @@ func main() {
 	if err != nil {
 		service.Fatal(log, "build gamesync", err)
 	}
+	srv.SetSessionPhaseReader(sync.SessionPhase)
 
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)
 	if err != nil {

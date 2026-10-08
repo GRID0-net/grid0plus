@@ -300,3 +300,37 @@ func TestTheSnapshotShowsWaitsInSecondsNotDurationStrings(t *testing.T) {
 		t.Errorf("userId = %q", waiting[0].UserID)
 	}
 }
+
+func TestTheAdminSnapshotReportsTheObservedRematchPhase(t *testing.T) {
+	h, admin := adminHarness(t)
+	h.srv.SetSessionPhaseReader(func(scope string, players int) string {
+		if scope == "" || players != 2 {
+			t.Fatalf("phase lookup = %q/%d", scope, players)
+		}
+		return "rematch_waiting"
+	})
+	h.srv.queue.SetModeSize("turf_war", 8)
+	for _, user := range []string{"alice", "bob"} {
+		if _, _, err := h.srv.queue.Enqueue(user, "turf_war"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok, err := h.srv.queue.ForceMatch("turf_war"); err != nil || !ok {
+		t.Fatalf("force match: %v, %v", ok, err)
+	}
+	rec := adminDo(t, admin, "GET", "/matchmaking", "test-admin-token", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("snapshot: %d", rec.Code)
+	}
+	var body struct {
+		Sessions []struct {
+			Phase string `json:"phase"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Sessions) != 1 || body.Sessions[0].Phase != "rematch_waiting" {
+		t.Fatalf("wire phase = %+v", body.Sessions)
+	}
+}

@@ -114,6 +114,7 @@ type adminSession struct {
 	Players   []string  `json:"players"`
 	Host      string    `json:"host"`
 	CreatedAt time.Time `json:"createdAt"`
+	Phase     string    `json:"phase"`
 	// Forced is true when this match has fewer players than its mode CURRENTLY
 	// wants -- either it was force-started, or the mode was resized afterwards.
 	// The page says "undersized" rather than "forced" for that reason.
@@ -158,9 +159,18 @@ func (h *AdminHandler) snapshotBody() (adminSnapshot, map[string]int) {
 	}
 
 	for _, s := range snap.Sessions {
-		out.Sessions = append(out.Sessions, sessionBody(s, sizeOf))
+		body := sessionBody(s, sizeOf)
+		if h.srv != nil && h.srv.sessionPhase != nil {
+			body.Phase = h.srv.sessionPhase(s.ID, len(s.Players))
+		}
+		out.Sessions = append(out.Sessions, body)
 	}
 	return out, sizeOf
+}
+
+// SetSessionPhaseReader wires Gamesync into the operator API before serving.
+func (s *Server) SetSessionPhaseReader(reader func(string, int) string) {
+	s.sessionPhase = reader
 }
 
 // sessionBody renders a session, working out whether it was undersized.

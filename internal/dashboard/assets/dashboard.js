@@ -883,6 +883,7 @@ function renderMatchmaking(mm) {
           <div class="meta">${s.players.length} player${s.players.length === 1 ? "" : "s"} ·
             host ${escape(playerName(s.host))} ·
             ${new Date(s.createdAt).toLocaleTimeString()}</div>
+          <div class="meta">${escape(({connected: "Session connected", starting: "Match starting", ready: "All player profiles received", results: "Results reported", rematch_waiting: "Waiting for rematch", rematch_locked: "Rematch lobby locked"})[s.phase] || "Session phase unavailable")}</div>
           <div class="meta">${s.players.map((p) => escape(playerName(p))).join(", ")}</div>
         </div>`;
       return card;

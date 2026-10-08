@@ -65,6 +65,21 @@ moment the legitimate console refreshes.
 
 ## Writes are atomic, and that is the point
 
+Public rematches reuse a Gamesync session, not a waiting matchmaking ticket.
+An explicit `__gs/m` reopen (`cp` and `ebf` true) starts a 20-second window
+for Versus as well as Coop. Versus keeps the first deadline; an additional
+Coop caller restarts it. Repeated writes from the same caller do not extend it,
+and a client lock cancels the old callback. Directly created private rooms are
+excluded. The earlier `bfmin=0` experiment has been removed; the captured
+value remains 1. The timer alone did not resolve the earlier hardware rejoin
+failure, so this behavior still needs testing with Toolbox 0.8.1's additional
+lobby minimum-player comparisons.
+
+The dashboard reads committed session events through `SessionPhase`: kickoff,
+each player's profile, results, and subsequent session reopening/locking.
+Receiving every profile is labelled "ready", not proof that gameplay began.
+No match duration or presence timeout drives these transitions.
+
 `apply` runs two passes: check every precondition against the current tree, then
 mutate. A batch that fails changes nothing.
 
