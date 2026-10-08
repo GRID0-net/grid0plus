@@ -621,6 +621,7 @@ func (s *Server) LazyWriteDocuments(
 // transaction is a set of writes waiting to be committed together.
 type transaction struct {
 	userID    string
+	scope     string
 	startedAt time.Time
 }
 
@@ -635,7 +636,7 @@ func (s *Server) BeginTransaction(
 
 	token := randomToken()
 	s.mu.Lock()
-	s.txns[token] = &transaction{userID: caller.userID, startedAt: s.now()}
+	s.txns[token] = &transaction{userID: caller.userID, scope: scopeOf(caller), startedAt: s.now()}
 	s.mu.Unlock()
 
 	return &syncpb.BeginTransactionResponse{Transaction: []byte(token)}, nil
@@ -660,7 +661,7 @@ func (s *Server) CommitTransaction(
 		return nil, status.Error(codes.Unimplemented, "")
 	}
 
-	if err := s.claimTransaction(string(req.GetTransaction()), caller.userID); err != nil {
+	if err := s.claimTransaction(string(req.GetTransaction()), caller); err != nil {
 		return nil, err
 	}
 
@@ -691,13 +692,13 @@ func (s *Server) RollbackTransaction(
 	// A rollback of something that is already gone is not an error: a client
 	// that lost its connection mid-transaction retries the rollback, and
 	// failing it leaves the client believing state is still pending.
-	_ = s.claimTransaction(string(req.GetTransaction()), caller.userID)
+	_ = s.claimTransaction(string(req.GetTransaction()), caller)
 	return &emptypb.Empty{}, nil
 }
 
 // claimTransaction removes a transaction, checking that it belongs to the
 // caller.
-func (s *Server) claimTransaction(token, userID string) error {
+func (s *Server) claimTransaction(token string, caller *session) error {
 	if token == "" {
 		return status.Error(codes.InvalidArgument, "no transaction")
 	}
@@ -709,7 +710,7 @@ func (s *Server) claimTransaction(token, userID string) error {
 	if !ok {
 		return status.Error(codes.FailedPrecondition, "unknown or already-finished transaction")
 	}
-	if txn.userID != userID {
+	if txn.userID != caller.userID || txn.scope != scopeOf(caller) {
 		// Somebody else's transaction. NotFound rather than PermissionDenied,
 		// so a caller does not learn that a token they guessed is real.
 		return status.Error(codes.FailedPrecondition, "unknown or already-finished transaction")

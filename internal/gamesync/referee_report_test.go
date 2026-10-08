@@ -45,6 +45,11 @@ func TestOnlyCommittedFinalRefereeReportsReachTheBattleRecorder(t *testing.T) {
 	write("docs/@@RefereeReport/20260905T010000_room-1/User/alice", map[string]*commonpb.Value{
 		"personal_result": intValue(2),
 	})
+	// A client-supplied battle name must not move a completed report outside
+	// the game session established by its token.
+	write("docs/@@RefereeReport/20260905T010000_other-room/User/alice", map[string]*commonpb.Value{
+		"team_result": intValue(1), "personal_result": intValue(2),
+	})
 	if len(reports) != 1 || reports[0].BattleID != "20260905T010000_room-1" ||
 		reports[0].UserID != "alice" || len(reports[0].Players) != 2 {
 		t.Fatalf("authenticated report callback = %v", reports)
