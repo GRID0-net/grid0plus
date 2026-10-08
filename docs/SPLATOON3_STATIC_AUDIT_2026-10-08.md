@@ -293,3 +293,37 @@ Remaining limits: no claim of complete behavioral parity, full decompilation or
 successful match startup. Missing upload/public-plaza/Challenge features need
 separate implementations and validation. Session retirement and peer readiness
 must be compared with a successful multi-console capture before changing them.
+
+## Follow-up: Battle Time startup delay
+
+Direct disassembly of v11.3.0 found a referee-state wait in
+`0x71038985e8`. At `0x71038986a0`, referee state 1 selects the timer path;
+`0x710389875c` compares the converted timer against 301, then
+`0x7103898788` periodically calls `0x71014ffa90`. At
+`0x710389878c` a 900 threshold selects a fallback to state 9 through
+`0x7103898794`. Assuming 60 update units per second, these thresholds are
+approximately 5 and 15 seconds. The timer's unit and mapping to the visible
+BATTLE TIME card still need live confirmation; these are not instructions
+that explicitly sleep for seconds.
+
+The existing referee decompile and fresh instruction reads agree:
+`0x71014fe4b0` maps response status -1 to state 2 when the current state is
+below 2 (`0x71014fea64`); status 0 instead maps state 3 to 4
+(`0x71014fea78`). GRID0 immediately emits status 0. An early intermediate
+referee response is therefore a concrete investigation target, not permission
+to fabricate status -1 without a wire or live-client check.
+
+The preserved Nextendo match has kickoff at epoch 1790782358.7908537 and
+profile at 1790782373.806565, a 15.016-second interval. The October 8 GRID0
+failed match similarly has kickoff at 15:35:06.502664Z and profile at
+15:35:21.516672Z, 15.014 seconds. A profile write is not a timestamp for
+when the card disappears or loading starts. Both intervals show that the
+long interval is also present in the reference; no synchronized screen
+recording exists here to assign it entirely to the card.
+
+Server timer review: normal queue grace precedes session delivery; the live
+VM config has Versus grace 10 seconds and Coop grace 20 seconds. The rematch
+Gamesync grace is 20 seconds. Track's optional minimum hold defaults to zero
+and is not configured on the VM; synthetic PLACING adds one second only if
+needed. Gamesync refresh republishes every three seconds. Referee publication
+itself has no delayed timer. No timing bypass was added from this finding.
