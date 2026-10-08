@@ -156,6 +156,16 @@ caller's *own* outgoing packets, so each console got its own packets back
 stamped "from the peer". From then on the joiner addressed its packets to
 itself, and the private room's "ready" step ended in a communication error.
 
+Peer state is retained per authenticated sender within a game session, so a
+late or reconnected watch receives each sender's latest committed inbox state.
+The initial watch snapshot uses backpressure; live notification overflow ends
+the stream explicitly rather than silently losing peer updates. Tokens continue
+to determine identity and room scope, including transaction ownership.
+
+Versus final verdicts are projected for each recipient: a player remains at the
+kickoff status until their own personal result arrives. The shared accumulated
+verdict remains unchanged; Salmon Run uses its existing result shape.
+
 ## Not implemented, and why
 
 | RPC | Why |
