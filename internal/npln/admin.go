@@ -163,6 +163,11 @@ func (h *AdminHandler) snapshotBody() (adminSnapshot, map[string]int) {
 		if h.srv != nil && h.srv.sessionPhase != nil {
 			body.Phase = h.srv.sessionPhase(s.ID, len(s.Players))
 		}
+		// Retention keeps Again! working; it does not make a completed battle
+		// live. A later reopen or kickoff makes this session visible again.
+		if body.Phase == "results" {
+			continue
+		}
 		out.Sessions = append(out.Sessions, body)
 	}
 	return out, sizeOf
