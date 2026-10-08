@@ -129,7 +129,8 @@ type Server struct {
 	docs  *storeSet
 	watch *watchers
 	// again holds each Salmon Run session's "Again!" grace window.
-	again againQueue
+	again   againQueue
+	mailbox peerMailbox
 	// A report from any player may update the same battle verdict. Serialize
 	// read/merge/write so simultaneous reports cannot discard one another.
 	refereeMu sync.Mutex
@@ -563,11 +564,7 @@ func (s *Server) WriteDocuments(
 			"error", err)
 		return nil, err
 	}
-	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
-	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
-	s.observeRefereeReports(ctx, req.GetWriteOperations())
-	s.resendKickoffVerdictAfterProfile(caller, req.GetWriteOperations())
-	s.noteAgain(caller, req.GetWriteOperations())
+	s.afterWrites(ctx, caller, req.GetWriteOperations(), commit.changes)
 	if len(req.GetDefermentOperations()) > 0 {
 		caller, _ := callerFrom(ctx)
 		s.stageDeferments(caller, req.GetDefermentOperations())
@@ -609,13 +606,12 @@ func (s *Server) LazyWriteDocuments(
 		}
 	}
 
+	s.seedRoomDocuments(caller, ops)
 	_, commit, err := s.docsFor(caller).apply(ops)
 	if err != nil {
 		return nil, err
 	}
-	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
-	s.publishRefereeVerdicts(ctx, ops)
-	s.observeRefereeReports(ctx, ops)
+	s.afterWrites(ctx, caller, ops, commit.changes)
 
 	return &syncpb.LazyWriteDocumentsResponse{CommitTime: timestamppb.New(commit.at)}, nil
 }
@@ -676,9 +672,7 @@ func (s *Server) CommitTransaction(
 	if err != nil {
 		return nil, err
 	}
-	s.watch.publish(scopeOf(caller), s.normalizeSessionChanges(caller, commit.changes))
-	s.publishRefereeVerdicts(ctx, req.GetWriteOperations())
-	s.observeRefereeReports(ctx, req.GetWriteOperations())
+	s.afterWrites(ctx, caller, req.GetWriteOperations(), commit.changes)
 
 	return &syncpb.CommitTransactionResponse{
 		WriteResults: results,
@@ -739,7 +733,8 @@ func (s *Server) claimTransaction(token, userID string) error {
 func (s *Server) KeepUserSession(
 	stream grpc.BidiStreamingServer[syncpb.KeepUserSessionRequest, syncpb.KeepUserSessionResponse],
 ) error {
-	ctx := stream.Context()
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
 	caller, ok := callerFrom(ctx)
 	if !ok {
 		return errUnauthenticated
@@ -776,7 +771,7 @@ func (s *Server) KeepUserSession(
 				close(done)
 				return
 			}
-			s.handleWatchRequest(caller, sub, req, out)
+			s.handleWatchRequest(ctx, caller, sub, req, out)
 		}
 	}()
 
@@ -784,6 +779,8 @@ func (s *Server) KeepUserSession(
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-sub.overflow:
+			return status.Error(codes.ResourceExhausted, "watch fell behind; reconnect for a fresh snapshot")
 		case <-done:
 			// The console stopped sending. It may still be reading, but there
 			// is nothing left to tell it about: its targets went with the
@@ -830,14 +827,14 @@ func (s *Server) KeepUserSession(
 }
 
 func (s *Server) handleWatchRequest(
-	caller *session, sub *subscriber, req *syncpb.KeepUserSessionRequest,
+	ctx context.Context, caller *session, sub *subscriber, req *syncpb.KeepUserSessionRequest,
 	out chan<- *syncpb.KeepUserSessionResponse,
 ) {
 	switch r := req.GetRequestType().(type) {
 	case *syncpb.KeepUserSessionRequest_Echo:
 		// Echoed back verbatim. It is the client's own liveness check, so
 		// changing the payload would defeat the only thing it is for.
-		send(out, &syncpb.KeepUserSessionResponse{
+		send(ctx, out, &syncpb.KeepUserSessionResponse{
 			ResponseType: &syncpb.KeepUserSessionResponse_Echo{Echo: r.Echo},
 		})
 
@@ -851,7 +848,7 @@ func (s *Server) handleWatchRequest(
 		s.watch.addTarget(sub, target)
 		id := wireTargetID(target.GetName())
 		targetChange := func(kind syncpb.TargetChange_TargetChangeType) {
-			send(out, &syncpb.KeepUserSessionResponse{
+			send(ctx, out, &syncpb.KeepUserSessionResponse{
 				ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
 					TargetChange: &syncpb.TargetChange{TargetId: id, TargetChangeType: kind},
 				},
@@ -868,7 +865,7 @@ func (s *Server) handleWatchRequest(
 			docs = s.collectionSnapshot(caller, coll.GetCollection())
 		}
 		for _, doc := range docs {
-			send(out, &syncpb.KeepUserSessionResponse{
+			send(ctx, out, &syncpb.KeepUserSessionResponse{
 				ResponseType: &syncpb.KeepUserSessionResponse_DocumentChange{
 					DocumentChange: &syncpb.DocumentChange{
 						TargetId: id, DocumentChangeType: syncpb.DocumentChange_EXIST, Document: doc,
@@ -882,7 +879,7 @@ func (s *Server) handleWatchRequest(
 	case *syncpb.KeepUserSessionRequest_DeleteTarget:
 		name := r.DeleteTarget.GetName()
 		s.watch.removeTarget(sub, name)
-		send(out, &syncpb.KeepUserSessionResponse{
+		send(ctx, out, &syncpb.KeepUserSessionResponse{
 			ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
 				TargetChange: &syncpb.TargetChange{
 					TargetId:         wireTargetID(name),
@@ -893,13 +890,12 @@ func (s *Server) handleWatchRequest(
 	}
 }
 
-// send drops a message the writer cannot keep up with, rather than blocking the
-// reader goroutine. A console that has stopped reading its own stream must not
-// be able to wedge the goroutine reading its requests.
-func send(out chan<- *syncpb.KeepUserSessionResponse, msg *syncpb.KeepUserSessionResponse) {
+// Backpressure preserves the snapshot boundary and every document preceding it.
+// Cancellation releases the receiver even if the stream's writer has failed.
+func send(ctx context.Context, out chan<- *syncpb.KeepUserSessionResponse, msg *syncpb.KeepUserSessionResponse) {
 	select {
 	case out <- msg:
-	default:
+	case <-ctx.Done():
 	}
 }
 

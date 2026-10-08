@@ -110,6 +110,7 @@ func (s *Server) endSessionStream(caller *session) {
 			s.log.Warn("gamesync: deferred cleanup failed", "name", name, "error", err)
 			continue
 		}
+		s.rememberPeerStates(caller, commit.changes)
 		s.watch.publish(scopeOf(caller), commit.changes)
 	}
 }

@@ -22,11 +22,10 @@ type subscriber struct {
 	// subscriber must only see verdicts for its verified game session.
 	sessionID string
 
-	// changes is buffered, and a send that would block is dropped. A console
-	// that has stopped reading its stream must not be able to stall a write for
-	// every other console in the lobby -- the same trade internal/matchmaking's
-	// watchers and internal/presencebus both make.
-	changes chan *syncpb.DocumentChange
+	// A slow subscriber must not stall writers in the room. Overflow ends its
+	// stream explicitly so lost updates cannot look like a successful delivery.
+	changes  chan *syncpb.DocumentChange
+	overflow chan struct{}
 
 	mu sync.Mutex
 	// documents are the exact document names this subscriber watches, by target.
@@ -45,6 +44,7 @@ func (w *watchers) subscribe(userID, userSession, sessionID string) *subscriber 
 		userSession: userSession,
 		sessionID:   sessionID,
 		changes:     make(chan *syncpb.DocumentChange, 64),
+		overflow:    make(chan struct{}, 1),
 		documents:   map[string][]string{},
 		collections: map[string]string{},
 	}
@@ -123,6 +123,12 @@ func (w *watchers) publish(scope string, changes []*syncpb.DocumentChange) {
 				select {
 				case sub.changes <- out:
 				default:
+					// Lost Pia state cannot be repaired by replaying the latest
+					// single recipient document. Force a fresh watch snapshot.
+					select {
+					case sub.overflow <- struct{}{}:
+					default:
+					}
 				}
 			}
 		}

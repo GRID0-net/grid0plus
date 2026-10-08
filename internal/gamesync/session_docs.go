@@ -207,6 +207,11 @@ func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Doc
 		if seen[name] {
 			continue
 		}
+		if peers := s.peerInboxSnapshot(caller, name); len(peers) > 0 {
+			docs = append(docs, peers...)
+			seen[name] = true
+			continue
+		}
 		if doc, ok := s.watchDocument(caller, name); ok {
 			docs = append(docs, doc)
 			seen[name] = true
@@ -275,7 +280,11 @@ func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb
 
 func (s *Server) normalizeSessionChanges(caller *session, changes []*syncpb.DocumentChange) []*syncpb.DocumentChange {
 	for _, change := range changes {
-		if change.GetDocumentChangeType() == syncpb.DocumentChange_DELETED {
+		// Shared inboxes may already contain a later sender's write. Deliver
+		// this commit's payload, rather than rereading and relabelling that write.
+		if change.GetDocumentChangeType() == syncpb.DocumentChange_DELETED ||
+			strings.HasPrefix(change.GetDocument().GetName(), peerInboxPrefix) ||
+			strings.HasPrefix(change.GetDocument().GetName(), refereeResultPrefix) {
 			continue
 		}
 		if doc, ok := s.watchDocument(caller, change.GetDocument().GetName()); ok {
