@@ -102,12 +102,12 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 		t.Fatalf("another match listed the verdict: docs=%d err=%v", len(listed.GetDocuments()), err)
 	}
 
-	write(refereeReportPrefix+battle+"/User/alice", map[string]*commonpb.Value{
+	write(refereeReportPrefix+battle+"/User/token-alice", map[string]*commonpb.Value{
 		"team_result": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 			"winner": intValue(1),
 		}}}},
 		"personal_result": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-			"alice": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"token-alice": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 				"team": intValue(1), "kill_num": intValue(5), "npln_user_id": stringValue("alice"),
 			}}}},
 		}}}},
@@ -117,20 +117,35 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 		t.Fatal(err)
 	}
 	f = got.GetFields().GetFields()
-	player := f["personal_result"].GetMapValue().GetFields()["alice"].GetMapValue().GetFields()
+	player := f["personal_result"].GetMapValue().GetFields()["token-alice"].GetMapValue().GetFields()
 	if f["status"].GetIntegerValue() != 1 || f["stage"].GetIntegerValue() != 14 ||
 		len(player) != 23 || player["deemed_result"].GetIntegerValue() != 0 || player["kill_num"].GetIntegerValue() != 5 {
 		t.Fatalf("final verdict did not preserve the match and fill the player's result: status=%d stage=%d player_fields=%d deemed=%d kills=%d",
 			f["status"].GetIntegerValue(), f["stage"].GetIntegerValue(), len(player),
 			player["deemed_result"].GetIntegerValue(), player["kill_num"].GetIntegerValue())
 	}
-	write(refereeReportPrefix+battle+"/User/alice", map[string]*commonpb.Value{
-		"personal_result": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-			"bob": {ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
-				"team": intValue(2),
-			}}}},
-		}}}},
-	})
+	h.srv.mu.Lock()
+	for _, sess := range h.srv.sessions {
+		if sess.userID == "bob" {
+			sess.details = &SessionDetails{UserID: "bob", SessionID: "match-1"}
+		}
+	}
+	h.srv.mu.Unlock()
+	mapValue := func(fields map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: fields}}}
+	}
+	bobReport := map[string]*commonpb.Value{
+		"team_result": mapValue(map[string]*commonpb.Value{"winner": intValue(1)}),
+		"personal_result": mapValue(map[string]*commonpb.Value{
+			"token-bob": mapValue(map[string]*commonpb.Value{"team": intValue(2), "npln_user_id": stringValue("bob")}),
+		}),
+	}
+	if _, err := h.client.WriteDocuments(bob, &syncpb.WriteDocumentsRequest{
+		WriteOperations: []*syncpb.WriteOperation{merge(doc(refereeReportPrefix+battle+"/User/token-bob", bobReport))},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	write(refereeRequestPrefix+battle, map[string]*commonpb.Value{
 		"users": {ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{}}},
 	})
@@ -141,7 +156,7 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 	f = got.GetFields().GetFields()
 	people := f["personal_result"].GetMapValue().GetFields()
 	if f["status"].GetIntegerValue() != 1 || len(people) != 2 ||
-		people["alice"].GetMapValue().GetFields()["kill_num"].GetIntegerValue() != 5 {
+		people["token-alice"].GetMapValue().GetFields()["kill_num"].GetIntegerValue() != 5 {
 		t.Fatalf("a later report or retried kickoff discarded the final verdict: status=%d players=%d",
 			f["status"].GetIntegerValue(), len(people))
 	}

@@ -134,6 +134,9 @@ type Server struct {
 	// A report from any player may update the same battle verdict. Serialize
 	// read/merge/write so simultaneous reports cannot discard one another.
 	refereeMu sync.Mutex
+	// Serialize durable snapshots and callbacks so an older partial result
+	// cannot overwrite a newer accumulated history after a slow DB write.
+	reportMu sync.Mutex
 
 	// cleanups holds deferments and open watch streams per user-session
 	// name, not per token: see userSessionCleanup.
@@ -545,12 +548,27 @@ func (s *Server) WriteDocuments(
 	if !ok {
 		return nil, errUnauthenticated
 	}
+	prepared, err := ownedReportWrites(caller, req.GetWriteOperations())
+	if err != nil {
+		return nil, err
+	}
+	req = proto.Clone(req).(*syncpb.WriteDocumentsRequest)
+	req.WriteOperations = prepared
 	if response, duplicate := s.duplicateRefereeKickoff(caller, req); duplicate {
 		return response, nil
 	}
 	if len(req.GetDefermentOperations()) > 0 {
 		if err := validateDeferments(req.GetDefermentOperations()); err != nil {
 			return nil, err
+		}
+		for _, operation := range req.GetDefermentOperations() {
+			if update := operation.GetUpdateDeferment(); update != nil {
+				prepared, err := ownedReportWrites(caller, update.GetDeferment().GetWriteOperations())
+				if err != nil {
+					return nil, err
+				}
+				update.Deferment.WriteOperations = prepared
+			}
 		}
 	}
 
@@ -606,6 +624,11 @@ func (s *Server) LazyWriteDocuments(
 		}
 	}
 
+	prepared, err := ownedReportWrites(caller, ops)
+	if err != nil {
+		return nil, err
+	}
+	ops = prepared
 	s.seedRoomDocuments(caller, ops)
 	_, commit, err := s.docsFor(caller).apply(ops)
 	if err != nil {
@@ -661,6 +684,12 @@ func (s *Server) CommitTransaction(
 		return nil, status.Error(codes.Unimplemented, "")
 	}
 
+	prepared, err := ownedReportWrites(caller, req.GetWriteOperations())
+	if err != nil {
+		return nil, err
+	}
+	req = proto.Clone(req).(*syncpb.CommitTransactionRequest)
+	req.WriteOperations = prepared
 	if err := s.claimTransaction(string(req.GetTransaction()), caller); err != nil {
 		return nil, err
 	}

@@ -21,6 +21,8 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 	if !ok || caller.details == nil {
 		return
 	}
+	s.reportMu.Lock()
+	defer s.reportMu.Unlock()
 	for _, op := range ops {
 		var doc *syncpb.Document
 		if update := op.GetUpdateDocument(); update != nil {
@@ -48,6 +50,11 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 		// console's raw report, so the battle history shows the same outcome
 		// the game was told.
 		fields := proto.Clone(committed.GetFields()).(*commonpb.MapValue)
+		verified, err := reporterResult(caller, fields.Fields["personal_result"])
+		if err != nil {
+			continue
+		}
+		fields.Fields["personal_result"] = verified
 		coop := isCoopReport(fields) || strings.Contains(d.Mode, "coop")
 		if !coop {
 			fields.Fields["personal_result"] = completePersonalResults(
