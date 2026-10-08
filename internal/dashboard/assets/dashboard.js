@@ -11,6 +11,46 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Keep resource IDs in requests; labels are presentation only. Internal variants
+// have descriptive suffixes because they are not separate names in the game UI.
+function matchmakingModeName(mode) {
+  const key = String(mode || "").split("/").pop();
+  const names = {
+    regular_match_config: "Regular Battle (Turf War)",
+    bankara_match_open_oneshot_config: "Anarchy Battle (Open)",
+    coop_regular_config: "Salmon Run Next Wave",
+    coop_bigrun_config: "Big Run",
+    coop_private_config: "Salmon Run — Private Job",
+    coop_team_contest_config: "Eggstra Work",
+    fest_match_challenge_oneshot_config: "Splatfest Battle (Pro)",
+    fest_match_regular_normal_config: "Splatfest Battle (Open)",
+    fest_match_regular_direct_pair_config: "Splatfest Battle (Open) — Same Team",
+    fest_match_tricolor_oneshot_config: "Tricolor Battle",
+    fest_match_tricolor_team_config: "Tricolor Battle — Team",
+    private_match_config: "Private Battle",
+    minigame_config: "Tableturf Battle",
+    league_match_normal_oneshot_config: "Challenge",
+    league_match_ignore_weapon_type_oneshot_config: "Challenge — Any Weapon Composition",
+    league_match_pair_oneshot_config: "Challenge — Pair",
+    league_match_tournament_oneshot_config: "Challenge — Tournament",
+    league_match_x_playoff_oneshot_config: "Challenge — X Playoff",
+    x_match_lower_oneshot_config: "X Battle — Lower Power Bracket",
+    x_match_upper_oneshot_config: "X Battle — Upper Power Bracket",
+    regular: "Regular Battle (Turf War)", turf: "Regular Battle (Turf War)",
+    bankara: "Anarchy Battle", coop: "Salmon Run Next Wave",
+    private: "Private Battle", join_room: "Join Friend’s Room",
+  };
+  if (names[key]) return names[key];
+  const series = /^bankara_match_challenge_(ar|cl|gl|lf)(_team)?_config$/.exec(key);
+  if (series) {
+    const rules = { ar: "Splat Zones", cl: "Clam Blitz", gl: "Rainmaker", lf: "Tower Control" };
+    return `Anarchy Battle (Series) — ${rules[series[1]]}${series[2] ? " — Same Team" : ""}`;
+  }
+  const room = /^join_room_(2|4|8)_no_referee_config$/.exec(key);
+  if (room) return `Join Friend’s Room — ${room[1]} Players`;
+  return key.replace(/_config$/, "").replace(/_/g, " ") || "Unknown mode";
+}
+
 const TOKEN = document.documentElement.dataset.token || "";
 
 /** Appends the shared token, when the page was opened with one. */
@@ -257,7 +297,7 @@ function renderOverview(o) {
     queue.textContent = o.matchmaking.waiting;
     const modes = Object.entries(o.matchmaking.byMode || {});
     note.textContent = modes.length
-      ? modes.map(([m, n]) => `${m} ${n}`).join(" · ")
+      ? modes.map(([m, n]) => `${matchmakingModeName(m)} ${n}`).join(" · ")
       : `reported ${ago(o.matchmaking.reportAt)}`;
     note.hidden = false;
   }
@@ -308,7 +348,7 @@ function renderMatchTable(tableSel, emptySel, list) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td style="color:var(--fg-dim)">${ago(m.createdAt)}</td>
-        <td><code>${escape(m.mode)}</code>
+        <td><code>${escape(matchmakingModeName(m.mode))}</code>
           ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
         </td>
         <td><strong>${escape(playerName(m.hostUserId))}</strong></td>
@@ -824,7 +864,7 @@ function renderMatchmaking(mm) {
       card.className = "mm-mode";
       card.innerHTML = `
         <div class="cols">
-          <div class="fid">${escape(m.mode)}
+          <div class="fid">${escape(matchmakingModeName(m.mode))}
             <span class="pill ${short ? "warn" : "on"}">${m.waiting.length} / ${m.size}</span>
             ${m.overridden ? `<span class="pill" title="Set here rather than taken from the default">custom size</span>` : ""}
           </div>
@@ -877,7 +917,7 @@ function renderMatchmaking(mm) {
       card.className = "mm-session";
       card.innerHTML = `
         <div class="cols">
-          <div class="fid">${escape(s.mode)}
+          <div class="fid">${escape(matchmakingModeName(s.mode))}
             ${s.forced ? `<span class="pill warn" title="Fewer players than this mode currently wants. Either it was force-started, or the mode was resized after it formed.">undersized</span>` : ""}
           </div>
           <div class="meta">${s.players.length} player${s.players.length === 1 ? "" : "s"} ·
@@ -919,7 +959,7 @@ $("#mm-modes").addEventListener("click", async (e) => {
       // Only ask when it is actually short. Confirming something that was going
       // to happen anyway is the kind of dialog people learn to click through.
       if (m && m.waiting.length < m.size &&
-          !confirm(`Start ${mode} with ${m.waiting.length} of ${m.size} players?\n\n` +
+          !confirm(`Start ${matchmakingModeName(mode)} with ${m.waiting.length} of ${m.size} players?\n\n` +
                    `Whether the game accepts an undersized match is not known — that is what this finds out.`)) {
         return;
       }
@@ -1402,7 +1442,7 @@ function renderPlayerDetail(d) {
         .map(
           (m) => `
         <li>
-          ${m.game ? `<span class="pill on">${escape(m.game)}</span>` : ""}<span class="pill">${escape(m.mode)}</span>
+          ${m.game ? `<span class="pill on">${escape(m.game)}</span>` : ""}<span class="pill">${escape(matchmakingModeName(m.mode))}</span>
           <span class="meta">${m.hostUserId === d.id ? "hosted" : "played"} · ${ago(m.createdAt)}</span>
         </li>`
         )
