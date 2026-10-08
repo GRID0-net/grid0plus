@@ -63,3 +63,34 @@ func TestAgainReopensTheSessionAndLocksItAfterTheGraceWindow(t *testing.T) {
 		t.Error("locking dropped the fields it did not name")
 	}
 }
+
+func TestAnAlreadyStartedAgainTimerCannotLockTheReplacementWindow(t *testing.T) {
+	s := &Server{docs: newStoreSet(time.Now), watch: newWatchers(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	caller := &session{userID: "alice", details: &SessionDetails{SessionID: "job", Mode: "coop", CreatedAt: time.Unix(1000, 0)}, userSession: "userSessions/us-alice"}
+	ops := []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(true), "ebf": boolean(true)}))}
+	s.seedRoomDocuments(caller, ops)
+	if _, _, err := s.docsFor(caller).apply(ops); err != nil {
+		t.Fatal(err)
+	}
+	s.noteAgain(caller, ops)
+	old := s.again.timers[scopeOf(caller)]
+	if old == nil {
+		t.Fatal("merge reopening did not start a grace window")
+	}
+	old.timer.Stop()
+	s.noteAgain(caller, ops)
+	replacement := s.again.timers[scopeOf(caller)]
+	defer replacement.timer.Stop()
+	// Simulate the old callback that has already fired and was blocked on the
+	// queue mutex while a second player's Again request replaced its window.
+	s.lockAfterAgain(caller, old)
+	room, _ := s.docsFor(caller).snapshot("docs/__gs/m")
+	if !room.GetFields().GetFields()["cp"].GetBooleanValue() {
+		t.Fatal("superseded timer closed the newly reopened lobby")
+	}
+	s.lockAfterAgain(caller, replacement)
+	room, _ = s.docsFor(caller).snapshot("docs/__gs/m")
+	if room.GetFields().GetFields()["cp"].GetBooleanValue() {
+		t.Fatal("current timer failed to close the lobby")
+	}
+}

@@ -35,8 +35,10 @@ var againGrace = 20 * time.Second
 
 type againQueue struct {
 	mu     sync.Mutex
-	timers map[string]*time.Timer
+	timers map[string]*againWindow
 }
+
+type againWindow struct{ timer *time.Timer }
 
 // noteAgain restarts a session's grace window when a write reopens it.
 func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
@@ -47,6 +49,9 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 	reopened := false
 	for _, op := range ops {
 		doc := op.GetUpdateDocument().GetDocument()
+		if doc == nil {
+			doc = op.GetMergeDocument().GetDocument()
+		}
 		if doc.GetName() != "docs/__gs/m" {
 			continue
 		}
@@ -58,25 +63,32 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 	if !reopened {
 		return
 	}
-	s.writeSessionMeta(caller, map[string]*commonpb.Value{"bfmin": integer(0)}, "gamesync: Again! reopen; bfmin 0 published")
 	s.again.mu.Lock()
 	defer s.again.mu.Unlock()
 	if s.again.timers == nil {
-		s.again.timers = map[string]*time.Timer{}
+		s.again.timers = map[string]*againWindow{}
 	}
 	if t := s.again.timers[scope]; t != nil {
-		t.Stop()
+		t.timer.Stop()
 	}
 	s.log.Info("gamesync: Again! pressed; the grace window restarts", "session", scope, "user", caller.userID)
-	s.again.timers[scope] = time.AfterFunc(againGrace, func() { s.lockAfterAgain(caller) })
+	window := &againWindow{}
+	s.again.timers[scope] = window
+	s.writeSessionMeta(caller, map[string]*commonpb.Value{"bfmin": integer(0)}, "gamesync: Again! reopen; bfmin 0 published")
+	window.timer = time.AfterFunc(againGrace, func() { s.lockAfterAgain(caller, window) })
 }
 
 // lockAfterAgain closes a reopened session once its grace window has passed.
-func (s *Server) lockAfterAgain(caller *session) {
+func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 	scope := scopeOf(caller)
 	s.again.mu.Lock()
+	defer s.again.mu.Unlock()
+	// Stop cannot retract a callback already waiting for this mutex. Only the
+	// current generation may lock the lobby or remove its pending window.
+	if s.again.timers[scope] != window {
+		return
+	}
 	delete(s.again.timers, scope)
-	s.again.mu.Unlock()
 
 	s.writeSessionMeta(caller, map[string]*commonpb.Value{
 		"cp": boolean(false), "ebf": boolean(false), "bfmin": integer(1),
