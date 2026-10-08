@@ -11,6 +11,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/n-popescu/grid0plus/internal/bcat"
 	"github.com/n-popescu/grid0plus/internal/db"
@@ -298,16 +300,10 @@ func TestTheDecryptionKeysComeBackInTheOrderTheMessageDeclares(t *testing.T) {
 	}
 }
 
-// TestAllSixKeySlotsAreAvailable.
-//
-// The reference implementation this protocol knowledge came from caps its
-// response at three keys, on the grounds that the game never asks for more. The
-// schema declares six and the request carries a show_all_keys flag, so that cap
-// is a property of the phases they happened to test rather than of the protocol.
-// Not inherited.
+// Explicit show_all_keys requests can still retrieve stored optional slots.
 func TestAllSixKeySlotsAreAvailable(t *testing.T) {
 	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
-	svc, _ := newService(t, start.Add(6*time.Hour))
+	svc, _ := newService(t, start.Add(51*time.Hour))
 
 	f := NewFest(start, nil)
 	keys := []string{
@@ -323,7 +319,7 @@ func TestAllSixKeySlotsAreAvailable(t *testing.T) {
 	}
 
 	got, err := svc.GetFestDecryptionKey(context.Background(),
-		&toyohrpb.GetFestDecryptionKeyRequest{Name: f.ID})
+		&toyohrpb.GetFestDecryptionKeyRequest{Name: f.ID, ShowAllKeys: true})
 	if err != nil {
 		t.Fatalf("GetFestDecryptionKey: %v", err)
 	}
@@ -429,7 +425,7 @@ func TestAPackThatDoesNotExistKeepsItsKeySlotEmpty(t *testing.T) {
 // survives the trip through the store and out of GetFestDecryptionKey.
 func TestATeamPackKeyReachesItsOwnTeamField(t *testing.T) {
 	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
-	svc, _ := newService(t, start.Add(-24*time.Hour))
+	svc, _ := newService(t, start.Add(51*time.Hour))
 
 	f := NewFest(start, DefaultRegions)
 	keys := bcat.KeysInFieldOrder(map[string][]byte{
@@ -443,7 +439,8 @@ func TestATeamPackKeyReachesItsOwnTeamField(t *testing.T) {
 
 	got, err := svc.GetFestDecryptionKey(context.Background(),
 		&toyohrpb.GetFestDecryptionKeyRequest{
-			Name: "tenants/" + testTenant + "/fests/" + f.ID + "/decryptionKey",
+			Name:        "tenants/" + testTenant + "/fests/" + f.ID + "/decryptionKey",
+			ShowAllKeys: true,
 		})
 	if err != nil {
 		t.Fatalf("get keys: %v", err)
@@ -463,5 +460,49 @@ func TestATeamPackKeyReachesItsOwnTeamField(t *testing.T) {
 	if got.GetResultWinningTeamKey() != "" {
 		t.Errorf("result_winning_team_key = %q, but no pack corresponds to it",
 			got.GetResultWinningTeamKey())
+	}
+}
+
+func TestOrdinaryFestKeyResponsesOmitFuturePackFieldsOnTheWire(t *testing.T) {
+	start := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	for _, offset := range []time.Duration{-24 * time.Hour, time.Hour, 25 * time.Hour} {
+		t.Run(offset.String(), func(t *testing.T) {
+			svc, _ := newService(t, start.Add(offset))
+			f := NewFest(start, DefaultRegions)
+			keys := []string{strings.Repeat("11", 16), strings.Repeat("22", 16), strings.Repeat("33", 16), strings.Repeat("44", 16), strings.Repeat("55", 16), strings.Repeat("66", 16)}
+			if err := svc.SaveFest(context.Background(), f, true, keys); err != nil {
+				t.Fatal(err)
+			}
+			for _, all := range []bool{false, true} {
+				got, err := svc.GetFestDecryptionKey(context.Background(), &toyohrpb.GetFestDecryptionKeyRequest{Name: f.ID, ShowAllKeys: all})
+				if err != nil {
+					t.Fatal(err)
+				}
+				raw, err := proto.Marshal(got)
+				if err != nil {
+					t.Fatal(err)
+				}
+				seen := map[protowire.Number]bool{}
+				for len(raw) > 0 {
+					field, kind, n := protowire.ConsumeTag(raw)
+					if n < 0 {
+						t.Fatal("invalid tag")
+					}
+					raw = raw[n:]
+					if field < 1 || field > 3 {
+						t.Fatalf("active fest published unexpected key field %d", field)
+					}
+					_, n = protowire.ConsumeBytes(raw)
+					if kind != protowire.BytesType || n < 0 {
+						t.Fatal("invalid key field")
+					}
+					raw = raw[n:]
+					seen[field] = true
+				}
+				if len(seen) != 3 {
+					t.Fatalf("wire fields=%v, want name, notice and start", seen)
+				}
+			}
+		})
 	}
 }

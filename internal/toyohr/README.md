@@ -485,3 +485,9 @@ receives its real schedule during its publication window.
 `LobbyMessaging/RecvMessage` sends its idle keepalive every 20 seconds, as
 measured in both successful 2026-09-23 hall captures; see
 [the capture comparison](../../docs/CAPTURES/npln-stream-liveness-2026-09-24.md).
+
+Ordinary fest-key requests publish notice and start keys during the announcement
+and playable phases, matching Nextendo's active-fest capture. Stored team-key
+fields are exposed only after results on an explicit `show_all_keys` request; a schema field
+being available does not establish that the game expects it during startup.
+The result key and winning team remain withheld until the results phase.

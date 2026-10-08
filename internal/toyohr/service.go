@@ -275,6 +275,15 @@ func (s *Service) GetFestDecryptionKey(
 		Name: s.tenantPath() + "/fests/" + id + "/decryptionKey",
 	}
 	assignPackKeys(out, row.PackKeys)
+	// Nextendo's working active-fest capture carries only name, notice and
+	// start (fields 1-3). Publishing the stored team keys on an ordinary
+	// request added fields 5-7 before the result phase. Keep those optional
+	// slots for explicit show_all_keys requests after results, not game startup.
+	if !req.GetShowAllKeys() {
+		out.TeamAlphaKey = ""
+		out.TeamBravoKey = ""
+		out.TeamCharlieKey = ""
+	}
 	if f := festFromRow(row); f.PhaseAt(s.now()) == PhaseClosed {
 		entries, err := s.store.ListFestEntries(ctx, id)
 		if err != nil {
@@ -294,7 +303,13 @@ func (s *Service) GetFestDecryptionKey(
 		// A result key and winner during an active fest make the game read
 		// the victory pack before the result window opens.
 		out.ResultWinningTeamKey = ""
+		out.TeamAlphaKey = ""
+		out.TeamBravoKey = ""
+		out.TeamCharlieKey = ""
 	}
+	s.log.Info("toyohr: fest key response", "fest", id, "show_all_keys", req.GetShowAllKeys(),
+		"notice", out.NoticeKey != "", "start", out.StartKey != "",
+		"result", out.ResultWinningTeamKey != "", "team_keys", out.TeamAlphaKey != "" || out.TeamBravoKey != "" || out.TeamCharlieKey != "")
 	return out, nil
 }
 
@@ -305,11 +320,9 @@ func (s *Service) GetFestDecryptionKey(
 // empty string: Nintendo omits the key for a phase that has not happened yet,
 // and an empty string is a key the console would try to use.
 //
-// The reference implementation this protocol knowledge came from caps its
-// response at three fields, on the grounds that the game never asks for more --
-// which is plausibly true of the phases it was tested against and is not a
-// property of the protocol, since the schema declares six and the request
-// carries a show_all_keys flag. All six are filled when they are supplied.
+// All supplied slots remain available to explicit show_all_keys requests.
+// Ordinary requests are filtered by GetFestDecryptionKey to match the captured
+// phase response rather than treating schema availability as a publish rule.
 func assignPackKeys(dst *toyohrpb.FestDecryptionKey, keys []string) {
 	set := map[string]func(string){
 		bcat.KeyNotice:            func(v string) { dst.NoticeKey = v },
