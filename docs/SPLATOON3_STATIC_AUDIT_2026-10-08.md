@@ -327,3 +327,12 @@ Gamesync grace is 20 seconds. Track's optional minimum hold defaults to zero
 and is not configured on the VM; synthetic PLACING adds one second only if
 needed. Gamesync refresh republishes every three seconds. Referee publication
 itself has no delayed timer. No timing bypass was added from this finding.
+
+Reference source cross-check: Nextendo `gamesync.go` documents an official
+capture with referee statuses -1, then 0, then 1. Its current arbitration
+implementation nevertheless emits 0 for a request and 1 for a report, with
+no intermediate -1 publication in that path. This corroborates the missing
+early-phase hypothesis and explains why copying the reference's present
+behavior would not distinguish this delay. The correct publication point
+and transition timing remain open; a blind back-to-back -1/0 pair could be
+coalesced or consumed before the game enters state 3.
