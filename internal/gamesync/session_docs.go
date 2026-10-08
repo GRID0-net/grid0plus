@@ -145,7 +145,7 @@ func (s *Server) watchDocument(caller *session, name string) (*syncpb.Document, 
 			}
 			return merged, true
 		}
-		return recipientVerdict(doc, caller.userID), true
+		return recipientVerdict(s.startupVerdict(doc, scopeOf(caller), caller.userSession), caller.userID), true
 	}
 	if doc, ok := s.roomDocument(caller, name); ok {
 		return doc, true

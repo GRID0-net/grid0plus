@@ -10,8 +10,9 @@ import (
 
 // watchers routes document changes to the consoles watching for them.
 type watchers struct {
-	mu   sync.Mutex
-	subs map[*subscriber]struct{}
+	mu      sync.Mutex
+	subs    map[*subscriber]struct{}
+	startup func(*syncpb.Document, string, string) *syncpb.Document
 }
 
 // subscriber is one open KeepUserSession stream and what it is watching.
@@ -112,13 +113,17 @@ func (w *watchers) publish(scope string, changes []*syncpb.DocumentChange) {
 
 	for _, sub := range subs {
 		for _, change := range changes {
+			visible := change.GetDocument()
+			if w.startup != nil {
+				visible = w.startup(visible, scope, sub.userSession)
+			}
 			for _, targetID := range sub.targetIDsFor(change.GetDocument().GetName()) {
 				// The same collection may be watched under two targets. Each
 				// target must get its own boundary for the client to apply it.
 				out := &syncpb.DocumentChange{
 					TargetId:           targetID,
 					DocumentChangeType: change.GetDocumentChangeType(),
-					Document:           recipientVerdict(change.GetDocument(), sub.userID),
+					Document:           recipientVerdict(visible, sub.userID),
 				}
 				select {
 				case sub.changes <- out:

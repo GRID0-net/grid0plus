@@ -197,6 +197,7 @@ func New(opts Options) (*Server, error) {
 		cleanups:         map[string]*userSessionCleanup{},
 		txns:             map[string]*transaction{},
 	}
+	s.watch.startup = s.startupVerdict
 	s.grpc = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(s.unaryInterceptor),
 		grpc.ChainStreamInterceptor(s.streamInterceptor),

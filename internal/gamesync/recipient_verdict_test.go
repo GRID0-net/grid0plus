@@ -54,3 +54,54 @@ func TestAVersusVerdictWaitsForEachRecipientsOwnResult(t *testing.T) {
 		t.Fatal("recipient projection modified shared verdict")
 	}
 }
+
+func TestAPlayersProfileCannotSkipAnotherPlayersEarlyRefereePhase(t *testing.T) {
+	h := newHarness(t)
+	alice, err := h.srv.newSession("alice", "userSessions/us-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice.details = &SessionDetails{SessionID: "room"}
+	bob.details = &SessionDetails{SessionID: "room"}
+	name := refereeResultPrefix + "battle_room"
+	_, commit, err := h.srv.docsFor(alice).apply([]*syncpb.WriteOperation{
+		merge(doc(name, map[string]*commonpb.Value{"status": intValue(-1)})),
+		merge(doc(refereeProfilePrefix+"battle_room/User/us-alice", map[string]*commonpb.Value{})),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, caller := range []*session{alice, bob} {
+		want := int64(-1)
+		if caller == alice {
+			want = 0
+		}
+		got, err := h.client.GetDocument(h.authed(caller.accessToken), &syncpb.GetDocumentRequest{Name: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.GetFields().GetFields()["status"].GetIntegerValue() != want {
+			t.Fatalf("%s read wrong startup phase", caller.userID)
+		}
+		sub := h.srv.watch.subscribe(caller.userID, caller.userSession, "room")
+		h.srv.watch.addTarget(sub, &syncpb.Target{Name: "targets/9", TargetType: &syncpb.Target_Documents{Documents: &syncpb.DocumentsTarget{Documents: []string{name}}}})
+		h.srv.watch.publish("room", commit.changes)
+		select {
+		case change := <-sub.changes:
+			if change.GetDocument().GetFields().GetFields()["status"].GetIntegerValue() != want {
+				t.Fatalf("%s watched wrong startup phase", caller.userID)
+			}
+		default:
+			t.Fatal("missing startup verdict")
+		}
+		h.srv.watch.unsubscribe(sub)
+	}
+	stored, _ := h.srv.docsFor(alice).snapshot(name)
+	if stored.GetFields().GetFields()["status"].GetIntegerValue() != -1 {
+		t.Fatal("projection advanced the shared phase")
+	}
+}

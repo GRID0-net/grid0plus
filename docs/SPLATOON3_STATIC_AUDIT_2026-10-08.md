@@ -336,3 +336,13 @@ early-phase hypothesis and explains why copying the reference's present
 behavior would not distinguish this delay. The correct publication point
 and transition timing remain open; a blind back-to-back -1/0 pair could be
 coalesced or consumed before the game enters state 3.
+
+Implementation follow-up: the client request builder at `0x71014feeb0`
+sets referee state 1 at `0x71014ff2dc`; the profile builder at
+`0x71014ff540` sets state 3. GRID0 now stores the initial verdict with
+status -1 and projects status 0 only for an authenticated user session whose
+exact `@@Profile/<battle>/User/<user-session>` document exists. Live watches,
+initial snapshots and direct reads use the same projection. Profile submission
+re-publishes the verdict immediately; no timer or readiness bypass is added.
+Final report behavior remains status 1. Tests cover wire reads and live watches
+for two recipients with different readiness. Hardware timing is still pending.

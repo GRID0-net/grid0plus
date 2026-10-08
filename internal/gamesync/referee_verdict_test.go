@@ -77,7 +77,7 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 			t.Fatal(err)
 		}
 		if d := msg.GetDocumentChange(); d != nil && d.GetDocument().GetName() == resultName {
-			if d.GetDocument().GetFields().GetFields()["status"].GetIntegerValue() != 0 {
+			if d.GetDocument().GetFields().GetFields()["status"].GetIntegerValue() != -1 {
 				t.Fatal("watch did not receive the kickoff verdict")
 			}
 			break
@@ -88,7 +88,7 @@ func TestACommittedRefereeRequestAndReportPublishTheVerdictsTheGameWatches(t *te
 		t.Fatal(err)
 	}
 	f := got.GetFields().GetFields()
-	if f["status"].GetIntegerValue() != 0 || f["request_id"].GetStringValue() != battle ||
+	if f["status"].GetIntegerValue() != -1 || f["request_id"].GetStringValue() != battle ||
 		f["stage"].GetIntegerValue() != 14 || f["trace_id"].GetStringValue() != refereeTraceID(battle) || f["battle_id"] != nil {
 		t.Fatalf("kickoff verdict has wrong wire fields: status=%d request_id=%q stage=%d trace_id_empty=%v battle_id_present=%v",
 			f["status"].GetIntegerValue(), f["request_id"].GetStringValue(), f["stage"].GetIntegerValue(),
@@ -275,7 +275,7 @@ func TestTheKickoffVerdictIsSentAgainAfterAConsoleWritesItsProfile(t *testing.T)
 			break
 		}
 	}
-	verdict := func(after string) {
+	verdict := func(after string, want int64) {
 		t.Helper()
 		for {
 			msg, err := stream.Recv()
@@ -283,8 +283,8 @@ func TestTheKickoffVerdictIsSentAgainAfterAConsoleWritesItsProfile(t *testing.T)
 				t.Fatalf("no kickoff verdict after %s: %v", after, err)
 			}
 			if d := msg.GetDocumentChange(); d != nil && d.GetDocument().GetName() == resultName {
-				if d.GetDocument().GetFields().GetFields()["status"].GetIntegerValue() != 0 {
-					t.Fatalf("verdict after %s does not carry status 0", after)
+				if d.GetDocument().GetFields().GetFields()["status"].GetIntegerValue() != want {
+					t.Fatalf("verdict after %s does not carry status %d", after, want)
 				}
 				return
 			}
@@ -304,9 +304,9 @@ func TestTheKickoffVerdictIsSentAgainAfterAConsoleWritesItsProfile(t *testing.T)
 		}
 	}
 	write(refereeRequestPrefix + battle)
-	verdict("the kickoff request")
-	write(refereeProfilePrefix + battle + "/User/us-alice")
-	verdict("@@Profile")
+	verdict("the kickoff request", -1)
+	write(refereeProfilePrefix + battle + "/User/token-alice")
+	verdict("@@Profile", 0)
 }
 
 // Nextendo re-sends an unchanged verdict every refresh; a console that ignored

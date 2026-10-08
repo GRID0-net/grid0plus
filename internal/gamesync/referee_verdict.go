@@ -60,15 +60,10 @@ const (
 // resendKickoffVerdictAfterProfile re-delivers a battle's @@RefereeResult once
 // a console has written its @@Profile for that battle.
 //
-// The game only accepts the kickoff verdict (status 0) once its referee is in
-// the state it enters when it queues the @@Profile write (Splatoon 3's
-// FUN_71014ff540 sets state 3 there; FUN_71014fe4b0 moves 3 -> 4 only on a
-// status-0 change). The verdict is published at kickoff, about 15 s earlier,
-// while the console is still in an earlier state and ignores it. Without a
-// later copy it waits 1800 frames (FUN_7103898e98) and leaves the match with
-// GamesyncRefereeTimeoutVs: the private-battle drop 30 s after loading.
-// Nextendo's server re-sends the verdict repeatedly, which is why it never
-// hits this.
+// The initial stored verdict is status -1, which advances referee state 1 to
+// state 2. A player's @@Profile write enters state 3; startupVerdict then
+// projects status 0 for that player. Re-publish immediately rather than waiting
+// for the periodic snapshot (v11.3.0: 0x14ff540 and 0x14fe4b0).
 func (s *Server) resendKickoffVerdictAfterProfile(caller *session, ops []*syncpb.WriteOperation) {
 	if caller.details == nil || caller.details.SessionID == "" {
 		return
@@ -201,7 +196,7 @@ func (s *Server) publishRefereeVerdict(caller *session, scope, battleID, sourceN
 		}
 		fields["request_id"] = verdictString(battleID)
 		fields["trace_id"] = verdictString(refereeTraceID(battleID))
-		fields["status"] = verdictInt(0)
+		fields["status"] = verdictInt(-1)
 		if fields["shift_id"] == nil { // The captured VS verdict carries this empty field; Coop does not.
 			fields["tournament_id"] = verdictString("")
 		}
