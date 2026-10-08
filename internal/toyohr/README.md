@@ -59,6 +59,11 @@ collection, not `fests/<id>`. The result response echoes that requested name;
 returning `InvalidArgument` for this normal path stops the hall flow before the
 console can continue to the BCAT download.
 
+After results open, `GetFestDecryptionKey` uses the same calculated winner as
+`GetFestResult` to select the `wa`/`wb`/`wc` archive key for response field 4.
+A stored explicit result key takes precedence for older single-outcome seeds.
+Ordinary calls omit the optional per-team keys, including in the results phase.
+
 ## A Splatfest lives in two places, and they must agree
 
 This is the thing to understand before changing anything here.

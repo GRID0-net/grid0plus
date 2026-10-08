@@ -275,6 +275,11 @@ func (s *Service) GetFestDecryptionKey(
 		Name: s.tenantPath() + "/fests/" + id + "/decryptionKey",
 	}
 	assignPackKeys(out, row.PackKeys)
+	// The result field carries the key for the winning wa/wb/wc archive,
+	// not all three outcome archives. Retain these before phase filtering.
+	outcomeKeys := map[string]string{
+		"Alpha": out.TeamAlphaKey, "Bravo": out.TeamBravoKey, "Charlie": out.TeamCharlieKey,
+	}
 	// Nextendo's working active-fest capture carries only name, notice and
 	// start (fields 1-3). Publishing the stored team keys on an ordinary
 	// request added fields 5-7 before the result phase. Keep those optional
@@ -298,6 +303,9 @@ func (s *Service) GetFestDecryptionKey(
 			// The winner in the result-pack key must be the same team as the
 			// one awarded the most points in GetFestResult.
 			out.WinningTeam = overall.GetPoints()[0].GetFestTeam()
+			if out.ResultWinningTeamKey == "" {
+				out.ResultWinningTeamKey = outcomeKeys[out.WinningTeam]
+			}
 		}
 	} else {
 		// A result key and winner during an active fest make the game read

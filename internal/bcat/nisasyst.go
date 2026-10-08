@@ -183,21 +183,15 @@ var KeyFields = []string{
 
 // PackForKeyField maps each key field onto the pack its key opens.
 //
-// **The three team fields are the certain half**: team_alpha opens wa, bravo
-// opens wb, charlie opens wc. Nothing else reads sensibly, and getting these
-// wrong is what a five-packs-onto-six-fields positional list silently did —
-// wa's key landed in result_winning_team, wb's in team_alpha, and every team
-// pack failed to open.
+// The optional team slots retain each outcome archive's key in storage. They
+// are not all published on ordinary calls: toyohr selects wa/wb/wc from the
+// calculated winner and supplies that key in result_winning_team after close.
+// There is therefore no static pack for the result slot in this map.
 //
-// TODO(capture-needed): which of notice and start opens base, and which opens
-// bh — and what result_winning_team opens, since a seed folder has five files
-// and there are six fields, so at least one field has no pack in the layout
-// confirmed against a real seed. The reading here is chronological: base is the
-// fest's main content and is present from the announcement, bh is battle help
-// which matters once play starts, and result_winning_team has no pack because
-// nothing in a real seed folder corresponds to it. A capture of
-// GetFestDecryptionKey's response for a fest whose packs are known would settle
-// it. Change: this map.
+// TODO(capture-needed): confirm the base/notice and bh/start mapping against
+// a successful native BCAT download whose phase keys and packs are available.
+// The working reference server uses base, bh, then the winning outcome pack.
+// Change this map if that comparison establishes a different phase mapping.
 var PackForKeyField = map[string]string{
 	KeyNotice:            PackBase,
 	KeyStart:             PackBattleHelp,

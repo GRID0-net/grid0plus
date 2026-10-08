@@ -2,10 +2,12 @@ package toyohr
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/n-popescu/grid0plus/internal/db"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
@@ -13,6 +15,11 @@ import (
 
 func TestCompletedFestRanksRealMatchModesAndFreezesTheMidpoint(t *testing.T) {
 	svc, store, fest := liveFest(t, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	keys := []string{strings.Repeat("11", 16), strings.Repeat("22", 16), "",
+		strings.Repeat("33", 16), strings.Repeat("44", 16), strings.Repeat("55", 16)}
+	if err := svc.SaveFest(context.Background(), fest, true, keys); err != nil {
+		t.Fatal(err)
+	}
 	for _, pick := range []struct{ user, team string }{
 		{"p1", "Alpha"}, {"p2", "Alpha"}, {"p3", "Bravo"},
 	} {
@@ -66,6 +73,36 @@ func TestCompletedFestRanksRealMatchModesAndFreezesTheMidpoint(t *testing.T) {
 	key, err := svc.GetFestDecryptionKey(context.Background(), &toyohrpb.GetFestDecryptionKeyRequest{Name: fest.ID})
 	if err != nil || key.GetWinningTeam() != points[0].GetFestTeam() {
 		t.Fatalf("result-pack winner %q does not match awarded points %v (error %v)", key.GetWinningTeam(), points, err)
+	}
+	wire, err := proto.Marshal(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenResult := false
+	for len(wire) > 0 {
+		field, kind, n := protowire.ConsumeTag(wire)
+		if n < 0 {
+			t.Fatal("invalid result key wire tag")
+		}
+		wire = wire[n:]
+		if field >= 5 && field <= 7 {
+			t.Fatal("ordinary result response leaked optional team keys")
+		}
+		if field == 4 {
+			value, n := protowire.ConsumeString(wire)
+			if kind != protowire.BytesType || n < 0 || value != keys[3] {
+				t.Fatalf("winner's result-pack key is missing or wrong: %q", value)
+			}
+			seenResult = true
+		}
+		n = protowire.ConsumeFieldValue(field, kind, wire)
+		if n < 0 {
+			t.Fatal("invalid result key wire value")
+		}
+		wire = wire[n:]
+	}
+	if !seenResult {
+		t.Fatal("winning archive key omitted from wire field 4")
 	}
 	unknown := final.GetHonsaiFinal().ProtoReflect().GetUnknown()
 	field, kind, n := protowire.ConsumeTag(unknown)

@@ -254,20 +254,20 @@ Two consequences worth stating, each with a test:
 
 ## Five packs, six key fields
 
-A seed folder holds **five** packs. `FestDecryptionKey` declares **six** key
-fields, and the keys are returned *positionally* — so no positional mapping
-between the two can be right, and treating `PackOrder` as a key order was a real
-bug: `wa`'s key landed in `result_winning_team`, `wb`'s in `team_alpha`, and every
-team pack failed to open with nothing in the failure naming a phase.
+A seed folder can hold **five** packs, while `FestDecryptionKey` declares
+**six** key fields. `PackOrder` is not the protobuf field order.
+`KeyFields`, `PackForKeyField`, and `KeysInFieldOrder` preserve the stored slots.
 
-`KeyFields` and `PackForKeyField` are the mapping, and `KeysInFieldOrder` is the
-only place that turns per-pack keys into the stored list.
+The reference server serves notice/start during the fest, then a result key
+and the winning team after close. The `wa`, `wb`, and `wc` archives contain
+WinA/WinB/WinC outcomes. Their keys are retained in the optional team slots;
+`toyohr.GetFestDecryptionKey` selects the calculated winner's archive for
+`result_winning_team` when no explicit legacy result key was supplied. Ordinary
+responses omit the three optional team-key fields. Explicit legacy result keys
+remain supported for seeds containing one already-selected result archive.
 
-The three team fields are the certain half — `team_alpha` opens `wa` and so on;
-nothing else reads sensibly. Which of `notice` and `start` opens `base` and which
-opens `bh`, and what `result_winning_team` opens at all, is
-`TODO(capture-needed)`: a real seed folder has five files and the message has six
-fields, so at least one field has no pack.
+The base/notice and bh/start mapping still has a native-download
+`TODO(capture-needed)`; archive counts alone cannot establish field semantics.
 
 An absent pack keeps an **empty slot** rather than being left out. A two-team
 fest has no `wc`, and dropping its slot shifts every later key into the wrong
