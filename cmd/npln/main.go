@@ -173,6 +173,10 @@ func main() {
 		ResolveSession:   srv.ResolveGamesyncSession,
 		LiveParticipants: srv.GamesyncRoomParticipants,
 		IssueAccessToken: gamesyncProbeSigner,
+		PrepareCoopVerdict: func(ctx context.Context, report gamesync.RefereeReport) error {
+			return ugcstore.ApplyCoopGrades(ctx, store, cfg.NPLN.Tenant, report.BattleID,
+				report.Mode, report.Verdict, report.SessionUsers, time.Now().UTC())
+		},
 		OnRefereeReport: func(ctx context.Context, report gamesync.RefereeReport) error {
 			now := time.Now().UTC()
 			if report.Coop && report.Verdict != nil {

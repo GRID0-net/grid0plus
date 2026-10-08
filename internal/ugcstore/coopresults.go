@@ -31,9 +31,9 @@ import (
 // keeps, the team result and each player's waves from the report, the
 // profiles from @@Profile. kuma_point is the point cards' own rule.
 //
-// TODO(capture-needed): grade_before/after, grade_point_before/after and
-// grade_rate. Only Nintendo computes a player's Grizzco grade, so they are
-// left out and the game shows its default. Change coopPersonalData.
+// Grade changes come from the persisted per-player verdict, not a shared
+// team grade. TODO(capture-needed): the exact grade_rate field convention;
+// leave it absent rather than invent a multiplier. Change coopPersonalData.
 func RecordCoopResults(ctx context.Context, store db.Store, tenant, battleID string,
 	report, verdict *commonpb.MapValue, sessionUsers map[string]string,
 	profiles map[string]*commonpb.Value, now time.Time) error {
@@ -107,7 +107,8 @@ func coopPersonalData(uid string, entry, playerInfo *commonpb.Value, points int6
 		"is_supporter": {ValueType: &commonpb.Value_BooleanValue{BooleanValue: false}},
 		"kuma_point":   integer(points),
 	}
-	for _, k := range []string{"disconnected", "group_leader", "personal_wave_result", "report_score"} {
+	for _, k := range []string{"is_supporter", "disconnected", "group_leader", "personal_wave_result", "report_score",
+		"grade_before", "grade_after", "grade_point_before", "grade_point_after", "grade_rate"} {
 		if v := ef[k]; v != nil {
 			out[k] = v
 		}

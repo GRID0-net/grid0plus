@@ -79,6 +79,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"festBattles":               testFestBattles,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
+		"ugcCompareAndPut":          testUGCCompareAndPut,
 		"saveDataArchives":          testSaveDataArchives,
 		"componentFiles":            testComponentFiles,
 		"ping":                      testPing,
@@ -90,6 +91,34 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		t.Run(name, func(t *testing.T) {
 			fn(t, open(t))
 		})
+	}
+}
+
+func testUGCCompareAndPut(t *testing.T, store Store) {
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	prefix := uuid.NewString()
+	a := UGCDocument{Name: prefix + "a", Owner: "alice", Fields: []byte{1}, CreateTime: now, UpdateTime: now}
+	marker := UGCDocument{Name: prefix + "marker", Owner: "alice", Fields: []byte{2}, CreateTime: now, UpdateTime: now}
+	if err := store.CompareAndPutUGCDocuments(ctx, []UGCDocumentCAS{{Document: a}, {Document: marker}}); err != nil {
+		t.Fatal(err)
+	}
+	updated := a
+	updated.Fields = []byte{3}
+	updated.UpdateTime = now.Add(time.Second)
+	// A marker conflict must roll back an earlier attribute update in the batch.
+	if err := store.CompareAndPutUGCDocuments(ctx, []UGCDocumentCAS{{Document: updated, PreviousUpdateTime: &now}, {Document: marker}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("conflict=%v", err)
+	}
+	got, err := store.GetUGCDocument(ctx, a.Name)
+	if err != nil || string(got.Fields) != string(a.Fields) {
+		t.Fatalf("partial credit committed: %+v %v", got, err)
+	}
+	if err := store.CompareAndPutUGCDocuments(ctx, []UGCDocumentCAS{{Document: updated, PreviousUpdateTime: &now}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompareAndPutUGCDocuments(ctx, []UGCDocumentCAS{{Document: a, PreviousUpdateTime: &now}}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale revision accepted: %v", err)
 	}
 }
 

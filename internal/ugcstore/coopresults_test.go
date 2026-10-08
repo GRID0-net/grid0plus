@@ -32,7 +32,8 @@ func TestAFinishedJobAppearsInEachPlayersJobHistory(t *testing.T) {
 			"wave_detail": mapOf(map[string]*commonpb.Value{}),
 		}),
 		"personal_result": mapOf(map[string]*commonpb.Value{
-			"session-a": mapOf(map[string]*commonpb.Value{"npln_user_id": str("alice"), "personal_wave_result": waves}),
+			"session-a": mapOf(map[string]*commonpb.Value{"npln_user_id": str("alice"), "personal_wave_result": waves,
+				"grade_before": integer(2), "grade_after": integer(2), "grade_point_before": integer(240), "grade_point_after": integer(260)}),
 			"session-b": mapOf(map[string]*commonpb.Value{"personal_wave_result": waves}),
 		}),
 	}}
@@ -76,6 +77,9 @@ func TestAFinishedJobAppearsInEachPlayersJobHistory(t *testing.T) {
 			continue
 		}
 		name := pf["personal_profile"].GetMapValue().GetFields()["player_info"].GetMapValue().GetFields()["name"].GetStringValue()
+		if pf["grade_point_before"].GetIntegerValue() != 240 || pf["grade_point_after"].GetIntegerValue() != 260 {
+			t.Error("job history lost the player's grade change")
+		}
 		if name != "Alice" {
 			t.Errorf("personal_profile.player_info.name = %q, want Alice", name)
 		}

@@ -845,6 +845,41 @@ func (p *Postgres) PutUGCDocument(ctx context.Context, d UGCDocument) error {
 	return mapErr(err)
 }
 
+// CompareAndPutUGCDocuments commits the entire batch only if every revision matches.
+func (p *Postgres) CompareAndPutUGCDocuments(ctx context.Context, changes []UGCDocumentCAS) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	seen := map[string]bool{}
+	for _, change := range changes {
+		d := change.Document
+		if seen[d.Name] {
+			return ErrConflict
+		}
+		seen[d.Name] = true
+		if d.Fields == nil {
+			d.Fields = []byte{}
+		}
+		var tag pgconn.CommandTag
+		if change.PreviousUpdateTime == nil {
+			tag, err = tx.Exec(ctx, `INSERT INTO ugc_documents (name, owner, fields, create_time, update_time)
+			VALUES ($1,$2,$3,$4,$5) ON CONFLICT (name) DO NOTHING`, d.Name, d.Owner, d.Fields, d.CreateTime, d.UpdateTime)
+		} else {
+			tag, err = tx.Exec(ctx, `UPDATE ugc_documents SET owner=$2, fields=$3, create_time=$4, update_time=$5
+			WHERE name=$1 AND update_time=$6`, d.Name, d.Owner, d.Fields, d.CreateTime, d.UpdateTime, *change.PreviousUpdateTime)
+		}
+		if err != nil {
+			return mapErr(err)
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrConflict
+		}
+	}
+	return mapErr(tx.Commit(ctx))
+}
+
 // DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
 func (p *Postgres) DeleteUGCDocument(ctx context.Context, name string) error {
 	tag, err := p.pool.Exec(ctx, `DELETE FROM ugc_documents WHERE name = $1`, name)

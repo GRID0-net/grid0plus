@@ -404,3 +404,38 @@ retained Gamesync/matchmaking session. A later rematch_waiting or starting
 phase makes it visible again. Wire tests verify disappearance and reappearance
 on the same retained session. These changes are local only: deployment is
 on hold while the operator plays.
+
+## Rematch lock and Salmon Run progression implementation
+
+Toolbox v0.8.2 (CFW commit c6a58fd) gates the shared rematch decision at
+RVA 0x389f654 on Gamesync's cached `ebf` flag. Manager global 0x605c278
+holds primary active/ebf at offsets 32/41 and secondary active/ebf at 64/73.
+Updater 0x14f5460 reads the actual cp/ebf keys. The trampoline chooses the
+active secondary session or primary session and waits while backfill is open.
+Four verified alignment spans hold the trampoline; original conditional flags
+and the stable-count check are preserved. Unicorn executes all 16 combinations
+of session selection, open state and original signed comparison. This verifies
+instructions, not the complete console flow; a hardware rematch test is pending.
+
+The grade reader at 0x327bc84 stores total_grade_point at record offset 4632.
+Result-screen routines 0x37dc070 and 0x37dcb70 copy the before/after snapshots
+from that record. History parser 0x383ab10 reads grade_point_before/after.
+The coordinate conversion at 0x38ca558 uses 100-point bands below 800 and
+Eggsecutive VP points above 800, capped at total 1799. The server previously
+reused the unchanged kickoff grade and omitted history's before/after values.
+
+ApplyCoopGrades now updates CoopUserAttribute before publishing the final
+verdict, then supplies the same per-player grades to job history and point cards.
+An atomic revision check and private per-job credit marker prevent duplicate
+reports from applying the change twice. Normal clears gain 20; failures lose
+20/10/0 by wave. Reported teammate disconnects halve survivor losses; an
+undersized initial lobby alone does not. Positive supporter credit is suppressed.
+Private jobs and team contests are excluded. Failed-result enum coverage and
+grade_rate still need captures, as listed in CAPTURES/README.md. Existing
+history is not retroactively fabricated.
+
+The memory and PostgreSQL contract verifies whole-batch rollback and stale
+revision rejection. Local service startup succeeds with a valid temporary
+config; make seed still fails its existing Ayame registration step with 422,
+so that command does not constitute a successful end-to-end smoke test.
+The earlier deployment hold is revoked by the operator's subsequent request.

@@ -129,6 +129,10 @@ func RecordCoopPointCards(ctx context.Context, store db.Store, tenant, battleID,
 			return err
 		}
 		j := shared
+		if after := entry.GetMapValue().GetFields()["grade_point_after"]; after != nil {
+			j.gradePoint = after.GetIntegerValue()
+			j.grade = entry.GetMapValue().GetFields()["grade_after"].GetIntegerValue()
+		}
 		j.golden = sumNamed(entry, "golden_ikura_num")
 		j.eggs = sumNamed(entry, "ikura_num")
 		j.rescues = sumNamed(entry, "rescue_num")

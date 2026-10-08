@@ -765,6 +765,28 @@ func (m *Memory) PutUGCDocument(_ context.Context, d UGCDocument) error {
 	return nil
 }
 
+// CompareAndPutUGCDocuments commits the entire batch only if every revision matches.
+func (m *Memory) CompareAndPutUGCDocuments(_ context.Context, changes []UGCDocumentCAS) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[string]bool{}
+	for _, change := range changes {
+		name := change.Document.Name
+		old, exists := m.ugcDocuments[name]
+		if seen[name] || (change.PreviousUpdateTime == nil && exists) ||
+			(change.PreviousUpdateTime != nil && (!exists || !old.UpdateTime.Equal(*change.PreviousUpdateTime))) {
+			return ErrConflict
+		}
+		seen[name] = true
+	}
+	for _, change := range changes {
+		d := change.Document
+		d.Fields = append([]byte(nil), d.Fields...)
+		m.ugcDocuments[d.Name] = d
+	}
+	return nil
+}
+
 // ListUGCDocuments returns every document whose name starts with prefix,
 // newest name first.
 func (m *Memory) ListUGCDocuments(_ context.Context, prefix string) ([]UGCDocument, error) {

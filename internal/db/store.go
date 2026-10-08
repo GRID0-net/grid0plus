@@ -19,7 +19,7 @@ import (
 var (
 	// ErrNotFound means the row does not exist.
 	ErrNotFound = errors.New("db: not found")
-	// ErrConflict means the write would violate a uniqueness constraint.
+	// ErrConflict means uniqueness or an expected document revision conflicts.
 	ErrConflict = errors.New("db: conflict")
 )
 
@@ -205,6 +205,14 @@ type UGCDocument struct {
 	Fields     []byte
 	CreateTime time.Time
 	UpdateTime time.Time
+}
+
+// UGCDocumentCAS pairs a replacement with its expected prior revision. Nil
+// requires absence. A batch commits together, so a grade credit cannot be
+// saved without its retry marker (or vice versa).
+type UGCDocumentCAS struct {
+	Document           UGCDocument
+	PreviousUpdateTime *time.Time
 }
 
 // NEXRecord is one piece of state a NEX game server keeps for a title: a
@@ -815,6 +823,7 @@ type Store interface {
 	GetUGCDocument(ctx context.Context, name string) (UGCDocument, error)
 	// PutUGCDocument creates or replaces a Ugcstore document.
 	PutUGCDocument(ctx context.Context, d UGCDocument) error
+	CompareAndPutUGCDocuments(ctx context.Context, changes []UGCDocumentCAS) error
 	// ListUGCDocuments returns every Ugcstore document whose name starts with
 	// prefix, newest name first.
 	ListUGCDocuments(ctx context.Context, prefix string) ([]UGCDocument, error)

@@ -157,13 +157,13 @@ func (s *Server) publishRefereeVerdicts(ctx context.Context, ops []*syncpb.Write
 		// One line per barrier, so the time a match takes to start can be
 		// read off the log: kickoff, each console's @@Profile, the report.
 		s.log.Info("gamesync: referee step", "battle", battleID, "user", caller.userID, "final", final)
-		if err := s.publishRefereeVerdict(caller, caller.details.SessionID, battleID, name, final); err != nil {
+		if err := s.publishRefereeVerdict(ctx, caller, caller.details.SessionID, battleID, name, final); err != nil {
 			s.log.Warn("gamesync: could not publish referee verdict", "battle", battleID, "error", err)
 		}
 	}
 }
 
-func (s *Server) publishRefereeVerdict(caller *session, scope, battleID, sourceName string, final bool) error {
+func (s *Server) publishRefereeVerdict(ctx context.Context, caller *session, scope, battleID, sourceName string, final bool) error {
 	docs := s.docs.in(scope)
 	s.refereeMu.Lock()
 	defer s.refereeMu.Unlock()
@@ -221,6 +221,14 @@ func (s *Server) publishRefereeVerdict(caller *session, scope, battleID, sourceN
 			// Salmon Run's captured verdict has a different per-player shape.
 			// Preserve the game's report instead of adding versus-only fields.
 			fields["personal_result"] = personal
+			if s.prepareCoopVerdict != nil {
+				if err := s.prepareCoopVerdict(ctx, RefereeReport{
+					BattleID: battleID, SessionID: scope, Mode: caller.details.Mode,
+					Verdict: &commonpb.MapValue{Fields: fields}, SessionUsers: s.sessionUsers(scope), Coop: true,
+				}); err != nil {
+					return err
+				}
+			}
 		} else {
 			fields["personal_result"] = completePersonalResults(personal, fields["team_result"])
 		}

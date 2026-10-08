@@ -83,6 +83,9 @@ type Options struct {
 	// OnRefereeReport records a completed match outside the transient lobby
 	// document store. A nil callback leaves ordinary gamesync unchanged.
 	OnRefereeReport func(context.Context, RefereeReport) error
+	// PrepareCoopVerdict persists grade changes before clients can read their
+	// refreshed attributes, and adds the same before/after values to history.
+	PrepareCoopVerdict func(context.Context, RefereeReport) error
 }
 
 // RefereeReport is the authenticated match context plus the game's final
@@ -116,15 +119,16 @@ const defaultSessionTTL = time.Hour
 type Server struct {
 	syncpb.UnimplementedGamesyncServer
 
-	log              *slog.Logger
-	verify           TokenVerifier
-	resolveSession   func(string) (SessionDetails, error)
-	liveParticipants func(sessionID, userID string) (int, bool)
-	issueAccessToken func(userID, userSession string, expiresAt time.Time) (string, error)
-	onRefereeReport  func(context.Context, RefereeReport) error
-	sessionTTL       time.Duration
-	refreshEvery     time.Duration
-	now              func() time.Time
+	log                *slog.Logger
+	verify             TokenVerifier
+	resolveSession     func(string) (SessionDetails, error)
+	liveParticipants   func(sessionID, userID string) (int, bool)
+	issueAccessToken   func(userID, userSession string, expiresAt time.Time) (string, error)
+	onRefereeReport    func(context.Context, RefereeReport) error
+	prepareCoopVerdict func(context.Context, RefereeReport) error
+	sessionTTL         time.Duration
+	refreshEvery       time.Duration
+	now                func() time.Time
 
 	docs  *storeSet
 	watch *watchers
@@ -182,20 +186,21 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		log:              opts.Log,
-		verify:           opts.VerifyIDToken,
-		resolveSession:   opts.ResolveSession,
-		liveParticipants: opts.LiveParticipants,
-		issueAccessToken: opts.IssueAccessToken,
-		onRefereeReport:  opts.OnRefereeReport,
-		sessionTTL:       opts.SessionTTL,
-		refreshEvery:     3 * time.Second,
-		now:              opts.Now,
-		docs:             newStoreSet(opts.Now),
-		watch:            newWatchers(),
-		sessions:         map[string]*session{},
-		cleanups:         map[string]*userSessionCleanup{},
-		txns:             map[string]*transaction{},
+		log:                opts.Log,
+		verify:             opts.VerifyIDToken,
+		resolveSession:     opts.ResolveSession,
+		liveParticipants:   opts.LiveParticipants,
+		issueAccessToken:   opts.IssueAccessToken,
+		onRefereeReport:    opts.OnRefereeReport,
+		prepareCoopVerdict: opts.PrepareCoopVerdict,
+		sessionTTL:         opts.SessionTTL,
+		refreshEvery:       3 * time.Second,
+		now:                opts.Now,
+		docs:               newStoreSet(opts.Now),
+		watch:              newWatchers(),
+		sessions:           map[string]*session{},
+		cleanups:           map[string]*userSessionCleanup{},
+		txns:               map[string]*transaction{},
 	}
 	s.watch.startup = s.startupVerdict
 	s.grpc = grpc.NewServer(

@@ -42,6 +42,8 @@ Fields are stored as the encoded `MapValue`, so value types survive exactly.
 | `RunQuery` | lists the documents directly in the requested collections under `parent`, newest name first; with no match, the captured one-message `read_time` answer. The in-game battle history is this query over `VsResults`, which the server writes after each match (`RecordVsResults`) |
 
 The server also writes two kinds of `services/GameRecord` documents the console only reads: each player's `VsResults/<battle>` after a versus battle (`RecordVsResults`) and `CoopResults/<job>` after a Salmon Run job (`RecordCoopResults`), each row carrying the player's `player_info` from the battle's `@@Profile` documents, and Salmon Run's point cards, `PointCardTotal/Data` and `PointCardRegular/<shift_id>`, after each job (`RecordCoopPointCards`). Without the point cards the Bonus Meter never moves.
+
+`ApplyCoopGrades` updates `CoopUserAttribute/Data` before the final referee verdict is published. A clear adds 20; failures in waves one, two and three deduct 20, 10 and zero. A real reported teammate disconnect halves a survivor's deduction; deliberately empty player slots do not. Each player's before/after grade is retained in the verdict, history and shift card. Attribute changes and the private `grid0/coopGradeCredits` retry marker commit atomically, so retries and late peer reports cannot credit the same job twice. Private jobs and Eggstra Work do not use this ordinary grade rule.
 | `BulkGetDocuments`, attachments, short aliases, `IssueUploadUri` | **no** — `Unimplemented`, logged once by the gateway when a console asks |
 
 **`RunQuery` used to be Unimplemented too, and that broke the lobby.** It is

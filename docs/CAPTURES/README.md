@@ -1562,3 +1562,11 @@ shape"). The weapon measurement is answered with the document the game
 already reads (`WeaponPowerMeasurement/<field 2>`); the Bankara and League
 document names mirror it and are guesses; PrepareTag answers an empty tag
 and ResetUdemae an empty response. Not tried on a console.
+
+## Salmon Run grade-result enums
+
+`internal/ugcstore/coopgrades.go`, `ApplyCoopGrades`, needs failed-job captures
+to confirm the complete `team_result.result` enum. A completed three-wave job
+on 2026-10-08 reports result 0 and zero-based final_wave 2; the implementation
+accepts failure 1 and ignores unknown values. Also verify the history
+`grade_rate` convention before supplying it in `coopPersonalData`.
