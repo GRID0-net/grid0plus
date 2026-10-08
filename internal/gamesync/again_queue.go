@@ -10,6 +10,9 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
+// "Again!" reuses the old Gamesync session rather than entering the ticket
+// queue. Public Versus therefore needs this window too: queue.Sweep cannot
+// start a countdown for players who have not submitted new tickets.
 // Salmon Run's "Again!" does not send a matchmaking ticket. Every console that
 // presses it reopens the session it just played in with a masked update of
 // docs/__gs/m -- cp, ebf and ip true, pw empty (loopback capture of two
@@ -21,10 +24,9 @@ import (
 // restarts it, and when it runs out the session is locked again (cp and ebf
 // false), the same shape the console itself writes when a fresh match locks.
 //
-// Experiment (2026-10-04, untested): every reopen also sets bfmin 0 in
-// __gs/m, on the reading that bfmin 1 makes the host wait for at least one
-// backfilled stranger; the lock restores bfmin 1. Remove if a test shows no
-// change.
+// Keep bfmin as captured (1). The earlier bfmin=0 experiment did not fix
+// rematches; lowering a protocol field is not a substitute for the client's
+// separate eight-player minimum in its retained-lobby controller.
 //
 // TODO(capture-needed): the lock did not change anything on hardware. The
 // host's State::ActivateBackFill runs a session-join operation and gives it
@@ -38,15 +40,19 @@ type againQueue struct {
 	timers map[string]*againWindow
 }
 
-type againWindow struct{ timer *time.Timer }
+type againWindow struct {
+	timer *time.Timer
+	users map[string]bool
+}
 
 // noteAgain restarts a session's grace window when a write reopens it.
 func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 	scope := scopeOf(caller)
-	if scope == "" || !strings.Contains(caller.details.Mode, "coop") {
+	if scope == "" || caller.details.Room || !publicRematchMode(caller.details.Mode) {
 		return
 	}
 	reopened := false
+	closed := false
 	for _, op := range ops {
 		doc := op.GetUpdateDocument().GetDocument()
 		if doc == nil {
@@ -56,11 +62,14 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 			continue
 		}
 		f := doc.GetFields().GetFields()
+		if cp, ebf := f["cp"], f["ebf"]; cp != nil && ebf != nil && !cp.GetBooleanValue() && !ebf.GetBooleanValue() {
+			closed = true
+		}
 		if f["ebf"].GetBooleanValue() && f["cp"].GetBooleanValue() {
 			reopened = true
 		}
 	}
-	if !reopened {
+	if !reopened && !closed {
 		return
 	}
 	s.again.mu.Lock()
@@ -68,14 +77,45 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 	if s.again.timers == nil {
 		s.again.timers = map[string]*againWindow{}
 	}
+	if closed && !reopened {
+		if t := s.again.timers[scope]; t != nil {
+			t.timer.Stop()
+			delete(s.again.timers, scope)
+		}
+		return
+	}
 	if t := s.again.timers[scope]; t != nil {
+		// Retries by one console must not postpone the match indefinitely.
+		if t.users[caller.userID] {
+			return
+		}
+		t.users[caller.userID] = true
+		// Versus keeps the first player's deadline. Coop grants a fresh
+		// window to each additional player, as its initial queue does.
+		if !strings.Contains(caller.details.Mode, "coop") {
+			return
+		}
 		t.timer.Stop()
 	}
 	s.log.Info("gamesync: Again! pressed; the grace window restarts", "session", scope, "user", caller.userID)
-	window := &againWindow{}
+	window := &againWindow{users: map[string]bool{caller.userID: true}}
+	if previous := s.again.timers[scope]; previous != nil {
+		window.users = previous.users
+	}
 	s.again.timers[scope] = window
-	s.writeSessionMeta(caller, map[string]*commonpb.Value{"bfmin": integer(0)}, "gamesync: Again! reopen; bfmin 0 published")
 	window.timer = time.AfterFunc(againGrace, func() { s.lockAfterAgain(caller, window) })
+}
+
+func publicRematchMode(mode string) bool {
+	if strings.Contains(mode, "private") || strings.Contains(mode, "join_room") {
+		return false
+	}
+	for _, marker := range []string{"coop", "regular", "turf", "bankara", "league", "x_match", "fest"} {
+		if strings.Contains(mode, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // lockAfterAgain closes a reopened session once its grace window has passed.

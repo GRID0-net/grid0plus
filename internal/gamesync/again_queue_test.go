@@ -47,8 +47,8 @@ func TestAgainReopensTheSessionAndLocksItAfterTheGraceWindow(t *testing.T) {
 	if !m.GetFields().GetFields()["cp"].GetBooleanValue() {
 		t.Fatal("the session was locked before the grace window ran out")
 	}
-	if got := m.GetFields().GetFields()["bfmin"].GetIntegerValue(); got != 0 {
-		t.Errorf("reopened __gs/m bfmin = %d, want 0 (the backfill experiment)", got)
+	if got := m.GetFields().GetFields()["bfmin"].GetIntegerValue(); got != 1 {
+		t.Errorf("reopened __gs/m bfmin = %d, want captured 1", got)
 	}
 	time.Sleep(100 * time.Millisecond)
 	m, _ = s.docsFor(caller).snapshot("docs/__gs/m")
@@ -78,7 +78,8 @@ func TestAnAlreadyStartedAgainTimerCannotLockTheReplacementWindow(t *testing.T) 
 		t.Fatal("merge reopening did not start a grace window")
 	}
 	old.timer.Stop()
-	s.noteAgain(caller, ops)
+	guest := &session{userID: "bob", details: caller.details, userSession: "userSessions/us-bob"}
+	s.noteAgain(guest, ops)
 	replacement := s.again.timers[scopeOf(caller)]
 	defer replacement.timer.Stop()
 	// Simulate the old callback that has already fired and was blocked on the
@@ -92,5 +93,50 @@ func TestAnAlreadyStartedAgainTimerCannotLockTheReplacementWindow(t *testing.T) 
 	room, _ = s.docsFor(caller).snapshot("docs/__gs/m")
 	if room.GetFields().GetFields()["cp"].GetBooleanValue() {
 		t.Fatal("current timer failed to close the lobby")
+	}
+}
+
+func TestVersusAgainRetriesCannotPostponeTheFirstDeadline(t *testing.T) {
+	s := &Server{docs: newStoreSet(time.Now), watch: newWatchers(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	caller := &session{userID: "alice", details: &SessionDetails{SessionID: "match", Mode: "regular_match_config", CreatedAt: time.Unix(1000, 0)}, userSession: "userSessions/us-alice"}
+	ops := []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(true), "ebf": boolean(true)}))}
+	s.seedRoomDocuments(caller, ops)
+	if _, _, err := s.docsFor(caller).apply(ops); err != nil {
+		t.Fatal(err)
+	}
+	s.noteAgain(caller, ops)
+	first := s.again.timers[scopeOf(caller)]
+	if first == nil {
+		t.Fatal("public Versus did not enter the rematch window")
+	}
+	defer first.timer.Stop()
+	s.noteAgain(caller, ops)
+	guest := &session{userID: "bob", details: caller.details, userSession: "userSessions/us-bob"}
+	s.noteAgain(guest, ops)
+	if s.again.timers[scopeOf(caller)] != first {
+		t.Fatal("retry or second Versus player moved the deadline")
+	}
+	s.lockAfterAgain(caller, first)
+	m, _ := s.docsFor(caller).snapshot("docs/__gs/m")
+	if m.GetFields().GetFields()["cp"].GetBooleanValue() || m.GetFields().GetFields()["ebf"].GetBooleanValue() {
+		t.Fatal("Versus rematch remained open")
+	}
+}
+
+func TestANewMatchLockCancelsTheOldRematchTimer(t *testing.T) {
+	s := &Server{docs: newStoreSet(time.Now), watch: newWatchers(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	caller := &session{userID: "alice", details: &SessionDetails{SessionID: "match", Mode: "coop", CreatedAt: time.Unix(1000, 0)}, userSession: "userSessions/us-alice"}
+	ops := []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(true), "ebf": boolean(true)}))}
+	s.seedRoomDocuments(caller, ops)
+	s.noteAgain(caller, ops)
+	old := s.again.timers[scopeOf(caller)]
+	s.noteAgain(caller, []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(false), "ebf": boolean(false)}))})
+	if s.again.timers[scopeOf(caller)] != nil {
+		t.Fatal("new match left its old rematch timer active")
+	}
+	s.lockAfterAgain(caller, old)
+	m, _ := s.docsFor(caller).snapshot("docs/__gs/m")
+	if !m.GetFields().GetFields()["cp"].GetBooleanValue() {
+		t.Fatal("cancelled callback changed the new lobby")
 	}
 }

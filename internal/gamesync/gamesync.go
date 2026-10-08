@@ -128,7 +128,7 @@ type Server struct {
 
 	docs  *storeSet
 	watch *watchers
-	// again holds each Salmon Run session's "Again!" grace window.
+	// again holds public sessions' "Again!" grace windows.
 	again   againQueue
 	mailbox peerMailbox
 	// A report from any player may update the same battle verdict. Serialize
