@@ -245,9 +245,10 @@ a player changing their mind in the lobby. Once play opens:
 - **a player who already picked gets their existing entry back**, not an error.
   A console re-sending its choice on reconnect is normal traffic, and an error
   there reads to the player as the fest being broken.
-- **a player who never picked is refused.** Splatoon 3 makes players choose
-  before a fest opens, and a vote arriving after a ratio was published changes a
-  number the players have already seen.
+- **a player who never picked can still pick until play ends.** Splatoon 3
+  asks a player with no entry to choose when they open the game mid-fest, and
+  refusing it is a communication error (1869763). The late vote does move the
+  vote ratio. After play ends a new entry is refused.
 
 A fest that is disabled, or not yet announced, does not exist to a console at
 all — `NotFound`, not a more specific refusal.
