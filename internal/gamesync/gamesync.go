@@ -631,6 +631,7 @@ func (s *Server) LazyWriteDocuments(
 			return nil, status.Error(codes.InvalidArgument, "unsupported lazy write")
 		}
 	}
+	s.logLobbyControlWrites(caller, ops)
 
 	prepared, err := ownedReportWrites(caller, ops)
 	if err != nil {
@@ -698,6 +699,7 @@ func (s *Server) CommitTransaction(
 	}
 	req = proto.Clone(req).(*syncpb.CommitTransactionRequest)
 	req.WriteOperations = prepared
+	s.logLobbyControlWrites(caller, prepared)
 	if err := s.claimTransaction(string(req.GetTransaction()), caller); err != nil {
 		return nil, err
 	}
