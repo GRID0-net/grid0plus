@@ -945,37 +945,63 @@ func TestOnePlayerPerTeamStillPlaysTricolor(t *testing.T) {
 }
 
 // TestATricolorTeamLobbyHoldsOneFestTeam: the first Tricolor step gathers a
-// pair of one team; three teams in one lobby never start (the game waits for
-// exactly two). A player with no partner gets a lobby alone after the grace.
+// pair of one team at once. Players without a partner get a lobby alone only
+// once all three teams are waiting, after a grace period that any new
+// arrival restarts.
 func TestATricolorTeamLobbyHoldsOneFestTeam(t *testing.T) {
 	q, clock := testQueue(t, 8)
 	q.cfg.VersusGracePeriod = 20 * time.Second
 	mode := "fest_match_tricolor_team_config"
 	q.SetTricolorDefender(mode, "Alpha")
-	var formed []Session
-	for _, p := range []struct{ user, team string }{
-		{"a1", "Alpha"}, {"b1", "Bravo"}, {"a2", "Alpha"}, {"c1", "Charlie"},
-	} {
-		_, f, err := q.EnqueueWithFestTeam(p.user, mode, p.team)
+	enqueue := func(user, team string) []Session {
+		_, f, err := q.EnqueueWithFestTeam(user, mode, team)
 		if err != nil {
 			t.Fatal(err)
 		}
-		formed = append(formed, f...)
+		return f
 	}
-	if len(formed) != 1 || len(formed[0].Players) != 2 || formed[0].TeamSlots["a1"] != "team1" || formed[0].TeamSlots["a2"] != "team1" {
-		t.Fatalf("formed %v, want the Alpha pair at once", formed)
+
+	if f := append(enqueue("a1", "Alpha"), enqueue("a2", "Alpha")...); len(f) != 1 || len(f[0].Players) != 2 || f[0].TeamSlots["a1"] != "team1" {
+		t.Fatalf("formed %v, want the Alpha pair at once", f)
 	}
-	*clock = clock.Add(21 * time.Second)
-	_, later := q.Sweep()
-	if len(later) != 2 {
-		t.Fatalf("after the grace formed %v, want Bravo and Charlie alone", later)
+
+	// Two teams waiting alone is not a Tricolor match, however long it waits.
+	enqueue("b1", "Bravo")
+	enqueue("c1", "Charlie")
+	*clock = clock.Add(time.Minute)
+	if _, f := q.Sweep(); len(f) != 0 {
+		t.Fatalf("formed %v with only Bravo and Charlie waiting", f)
 	}
-	for _, s := range later {
-		if len(s.Players) != 1 {
-			t.Fatalf("lobby %v mixes players", s)
-		}
+}
+
+func TestTricolorSinglesWaitForAllThreeTeamsAndRestartOnArrival(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	mode := "fest_match_tricolor_team_config"
+	q.SetTricolorDefender(mode, "Alpha")
+	for _, p := range []struct{ user, team string }{{"a1", "Alpha"}, {"b1", "Bravo"}} {
+		q.EnqueueWithFestTeam(p.user, mode, p.team)
 	}
-	if later[0].TeamSlots["b1"] != "team2" && later[1].TeamSlots["b1"] != "team2" {
-		t.Errorf("Bravo should keep team2: %v", later)
+	*clock = clock.Add(30 * time.Second)
+	if _, f := q.Sweep(); len(f) != 0 {
+		t.Fatalf("formed %v before every team was waiting", f)
+	}
+	q.EnqueueWithFestTeam("c1", mode, "Charlie")
+	*clock = clock.Add(15 * time.Second)
+	q.Sweep()
+	// A fourth player joining restarts the grace period: b2 pairs with b1 at
+	// once, and the pair moves on to the oneshot queue.
+	if _, f, _ := q.EnqueueWithFestTeam("b2", mode, "Bravo"); len(f) != 1 || len(f[0].Players) != 2 {
+		t.Fatalf("formed %v, want the Bravo pair", f)
+	}
+	q.EnqueueSquadTeams("b1", []string{"b2"}, tricolorOneshotMode(mode), "Bravo", nil)
+	*clock = clock.Add(15 * time.Second)
+	if _, f := q.Sweep(); len(f) != 0 {
+		t.Fatalf("formed %v before the restarted grace ended", f)
+	}
+	*clock = clock.Add(10 * time.Second)
+	_, f := q.Sweep()
+	if len(f) != 2 {
+		t.Fatalf("formed %v, want Alpha and Charlie alone after the grace", f)
 	}
 }

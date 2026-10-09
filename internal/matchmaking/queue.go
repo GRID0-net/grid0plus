@@ -1019,7 +1019,8 @@ func tricolorSlot(team, defender string) string {
 // (check at 0x71038aac80: count == 2 for match kind 8; observed count 3 vs 2
 // on a three-team lobby, 2026-10-09), so a mixed lobby never starts. A pair
 // forms as soon as two players of one team wait; a player with no partner
-// after the grace period gets a lobby alone, which a patched game accepts.
+// gets a lobby alone, which a patched game accepts, once every team is
+// waiting and the grace period has passed.
 func (q *Queue) formTricolorTeamLocked(mode string) []Session {
 	var formed []Session
 	byTeam := map[string][]string{}
@@ -1034,18 +1035,49 @@ func (q *Queue) formTricolorTeamLocked(mode string) []Session {
 		}
 		byTeam[team] = append(byTeam[team], id)
 	}
+	var singles []string
 	for _, team := range teams {
 		ids := byTeam[team]
 		for len(ids) >= 2 {
 			formed = append(formed, q.formSessionLocked(mode, ids[:2]))
 			ids = ids[2:]
 		}
-		if len(ids) == 1 && q.cfg.VersusGracePeriod > 0 &&
-			!q.now().Before(q.tickets[ids[0]].CreatedAt.Add(q.cfg.VersusGracePeriod)) {
-			formed = append(formed, q.formSessionLocked(mode, ids))
+		singles = append(singles, ids...)
+	}
+
+	// A player alone only gets a lobby once all three fest teams are waiting
+	// -- here, or already paired and waiting on the oneshot queue -- since a
+	// Tricolor match needs every team. The grace period restarts whenever
+	// anyone joins, so a late arrival is not left behind.
+	present := map[string]bool{}
+	for _, id := range append(q.liveWaitingLocked(mode), q.liveWaitingLocked(tricolorOneshotMode(mode))...) {
+		if team := q.tickets[id].FestTeam; team != "" {
+			present[team] = true
 		}
 	}
+	if len(singles) == 0 || len(present) < 3 || q.cfg.VersusGracePeriod <= 0 {
+		q.cancelGraceLocked(mode)
+		return formed
+	}
+	n := len(q.liveWaitingLocked(mode)) + len(q.liveWaitingLocked(tricolorOneshotMode(mode)))
+	g, pending := q.grace[mode]
+	if !pending || n != g.lastCount {
+		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod), lastCount: n}
+		return formed
+	}
+	if q.now().Before(g.deadline) {
+		return formed
+	}
+	delete(q.grace, mode)
+	for _, id := range singles {
+		formed = append(formed, q.formSessionLocked(mode, []string{id}))
+	}
 	return formed
+}
+
+// tricolorOneshotMode is the oneshot queue a tricolor_team queue hands on to.
+func tricolorOneshotMode(teamMode string) string {
+	return strings.Replace(teamMode, "tricolor_team_config", "tricolor_oneshot_config", 1)
 }
 
 func isDirectPairMode(mode string) bool {
