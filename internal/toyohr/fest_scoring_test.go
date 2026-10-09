@@ -110,3 +110,12 @@ func TestCompletedFestRanksRealMatchModesAndFreezesTheMidpoint(t *testing.T) {
 		t.Fatalf("tricolor ranking missing from final wire field 5: %x", unknown)
 	}
 }
+
+func TestAShareNeverReachesAHundredPercent(t *testing.T) {
+	// One team holding every point is a whole 1.0, which the halftime report
+	// showed as 0% for everyone.
+	ranked := rankedShares(map[string]float64{"Alpha": 1, "Bravo": 0, "Charlie": 0})
+	if ranked[0].GetFestTeam() != "Alpha" || ranked[0].GetRatio() >= 1 {
+		t.Fatalf("ranked = %v, want Alpha first below 1.0", ranked)
+	}
+}

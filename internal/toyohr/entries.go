@@ -256,7 +256,7 @@ func voteRatios(entries []db.FestEntry) []*toyohrpb.FestTeamRatio {
 	for _, team := range teams {
 		out = append(out, &toyohrpb.FestTeamRatio{
 			FestTeam: team,
-			Ratio:    float64(counts[team]) / float64(len(entries)),
+			Ratio:    displayRatio(float64(counts[team]) / float64(len(entries))),
 		})
 	}
 	return out
