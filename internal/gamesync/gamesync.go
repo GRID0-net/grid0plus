@@ -29,9 +29,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -87,6 +89,12 @@ type Options struct {
 	// PrepareCoopVerdict persists grade changes before clients can read their
 	// refreshed attributes, and adds the same before/after values to history.
 	PrepareCoopVerdict func(context.Context, RefereeReport) error
+
+	// LobbyLogFlag is a file whose presence turns lobby-control logging on.
+	// A file rather than a setting so the operator can flip it during a busy
+	// fest without restarting npln and dropping every lobby; off by default,
+	// because every console writes these documents several times a match.
+	LobbyLogFlag string
 }
 
 // RefereeReport is the authenticated match context plus the game's final
@@ -154,6 +162,9 @@ type Server struct {
 	txns map[string]*transaction
 
 	grpc *grpc.Server
+
+	lobbyLogFlag string
+	lobbyLog     atomic.Bool
 }
 
 // session is one console's authenticated gamesync session.
@@ -195,6 +206,7 @@ func New(opts Options) (*Server, error) {
 		onRefereeReport:    opts.OnRefereeReport,
 		prepareCoopVerdict: opts.PrepareCoopVerdict,
 		sessionTTL:         opts.SessionTTL,
+		lobbyLogFlag:       opts.LobbyLogFlag,
 		refreshEvery:       3 * time.Second,
 		now:                opts.Now,
 		docs:               newStoreSet(opts.Now),
@@ -1043,6 +1055,9 @@ func emptyMap() *commonpb.MapValue {
 // documents (docs/__gs/*, docs/SessionInfo/*): backfill, lock and start flags
 // are only visible there, and a lobby that never starts is diagnosed from them.
 func (s *Server) logLobbyControlWrites(caller *session, ops []*syncpb.WriteOperation) {
+	if !s.lobbyLog.Load() {
+		return
+	}
 	for _, op := range ops {
 		doc := op.GetUpdateDocument().GetDocument()
 		if doc == nil {
@@ -1059,5 +1074,31 @@ func (s *Server) logLobbyControlWrites(caller *session, ops []*syncpb.WriteOpera
 		body, _ := protojson.Marshal(doc.GetFields())
 		s.log.Info("gamesync: lobby control write", "user", caller.userID, "mode", mode,
 			"doc", name, "fields", string(body))
+	}
+}
+
+// WatchLobbyLogFlag polls LobbyLogFlag until ctx ends, so creating or removing
+// the file turns lobby-control logging on or off within a few seconds.
+func (s *Server) WatchLobbyLogFlag(ctx context.Context, every time.Duration) {
+	if s.lobbyLogFlag == "" {
+		return
+	}
+	check := func() {
+		_, err := os.Stat(s.lobbyLogFlag)
+		on := err == nil
+		if s.lobbyLog.Swap(on) != on {
+			s.log.Info("gamesync: lobby control logging", "enabled", on, "flag", s.lobbyLogFlag)
+		}
+	}
+	check()
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			check()
+		}
 	}
 }

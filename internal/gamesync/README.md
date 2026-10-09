@@ -193,3 +193,18 @@ verdict remains unchanged; Salmon Run uses its existing result shape.
 | deferment operations | a batch of writes to apply later, on a trigger nothing here models. Refused rather than dropped: a client told "done" would wait for an effect that never arrives |
 | global-value transforms | they read and write a namespace shared across documents. A no-op would have the client store a value it later reads back as absent |
 | paging on `ListDocuments` | the whole store is one lobby's live state — tens of documents. A page token would name the only page. The absence is visible here rather than hidden behind an empty `next_page_token` |
+
+## Lobby-control logging
+
+`gamesync: lobby control write` lines (every console write to `docs/__gs/*`
+and `docs/SessionInfo/*`) are off by default: a busy fest writes them several
+times per player per match. Turn them on without restarting npln by creating
+the flag file, off by removing it; npln notices within five seconds and logs
+`gamesync: lobby control logging enabled=…`.
+
+```sh
+sudo -u switchnet touch /opt/switchnet/data/gamesync-lobby-log   # on
+sudo rm /opt/switchnet/data/gamesync-lobby-log                   # off
+```
+
+`SWITCHNET_NPLN_LOBBY_LOG_FLAG` moves the file.

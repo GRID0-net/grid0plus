@@ -173,6 +173,7 @@ func main() {
 		ResolveSession:   srv.ResolveGamesyncSession,
 		LiveParticipants: srv.GamesyncRoomParticipants,
 		IssueAccessToken: gamesyncProbeSigner,
+		LobbyLogFlag:     lobbyLogFlag(),
 		PrepareCoopVerdict: func(ctx context.Context, report gamesync.RefereeReport) error {
 			return ugcstore.ApplyCoopGrades(ctx, store, cfg.NPLN.Tenant, report.BattleID,
 				report.Mode, report.Verdict, report.SessionUsers, time.Now().UTC())
@@ -228,6 +229,7 @@ func main() {
 	}()
 
 	syncErr := make(chan error, 1)
+	go sync.WatchLobbyLogFlag(ctx, 5*time.Second)
 	go func() { syncErr <- sync.Serve(syncLis) }()
 
 	go func() {
@@ -249,4 +251,13 @@ func main() {
 	if err := <-syncErr; err != nil {
 		service.Fatal(log, "serve gamesync", err)
 	}
+}
+
+// lobbyLogFlag is the file that turns gamesync's lobby-control logging on;
+// see gamesync.Options.LobbyLogFlag.
+func lobbyLogFlag() string {
+	if p := os.Getenv("SWITCHNET_NPLN_LOBBY_LOG_FLAG"); p != "" {
+		return p
+	}
+	return "data/gamesync-lobby-log"
 }
