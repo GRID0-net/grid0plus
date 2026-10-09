@@ -315,7 +315,20 @@ func (q *Queue) EnqueueWithFestTeam(userID, mode, team string) (Ticket, []Sessio
 
 // EnqueueSquad queues userID together with members, who must be matched in
 // the same session. The returned ticket is userID's; every member follows it.
+// Every member is given the leader's fest team; EnqueueSquadTeams gives each
+// their own.
 func (q *Queue) EnqueueSquad(userID string, members []string, mode, team string) (Ticket, []Session, error) {
+	return q.EnqueueSquadTeams(userID, members, mode, team, nil)
+}
+
+// EnqueueSquadTeams is EnqueueSquad with each member's own fest team.
+//
+// A Splatfest squad is not always one team. "Continue with this team"
+// (fest_match_regular_direct_pair_config) re-queues the whole lobby the
+// players just shared, both sides of it, as one squad. Labelling them all with
+// the leader's team made the pair look one-sided, and a one-sided fest queue
+// never forms. A member missing from memberTeams falls back to team.
+func (q *Queue) EnqueueSquadTeams(userID string, members []string, mode, team string, memberTeams map[string]string) (Ticket, []Session, error) {
 	if userID == "" {
 		return Ticket{}, nil, fmt.Errorf("matchmaking: no user")
 	}
@@ -344,7 +357,7 @@ func (q *Queue) EnqueueSquad(userID string, members []string, mode, team string)
 	q.waiting[mode] = append(q.waiting[mode], t.ID)
 	for _, m := range members {
 		mt := &Ticket{
-			ID: uuid.NewString(), UserID: m, Mode: mode, FestTeam: team,
+			ID: uuid.NewString(), UserID: m, Mode: mode, FestTeam: memberTeam(memberTeams, m, team),
 			Party: t.ID, State: StateSearching, CreatedAt: t.CreatedAt,
 		}
 		q.tickets[mt.ID] = mt
@@ -353,6 +366,13 @@ func (q *Queue) EnqueueSquad(userID string, members []string, mode, team string)
 
 	sessions := q.formMatchesLocked()
 	return *q.tickets[t.ID], sessions, nil
+}
+
+func memberTeam(teams map[string]string, user, fallback string) string {
+	if t := teams[user]; t != "" {
+		return t
+	}
+	return fallback
 }
 
 // Cancel withdraws a ticket.

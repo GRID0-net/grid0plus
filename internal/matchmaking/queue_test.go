@@ -899,3 +899,24 @@ func TestASmallTricolorGroupKeepsTheTwoToOneRatio(t *testing.T) {
 		t.Fatalf("slots = %v", s)
 	}
 }
+
+func TestAFestSquadSpanningTwoTeamsFormsOnItsOwn(t *testing.T) {
+	q := New(Config{VersusGracePeriod: time.Second}, time.Now)
+	mode := "tenants/current/matchmakingConfigs/fest_match_regular_direct_pair_config"
+
+	// "Continue with this team" re-queues both sides of the lobby as one
+	// squad. Labelled with the leader's team alone, it waited forever for an
+	// opposing team that was already in it.
+	_, formed, err := q.EnqueueSquadTeams("rock", []string{"paper"}, mode, "Alpha",
+		map[string]string{"paper": "Bravo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(formed) != 0 {
+		t.Fatalf("formed %d sessions before the grace period", len(formed))
+	}
+	ids := q.selectFestPlayersLocked(q.liveWaitingLocked(mode), q.playersForLocked(mode))
+	if len(ids) != 2 {
+		t.Errorf("fest selection kept %d of the squad, want both sides", len(ids))
+	}
+}

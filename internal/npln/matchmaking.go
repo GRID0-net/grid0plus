@@ -115,13 +115,27 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		}
 	}
 	members := m.s.squadMembers(caller.UserID, req.GetUserDelegationTokens())
-	ticket, sessions, err := m.s.queue.EnqueueSquad(caller.UserID, members, mode, team)
+	var memberTeams map[string]string
+	if festRow.ID != "" {
+		memberTeams = map[string]string{}
+		for _, member := range members {
+			entry, err := m.s.store.GetFestEntry(ctx, festRow.ID, member)
+			if err == nil {
+				memberTeams[member] = entry.Team
+			} else if !errors.Is(err, db.ErrNotFound) {
+				m.s.log.Error("npln: look up a squad member's fest team", "error", err)
+				return nil, errInternal()
+			}
+		}
+	}
+	ticket, sessions, err := m.s.queue.EnqueueSquadTeams(caller.UserID, members, mode, team, memberTeams)
 	if err != nil {
 		m.s.log.Error("npln: enqueue", "user", caller.UserID, "error", err)
 		return nil, errMalformed(m.s.env)
 	}
 	if len(members) > 0 {
-		m.s.log.Info("npln: squad queued", "ticket", ticket.ID, "leader", caller.UserID, "members", members)
+		m.s.log.Info("npln: squad queued", "ticket", ticket.ID, "leader", caller.UserID, "members", members,
+			"team", team, "member_teams", memberTeams)
 	}
 	// One definition per player of the ticket, keyed by player: the leader's
 	// own and each member's, as the console sent them.
