@@ -943,3 +943,39 @@ func TestOnePlayerPerTeamStillPlaysTricolor(t *testing.T) {
 		t.Fatalf("slots = %v", s)
 	}
 }
+
+// TestATricolorTeamLobbyHoldsOneFestTeam: the first Tricolor step gathers a
+// pair of one team; three teams in one lobby never start (the game waits for
+// exactly two). A player with no partner gets a lobby alone after the grace.
+func TestATricolorTeamLobbyHoldsOneFestTeam(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	mode := "fest_match_tricolor_team_config"
+	q.SetTricolorDefender(mode, "Alpha")
+	var formed []Session
+	for _, p := range []struct{ user, team string }{
+		{"a1", "Alpha"}, {"b1", "Bravo"}, {"a2", "Alpha"}, {"c1", "Charlie"},
+	} {
+		_, f, err := q.EnqueueWithFestTeam(p.user, mode, p.team)
+		if err != nil {
+			t.Fatal(err)
+		}
+		formed = append(formed, f...)
+	}
+	if len(formed) != 1 || len(formed[0].Players) != 2 || formed[0].TeamSlots["a1"] != "team1" || formed[0].TeamSlots["a2"] != "team1" {
+		t.Fatalf("formed %v, want the Alpha pair at once", formed)
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, later := q.Sweep()
+	if len(later) != 2 {
+		t.Fatalf("after the grace formed %v, want Bravo and Charlie alone", later)
+	}
+	for _, s := range later {
+		if len(s.Players) != 1 {
+			t.Fatalf("lobby %v mixes players", s)
+		}
+	}
+	if later[0].TeamSlots["b1"] != "team2" && later[1].TeamSlots["b1"] != "team2" {
+		t.Errorf("Bravo should keep team2: %v", later)
+	}
+}

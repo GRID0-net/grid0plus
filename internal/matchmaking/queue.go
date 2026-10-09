@@ -906,6 +906,8 @@ func (q *Queue) formMatchesLocked() []Session {
 	for _, mode := range sortedKeys(q.waiting) {
 		if q.cfg.CoopModes[mode] {
 			formed = append(formed, q.formCoopLocked(mode)...)
+		} else if isTricolorTeamMode(mode) {
+			formed = append(formed, q.formTricolorTeamLocked(mode)...)
 		} else {
 			formed = append(formed, q.formVersusLocked(mode)...)
 		}
@@ -981,6 +983,69 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	}
 	delete(q.grace, mode)
 	return append(formed, q.formSessionLocked(mode, ids))
+}
+
+// isTricolorTeamMode reports fest_match_tricolor_team_config, the first of
+// Tricolor's two steps.
+func isTricolorTeamMode(mode string) bool {
+	return isTricolorMode(mode) && strings.Contains(strings.ToLower(mode), "team")
+}
+
+// tricolorSlot is a fest team's slot in a Tricolor match: the defender in
+// team1, the two attackers in team2 and team3 in name order. It depends on
+// the team alone, so a pair gathered in fest_match_tricolor_team_config keeps
+// the slot it will play in.
+func tricolorSlot(team, defender string) string {
+	if team == defender {
+		return "team1"
+	}
+	var attackers []string
+	for _, t := range []string{"Alpha", "Bravo", "Charlie"} {
+		if t != defender {
+			attackers = append(attackers, t)
+		}
+	}
+	if len(attackers) == 2 && team == attackers[1] {
+		return "team3"
+	}
+	return "team2"
+}
+
+// formTricolorTeamLocked forms fest_match_tricolor_team_config lobbies.
+//
+// That queue is not the match. Its lobby is a pair of one fest team, which
+// then re-queues together on fest_match_tricolor_oneshot_config to meet the
+// other two teams. The game waits until the lobby holds exactly two players
+// (check at 0x71038aac80: count == 2 for match kind 8; observed count 3 vs 2
+// on a three-team lobby, 2026-10-09), so a mixed lobby never starts. A pair
+// forms as soon as two players of one team wait; a player with no partner
+// after the grace period gets a lobby alone, which a patched game accepts.
+func (q *Queue) formTricolorTeamLocked(mode string) []Session {
+	var formed []Session
+	byTeam := map[string][]string{}
+	var teams []string
+	for _, id := range q.liveWaitingLocked(mode) {
+		team := q.tickets[id].FestTeam
+		if team == "" {
+			continue
+		}
+		if _, seen := byTeam[team]; !seen {
+			teams = append(teams, team)
+		}
+		byTeam[team] = append(byTeam[team], id)
+	}
+	for _, team := range teams {
+		ids := byTeam[team]
+		for len(ids) >= 2 {
+			formed = append(formed, q.formSessionLocked(mode, ids[:2]))
+			ids = ids[2:]
+		}
+		if len(ids) == 1 && q.cfg.VersusGracePeriod > 0 &&
+			!q.now().Before(q.tickets[ids[0]].CreatedAt.Add(q.cfg.VersusGracePeriod)) {
+			formed = append(formed, q.formSessionLocked(mode, ids))
+		}
+	}
+	return formed
 }
 
 func isDirectPairMode(mode string) bool {
@@ -1203,21 +1268,9 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 		// selectTricolorPlayersLocked). Which slot Nintendo gives the defender
 		// is not measured; team1 follows NextendoNetwork's reading.
 		defender := q.tricolorDefender[mode]
-		var attackers []string
 		s.TeamSlots = map[string]string{}
 		for _, id := range chosen {
-			team := q.tickets[id].FestTeam
-			slot := "team1"
-			if team != defender {
-				if !slices.Contains(attackers, team) {
-					attackers = append(attackers, team)
-				}
-				slot = "team2"
-				if slices.Index(attackers, team) == 1 {
-					slot = "team3"
-				}
-			}
-			s.TeamSlots[q.tickets[id].UserID] = slot
+			s.TeamSlots[q.tickets[id].UserID] = tricolorSlot(q.tickets[id].FestTeam, defender)
 		}
 		q.sessions[s.ID].TeamSlots = s.TeamSlots
 	} else if isFestMode(mode) && len(chosen) > 0 {
