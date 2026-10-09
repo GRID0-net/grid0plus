@@ -156,7 +156,7 @@ func TestNoFestIsAnnouncedBetweenFests(t *testing.T) {
 		at   time.Time
 	}{
 		{"long before the announcement", f.Timetable().Open.Add(-48 * time.Hour)},
-		{"after the results are published", f.Timetable().Close.Add(time.Hour)},
+		{"after its publication window", func() time.Time { _, end := f.PublishWindow(); return end.Add(time.Hour) }()},
 	} {
 		t.Run(when.name, func(t *testing.T) {
 			svc, _ := newService(t, when.at)
@@ -172,6 +172,25 @@ func TestNoFestIsAnnouncedBetweenFests(t *testing.T) {
 				t.Errorf("announced a fest %s, outside its publication window", when.name)
 			}
 		})
+	}
+}
+
+// The results phase is announced: the game shows the results from this
+// schedule, and dropping a closed fest hid them (2026-10-09, hardware).
+func TestAFestIsStillAnnouncedOnceItsResultsAreOut(t *testing.T) {
+	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	f := NewFest(start, nil)
+	svc, _ := newService(t, f.Timetable().Close.Add(time.Hour))
+	if err := svc.SaveFest(context.Background(), f, true, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	resp, err := svc.SelectFestSchedule(context.Background(),
+		&toyohrpb.SelectFestScheduleRequest{Tenant: testTenant, Region: "JP"})
+	if err != nil {
+		t.Fatalf("SelectFestSchedule: %v", err)
+	}
+	if resp.GetSchedule() == nil {
+		t.Fatal("a fest with published results was not announced")
 	}
 }
 

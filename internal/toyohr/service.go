@@ -416,7 +416,10 @@ func (s *Service) currentFest(ctx context.Context, region string) (Fest, bool, e
 		if region != "" && !f.publishedIn(region) {
 			continue
 		}
-		if p := f.PhaseAt(now); p == PhaseNone || p == PhaseClosed {
+		// A closed fest is one whose results are out, and the game shows them
+		// from this schedule, so it stays announced until its publish window
+		// ends. Dropping it at close hid the results entirely (2026-10-09).
+		if _, pubEnd := f.PublishWindow(); f.PhaseAt(now) == PhaseNone || !now.Before(pubEnd) {
 			continue
 		}
 		found++
