@@ -953,6 +953,14 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 		ids = q.wholeSquadsLocked(ids, size)
 	}
 
+	if isDirectPairMode(mode) && len(ids) >= 2 && q.oneSquadLocked(ids) {
+		// "Continue with this team" re-queues the lobby the players just
+		// shared, both fest teams in one squad. Nobody else is coming for it,
+		// so waiting out the grace period only delays the match.
+		q.cancelGraceLocked(mode)
+		return append(formed, q.formSessionLocked(mode, ids))
+	}
+
 	n := len(ids)
 	// Tricolor's three sides are never two even halves; its selection above
 	// already decides which counts can play.
@@ -973,6 +981,28 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	}
 	delete(q.grace, mode)
 	return append(formed, q.formSessionLocked(mode, ids))
+}
+
+func isDirectPairMode(mode string) bool {
+	return strings.Contains(strings.ToLower(mode), "direct_pair")
+}
+
+// oneSquadLocked reports whether every ticket in ids belongs to one squad.
+func (q *Queue) oneSquadLocked(ids []string) bool {
+	leader := ""
+	for _, id := range ids {
+		t := q.tickets[id]
+		party := t.Party
+		if party == "" {
+			party = t.ID
+		}
+		if leader == "" {
+			leader = party
+		} else if party != leader {
+			return false
+		}
+	}
+	return leader != ""
 }
 
 func isFestMode(mode string) bool { return strings.Contains(strings.ToLower(mode), "fest") }

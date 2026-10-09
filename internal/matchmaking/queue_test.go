@@ -912,12 +912,10 @@ func TestAFestSquadSpanningTwoTeamsFormsOnItsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(formed) != 0 {
-		t.Fatalf("formed %d sessions before the grace period", len(formed))
-	}
-	ids := q.selectFestPlayersLocked(q.liveWaitingLocked(mode), q.playersForLocked(mode))
-	if len(ids) != 2 {
-		t.Errorf("fest selection kept %d of the squad, want both sides", len(ids))
+	// The squad is the whole lobby, so it forms at once rather than after
+	// the grace period.
+	if len(formed) != 1 || len(formed[0].Players) != 2 {
+		t.Fatalf("formed %v, want the pair matched immediately", formed)
 	}
 }
 
