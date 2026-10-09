@@ -920,3 +920,28 @@ func TestAFestSquadSpanningTwoTeamsFormsOnItsOwn(t *testing.T) {
 		t.Errorf("fest selection kept %d of the squad, want both sides", len(ids))
 	}
 }
+
+// TestOnePlayerPerTeamStillPlaysTricolor: with one player on each fest team,
+// Tricolor forms 1 v 1 v 1 after the grace period instead of waiting forever
+// for a second defender.
+func TestOnePlayerPerTeamStillPlaysTricolor(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	mode := "fest_match_tricolor_oneshot_config"
+	q.SetTricolorDefender(mode, "Alpha")
+	for _, p := range []struct{ user, team string }{
+		{"a1", "Alpha"}, {"b1", "Bravo"}, {"c1", "Charlie"},
+	} {
+		if _, f, err := q.EnqueueWithFestTeam(p.user, mode, p.team); err != nil || len(f) != 0 {
+			t.Fatalf("premature: %v %v", f, err)
+		}
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 3 {
+		t.Fatalf("formed %v, want one 1v1v1 Tricolor match", formed)
+	}
+	if s := formed[0].TeamSlots; s["a1"] != "team1" || s["b1"] != "team2" || s["c1"] != "team3" {
+		t.Fatalf("slots = %v", s)
+	}
+}

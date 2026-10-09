@@ -954,7 +954,10 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	}
 
 	n := len(ids)
-	if q.cfg.VersusGracePeriod <= 0 || n < 2 || n%2 != 0 {
+	// Tricolor's three sides are never two even halves; its selection above
+	// already decides which counts can play.
+	odd := n%2 != 0 && !isTricolorMode(mode)
+	if q.cfg.VersusGracePeriod <= 0 || n < 2 || odd {
 		q.cancelGraceLocked(mode)
 		return formed
 	}
@@ -1004,8 +1007,11 @@ func (q *Queue) SetTricolorDefender(mode, team string) {
 // full. NextendoNetwork/splatoon-3's notes on a capture of an official
 // Tricolor battle (2026-08-22/23, facts only) show four defenders, all of
 // the midterm winner's team, against two pairs, and team1/team2/team3 slots.
-// Below full size the same 2:1:1 ratio is kept (2 v 1 v 1 at the least) so a
-// small group can play. Result grouped defender first, then each attacker.
+// Below full size the same 2:1:1 ratio is kept so a small group can play, and
+// when even 2 v 1 v 1 is not possible but every team has a player, the match
+// forms 1 v 1 v 1: a group too small for the official shape should still get
+// to play Tricolor rather than wait forever. Result grouped defender first,
+// then each attacker.
 func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
 	mode := q.modeOf(ids)
 	defender := q.tricolorDefender[mode]
@@ -1015,7 +1021,7 @@ func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
 			byTeam[team] = append(byTeam[team], id)
 		}
 	}
-	if defender == "" || len(byTeam[defender]) < 2 {
+	if defender == "" || len(byTeam[defender]) == 0 {
 		return nil
 	}
 	attackers := make([]string, 0, 2)
@@ -1030,7 +1036,10 @@ func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
 	sort.Strings(attackers)
 	perAttacker := min(size/4, len(byTeam[defender])/2, len(byTeam[attackers[0]]), len(byTeam[attackers[1]]))
 	if perAttacker < 1 {
-		return nil
+		if len(byTeam[attackers[0]]) == 0 || len(byTeam[attackers[1]]) == 0 {
+			return nil
+		}
+		return []string{byTeam[defender][0], byTeam[attackers[0]][0], byTeam[attackers[1]][0]}
 	}
 	out := append([]string(nil), byTeam[defender][:2*perAttacker]...)
 	out = append(out, byTeam[attackers[0]][:perAttacker]...)
