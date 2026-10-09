@@ -1570,3 +1570,11 @@ to confirm the complete `team_result.result` enum. A completed three-wave job
 on 2026-10-08 reports result 0 and zero-based final_wave 2; the implementation
 accepts failure 1 and ignores unknown values. Also verify the history
 `grade_rate` convention before supplying it in `coopPersonalData`.
+
+### Splatfest share display at 100% (2026-10-09)
+
+A halftime share of exactly 1.0 (one team holding every point) showed 0% for
+every team on hardware. `displayRatio` in `internal/toyohr/fest_scoring.go`
+caps shares at 0.9999. A capture of the console rendering a near-100% share,
+or RE of the halftime UI's number formatting, would settle whether the display
+overflows at 100 or rejects the block for another reason.
