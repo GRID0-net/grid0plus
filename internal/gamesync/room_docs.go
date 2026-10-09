@@ -91,9 +91,19 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	if isPrivateBattle(d) {
 		wireCapacity, mcn = d.Capacity, roomConfig(d)
 	}
+	// A Tricolor lobby smaller than eight announces its real size. The host
+	// never locked a 1 v 1 v 1 Tricolor lobby (2026-10-09, hardware) while
+	// maxu said eight; Nextendo's server keeps a switch ("salleplein") that
+	// does the same for groups that will never reach eight.
+	//
+	// TODO(capture-needed): whether maxu is what the Tricolor host waits on.
+	// Change: this branch.
+	if !d.Room && strings.Contains(strings.ToLower(d.Mode), "tricolor") && len(d.Players) > 1 && len(d.Players) < 8 {
+		wireCapacity = len(d.Players)
+	}
 	settings := func() map[string]*commonpb.Value {
 		return map[string]*commonpb.Value{
-			"bfmax": integer(int64(wireCapacity - 3)), "bfmin": integer(1),
+			"bfmax": integer(int64(max(wireCapacity-3, 1))), "bfmin": integer(1),
 			"cp": boolean(true), "ebf": boolean(false), "ip": boolean(true),
 			"prp": mapValue(nil), "pw": str(d.Password),
 		}
