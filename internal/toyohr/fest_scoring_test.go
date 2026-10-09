@@ -63,9 +63,9 @@ func TestCompletedFestRanksRealMatchModesAndFreezesTheMidpoint(t *testing.T) {
 		t.Fatalf("regular and challenge wins were not scored separately: %v", final.GetHonsaiFinal())
 	}
 	points := final.GetOverall().GetPoints()
-	if len(points) != 3 || points[0].GetFestTeam() != "Alpha" || points[0].GetPoints() != 460 ||
-		points[1].GetFestTeam() != "Bravo" || points[1].GetPoints() != 290 {
-		t.Fatalf("five-category points = %v, want Alpha 460 Bravo 290 Charlie 0; tied zero-win teams rank third", points)
+	if len(points) != 3 || points[0].GetFestTeam() != "Alpha" || points[0].GetPoints() != 520 ||
+		points[1].GetFestTeam() != "Bravo" || points[1].GetPoints() != 350 || points[2].GetPoints() != 120 {
+		t.Fatalf("five-category points = %v, want Alpha 520 Bravo 350 Charlie 120; tied teams share the best rank of their tie", points)
 	}
 	if len(final.GetOverall().GetWeights().GetFields()) != 15 {
 		t.Fatal("final result lost captured points weights")

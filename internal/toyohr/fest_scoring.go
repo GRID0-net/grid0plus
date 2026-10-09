@@ -114,16 +114,18 @@ func categoryShares(battles []db.FestBattle, category string, baseline map[strin
 }
 
 func festPoints(ranked []*toyohrpb.FestTeamRatio, weights [3]int64, total map[string]int64) {
-	// Tied teams receive the last rank occupied by their tie group. A stable
-	// alphabetic sort must not give the earlier name more points.
+	// Tied teams share the best rank of their tie group: two teams tied for
+	// second both get second place's points, as in Splatoon 3, where a tie for
+	// second is possible. A stable alphabetic sort must not give the earlier
+	// name more points.
 	for i := 0; i < len(ranked); {
 		end := i
 		for end+1 < len(ranked) && ranked[end+1].GetRatio() == ranked[i].GetRatio() {
 			end++
 		}
 		weight := int64(0)
-		if end < len(weights) {
-			weight = weights[end]
+		if i < len(weights) {
+			weight = weights[i]
 		}
 		for j := i; j <= end; j++ {
 			total[ranked[j].GetFestTeam()] += weight

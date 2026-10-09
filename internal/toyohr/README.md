@@ -228,7 +228,8 @@ At results time, the five captured ranking weights are 90/45/0 for the vote,
 180/90/0 for tricolor. A battle category with no recorded wins uses the vote
 ranking; this is explicitly an editorial fallback, not a measured battle
 result or a claim to reproduce Nintendo's undisclosed clout formula. Tied
-teams share the last rank occupied by their tie group.
+teams share the best rank of their tie group, so a tie for second gives
+both teams second place.
 
 `GetFestResult` and the result-pack winner in `GetFestDecryptionKey` read the
 same scoring function, so the announced winning team matches the points the
