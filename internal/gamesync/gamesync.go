@@ -38,6 +38,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -560,6 +561,7 @@ func (s *Server) WriteDocuments(
 	}
 	req = proto.Clone(req).(*syncpb.WriteDocumentsRequest)
 	req.WriteOperations = prepared
+	s.logLobbyControlWrites(caller, prepared)
 	if response, duplicate := s.duplicateRefereeKickoff(caller, req); duplicate {
 		return response, nil
 	}
@@ -1033,4 +1035,27 @@ func sortedNames[V any](m map[string]V) []string {
 // every transform and merge writes into it, and a nil map panics on write.
 func emptyMap() *commonpb.MapValue {
 	return &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
+}
+
+// logLobbyControlWrites logs what a console writes to the lobby-control
+// documents (docs/__gs/*, docs/SessionInfo/*): backfill, lock and start flags
+// are only visible there, and a lobby that never starts is diagnosed from them.
+func (s *Server) logLobbyControlWrites(caller *session, ops []*syncpb.WriteOperation) {
+	for _, op := range ops {
+		doc := op.GetUpdateDocument().GetDocument()
+		if doc == nil {
+			doc = op.GetMergeDocument().GetDocument()
+		}
+		name := doc.GetName()
+		if !strings.HasPrefix(name, "docs/__gs/") && !strings.HasPrefix(name, "docs/SessionInfo") {
+			continue
+		}
+		mode := ""
+		if caller.details != nil {
+			mode = caller.details.Mode
+		}
+		body, _ := protojson.Marshal(doc.GetFields())
+		s.log.Info("gamesync: lobby control write", "user", caller.userID, "mode", mode,
+			"doc", name, "fields", string(body))
+	}
 }
