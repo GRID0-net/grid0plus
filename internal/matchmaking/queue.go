@@ -955,10 +955,14 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 		ids = q.wholeSquadsLocked(ids, size)
 	}
 
-	if isDirectPairMode(mode) && len(ids) >= 2 && q.oneSquadLocked(ids) {
+	if isDirectPairMode(mode) && len(ids) >= 2 && q.oneSquadLocked(ids) &&
+		len(q.liveWaitingLocked(directPairOpenMode(mode))) == 0 {
 		// "Continue with this team" re-queues the lobby the players just
-		// shared, both fest teams in one squad. Nobody else is coming for it,
-		// so waiting out the grace period only delays the match.
+		// shared, both fest teams in one squad. When nobody else is queued
+		// for Splatfest Open, nobody is coming for it, so waiting out the
+		// grace period only delays the match. When others are, it waits like
+		// any squad: starting it alone split six players into three 1v1s
+		// (2026-10-10).
 		q.cancelGraceLocked(mode)
 		return append(formed, q.formSessionLocked(mode, ids))
 	}
@@ -1078,6 +1082,12 @@ func (q *Queue) formTricolorTeamLocked(mode string) []Session {
 // tricolorOneshotMode is the oneshot queue a tricolor_team queue hands on to.
 func tricolorOneshotMode(teamMode string) string {
 	return strings.Replace(teamMode, "tricolor_team_config", "tricolor_oneshot_config", 1)
+}
+
+// directPairOpenMode is the ordinary Splatfest Open queue beside a
+// continue-with-this-team queue.
+func directPairOpenMode(mode string) string {
+	return strings.Replace(mode, "direct_pair_config", "normal_config", 1)
 }
 
 func isDirectPairMode(mode string) bool {

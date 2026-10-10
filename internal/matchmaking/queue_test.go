@@ -919,6 +919,26 @@ func TestAFestSquadSpanningTwoTeamsFormsOnItsOwn(t *testing.T) {
 	}
 }
 
+// A continue-with-this-team pair starts alone only when nobody else wants
+// Splatfest Open; with others queued it waits, or six players become three
+// separate 1v1s.
+func TestAFestSquadWaitsWhileOthersAreQueuedForOpen(t *testing.T) {
+	q := New(Config{VersusGracePeriod: time.Minute}, time.Now)
+	pair := "tenants/current/matchmakingConfigs/fest_match_regular_direct_pair_config"
+	open := "tenants/current/matchmakingConfigs/fest_match_regular_normal_config"
+	if _, _, err := q.EnqueueWithFestTeam("scissors", open, "Charlie"); err != nil {
+		t.Fatal(err)
+	}
+	_, formed, err := q.EnqueueSquadTeams("rock", []string{"paper"}, pair, "Alpha",
+		map[string]string{"paper": "Bravo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(formed) != 0 {
+		t.Fatalf("formed %v while another player waited for Open", formed)
+	}
+}
+
 // TestOnePlayerPerTeamStillPlaysTricolor: with one player on each fest team,
 // Tricolor forms 1 v 1 v 1 after the grace period instead of waiting forever
 // for a second defender.
