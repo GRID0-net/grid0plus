@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/n-popescu/grid0plus/internal/db"
@@ -74,6 +75,10 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 		if _, ok := sentWire[key]; !ok {
 			t.Errorf("the friend-request response has no %q key: %v", key, sentWire)
 		}
+	}
+	// friend_requests/%016llx: a UUID here is 2121-0104 on the inbox screen.
+	if id, _ := sentWire["id"].(string); len(id) != 16 || strings.Trim(id, "0123456789abcdef") != "" {
+		t.Errorf("request id %q is not the 16 hex digits the console parses", id)
 	}
 	if _, ok := sentWire["receiver"]; !ok {
 		t.Errorf("the friend-request response has no \"receiver\" key: %v", sentWire)
@@ -479,13 +484,15 @@ func TestOnlyTheRecipientMayAcceptAndOnlyTheSenderMayCancel(t *testing.T) {
 	})
 	requireError(t, resp, 403, "insufficient_scope")
 
-	// A third party must not be able to touch it at all.
+	// A third party must not be able to touch it at all. The console's
+	// 16-hex id is looked up among the caller's own requests, so to a
+	// stranger it does not exist.
 	resp = h.do(request{
 		method: "PATCH", path: "/2.0.0/friend_requests/" + send(),
 		token: stranger.AccessToken,
 		patch: `[{"op":"replace","path":"/state","value":"ACCEPTED"}]`,
 	})
-	requireError(t, resp, 403, "insufficient_scope")
+	requireError(t, resp, 404, "resource_is_not_found")
 
 	// The recipient must not be able to "cancel" — that is the sender's action.
 	resp = h.do(request{

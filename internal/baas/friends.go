@@ -420,7 +420,7 @@ func (s *Server) createFriendRequest(w http.ResponseWriter, r *http.Request, c *
 	}
 	if req.State == db.RequestAccepted {
 		writeJSON(w, http.StatusCreated, FriendRequestResponse{
-			ID:         req.ID,
+			ID:         wireRequestID(req.ID),
 			SenderID:   req.FromUserID,
 			ReceiverID: req.ToUserID,
 			State:      requestStateToWire(db.RequestAccepted),
@@ -605,6 +605,40 @@ func (s *Server) resolveFriendRequest(w http.ResponseWriter, r *http.Request, c 
 	writeJSON(w, http.StatusOK, s.friendRequestResponse(r.Context(), req, c.UserID))
 }
 
+// wireRequestID is a request's id as the console handles it: 16 hex digits.
+// The friends sysmodule reads $.items[*].id as a u64 and builds its
+// accept/reject URL with "friend_requests/%016llx"; a UUID does not parse, and
+// the received-requests screen failed with 2121-0104 on the first row. The
+// stored id stays a UUID; its first 64 bits name it on the wire.
+func wireRequestID(id string) string {
+	hex := strings.ReplaceAll(id, "-", "")
+	if len(hex) < 16 {
+		return hex
+	}
+	return hex[:16]
+}
+
+// findFriendRequest resolves an id from the console (wire form) or anything
+// else that still holds a full UUID, among the caller's own pending requests.
+func (s *Server) findFriendRequest(ctx context.Context, callerID, rid string) (db.FriendRequest, error) {
+	if len(rid) != 16 {
+		return s.store.GetFriendRequest(ctx, rid)
+	}
+	rid = strings.ToLower(rid)
+	for _, incoming := range []bool{true, false} {
+		reqs, err := s.store.ListFriendRequests(ctx, callerID, incoming, true)
+		if err != nil {
+			return db.FriendRequest{}, err
+		}
+		for _, req := range reqs {
+			if wireRequestID(req.ID) == rid {
+				return req, nil
+			}
+		}
+	}
+	return db.FriendRequest{}, db.ErrNotFound
+}
+
 var (
 	errNotYourRequest    = errors.New("caller may not do that to this friend request")
 	errRequestNotPending = errors.New("friend request is no longer pending")
@@ -615,7 +649,7 @@ var (
 // two parties may touch it, and each only their own half: the recipient
 // accepts or denies, the sender cancels.
 func (s *Server) settleFriendRequest(ctx context.Context, callerID, rid, state string) (db.FriendRequest, error) {
-	req, err := s.store.GetFriendRequest(ctx, rid)
+	req, err := s.findFriendRequest(ctx, callerID, rid)
 	if err != nil {
 		return db.FriendRequest{}, err
 	}
@@ -837,7 +871,7 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request, c *caller,
 // exactly this: a parser reading a field this server was leaving unset.
 func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest, callerID string) FriendRequestResponse {
 	out := FriendRequestResponse{
-		ID:         req.ID,
+		ID:         wireRequestID(req.ID),
 		SenderID:   req.FromUserID,
 		ReceiverID: req.ToUserID,
 		State:      requestStateToWire(req.State),
