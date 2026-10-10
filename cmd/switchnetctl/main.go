@@ -823,6 +823,12 @@ func frontlineServerBlock(cfg config.Config, serverNames []string) string {
         proxy_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
+
+        # It is a stream in both directions: npns sends its digital-twin
+        # sync, pings and acks as frames on a request body that never ends.
+        # Buffered, nginx waits for that end and the frames never arrive.
+        proxy_request_buffering off;
+        client_body_timeout 3600s;
     }
 }
 `, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))

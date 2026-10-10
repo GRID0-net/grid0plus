@@ -56,6 +56,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -452,6 +453,10 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	if err := controller.Flush(); err != nil {
 		return
 	}
+	s.log.Info("nplnrest: frontline request", "user_agent", r.UserAgent(),
+		"power_state", r.Header.Get("X-Power-State"), "hug", r.Header.Get("X-Hug"),
+		"protocol", r.Header.Get("X-Protocol-Version"), "system", r.Header.Get("X-System-Version"),
+		"network", r.Header.Get("X-Network-Type"), "proto", r.Proto)
 	open := s.frontlines.Add(1)
 	s.log.Info("nplnrest: frontline connection open", "host", wirelog.HostOnly(r.Host), "open", open)
 	reason := "request_context_done"
@@ -467,8 +472,25 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 		bodyDone = make(chan bodyReadResult, 1)
 		// Capture the channel value: the select disables its own copy on EOF.
 		go func(done chan<- bodyReadResult) {
-			n, err := io.Copy(io.Discard, r.Body)
-			done <- bodyReadResult{n, err}
+			var n int64
+			for {
+				frame, err := readFrontlineFrame(r.Body)
+				if err != nil {
+					if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+						err = nil
+					}
+					done <- bodyReadResult{n, err}
+					return
+				}
+				n += int64(len(frame)) + 4
+				t := frontlineFrameType(frame)
+				shown := frame
+				if len(shown) > 512 {
+					shown = shown[:512]
+				}
+				s.log.Info("nplnrest: frontline frame from console",
+					"type", t, "name", frontlineTypeName(t), "bytes", len(frame), "hex", hex.EncodeToString(shown))
+			}
 		}(bodyDone)
 	}
 	for {
