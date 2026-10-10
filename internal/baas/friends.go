@@ -579,6 +579,18 @@ func (s *Server) resolveTarget(w http.ResponseWriter, r *http.Request, body crea
 // nothing in the log to explain it.
 func (s *Server) resolveFriendRequest(w http.ResponseWriter, r *http.Request, c *caller) {
 	state, err := parseRequestState(r)
+	if errors.Is(err, errMarksRead) {
+		// Opening a request's sender profile. This server keeps no read
+		// state, so it changes nothing; refusing it was 2121-2001 on the
+		// profile. Still only the recipient's own request answers.
+		req, err := s.findFriendRequest(r.Context(), c.UserID, r.PathValue("rid"))
+		if err != nil || req.ToUserID != c.UserID {
+			writeError(w, r, errResourceNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.friendRequestResponse(r.Context(), req, c.UserID))
+		return
+	}
 	if err != nil {
 		// Checked after the request itself only matters for the order of
 		// errors; an unreadable body is a bad request either way.
@@ -721,6 +733,9 @@ func parseRequestState(r *http.Request) (string, error) {
 	if state, ok := stateFromPatchArray(raw); ok {
 		return requestStateFromWire(state), nil
 	}
+	if onlyMarksRead(raw) {
+		return "", errMarksRead
+	}
 
 	var obj struct {
 		State string `json:"state"`
@@ -810,6 +825,23 @@ func stateFromPatchArray(raw []byte) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// errMarksRead is a patch that only sets /extras/receiver/read: the console
+// sends it when the recipient opens the sender's profile from the inbox.
+var errMarksRead = errors.New("friend request patch only marks it read")
+
+func onlyMarksRead(raw []byte) bool {
+	var ops []patchOp
+	if err := unmarshalJSON(raw, &ops); err != nil || len(ops) == 0 {
+		return false
+	}
+	for _, op := range ops {
+		if op.Path != "/extras/receiver/read" {
+			return false
+		}
+	}
+	return true
 }
 
 // ---- inbox and outbox --------------------------------------------------

@@ -961,3 +961,29 @@ func TestPatchingAFriendsExtrasSticksAndIsOneDirectional(t *testing.T) {
 		t.Error("patching a non-friend's extras succeeded")
 	}
 }
+
+func TestOpeningARequestersProfileMayMarkTheRequestRead(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	resp := h.do(request{
+		method: "POST", path: "/2.0.0/friend_requests",
+		token: a.AccessToken, json: `{"friendCode":"` + h.friendCode(b) + `"}`,
+	})
+	requireStatus(t, resp, 201)
+	var sent FriendRequestResponse
+	decode(t, resp, &sent)
+
+	// 2121-2001 on the profile when this was refused as a bad state patch.
+	read := `[{"op":"replace","path":"/extras/receiver/read","value":true}]`
+	resp = h.do(request{method: "PATCH", path: "/2.0.0/friend_requests/" + sent.ID, token: b.AccessToken, patch: read})
+	requireStatus(t, resp, 200)
+	var got FriendRequestResponse
+	decode(t, resp, &got)
+	if got.State != "PENDING" {
+		t.Errorf("marking a request read changed its state to %q", got.State)
+	}
+	// Only the recipient reads their inbox.
+	resp = h.do(request{method: "PATCH", path: "/2.0.0/friend_requests/" + sent.ID, token: a.AccessToken, patch: read})
+	requireError(t, resp, 404, "resource_is_not_found")
+}
