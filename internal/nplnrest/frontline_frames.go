@@ -98,7 +98,7 @@ func frontlineTypeName(t int) string {
 //     drops any stale mirror and goes FUN_71000dba50 -> FUN_71000dbe50 ->
 //     FUN_71000da010, state 8. The list field must be present: npns follows
 //     it without checking (FUN_71000da2f0).
-//   - SubscribeTopic and DAPresence: an Ack. Both leave npns with a request
+//   - SubscribeTopic, DAPresence and PowerState: an Ack. Both leave npns with a request
 //     pending and a 10 s deadline (FUN_71000dd980, FUN_71000de140); with no
 //     Ack it drops the connection, which on hardware meant a reconnect every
 //     ~11 s and no presence ever settling. The Ack's field 0 must be the id
@@ -122,6 +122,19 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 			w.patch(refs[0], w.emptyVector())
 			return pos
 		})
+	case frontlinePowerState:
+		// Its id is the state's name from npns's table at 0x7100168908,
+		// "" past its end (FUN_71000dd2f0); field 0 defaults to Awake.
+		body, ok := frontlineBody(frame)
+		if !ok {
+			return nil
+		}
+		v, _ := fbU16(frame, body, 0)
+		id := ""
+		if int(v) < len(powerStateNames) {
+			id = powerStateNames[v]
+		}
+		return frontlineAckFrame(now, id)
 	case frontlineSubscribeTopic:
 		return frontlineAckFrame(now, "topic.subscription")
 	case frontlineDAPresence:
@@ -151,6 +164,7 @@ const (
 	frontlineAck            = 9
 	frontlineDAPresence     = 27
 	frontlineSubscribeTopic = 23
+	frontlinePowerState     = 14
 )
 
 // firstBytesLogger logs the first bytes the console sends on the frontline,
@@ -179,3 +193,5 @@ func frontlineAckFrame(now time.Time, id string) []byte {
 		return pos
 	})
 }
+
+var powerStateNames = []string{"Awake", "Sleep"}
