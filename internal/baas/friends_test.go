@@ -80,6 +80,12 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	if id, _ := sentWire["id"].(string); len(id) != 16 || strings.Trim(id, "0123456789abcdef") != "" {
 		t.Errorf("request id %q is not the 16 hex digits the console parses", id)
 	}
+	// The parser aborts an item with no channels[0] string: 2121-0104.
+	if ch, _ := sentWire["channels"].([]any); len(ch) == 0 {
+		t.Errorf("the friend-request response has no channels[0]: %v", sentWire)
+	} else if _, ok := ch[0].(string); !ok {
+		t.Errorf("channels[0] = %v, want a channel name string", ch[0])
+	}
 	if _, ok := sentWire["receiver"]; !ok {
 		t.Errorf("the friend-request response has no \"receiver\" key: %v", sentWire)
 	}

@@ -876,15 +876,14 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 		ReceiverID: req.ToUserID,
 		State:      requestStateToWire(req.State),
 		CreatedAt:  req.CreatedAt.Unix(),
-		// Channels is read as channels[0] by the decompiled parser (this
-		// type's own doc comment) but no capture has ever shown a
-		// non-empty one, and GRID0+ tracks no per-request channel
-		// provenance to report -- so this is a real, present, empty array,
-		// not an invented entry. The field being entirely ABSENT (its
-		// state before this fix) is the more likely crash: many JSON
-		// consumers guard `len(channels) > 0` before indexing, but nothing
-		// guards a missing key the same way an empty array does.
-		Channels: []any{},
+		// channels[0] is required: the inbox/outbox parser (0x1cf640) aborts
+		// an item that lacks any of id, channels[0], state, senderId,
+		// sender.nickname or sender.thumbnailUrl, and RapidJSON's
+		// kParseErrorTermination becomes 2121-0104 (table 0x222448). An empty
+		// array failed the received-requests screen. The console sends
+		// FRIEND_CODE when it creates a request and this server stores no
+		// channel, so it is echoed back for every request.
+		Channels: []any{"FRIEND_CODE"},
 		// Extras' three scopes (receiver/sender/senderAndReceiver) are the
 		// ones the decompiled parser reads
 		// (extras.receiver.read, extras.sender.route:*,
