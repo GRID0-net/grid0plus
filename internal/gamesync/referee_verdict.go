@@ -231,7 +231,6 @@ func (s *Server) publishRefereeVerdict(ctx context.Context, caller *session, sco
 			}
 		} else {
 			fields["personal_result"] = completePersonalResults(personal, fields["team_result"])
-			festContribution(caller.details.Mode, fields["personal_result"], fields["team_result"])
 		}
 	}
 
@@ -335,39 +334,4 @@ func completePersonalResults(in, teamResult *commonpb.Value) *commonpb.Value {
 		out[id] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: fields}}}
 	}
 	return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: out}}}
-}
-
-// festWinnerContribution is the clout Nintendo gives each winner of an
-// ordinary Splatfest battle. NextendoNetwork/splatoon-3 measured it on seven
-// battles of the official fest JUEA-00107 (2026-08-22/23; facts only, not its
-// code): fest_info.contribution is computed by the server, never sent by the
-// console, and in an ordinary fest battle the four winners get the same 1410
-// while the losers get 0. Without it every player saw 0 clout after a battle.
-//
-// TODO(capture-needed): Tricolor's amounts (flat per attacker pair, 16500 or
-// 7950 by the signals it planted; individual for defenders, near their paint)
-// and the 10x/100x battles' multipliers are not isolated, so Tricolor keeps 0.
-// Change: festContribution.
-const festWinnerContribution = 1410
-
-// festContribution fills contribution for the winners of an ordinary fest
-// battle, leaving every other mode, and any value already present, alone.
-func festContribution(mode string, personal, teamResult *commonpb.Value) {
-	mode = strings.ToLower(mode)
-	if !strings.Contains(mode, "fest") || strings.Contains(mode, "tricolor") {
-		return
-	}
-	winner := teamResult.GetMapValue().GetFields()["winner"].GetIntegerValue()
-	if winner == 0 {
-		return
-	}
-	for _, entry := range personal.GetMapValue().GetFields() {
-		fields := entry.GetMapValue().GetFields()
-		if fields == nil || fields["team"].GetIntegerValue() != winner {
-			continue
-		}
-		if fields["contribution"].GetIntegerValue() == 0 {
-			fields["contribution"] = verdictInt(festWinnerContribution)
-		}
-	}
 }
