@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
@@ -102,8 +103,12 @@ func (s *Server) recordDAPresence(ctx context.Context, frame []byte) (string, er
 		return "", fmt.Errorf("DAPresence status %d", d.Status)
 	}
 	var scopes daPresenceScopes
+	var reported db.ExtrasByScope
 	if d.JSON != "" {
 		if err := json.Unmarshal([]byte(d.JSON), &scopes); err != nil {
+			return "", fmt.Errorf("DAPresence JSON: %w", err)
+		}
+		if err := json.Unmarshal([]byte(d.JSON), &reported); err != nil {
 			return "", fmt.Errorf("DAPresence JSON: %w", err)
 		}
 	}
@@ -111,9 +116,15 @@ func (s *Server) recordDAPresence(ctx context.Context, frame []byte) (string, er
 	if len(f.AppField) > 1024 || len(f.AppID) > 32 || len(f.PresenceGroupID) > 32 {
 		return "", fmt.Errorf("DAPresence fields too long")
 	}
+	current, err := s.store.GetPresence(ctx, d.UserID)
+	if err != nil {
+		return "", err
+	}
+	extras := presenceExtras(current.Extras, reported)
 	now := s.clock()
 	patch := db.PresencePatch{
-		State: &state, AppID: &f.AppID, PresenceGroupID: &f.PresenceGroupID,
+		Extras: &extras,
+		State:  &state, AppID: &f.AppID, PresenceGroupID: &f.PresenceGroupID,
 		AppField: &f.AppField, ACDIndex: f.ACDIndex, ReportedAt: &now,
 	}
 	if state == db.StateOffline {
@@ -193,4 +204,37 @@ func isHex16(s string) bool {
 		}
 	}
 	return true
+}
+
+// presenceExtras merges a DAPresence's scopes into the stored presence extras.
+//
+// The JSON npns sends is already BAAS's extras-by-scope, and the extras are
+// the only place a friend's console reads the game from: the friend-list
+// presence carries appInfo:* under extras.friends and no flat app id at all.
+// Storing only the flat fields made a playing friend read as "Online
+// (Nintendo Switch)". Each report replaces the app keys of every scope it
+// names, so a game that closed does not linger; other keys are kept.
+func presenceExtras(current, reported db.ExtrasByScope) db.ExtrasByScope {
+	out := db.EmptyExtras()
+	for scope, kv := range current {
+		if out[scope] == nil {
+			continue
+		}
+		for k, v := range kv {
+			out[scope][k] = v
+		}
+	}
+	for _, scope := range db.Scopes {
+		kv, ok := reported[scope]
+		if !ok {
+			continue
+		}
+		for _, k := range []string{presence.KeyAppID, presence.KeyPresenceGroupID, presence.KeyACDIndex, presence.KeyAppField} {
+			delete(out[scope], k)
+		}
+		for k, v := range kv {
+			out[scope][k] = v
+		}
+	}
+	return out
 }

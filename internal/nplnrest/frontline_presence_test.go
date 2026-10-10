@@ -64,6 +64,20 @@ func TestAConsolesFrontlinePresenceMakesItPlaying(t *testing.T) {
 	if p.State != db.StatePlaying || p.AppID != "0100c2500fc20000" || p.PresenceGroupID != "0100c2500fc20000" || p.AppField != "{}" {
 		t.Fatalf("presence = %+v", p)
 	}
+	// A friend's console reads the game only from extras.friends.
+	if got := p.Extras[db.ScopeFriends]["appInfo:appId"]; got != "0100c2500fc20000" {
+		t.Fatalf("extras.friends appInfo:appId = %v, want the game; extras = %v", got, p.Extras)
+	}
+
+	// Closing the game: the next report has no app keys, and none linger.
+	frame = daPresenceFrame(now, 1, `{"self":{},"favoriteFriends":{},"friends":{},"foaf":{},"everyone":{}}`, "2a1a27dd90f47c89", "da"+"1a27dd90f47c89")
+	if _, err := s.recordDAPresence(ctx, frame[4:]); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = store.GetPresence(ctx, "2a1a27dd90f47c89")
+	if _, ok := p.Extras[db.ScopeFriends]["appInfo:appId"]; ok || p.State != db.StateOnline {
+		t.Fatalf("after closing the game: state %s, extras %v", p.State, p.Extras)
+	}
 }
 
 // npns waits 10 s for an Ack carrying the id it stored, and aborts on a
