@@ -3,6 +3,7 @@ package toyohr
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/n-popescu/grid0plus/internal/db"
@@ -69,6 +70,7 @@ func RecordFestReport(ctx context.Context, store db.Store, r gamesync.RefereeRep
 		for _, id := range r.Players {
 			members[id] = true
 		}
+		ownSlot := int64(0)
 		winnerCounts := map[string]int{}
 		ink := map[string]int64{}
 		for _, v := range personal.GetFields() {
@@ -89,6 +91,7 @@ func RecordFestReport(ctx context.Context, store db.Store, r gamesync.RefereeRep
 			// report carries exactly one player's paint -- the losers' too,
 			// which the battle row below never sees once a winner wrote it.
 			if uid == r.UserID {
+				ownSlot = fields["team"].GetIntegerValue()
 				if err := store.RecordFestBattlePlayer(ctx, db.FestBattlePlayer{
 					FestID: f.ID, BattleID: r.BattleID, UserID: uid, Team: team, Paint: max(paint, 0),
 				}); err != nil {
@@ -104,6 +107,9 @@ func RecordFestReport(ctx context.Context, store db.Store, r gamesync.RefereeRep
 		}
 		if winner == "" && !strings.Contains(mode, "tricolor") {
 			winner = otherTeam(r, votes)
+		}
+		if winner == "" && strings.Contains(mode, "tricolor") && ownSlot != 0 {
+			winner = tricolorSlots.resolve(r, votes, ownSlot, winnerSlot, now)
 		}
 		if winner == "" {
 			return nil
@@ -138,6 +144,71 @@ func otherTeam(r gamesync.RefereeReport, votes map[string]string) string {
 		other = team
 	}
 	return other
+}
+
+// tricolorSlots pieces a Tricolor battle's winner together from its losers'
+// reports. Each report names the winning slot but carries only the reporter's
+// own entry, so one loser cannot tell which of the two other teams holds that
+// slot. Across a battle's reports, though, every reporter pins its own slot to
+// its team: once two different losing teams have reported the winner is the
+// third, and once anyone in the winning slot has reported it is that team.
+// Only a battle reported by one losing team alone stays unrecorded.
+var tricolorSlots = &slotBook{battles: map[string]*slotTeams{}}
+
+type slotBook struct {
+	mu      sync.Mutex
+	battles map[string]*slotTeams
+}
+
+type slotTeams struct {
+	seen  time.Time
+	teams map[int64]string
+}
+
+func (b *slotBook) resolve(r gamesync.RefereeReport, votes map[string]string, ownSlot, winnerSlot int64, now time.Time) string {
+	own := votes[r.UserID]
+	if own == "" {
+		return ""
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for id, st := range b.battles {
+		// Every console reports within seconds of the results screen.
+		if now.Sub(st.seen) > 30*time.Minute {
+			delete(b.battles, id)
+		}
+	}
+	st := b.battles[r.BattleID]
+	if st == nil {
+		st = &slotTeams{teams: map[int64]string{}}
+		b.battles[r.BattleID] = st
+	}
+	st.seen = now
+	st.teams[ownSlot] = own
+	if team := st.teams[winnerSlot]; team != "" {
+		return team
+	}
+	losers := map[string]bool{}
+	for slot, team := range st.teams {
+		if slot != winnerSlot {
+			losers[team] = true
+		}
+	}
+	if len(losers) < 2 {
+		return ""
+	}
+	winner := ""
+	for _, id := range r.Players {
+		team := votes[id]
+		if team == "" || losers[team] {
+			continue
+		}
+		if winner != "" && winner != team {
+			return ""
+		}
+		winner = team
+	}
+	return winner
 }
 
 // FestTeamsOf maps the players of a fest battle's report to the teams they

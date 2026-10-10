@@ -98,3 +98,46 @@ func TestALosersReportAloneStillRecordsATwoTeamBattle(t *testing.T) {
 		t.Fatalf("loser-only battle = %v, %v", battles, err)
 	}
 }
+
+func TestTwoLosingTeamsReportsTogetherRecordATricolorBattle(t *testing.T) {
+	svc, store, fest := liveFest(t, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	for _, p := range [][2]string{{"t1", "Alpha"}, {"t2", "Bravo"}, {"t3", "Charlie"}} {
+		as(t, p[0])
+		entryFor(t, svc, fest.ID, p[1])
+	}
+	mapV := func(f map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: f}}}
+	}
+	integer := func(n int64) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
+	}
+	report := func(user string, slot int64) gamesync.RefereeReport {
+		return gamesync.RefereeReport{
+			BattleID: "20260905T010000_room-3", SessionID: "room-3", Mode: "fest_match_tricolor_config",
+			UserID: user, Players: []string{"t1", "t2", "t3"},
+			Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+				"team_result": mapV(map[string]*commonpb.Value{"winner": integer(3)}),
+				"personal_result": mapV(map[string]*commonpb.Value{
+					"a": mapV(map[string]*commonpb.Value{
+						"npln_user_id": {ValueType: &commonpb.Value_StringValue{StringValue: user}},
+						"team":         integer(slot), "paint_point": integer(500),
+					}),
+				}),
+			}},
+		}
+	}
+	at := fest.Timetable().Start.Add(time.Hour)
+	if err := RecordFestReport(context.Background(), store, report("t1", 1), at); err != nil {
+		t.Fatal(err)
+	}
+	if battles, _ := store.ListFestBattles(context.Background(), fest.ID); len(battles) != 0 {
+		t.Fatalf("one losing team alone cannot name the winner: %v", battles)
+	}
+	if err := RecordFestReport(context.Background(), store, report("t2", 2), at); err != nil {
+		t.Fatal(err)
+	}
+	battles, err := store.ListFestBattles(context.Background(), fest.ID)
+	if err != nil || len(battles) != 1 || battles[0].WinningTeam != "Charlie" {
+		t.Fatalf("tricolor from two losers = %v, %v", battles, err)
+	}
+}
