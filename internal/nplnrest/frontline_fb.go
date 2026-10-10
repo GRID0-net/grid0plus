@@ -155,3 +155,25 @@ func fbU64(p []byte, t, idx int) (uint64, bool) {
 
 func u16(v uint16) *fbField { return &fbField{scalar: binary.LittleEndian.AppendUint16(nil, v)} }
 func i64(v int64) *fbField  { return &fbField{scalar: binary.LittleEndian.AppendUint64(nil, uint64(v))} }
+
+// fbString reads the string a uoffset slot points at, or "" when it does not
+// fit the buffer.
+func fbString(p []byte, slot int) string {
+	pos, ok := fbTable(p, slot)
+	if !ok {
+		return ""
+	}
+	n := int(binary.LittleEndian.Uint32(p[pos:]))
+	if n < 0 || pos+4+n > len(p) {
+		return ""
+	}
+	return string(p[pos+4 : pos+4+n])
+}
+
+func fbU16(p []byte, t, idx int) (uint16, bool) {
+	pos, ok := fbFieldPos(p, t, idx)
+	if !ok || pos+2 > len(p) {
+		return 0, false
+	}
+	return binary.LittleEndian.Uint16(p[pos:]), true
+}

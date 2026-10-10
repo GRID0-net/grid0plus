@@ -19,16 +19,6 @@ import (
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
-// fbString reads the string a uoffset slot points at.
-func fbString(p []byte, slot int) string {
-	pos, ok := fbTable(p, slot)
-	if !ok {
-		return ""
-	}
-	n := int(binary.LittleEndian.Uint32(p[pos:]))
-	return string(p[pos+4 : pos+4+n])
-}
-
 // A friend's presence change reaches every console the friend is signed in
 // on, as a PutRecord npns hands to the friends sysmodule; and npns holds one
 // record at a time, so a second waits for its Ack.

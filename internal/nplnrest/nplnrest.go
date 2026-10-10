@@ -558,6 +558,7 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 		body := &firstBytesLogger{r: r.Body, log: s.log}
 		go func(done chan<- bodyReadResult) {
 			var n int64
+			var keeper presenceKeeper
 			for {
 				frame, err := readFrontlineFrame(body)
 				if err != nil {
@@ -582,6 +583,13 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 					}
 					rt := frontlineFrameType(reply[4:])
 					s.log.Info("nplnrest: frontline frame to console", "type", rt, "name", frontlineTypeName(rt), "bytes", len(reply)-4)
+				}
+				if t == frontlineDAPresence && s.store != nil {
+					if user, err := s.recordDAPresence(r.Context(), frame); err != nil {
+						s.log.Info("nplnrest: console presence refused", "error", err)
+					} else {
+						keeper.add(s, r.Context(), user)
+					}
 				}
 				if conn != nil {
 					switch t {
