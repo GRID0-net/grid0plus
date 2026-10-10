@@ -59,6 +59,7 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 		if !coop {
 			fields.Fields["personal_result"] = completePersonalResults(
 				fields.Fields["personal_result"], fields.Fields["team_result"])
+			festContribution(d.Mode, fields.Fields["personal_result"], fields.Fields["team_result"])
 		}
 		report := RefereeReport{
 			BattleID: battleID, SessionID: d.SessionID, Mode: d.Mode,
