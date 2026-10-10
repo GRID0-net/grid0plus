@@ -1772,6 +1772,23 @@ func testFestBattles(t *testing.T, s Store) {
 	if err != nil || again[0].Ink["Alpha"] != 1410 {
 		t.Fatalf("battle read must not mutate stored ink: %v, %v", again, err)
 	}
+	// Each console reports only its own result: the battle's ink becomes the
+	// per-team sum of its players, and a repeated report counts once.
+	players := []FestBattlePlayer{
+		{FestID: fest.ID, BattleID: "match-1", UserID: "u1", Team: "Alpha", Paint: 1410},
+		{FestID: fest.ID, BattleID: "match-1", UserID: "u2", Team: "Bravo", Paint: 900},
+		{FestID: fest.ID, BattleID: "match-1", UserID: "u3", Team: "Bravo", Paint: 100},
+		{FestID: fest.ID, BattleID: "match-1", UserID: "u2", Team: "Bravo", Paint: 900},
+	}
+	for _, p := range players {
+		if err := s.RecordFestBattlePlayer(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	summed, err := s.ListFestBattles(ctx, fest.ID)
+	if err != nil || len(summed) != 1 || summed[0].Ink["Alpha"] != 1410 || summed[0].Ink["Bravo"] != 1000 {
+		t.Fatalf("battle ink from players: %v, %v", summed, err)
+	}
 	if err := s.DeleteFest(ctx, fest.ID); err != nil {
 		t.Fatal(err)
 	}

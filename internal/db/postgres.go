@@ -1483,7 +1483,43 @@ func (p *Postgres) RecordFestBattle(ctx context.Context, b FestBattle) error {
 	return mapErr(err)
 }
 
+func (p *Postgres) RecordFestBattlePlayer(ctx context.Context, b FestBattlePlayer) error {
+	_, err := p.pool.Exec(ctx, `INSERT INTO npln_fest_battle_players
+		(fest_id, battle_id, user_id, team, paint)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (fest_id, battle_id, user_id) DO NOTHING`,
+		b.FestID, b.BattleID, b.UserID, b.Team, b.Paint)
+	return mapErr(err)
+}
+
+// festBattleInk sums each battle's recorded players' paint by team.
+func (p *Postgres) festBattleInk(ctx context.Context, festID string) (map[string]map[string]int64, error) {
+	rows, err := p.pool.Query(ctx, `SELECT battle_id, team, sum(paint)
+		FROM npln_fest_battle_players WHERE fest_id = $1 GROUP BY battle_id, team`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	out := map[string]map[string]int64{}
+	for rows.Next() {
+		var battle, team string
+		var paint int64
+		if err := rows.Scan(&battle, &team, &paint); err != nil {
+			return nil, mapErr(err)
+		}
+		if out[battle] == nil {
+			out[battle] = map[string]int64{}
+		}
+		out[battle][team] = paint
+	}
+	return out, mapErr(rows.Err())
+}
+
 func (p *Postgres) ListFestBattles(ctx context.Context, festID string) ([]FestBattle, error) {
+	summed, err := p.festBattleInk(ctx, festID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := p.pool.Query(ctx, `SELECT fest_id, battle_id, mode, winning_team, ink, finished_at
 		FROM npln_fest_battles WHERE fest_id = $1 ORDER BY finished_at, battle_id`, festID)
 	if err != nil {
@@ -1499,6 +1535,9 @@ func (p *Postgres) ListFestBattles(ctx context.Context, festID string) ([]FestBa
 		}
 		if err := json.Unmarshal(ink, &b.Ink); err != nil {
 			return nil, err
+		}
+		if players, ok := summed[b.BattleID]; ok {
+			b.Ink = players
 		}
 		out = append(out, b)
 	}

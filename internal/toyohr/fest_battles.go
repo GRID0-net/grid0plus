@@ -81,8 +81,19 @@ func RecordFestReport(ctx context.Context, store db.Store, r gamesync.RefereeRep
 			if fields["team"].GetIntegerValue() == winnerSlot {
 				winnerCounts[team]++
 			}
-			if paint := fields["paint_point"].GetIntegerValue(); paint > 0 {
+			paint := fields["paint_point"].GetIntegerValue()
+			if paint > 0 {
 				ink[team] += paint
+			}
+			// gamesync keeps only the reporter's own entry, so each console's
+			// report carries exactly one player's paint -- the losers' too,
+			// which the battle row below never sees once a winner wrote it.
+			if uid == r.UserID {
+				if err := store.RecordFestBattlePlayer(ctx, db.FestBattlePlayer{
+					FestID: f.ID, BattleID: r.BattleID, UserID: uid, Team: team, Paint: max(paint, 0),
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		winner, count := "", 0

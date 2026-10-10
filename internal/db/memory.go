@@ -37,7 +37,9 @@ type Memory struct {
 	// fest, the same shape friendships uses for its own per-pair map.
 	festEntries map[string]map[string]FestEntry
 	festBattles map[string]map[string]FestBattle
-	coopShifts  map[string]CoopShift
+	// festBattlePlayers is keyed by fest, then battle/user.
+	festBattlePlayers map[string]map[string]FestBattlePlayer
+	coopShifts        map[string]CoopShift
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
@@ -59,19 +61,20 @@ type Memory struct {
 // NewMemory returns an empty in-memory store.
 func NewMemory() *Memory {
 	return &Memory{
-		users:          map[string]User{},
-		devices:        map[string]Device{},
-		deviceAccounts: map[string]DeviceAccount{},
-		friendCodes:    map[string]FriendCode{},
-		fests:          map[string]Fest{},
-		festEntries:    map[string]map[string]FestEntry{},
-		festBattles:    map[string]map[string]FestBattle{},
-		coopShifts:     map[string]CoopShift{},
-		friendships:    map[string]map[string]Friendship{},
-		friendRequests: map[string]FriendRequest{},
-		blocks:         map[string]map[string]Block{},
-		presence:       map[string]Presence{},
-		images:         map[string]Image{},
+		users:             map[string]User{},
+		devices:           map[string]Device{},
+		deviceAccounts:    map[string]DeviceAccount{},
+		friendCodes:       map[string]FriendCode{},
+		fests:             map[string]Fest{},
+		festEntries:       map[string]map[string]FestEntry{},
+		festBattles:       map[string]map[string]FestBattle{},
+		festBattlePlayers: map[string]map[string]FestBattlePlayer{},
+		coopShifts:        map[string]CoopShift{},
+		friendships:       map[string]map[string]Friendship{},
+		friendRequests:    map[string]FriendRequest{},
+		blocks:            map[string]map[string]Block{},
+		presence:          map[string]Presence{},
+		images:            map[string]Image{},
 
 		naRefreshTokens: map[string]NARefreshToken{},
 		ugcDocuments:    map[string]UGCDocument{},
@@ -1516,6 +1519,7 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	// Without this a recreated fest of the same id would inherit the old votes.
 	delete(m.festEntries, id)
 	delete(m.festBattles, id)
+	delete(m.festBattlePlayers, id)
 	return nil
 }
 
@@ -1583,12 +1587,39 @@ func (m *Memory) RecordFestBattle(_ context.Context, b FestBattle) error {
 	return nil
 }
 
+func (m *Memory) RecordFestBattlePlayer(_ context.Context, p FestBattlePlayer) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.fests[p.FestID]; !ok {
+		return ErrNotFound
+	}
+	if m.festBattlePlayers[p.FestID] == nil {
+		m.festBattlePlayers[p.FestID] = map[string]FestBattlePlayer{}
+	}
+	key := p.BattleID + "/" + p.UserID
+	if _, exists := m.festBattlePlayers[p.FestID][key]; !exists {
+		m.festBattlePlayers[p.FestID][key] = p
+	}
+	return nil
+}
+
 func (m *Memory) ListFestBattles(_ context.Context, festID string) ([]FestBattle, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	summed := map[string]map[string]int64{}
+	for _, p := range m.festBattlePlayers[festID] {
+		if summed[p.BattleID] == nil {
+			summed[p.BattleID] = map[string]int64{}
+		}
+		summed[p.BattleID][p.Team] += p.Paint
+	}
 	out := make([]FestBattle, 0, len(m.festBattles[festID]))
 	for _, b := range m.festBattles[festID] {
-		b.Ink = cloneInk(b.Ink)
+		if ink, ok := summed[b.BattleID]; ok {
+			b.Ink = cloneInk(ink)
+		} else {
+			b.Ink = cloneInk(b.Ink)
+		}
 		out = append(out, b)
 	}
 	sort.Slice(out, func(i, j int) bool {

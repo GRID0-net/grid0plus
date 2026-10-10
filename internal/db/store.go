@@ -439,6 +439,14 @@ type FestBattle struct {
 	FinishedAt                          time.Time
 }
 
+// FestBattlePlayer is one player's part in a Splatfest battle, from that
+// player's own referee report: each console reports only its own result, so a
+// battle's ink is the sum of these rows across its players.
+type FestBattlePlayer struct {
+	FestID, BattleID, UserID, Team string
+	Paint                          int64
+}
+
 // CoopShift is one Salmon Run rotation slot, as the operator scheduled it.
 //
 // Only the mechanics, the same split Fest makes: when it runs and what real
@@ -732,7 +740,13 @@ type Store interface {
 	ListFestEntries(ctx context.Context, festID string) ([]FestEntry, error)
 	// RecordFestBattle is idempotent: eight consoles may report the same match.
 	RecordFestBattle(ctx context.Context, b FestBattle) error
+	// ListFestBattles returns each battle with Ink summed from its recorded
+	// players when it has any, and the battle row's own Ink otherwise (battles
+	// recorded before per-player rows existed).
 	ListFestBattles(ctx context.Context, festID string) ([]FestBattle, error)
+	// RecordFestBattlePlayer is idempotent per player: a console may report
+	// the same match more than once, and each report must count once.
+	RecordFestBattlePlayer(ctx context.Context, p FestBattlePlayer) error
 
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.
