@@ -21,7 +21,7 @@ import (
 //     copper/silver/gold_scale_num, personal_data, wave_detail;
 //   - personal_data[i]: npln_user_id, is_supporter, disconnected,
 //     group_leader, kuma_point, grade_rate, grade_before/after,
-//     grade_point_before/after, smell_before/after, personal_wave_result
+//     grade_point_before/after, smell_before/after (per player, see ApplyCoopGrades), personal_wave_result
 //     (wave, weapon_id, special_id, special_count, golden_ikura_num,
 //     assist_golden_ikura_num, ikura_num, rescued_num, rescue_num) and
 //     personal_profile {player_info, skin_id, report_score}.
@@ -64,7 +64,6 @@ func RecordCoopResults(ctx context.Context, store db.Store, tenant, battleID str
 
 	finalWave := firstNamed(team, "final_wave")
 	points := jobPoints(sumNamed(team, "delivered_golden_ikura_num"), finalWave)
-	smell := vf["scenario"].GetMapValue().GetFields()["smell_num"]
 
 	var players []string
 	var personal []*commonpb.Value
@@ -79,7 +78,7 @@ func RecordCoopResults(ctx context.Context, store db.Store, tenant, battleID str
 			continue
 		}
 		players = append(players, uid)
-		personal = append(personal, coopPersonalData(uid, entry, profiles[uid], points, smell))
+		personal = append(personal, coopPersonalData(uid, entry, profiles[uid], points))
 	}
 	top["personal_data"] = &commonpb.Value{ValueType: &commonpb.Value_ArrayValue{
 		ArrayValue: &commonpb.ArrayValue{Values: personal}}}
@@ -100,7 +99,7 @@ func RecordCoopResults(ctx context.Context, store db.Store, tenant, battleID str
 }
 
 // coopPersonalData is one player's personal_data entry, from their report.
-func coopPersonalData(uid string, entry, playerInfo *commonpb.Value, points int64, smell *commonpb.Value) *commonpb.Value {
+func coopPersonalData(uid string, entry, playerInfo *commonpb.Value, points int64) *commonpb.Value {
 	ef := entry.GetMapValue().GetFields()
 	out := map[string]*commonpb.Value{
 		"npln_user_id": str(uid),
@@ -108,13 +107,13 @@ func coopPersonalData(uid string, entry, playerInfo *commonpb.Value, points int6
 		"kuma_point":   integer(points),
 	}
 	for _, k := range []string{"is_supporter", "disconnected", "group_leader", "personal_wave_result", "report_score",
-		"grade_before", "grade_after", "grade_point_before", "grade_point_after", "grade_rate"} {
+		"grade_before", "grade_after", "grade_point_before", "grade_point_after", "grade_rate",
+		// Each player's own Salmometer, as ApplyCoopGrades moved it. The
+		// scenario's smell_num is the team's sum, not anyone's meter.
+		"smell_before", "smell_after"} {
 		if v := ef[k]; v != nil {
 			out[k] = v
 		}
-	}
-	if smell != nil {
-		out["smell_before"], out["smell_after"] = smell, smell
 	}
 	profile := map[string]*commonpb.Value{}
 	if playerInfo != nil {

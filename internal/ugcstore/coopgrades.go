@@ -36,6 +36,7 @@ func ApplyCoopGrades(ctx context.Context, store db.Store, tenant, battleID, mode
 	if result.GetIntegerValue() == 0 && wave.GetIntegerValue() < 2 {
 		return nil
 	}
+	encounter := kingSalmonidEncountered(f["team_result"])
 	people := f["personal_result"].GetMapValue().GetFields()
 	disconnect := false
 	for _, v := range people {
@@ -69,7 +70,7 @@ func ApplyCoopGrades(ctx context.Context, store db.Store, tenant, battleID, mode
 		if entry["is_supporter"].GetBooleanValue() && delta > 0 {
 			delta = 0
 		}
-		grades, err := creditCoopGrade(ctx, store, tenant, battleID, uid, delta, now)
+		grades, err := creditCoopGrade(ctx, store, tenant, battleID, uid, delta, encounter, now)
 		if err != nil {
 			return err
 		}
@@ -92,7 +93,33 @@ func nextCoopGrade(before, delta int64) int64 {
 	return after
 }
 
-func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid string, delta int64, now time.Time) (*commonpb.MapValue, error) {
+// smellMax is a full Salmometer. The game sums every player's smell into the
+// job's scenario.smell_num (FUN_71032c0260, from each member's copy of
+// CoopUserAttribute.smell, read at FUN_710327ba70) and rolls the King
+// Salmonid at the end of wave 3 from that sum; Inkipedia's datamine notes
+// give the odds (0 up to a sum of 4, certain at 20 = four full meters).
+const smellMax = 5
+
+// nextSmell is one player's Salmometer after a job: up one per job without
+// a King Salmonid, whatever the result, and empty again after one.
+// Nintendo's server keeps it; the console never reports a new value, only
+// the sum it started the job with.
+func nextSmell(before int64, encounter bool) int64 {
+	if encounter {
+		return 0
+	}
+	return min(max(before, 0)+1, smellMax)
+}
+
+// kingSalmonidEncountered reports an Xtrawave in a job's team result: a
+// fourth wave (final_wave counts from 0, a cleared normal job ends at 2), or
+// the game's own boss flags.
+func kingSalmonidEncountered(team *commonpb.Value) bool {
+	return firstNamed(team, "final_wave") >= 3 || firstNamed(team, "spawned_boss") != 0 ||
+		firstNamed(team, "did_defeat_boss") != 0
+}
+
+func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid string, delta int64, encounter bool, now time.Time) (*commonpb.MapValue, error) {
 	root := "tenants/" + tenant + documentsSegment
 	marker := root + "grid0/coopGradeCredits/" + battle + "_" + uid
 	name := root + "services/GameRecord/users/" + uid + "/CoopUserAttribute/Data"
@@ -121,12 +148,16 @@ func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid st
 			return nil, fmt.Errorf("invalid stored Coop grade coordinate")
 		}
 		after := nextCoopGrade(before, delta)
+		smellBefore := attrs.Fields["smell"].GetIntegerValue()
+		smellAfter := nextSmell(smellBefore, encounter)
 		grades := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 			"grade_point_before": integer(before), "grade_point_after": integer(after),
 			"grade_before": integer(min(before/100, 8)), "grade_after": integer(min(after/100, 8)),
+			"smell_before": integer(smellBefore), "smell_after": integer(smellAfter),
 		}}
 		attrs.Fields["total_grade_point"] = integer(after)
 		attrs.Fields["grade"] = integer(min(after/100, 8))
+		attrs.Fields["smell"] = integer(smellAfter)
 		d.Fields, err = encodeFields(attrs)
 		if err != nil {
 			return nil, err

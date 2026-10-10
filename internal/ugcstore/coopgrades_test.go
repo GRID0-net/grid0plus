@@ -25,7 +25,7 @@ func TestSmallCoopJobsAdvanceGradeAndRetriesDoNotCreditTwice(t *testing.T) {
 			store := db.NewMemory()
 			now := time.Now().UTC()
 			name := "tenants/t-dce9377b-lp1/documents/services/GameRecord/users/alice/CoopUserAttribute/Data"
-			encoded, _ := encodeFields(&commonpb.MapValue{Fields: map[string]*commonpb.Value{"total_grade_point": integer(tc.before), "smell": integer(8)}})
+			encoded, _ := encodeFields(&commonpb.MapValue{Fields: map[string]*commonpb.Value{"total_grade_point": integer(tc.before), "team_contest_point": integer(8), "smell": integer(2)}})
 			if err := store.PutUGCDocument(ctx, db.UGCDocument{Name: name, Owner: "alice", Fields: encoded, CreateTime: now, UpdateTime: now}); err != nil {
 				t.Fatal(err)
 			}
@@ -52,8 +52,12 @@ func TestSmallCoopJobsAdvanceGradeAndRetriesDoNotCreditTwice(t *testing.T) {
 			if got := attrs.Fields["total_grade_point"].GetIntegerValue(); got != tc.want {
 				t.Fatalf("grade=%d, want %d", got, tc.want)
 			}
-			if got := attrs.Fields["smell"].GetIntegerValue(); got != 8 {
+			if got := attrs.Fields["team_contest_point"].GetIntegerValue(); got != 8 {
 				t.Fatalf("unrelated attribute overwritten")
+			}
+			// One job, three verdict retries: the Salmometer moves once.
+			if got := attrs.Fields["smell"].GetIntegerValue(); got != 3 {
+				t.Fatalf("smell = %d after one job from 2, want 3", got)
 			}
 			p := verdict.Fields["personal_result"].GetMapValue().Fields["a"].GetMapValue().Fields
 			if p["grade_point_before"].GetIntegerValue() != tc.before || p["grade_point_after"].GetIntegerValue() != tc.want {
@@ -61,6 +65,51 @@ func TestSmallCoopJobsAdvanceGradeAndRetriesDoNotCreditTwice(t *testing.T) {
 			}
 			if tc.disconnect && verdict.Fields["personal_result"].GetMapValue().Fields["b"].GetMapValue().Fields["grade_point_after"].GetIntegerValue() != 0 {
 				t.Fatal("disconnected player received survivor credit")
+			}
+		})
+	}
+}
+
+// The Salmometer is Nintendo-server state: up one per job without a King
+// Salmonid, capped at full, and empty after one.
+func TestTheSalmometerFillsPerJobAndEmptiesAfterAKingSalmonid(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		before, want      int64
+		finalWave, result int64
+	}{
+		{"cleared job", 0, 1, 2, 0},
+		{"lost at wave one", 1, 2, 0, 1},
+		{"stays full", 5, 5, 2, 0},
+		{"xtrawave empties it", 5, 0, 3, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			store := db.NewMemory()
+			now := time.Now().UTC()
+			name := "tenants/t/documents/services/GameRecord/users/alice/CoopUserAttribute/Data"
+			encoded, _ := encodeFields(&commonpb.MapValue{Fields: map[string]*commonpb.Value{"smell": integer(tc.before)}})
+			if err := store.PutUGCDocument(ctx, db.UGCDocument{Name: name, Owner: "alice", Fields: encoded, CreateTime: now, UpdateTime: now}); err != nil {
+				t.Fatal(err)
+			}
+			m := func(f map[string]*commonpb.Value) *commonpb.Value {
+				return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: f}}}
+			}
+			verdict := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+				"team_result":     m(map[string]*commonpb.Value{"result": integer(tc.result), "final_wave": integer(tc.finalWave)}),
+				"personal_result": m(map[string]*commonpb.Value{"a": m(map[string]*commonpb.Value{})}),
+			}}
+			if err := ApplyCoopGrades(ctx, store, "t", "job", "coop_regular_config", verdict, map[string]string{"a": "alice"}, now); err != nil {
+				t.Fatal(err)
+			}
+			d, _ := store.GetUGCDocument(ctx, name)
+			attrs, _ := decodeFields(d.Fields)
+			if got := attrs.Fields["smell"].GetIntegerValue(); got != tc.want {
+				t.Fatalf("smell = %d, want %d", got, tc.want)
+			}
+			p := verdict.Fields["personal_result"].GetMapValue().Fields["a"].GetMapValue().Fields
+			if p["smell_before"].GetIntegerValue() != tc.before || p["smell_after"].GetIntegerValue() != tc.want {
+				t.Fatalf("job's smell_before/after = %v/%v", p["smell_before"], p["smell_after"])
 			}
 		})
 	}
