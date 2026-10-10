@@ -64,3 +64,37 @@ func TestRefereeReportRecordsOneBattleForTheAuthenticatedFestSession(t *testing.
 		t.Fatal("report for an unrelated session was counted")
 	}
 }
+
+func TestALosersReportAloneStillRecordsATwoTeamBattle(t *testing.T) {
+	svc, store, fest := liveFest(t, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	as(t, "p1")
+	entryFor(t, svc, fest.ID, "Alpha")
+	as(t, "p2")
+	entryFor(t, svc, fest.ID, "Bravo")
+	mapV := func(f map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: f}}}
+	}
+	integer := func(n int64) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
+	}
+	report := gamesync.RefereeReport{
+		BattleID: "20260905T010000_room-9", SessionID: "room-9", Mode: "fest_match_regular_direct_pair_config",
+		UserID: "p1", Players: []string{"p1", "p2"},
+		Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"team_result": mapV(map[string]*commonpb.Value{"winner": integer(2)}),
+			"personal_result": mapV(map[string]*commonpb.Value{
+				"a": mapV(map[string]*commonpb.Value{
+					"npln_user_id": {ValueType: &commonpb.Value_StringValue{StringValue: "p1"}},
+					"team":         integer(1), "paint_point": integer(700),
+				}),
+			}),
+		}},
+	}
+	if err := RecordFestReport(context.Background(), store, report, fest.Timetable().Start.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	battles, err := store.ListFestBattles(context.Background(), fest.ID)
+	if err != nil || len(battles) != 1 || battles[0].WinningTeam != "Bravo" || battles[0].Ink["Alpha"] != 700 {
+		t.Fatalf("loser-only battle = %v, %v", battles, err)
+	}
+}

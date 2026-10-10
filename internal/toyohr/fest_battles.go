@@ -102,6 +102,9 @@ func RecordFestReport(ctx context.Context, store db.Store, r gamesync.RefereeRep
 				winner, count = team, n
 			}
 		}
+		if winner == "" && !strings.Contains(mode, "tricolor") {
+			winner = otherTeam(r, votes)
+		}
 		if winner == "" {
 			return nil
 		}
@@ -111,4 +114,28 @@ func RecordFestReport(ctx context.Context, store db.Store, r gamesync.RefereeRep
 		})
 	}
 	return nil
+}
+
+// otherTeam names the winner from a losing player's report in a two-team
+// battle: the one fest team among the session's players that is not the
+// reporter's. Without it a battle whose winners never reported -- a winner
+// who disconnected at the results -- was not counted at all. Tricolor has
+// two other teams, so it is never inferred there.
+func otherTeam(r gamesync.RefereeReport, votes map[string]string) string {
+	own := votes[r.UserID]
+	if own == "" {
+		return ""
+	}
+	other := ""
+	for _, id := range r.Players {
+		team := votes[id]
+		if team == "" || team == own {
+			continue
+		}
+		if other != "" && other != team {
+			return ""
+		}
+		other = team
+	}
+	return other
 }
