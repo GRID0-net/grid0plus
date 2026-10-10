@@ -64,6 +64,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -447,10 +448,16 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	if s.now != nil {
 		now = s.now()
 	}
-	if _, err := w.Write(frontlineOpeningFrame(now)); err != nil {
-		return
+	var writeMu sync.Mutex
+	send := func(frame []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		if _, err := w.Write(frame); err != nil {
+			return err
+		}
+		return controller.Flush()
 	}
-	if err := controller.Flush(); err != nil {
+	if err := send(frontlineOpeningFrame(now)); err != nil {
 		return
 	}
 	s.log.Info("nplnrest: frontline request", "user_agent", r.UserAgent(),
@@ -471,10 +478,11 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil && r.Body != http.NoBody {
 		bodyDone = make(chan bodyReadResult, 1)
 		// Capture the channel value: the select disables its own copy on EOF.
+		body := &firstBytesLogger{r: r.Body, log: s.log}
 		go func(done chan<- bodyReadResult) {
 			var n int64
 			for {
-				frame, err := readFrontlineFrame(r.Body)
+				frame, err := readFrontlineFrame(body)
 				if err != nil {
 					if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 						err = nil
@@ -490,6 +498,14 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 				}
 				s.log.Info("nplnrest: frontline frame from console",
 					"type", t, "name", frontlineTypeName(t), "bytes", len(frame), "hex", hex.EncodeToString(shown))
+				if reply := s.frontlineReply(frame, t); reply != nil {
+					if err := send(reply); err != nil {
+						done <- bodyReadResult{n, err}
+						return
+					}
+					rt := frontlineFrameType(reply[4:])
+					s.log.Info("nplnrest: frontline frame to console", "type", rt, "name", frontlineTypeName(rt), "bytes", len(reply)-4)
+				}
 			}
 		}(bodyDone)
 	}

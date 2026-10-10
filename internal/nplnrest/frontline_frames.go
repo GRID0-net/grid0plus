@@ -2,9 +2,12 @@ package nplnrest
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"time"
 )
 
 // Frontline frames, both directions: a 4-byte little-endian length, then a
@@ -81,4 +84,60 @@ func frontlineTypeName(t int) string {
 		return frontlineTypeNames[t]
 	}
 	return fmt.Sprintf("type%d", t)
+}
+
+// frontlineReply answers one console frame, or returns nil. It only ever
+// answers: npns aborts on a Pong or Ack it is not waiting for, so nothing
+// here is sent unprompted.
+//
+//   - RootHash: echoed back. The server holds no records for the console's
+//     digital twin, so the twins agree; with equal roots npns skips the
+//     leaf/record exchange and enters state 8 (FUN_71000dba50 ->
+//     FUN_71000dbe50 -> FUN_71000da010).
+//   - Ping: a Pong carrying the Ping's first field, which npns compares with
+//     the id it stored when it sent the Ping (FUN_71000df9e0).
+func (s *Server) frontlineReply(frame []byte, t int) []byte {
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	switch t {
+	case frontlineRootHash:
+		return append(binary.LittleEndian.AppendUint32(nil, uint32(len(frame))), frame...)
+	case frontlinePing:
+		body, ok := frontlineBody(frame)
+		if !ok {
+			return nil
+		}
+		id, _ := fbU64(frame, body, 0)
+		return frontlineFrame(frontlinePong, now, func(w *fbWriter) int {
+			pos, _ := w.table([]*fbField{u64(id)})
+			return pos
+		})
+	}
+	return nil
+}
+
+const (
+	frontlineRootHash = 6
+	frontlinePing     = 16
+	frontlinePong     = 17
+)
+
+// firstBytesLogger logs the first bytes the console sends on the frontline,
+// whatever their shape, so a body that never forms a whole frame still shows.
+type firstBytesLogger struct {
+	r      io.Reader
+	log    *slog.Logger
+	logged int
+}
+
+func (l *firstBytesLogger) Read(p []byte) (int, error) {
+	n, err := l.r.Read(p)
+	if n > 0 && l.logged < 256 {
+		shown := p[:min(n, 256-l.logged)]
+		l.logged += len(shown)
+		l.log.Info("nplnrest: frontline bytes from console", "bytes", n, "hex", hex.EncodeToString(shown))
+	}
+	return n, err
 }
