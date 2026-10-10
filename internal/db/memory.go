@@ -39,7 +39,11 @@ type Memory struct {
 	festBattles map[string]map[string]FestBattle
 	// festBattlePlayers is keyed by fest, then battle/user.
 	festBattlePlayers map[string]map[string]FestBattlePlayer
-	coopShifts        map[string]CoopShift
+
+	penneTokens  map[string]PenneToken
+	pushChannels map[string]PushChannel // user/device account
+	penneTickets map[string]penneTicket
+	coopShifts   map[string]CoopShift
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
@@ -69,6 +73,9 @@ func NewMemory() *Memory {
 		festEntries:       map[string]map[string]FestEntry{},
 		festBattles:       map[string]map[string]FestBattle{},
 		festBattlePlayers: map[string]map[string]FestBattlePlayer{},
+		penneTokens:       map[string]PenneToken{},
+		pushChannels:      map[string]PushChannel{},
+		penneTickets:      map[string]penneTicket{},
 		coopShifts:        map[string]CoopShift{},
 		friendships:       map[string]map[string]Friendship{},
 		friendRequests:    map[string]FriendRequest{},
@@ -1754,4 +1761,82 @@ func (m *Memory) listMatches(tenant string, limit int) []Match {
 		out = out[:limit]
 	}
 	return out
+}
+
+// ---- push notifications (Penne) ----
+
+type penneTicket struct {
+	penneID string
+	expires time.Time
+}
+
+func (m *Memory) SetPenneToken(_ context.Context, t PenneToken) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.penneTokens[t.Token] = t
+	return nil
+}
+
+func (m *Memory) PenneTokens(_ context.Context, tokens []string) ([]PenneToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []PenneToken
+	for _, tok := range tokens {
+		if t, ok := m.penneTokens[tok]; ok {
+			out = append(out, t)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Token < out[j].Token })
+	return out, nil
+}
+
+func (m *Memory) SetPushChannel(_ context.Context, c PushChannel) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.users[c.UserID]; !ok {
+		return ErrNotFound
+	}
+	m.pushChannels[c.UserID+"/"+c.DeviceAccountID] = c
+	return nil
+}
+
+func (m *Memory) PushChannels(_ context.Context, userIDs []string) ([]PushChannel, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	want := map[string]bool{}
+	for _, id := range userIDs {
+		want[id] = true
+	}
+	var out []PushChannel
+	for _, c := range m.pushChannels {
+		if want[c.UserID] {
+			if _, ok := m.users[c.UserID]; ok {
+				out = append(out, c)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UserID != out[j].UserID {
+			return out[i].UserID < out[j].UserID
+		}
+		return out[i].DeviceAccountID < out[j].DeviceAccountID
+	})
+	return out, nil
+}
+
+func (m *Memory) SetPenneTicket(_ context.Context, ticket, penneID string, expires time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.penneTickets[ticket] = penneTicket{penneID: penneID, expires: expires}
+	return nil
+}
+
+func (m *Memory) PenneTicket(_ context.Context, ticket string, now time.Time) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.penneTickets[ticket]
+	if !ok || !now.Before(t.expires) {
+		return "", ErrNotFound
+	}
+	return t.penneID, nil
 }

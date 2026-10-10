@@ -1917,3 +1917,77 @@ func (p *Postgres) Stats(ctx context.Context) (Stats, error) {
 		&s.SaveDataArchives)
 	return s, mapErr(err)
 }
+
+// ---- push notifications (Penne) ----
+
+func (p *Postgres) SetPenneToken(ctx context.Context, t PenneToken) error {
+	_, err := p.pool.Exec(ctx, `INSERT INTO penne_tokens (token, penne_id, account, application_id, updated_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (token) DO UPDATE SET penne_id = EXCLUDED.penne_id, account = EXCLUDED.account,
+			application_id = EXCLUDED.application_id, updated_at = now()`,
+		t.Token, t.PenneID, t.Account, t.ApplicationID)
+	return mapErr(err)
+}
+
+func (p *Postgres) PenneTokens(ctx context.Context, tokens []string) ([]PenneToken, error) {
+	rows, err := p.pool.Query(ctx, `SELECT token, penne_id, account, application_id
+		FROM penne_tokens WHERE token = ANY($1) ORDER BY token`, tokens)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []PenneToken
+	for rows.Next() {
+		var t PenneToken
+		if err := rows.Scan(&t.Token, &t.PenneID, &t.Account, &t.ApplicationID); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, t)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) SetPushChannel(ctx context.Context, c PushChannel) error {
+	_, err := p.pool.Exec(ctx, `INSERT INTO push_channels (user_id, device_account_id, device_token, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (user_id, device_account_id) DO UPDATE SET device_token = EXCLUDED.device_token, updated_at = now()`,
+		c.UserID, c.DeviceAccountID, c.DeviceToken)
+	return mapErr(err)
+}
+
+func (p *Postgres) PushChannels(ctx context.Context, userIDs []string) ([]PushChannel, error) {
+	rows, err := p.pool.Query(ctx, `SELECT user_id, device_account_id, device_token
+		FROM push_channels WHERE user_id = ANY($1) ORDER BY user_id, device_account_id`, userIDs)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []PushChannel
+	for rows.Next() {
+		var c PushChannel
+		if err := rows.Scan(&c.UserID, &c.DeviceAccountID, &c.DeviceToken); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, c)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) SetPenneTicket(ctx context.Context, ticket, penneID string, expires time.Time) error {
+	// Expired tickets are only ever read to be refused; clearing them here
+	// keeps the table to the live ones without a separate sweeper.
+	if _, err := p.pool.Exec(ctx, `DELETE FROM penne_tickets WHERE expires_at < $1`, expires.Add(-30*24*time.Hour)); err != nil {
+		return mapErr(err)
+	}
+	_, err := p.pool.Exec(ctx, `INSERT INTO penne_tickets (ticket, penne_id, expires_at) VALUES ($1, $2, $3)
+		ON CONFLICT (ticket) DO UPDATE SET penne_id = EXCLUDED.penne_id, expires_at = EXCLUDED.expires_at`,
+		ticket, penneID, expires)
+	return mapErr(err)
+}
+
+func (p *Postgres) PenneTicket(ctx context.Context, ticket string, now time.Time) (string, error) {
+	var id string
+	err := p.pool.QueryRow(ctx, `SELECT penne_id FROM penne_tickets WHERE ticket = $1 AND expires_at > $2`,
+		ticket, now).Scan(&id)
+	return id, mapErr(err)
+}

@@ -447,6 +447,17 @@ type FestBattlePlayer struct {
 	Paint                          int64
 }
 
+// PenneToken is a notification token npns obtained from Penne for one local
+// account on one console; PushChannel is that token as BAAS learnt it for a
+// signed-in user. Together they say where a push to a user goes.
+type PenneToken struct {
+	Token, PenneID, Account, ApplicationID string
+}
+
+type PushChannel struct {
+	UserID, DeviceAccountID, DeviceToken string
+}
+
 // CoopShift is one Salmon Run rotation slot, as the operator scheduled it.
 //
 // Only the mechanics, the same split Fest makes: when it runs and what real
@@ -747,6 +758,23 @@ type Store interface {
 	// RecordFestBattlePlayer is idempotent per player: a console may report
 	// the same match more than once, and each report must count once.
 	RecordFestBattlePlayer(ctx context.Context, p FestBattlePlayer) error
+
+	// ---- push notifications (Penne) ----
+
+	// SetPenneToken records or replaces a notification token's owner.
+	SetPenneToken(ctx context.Context, t PenneToken) error
+	// PenneTokens returns the known tokens among tokens; unknown ones are
+	// skipped, not an error.
+	PenneTokens(ctx context.Context, tokens []string) ([]PenneToken, error)
+	// SetPushChannel records or replaces a user's push channel on a device.
+	SetPushChannel(ctx context.Context, c PushChannel) error
+	// PushChannels returns every push channel of the given users.
+	PushChannels(ctx context.Context, userIDs []string) ([]PushChannel, error)
+	// SetPenneTicket records a login ticket issued to a penne id.
+	SetPenneTicket(ctx context.Context, ticket, penneID string, expires time.Time) error
+	// PenneTicket returns the penne id a ticket was issued to, or ErrNotFound
+	// for an unknown or expired one.
+	PenneTicket(ctx context.Context, ticket string, now time.Time) (string, error)
 
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.

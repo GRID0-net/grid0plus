@@ -115,3 +115,20 @@ func containsID(ids []string, id string) bool {
 	}
 	return false
 }
+
+// The token is how a push to this user finds the console's npns.
+func TestAPushChannelIsRememberedForItsOwnUser(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	resp := h.do(request{
+		method: "PUT", path: "/1.0.0/push_channels/" + a.UserID + "/" + a.DeviceAccountID,
+		token: a.AccessToken,
+		json:  `{"service":"npns","deviceToken":"0009c95be1ac9b2c1e9d9d9fc8bf3302c7f5"}`,
+	})
+	requireStatus(h.t, resp, 200)
+	chans, err := h.store.PushChannels(t.Context(), []string{a.UserID})
+	if err != nil || len(chans) != 1 || chans[0].DeviceToken != "0009c95be1ac9b2c1e9d9d9fc8bf3302c7f5" ||
+		chans[0].DeviceAccountID != a.DeviceAccountID {
+		t.Fatalf("push channels = %+v, %v", chans, err)
+	}
+}

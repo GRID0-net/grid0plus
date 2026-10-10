@@ -77,6 +77,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"fests":                     testFests,
 		"festEntries":               testFestEntries,
 		"festBattles":               testFestBattles,
+		"penne":                     testPenne,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
 		"ugcCompareAndPut":          testUGCCompareAndPut,
@@ -2463,5 +2464,52 @@ func testDiscordUsers(t *testing.T, s Store) {
 	}
 	if got, _ := s.GetUser(ctx, alice.ID); got.LoginPasswordHash != hash {
 		t.Errorf("password hash after update = %q", got.LoginPasswordHash)
+	}
+}
+
+func testPenne(t *testing.T, s Store) {
+	ctx := t.Context()
+	u := makeUser(t, s, "Alice")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	tok := PenneToken{Token: "tok-1", PenneID: "penne-a", Account: "0123456789abcdef0123456789abcdef", ApplicationID: "0100000000000010"}
+	if err := s.SetPenneToken(ctx, tok); err != nil {
+		t.Fatal(err)
+	}
+	// A console that registers again replaces the owner, not adds a second.
+	tok.PenneID = "penne-b"
+	if err := s.SetPenneToken(ctx, tok); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.PenneTokens(ctx, []string{"tok-1", "unknown"})
+	if err != nil || len(got) != 1 || got[0] != tok {
+		t.Fatalf("penne tokens = %+v, %v", got, err)
+	}
+
+	if err := s.SetPushChannel(ctx, PushChannel{UserID: u.ID, DeviceAccountID: "da1", DeviceToken: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPushChannel(ctx, PushChannel{UserID: u.ID, DeviceAccountID: "da1", DeviceToken: "tok-1"}); err != nil {
+		t.Fatal(err)
+	}
+	chans, err := s.PushChannels(ctx, []string{u.ID, "nobody"})
+	if err != nil || len(chans) != 1 || chans[0].DeviceToken != "tok-1" {
+		t.Fatalf("push channels = %+v, %v", chans, err)
+	}
+	if chans, err := s.PushChannels(ctx, []string{}); err != nil || len(chans) != 0 {
+		t.Fatalf("an empty id list matched %+v, %v", chans, err)
+	}
+
+	if err := s.SetPenneTicket(ctx, "ticket", "penne-b", now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := s.PenneTicket(ctx, "ticket", now); err != nil || id != "penne-b" {
+		t.Fatalf("ticket = %q, %v", id, err)
+	}
+	if _, err := s.PenneTicket(ctx, "ticket", now.Add(2*time.Hour)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an expired ticket = %v, want ErrNotFound", err)
+	}
+	if _, err := s.PenneTicket(ctx, "nope", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an unknown ticket = %v, want ErrNotFound", err)
 	}
 }

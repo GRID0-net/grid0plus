@@ -55,6 +55,18 @@ func (s *Server) updatePushChannel(w http.ResponseWriter, r *http.Request, c *ca
 	if body.DeviceAttributes == nil {
 		body.DeviceAttributes = map[string]any{}
 	}
+	// The token is npns's notification token for this console's local
+	// account: remembering it is what lets a push to this user find the
+	// console (internal/nplnrest's frontline). Always the caller's own pair,
+	// checked above.
+	if body.DeviceToken != "" {
+		if err := s.store.SetPushChannel(r.Context(), db.PushChannel{
+			UserID: c.UserID, DeviceAccountID: c.DeviceAccountID, DeviceToken: body.DeviceToken,
+		}); err != nil {
+			writeInternalError(s.log, w, r, "store push channel", err)
+			return
+		}
+	}
 
 	now := s.now().Unix()
 	writeJSON(w, http.StatusOK, map[string]any{
