@@ -74,6 +74,13 @@ func (w *fbWriter) str(s string) int {
 	return pos
 }
 
+func (w *fbWriter) emptyVector() int {
+	w.align(4)
+	pos := len(w.b)
+	w.b = append(w.b, 0, 0, 0, 0)
+	return pos
+}
+
 func (w *fbWriter) patch(slot, target int) {
 	binary.LittleEndian.PutUint32(w.b[slot:], uint32(target-slot))
 }

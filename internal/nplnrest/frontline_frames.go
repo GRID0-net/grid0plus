@@ -90,10 +90,14 @@ func frontlineTypeName(t int) string {
 // answers: npns aborts on a Pong or Ack it is not waiting for, so nothing
 // here is sent unprompted.
 //
-//   - RootHash: echoed back. The server holds no records for the console's
-//     digital twin, so the twins agree; with equal roots npns skips the
-//     leaf/record exchange and enters state 8 (FUN_71000dba50 ->
-//     FUN_71000dbe50 -> FUN_71000da010).
+//   - RootHash: answered with the server's own, which lists no collections.
+//     npns compares the server's list with its local mirror of server-owned
+//     records (the "s-" keys, FUN_71000b2d00), not with the "c-" list it
+//     sends; an echo of that list read as server collections it lacked, so it
+//     asked for c-appearance's leaves and stalled. With an empty list it
+//     drops any stale mirror and goes FUN_71000dba50 -> FUN_71000dbe50 ->
+//     FUN_71000da010, state 8. The list field must be present: npns follows
+//     it without checking (FUN_71000da2f0).
 //   - Ping: a Pong carrying the Ping's first field, which npns compares with
 //     the id it stored when it sent the Ping (FUN_71000df9e0).
 func (s *Server) frontlineReply(frame []byte, t int) []byte {
@@ -103,7 +107,11 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 	}
 	switch t {
 	case frontlineRootHash:
-		return append(binary.LittleEndian.AppendUint32(nil, uint32(len(frame))), frame...)
+		return frontlineFrame(frontlineRootHash, now, func(w *fbWriter) int {
+			pos, refs := w.table([]*fbField{ref()})
+			w.patch(refs[0], w.emptyVector())
+			return pos
+		})
 	case frontlinePing:
 		body, ok := frontlineBody(frame)
 		if !ok {

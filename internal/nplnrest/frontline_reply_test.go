@@ -42,7 +42,7 @@ func TestAFrontlineFrameReadsBackAsItsTypeAndBody(t *testing.T) {
 
 // npns only reaches state 8 once its twin sync ends, and aborts on a Pong it
 // did not ask for: the frontline must answer RootHash and Ping, and only them.
-func TestTheFrontlineEchoesARootHashAndPongsAPing(t *testing.T) {
+func TestTheFrontlineAnswersARootHashWithAnEmptyOneAndPongsAPing(t *testing.T) {
 	s := newServer(t, t.TempDir())
 	server := httptest.NewServer(s.Handler())
 	defer server.Close()
@@ -80,8 +80,23 @@ func TestTheFrontlineEchoesARootHashAndPongsAPing(t *testing.T) {
 		return pos
 	})
 	sendChunk(rootHash)
-	if echo := readFrame(); string(echo) != string(rootHash[4:]) {
-		t.Fatalf("RootHash not echoed: % x", echo)
+	// The server's RootHash, listing no collections: an echo of the console's
+	// own list stalls npns asking for leaves the server does not have.
+	reply := readFrame()
+	if frontlineFrameType(reply) != frontlineRootHash {
+		t.Fatalf("reply type = %d, want RootHash", frontlineFrameType(reply))
+	}
+	body, ok := frontlineBody(reply)
+	if !ok {
+		t.Fatal("RootHash reply has no body")
+	}
+	slot, ok := fbFieldPos(reply, body, 0)
+	if !ok {
+		t.Fatal("RootHash reply omits its collection list, which npns reads unchecked")
+	}
+	vec, _ := fbTable(reply, slot)
+	if n := binary.LittleEndian.Uint32(reply[vec:]); n != 0 {
+		t.Fatalf("RootHash reply lists %d collections, want none", n)
 	}
 
 	ping := frontlineFrame(frontlinePing, time.Unix(2, 0), func(w *fbWriter) int {
@@ -93,7 +108,7 @@ func TestTheFrontlineEchoesARootHashAndPongsAPing(t *testing.T) {
 	if frontlineFrameType(pong) != frontlinePong {
 		t.Fatalf("reply type = %d, want Pong", frontlineFrameType(pong))
 	}
-	body, _ := frontlineBody(pong)
+	body, _ = frontlineBody(pong)
 	if id, _ := fbU64(pong, body, 0); id != 0x1234 {
 		t.Fatalf("pong id = %#x", id)
 	}

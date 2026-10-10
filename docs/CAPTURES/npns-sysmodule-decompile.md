@@ -109,9 +109,18 @@ is "Unexpected command … in steady state".
 
 ## Implemented (2026-10-10, `internal/nplnrest`)
 
-- **Sync:** a console RootHash is echoed back (no server-side records, so the
-  twins agree), which takes npns to state 8. Pings get a Pong carrying their
-  first field. Nothing is sent unprompted.
+- **Transport:** the fro-N hosts must be served over HTTP/2. npns asks curl
+  for it, and over HTTP/1.1 curl sends the POST with an empty body: no frame
+  ever arrives and npns reconnects every 70 s (seen on grid0, 2026-10-10).
+- **Sync:** the console's RootHash lists its own `c-*` records (c-appearance,
+  c-friends, c-settings, c-storage, each a name and a 20-byte hash). npns
+  compares the *server's* RootHash with its local mirror of server-owned `s-*`
+  records (`FUN_71000b2d00` iterates from `"s-"`), so an echo of the console's
+  list is wrong: on hardware it made npns ask for c-appearance's leaves
+  (LeafHash) and wait for PutRecord/DeleteRecord. The server answers with a
+  RootHash whose collection list is present but empty, which goes
+  `FUN_71000dba50 → FUN_71000dbe50 → FUN_71000da010`, state 8.
+  Pings get a Pong carrying their first field. Nothing is sent unprompted.
 - **Presence mode:** the first record after the sync is the control
   notification `presence:nxbaas` on topic `penne` (FUN_71000d64c0 /
   FUN_71000d6070), keeping the friends sysmodule on the BAAS presence path

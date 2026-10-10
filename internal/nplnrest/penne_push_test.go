@@ -93,7 +93,7 @@ func TestAPresenceChangeIsPushedToAFriendsConsoleOneRecordAtATime(t *testing.T) 
 	playing := presencebus.Event{UserID: "aaaaaaaaaaaaaaaa", State: db.StatePlaying, AppID: "0100c2500fc20000", At: now}
 	s.notifyPresence(ctx, playing)
 	sendChunk(frontlineFrame(frontlineRootHash, now, func(w *fbWriter) int { pos, _ := w.table(nil); return pos }))
-	read() // the RootHash echo
+	read() // the server's empty RootHash
 
 	// First npns's own control record, keeping presence on BAAS.
 	ctl := read()
