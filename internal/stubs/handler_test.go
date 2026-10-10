@@ -452,62 +452,6 @@ func TestTheBCATProbeWritesATranscriptWhenAskedTo(t *testing.T) {
 	}
 }
 
-// TestPenneNotificationTokenIsARealToken pins the one penne path whose answer
-// the console consumes. npns sends this to get the token the account
-// sysmodule then PUTs to /1.0.0/push_channels as deviceToken; the generic {}
-// left npns with nothing to hand back, and every link attempt stopped here.
-// Asserted on the wire: the key name and the 36-hex-digit shape from Kinnay's
-// Penne page and a working server's push_channels body.
-func TestPenneNotificationTokenIsARealToken(t *testing.T) {
-	h := newTestHandler(t)
-	const host = "god.hac.lp1.penne.srv.nintendo.net"
-
-	post := func(account, body string) string {
-		t.Helper()
-		req := httptest.NewRequest("POST", "http://"+host+"/v1/accounts/"+account+"/notification_tokens",
-			strings.NewReader(body))
-		req.Host = host
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		if rec.Code != 200 {
-			t.Fatalf("status = %d, want 200", rec.Code)
-		}
-		var got map[string]any
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatalf("body is not JSON: %v (%s)", err, rec.Body.String())
-		}
-		tok, ok := got["notification_token"].(string)
-		if !ok {
-			t.Fatalf("no notification_token string in %s", rec.Body.String())
-		}
-		if len(tok) != 36 || strings.Trim(tok, "0123456789abcdef") != "" {
-			t.Fatalf("notification_token = %q, want 36 lowercase hex digits", tok)
-		}
-		return tok
-	}
-
-	const body = `{"penne_id":"pzlfh504x771mrn0rpq0mutguiutqebj2","application_id":"0x0000000000000000"}`
-	a := post("10001ed3f08dc3b4679c13b4a847679c", body)
-	if again := post("10001ed3f08dc3b4679c13b4a847679c", body); again != a {
-		t.Errorf("same account got %q then %q; a re-registration must get the same token", a, again)
-	}
-	if other := post("10001ecfbee52144679c13b4a847679c", body); other == a {
-		t.Error("two different penne accounts got the same notification token")
-	}
-
-	// Every other penne account path is still the generic empty object.
-	if rec := get(t, h, host, "/v1/accounts/10001ed3f08dc3b4679c13b4a847679c"); strings.TrimSpace(rec.Body.String()) != "{}" {
-		t.Errorf("GET account = %s, want {}", rec.Body.String())
-	}
-}
-
-// TestOp2MembershipsIsTheItemsEnvelopeTheAccountParserReads pins
-// GET /v1/users/<na id>/memberships to the shape the account sysmodule's
-// parser accepts (see Handler.membership): an items array with one
-// "default" and one "ex" entry, each carrying the id from the URL as a
-// 16-hex-digit user_id and membership.active as a real boolean. Anything
-// less is 2124-3122 on the console. Asserted on the wire.
 func TestOp2MembershipsIsTheItemsEnvelopeTheAccountParserReads(t *testing.T) {
 	h := newTestHandler(t)
 	const naID = "ea4b6873f0397ab3"

@@ -145,3 +145,6 @@ func fbU64(p []byte, t, idx int) (uint64, bool) {
 	}
 	return binary.LittleEndian.Uint64(p[pos:]), true
 }
+
+func u16(v uint16) *fbField { return &fbField{scalar: binary.LittleEndian.AppendUint16(nil, v)} }
+func i64(v int64) *fbField  { return &fbField{scalar: binary.LittleEndian.AppendUint64(nil, uint64(v))} }

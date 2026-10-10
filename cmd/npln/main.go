@@ -150,10 +150,13 @@ func main() {
 		Log:           log.With("listener", "rest"),
 		FrontlineHost: cfg.NPLN.FrontlineHost,
 		RecordDir:     cfg.NPLN.RestRecordDir,
+		Store:         store,
+		Bus:           bus,
 	})
 	if err != nil {
 		service.Fatal(log, "build json front end", err)
 	}
+	go rest.Run(ctx)
 	if cfg.NPLN.RestRecordDir != "" {
 		log.Warn("npln: recording every JSON front-end request",
 			"dir", cfg.NPLN.RestRecordDir)

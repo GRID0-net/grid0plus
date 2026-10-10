@@ -13,7 +13,6 @@
 package stubs
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -151,12 +150,6 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// eLicenses. Most paths here are a fine empty object; one is not.
 		// See h.dragons.
 		h.dragons(w, path)
-
-	case strings.HasPrefix(host, "god.") && strings.HasSuffix(host, ".penne.srv.nintendo.net") &&
-		r.Method == http.MethodPost && isNotificationTokensPath(path):
-		// The one penne account path whose answer the console actually uses.
-		// See h.notificationToken.
-		h.notificationToken(w, r, path)
 
 	default:
 		h.emptyObject(w)
@@ -340,66 +333,6 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		// independently-arrived-at answer for this exact path.
 		h.emptyObject(w)
 	}
-}
-
-// isNotificationTokensPath matches /v1/accounts/<id>/notification_tokens.
-func isNotificationTokensPath(path string) bool {
-	rest, ok := strings.CutPrefix(path, "/v1/accounts/")
-	if !ok {
-		return false
-	}
-	id, ok := strings.CutSuffix(rest, "/notification_tokens")
-	return ok && id != "" && !strings.Contains(id, "/")
-}
-
-// notificationToken answers POST /v1/accounts/<id>/notification_tokens on
-// god.hac.lp1.penne.srv.nintendo.net.
-//
-// This cannot be the generic empty object. Decompiling the account sysmodule
-// (fw 22.5.0) shows the Nintendo Account link ends by registering a push
-// channel: FUN_71000c8450 logs in, asks npns over IPC for a notification
-// token (FUN_710015b5d0 -- this request is what npns sends to get one), and
-// only if that succeeds does it PUT /1.0.0/push_channels/<user>/<device> with
-// the token as deviceToken. Answered {}, npns has no token to hand back and
-// the PUT is never made -- and every hardware link attempt on record stops at
-// exactly this request, one step short of the push_channels PUT a working
-// server's capture shows next. Whether that is also what the "couldn't be
-// linked" dialog reports is not proven (FUN_71000c8450 returns void); that it
-// is the next request a working flow makes and ours cannot, is.
-//
-// Shape from Kinnay's wiki (Penne-Servers, "POST
-// /v1/accounts/<id>/notification_tokens"): one field, notification_token, 36
-// hex digits. A working server's push_channels body carries exactly such a
-// value ("0009c95be1ac9b2c1e9d9d9fc8bf3302c7f5",
-// docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow).
-//
-// The token is derived from the account id and application id rather than
-// random, so a console that registers twice gets the same token back and the
-// push channel BAAS stores stays the one npns knows about. Nothing on this
-// network ever delivers a push notification to it, so its only job is to be a
-// well-formed, stable value.
-//
-// TODO(capture-needed): whether the leading bytes ("0009..." in the one real
-// sample) are structure npns checks, rather than part of an opaque value.
-func (h *Handler) notificationToken(w http.ResponseWriter, r *http.Request, path string) {
-	account := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/accounts/"), "/notification_tokens")
-
-	// application_id is part of the identity when present. The body may
-	// already have been consumed by LogBodies, in which case the account id
-	// alone still gives a stable answer.
-	var body struct {
-		ApplicationID string `json:"application_id"`
-	}
-	if r.Body != nil {
-		if raw, err := io.ReadAll(io.LimitReader(r.Body, maxLoggedBody)); err == nil {
-			_ = json.Unmarshal(raw, &body)
-		}
-	}
-
-	sum := sha256.Sum256([]byte("penne-notification-token\x00" + account + "\x00" + body.ApplicationID))
-	writeJSON(w, http.StatusOK, map[string]any{
-		"notification_token": hex.EncodeToString(sum[:18]),
-	})
 }
 
 // membership reports an active Nintendo Switch Online membership.

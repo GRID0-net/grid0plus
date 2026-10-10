@@ -396,11 +396,11 @@ var Hosts = []Host{
 	},
 	{
 		Pattern: "god.hac.lp1.penne.srv.nintendo.net",
-		Service: ServiceStubs, TLS: true,
+		Service: ServiceNPLNRest, TLS: true,
 		Comment: "push notifications (Penne) accounts. npns registers here for " +
-			"the notification token the Nintendo Account link then PUTs to " +
-			"/1.0.0/push_channels -- internal/stubs answers that one path for " +
-			"real (Handler.notificationToken), everything else with {}",
+			"its penne id and the notification token the Nintendo Account link " +
+			"then PUTs to /1.0.0/push_channels; internal/nplnrest remembers whose " +
+			"token it is, which is what lets a push reach the console's frontline",
 	},
 	{
 		Pattern: "consumer.lp1.npns.srv.nintendo.net",

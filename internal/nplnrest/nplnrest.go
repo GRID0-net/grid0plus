@@ -53,6 +53,7 @@
 package nplnrest
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -60,8 +61,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -93,6 +97,13 @@ type Options struct {
 	RecordDir string
 
 	Now func() time.Time
+
+	// Store and Bus turn on push notifications: Store keeps the penne
+	// tokens and tickets that say which frontline is whose, Bus reports the
+	// presence changes worth pushing. Either nil leaves the frontline
+	// answering but pushing nothing.
+	Store db.Store
+	Bus   presencebus.Bus
 }
 
 // Server serves the NPLN JSON front end.
@@ -105,6 +116,10 @@ type Server struct {
 	// frontlines counts the persistent connections currently held open, for the
 	// log line that says whether the console got that far.
 	frontlines atomic.Int64
+
+	store    db.Store
+	bus      presencebus.Bus
+	registry frontlineRegistry
 }
 
 // New builds the front end.
@@ -146,7 +161,18 @@ func New(opts Options) (*Server, error) {
 		frontlineHost: opts.FrontlineHost,
 		rec:           rec,
 		now:           opts.Now,
+		store:         opts.Store,
+		bus:           opts.Bus,
 	}, nil
+}
+
+// Run pushes presence changes to consoles until ctx ends. A no-op without a
+// store and a bus.
+func (s *Server) Run(ctx context.Context) {
+	if s.store == nil || s.bus == nil {
+		return
+	}
+	s.watchPresence(ctx)
 }
 
 // Handler returns the routed handler.
@@ -163,6 +189,8 @@ func (s *Server) Handler() http.Handler {
 		switch {
 		case strings.HasPrefix(host, "fro-"):
 			s.frontline(w, r)
+		case strings.HasPrefix(host, "god.") && strings.Contains(host, ".penne."):
+			s.godPenne(w, r)
 		case strings.Contains(host, ".vermillion."):
 			s.vermillion(w, r)
 		case strings.Contains(host, ".penne."):
@@ -389,6 +417,19 @@ func (s *Server) penneLoginTickets(w http.ResponseWriter, r *http.Request) {
 		now = s.now
 	}
 	issuedAt := now().Unix()
+	var body struct {
+		ID string `json:"id"`
+	}
+	if raw, err := io.ReadAll(io.LimitReader(r.Body, 4096)); err == nil {
+		_ = json.Unmarshal(raw, &body)
+	}
+	if s.store != nil && body.ID != "" {
+		// The frontline presents this ticket; it is how a connection is
+		// known to be a given console's.
+		if err := s.store.SetPenneTicket(r.Context(), ticket, body.ID, time.Unix(issuedAt+345600, 0)); err != nil {
+			s.log.Error("nplnrest: store login ticket", "error", err)
+		}
+	}
 	s.answer(w, r, http.StatusOK, map[string]any{
 		"expires_at":                          issuedAt + 345600,
 		"frontline_fqdn":                      s.frontlineHost,
@@ -449,9 +490,20 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 		now = s.now()
 	}
 	var writeMu sync.Mutex
+	writerGone := false
+	// Set before the handler returns: the body reader and pushes outlive it,
+	// and a ResponseWriter must not be touched after.
+	defer func() {
+		writeMu.Lock()
+		writerGone = true
+		writeMu.Unlock()
+	}()
 	send := func(frame []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
+		if writerGone {
+			return net.ErrClosed
+		}
 		if _, err := w.Write(frame); err != nil {
 			return err
 		}
@@ -459,6 +511,21 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := send(frontlineOpeningFrame(now)); err != nil {
 		return
+	}
+	var conn *frontlineConn
+	if ticket, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && s.store != nil {
+		if penneID, err := s.store.PenneTicket(r.Context(), ticket, now); err == nil {
+			conn = &frontlineConn{penneID: penneID, send: send}
+			s.registry.add(conn)
+			defer func() {
+				s.registry.remove(conn)
+				conn.close()
+			}()
+		} else {
+			// Issued before tickets were remembered: answered as before,
+			// just not reachable by pushes until npns logs in again.
+			s.log.Info("nplnrest: frontline ticket not known", "error", err)
+		}
 	}
 	s.log.Info("nplnrest: frontline request", "user_agent", r.UserAgent(),
 		"power_state", r.Header.Get("X-Power-State"), "hug", r.Header.Get("X-Hug"),
@@ -505,6 +572,16 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 					}
 					rt := frontlineFrameType(reply[4:])
 					s.log.Info("nplnrest: frontline frame to console", "type", rt, "name", frontlineTypeName(rt), "bytes", len(reply)-4)
+				}
+				if conn != nil {
+					switch t {
+					case frontlineRootHash:
+						// Equal roots end the sync: npns is in state 8
+						// and can take records.
+						conn.synced()
+					case frontlineAck:
+						conn.acked()
+					}
 				}
 			}
 		}(bodyDone)

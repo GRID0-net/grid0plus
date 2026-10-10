@@ -522,7 +522,7 @@ func TestAMoreSpecificPenneHostStillBeatsTheFrontlineWildcard(t *testing.T) {
 	// individually listed penne hosts on their own services; without it the
 	// wildcard would swallow them.
 	for name, want := range map[string]Service{
-		"god.hac.lp1.penne.srv.nintendo.net": ServiceStubs,
+		"god.hac.lp1.penne.srv.nintendo.net": ServiceNPLNRest,
 		"val.hac.lp1.penne.srv.nintendo.net": ServiceNPLNRest,
 	} {
 		_, h, ok := Resolve(name)

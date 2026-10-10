@@ -122,6 +122,7 @@ const (
 	frontlineRootHash = 6
 	frontlinePing     = 16
 	frontlinePong     = 17
+	frontlineAck      = 9
 )
 
 // firstBytesLogger logs the first bytes the console sends on the frontline,
