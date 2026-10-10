@@ -15,7 +15,7 @@ import (
 // frontline, not as a BAAS PATCH. Seen on grid0 2026-10-10 from two consoles
 // in Splatoon 3, which never sent the friends sysmodule's PATCH at all.
 //
-//	DAPresence { 0: Presence, 1: string user id, 2: string device account id }
+//	DAPresence { 0: string device account id, 1: string user id, 2: Presence }
 //	Presence   { 0: u16 status, 1: string JSON, 2: u16 (1 in every frame seen) }
 //
 // status is nn::friends' own: 0 offline, 1 online, 2 playing. The JSON holds
@@ -36,10 +36,15 @@ func parseDAPresence(frame []byte) (daPresence, error) {
 	if slot, ok := fbFieldPos(frame, body, 1); ok {
 		d.UserID = fbString(frame, slot)
 	}
-	if slot, ok := fbFieldPos(frame, body, 2); ok {
+	if slot, ok := fbFieldPos(frame, body, 0); ok {
 		d.DeviceAccountID = fbString(frame, slot)
 	}
-	slot, ok := fbFieldPos(frame, body, 0)
+	// Both ids are 16 hex digits on the wire; anything else is a misread,
+	// and acking a misread id makes npns abort.
+	if !isHex16(d.UserID) || !isHex16(d.DeviceAccountID) {
+		return daPresence{}, fmt.Errorf("%w: DAPresence ids %q %q", errFrontlineFrame, d.UserID, d.DeviceAccountID)
+	}
+	slot, ok := fbFieldPos(frame, body, 2)
 	if !ok {
 		return daPresence{}, fmt.Errorf("%w: DAPresence has no presence", errFrontlineFrame)
 	}
@@ -176,4 +181,16 @@ func (k *presenceKeeper) run(s *Server, ctx context.Context) {
 			}
 		}
 	}
+}
+
+func isHex16(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }

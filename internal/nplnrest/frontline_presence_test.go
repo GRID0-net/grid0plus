@@ -1,8 +1,10 @@
 package nplnrest
 
 import (
+	"encoding/hex"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,10 +16,10 @@ func daPresenceFrame(now time.Time, status uint16, js, userID, daID string) []by
 	return frontlineFrame(frontlineDAPresence, now, func(w *fbWriter) int {
 		pos, refs := w.table([]*fbField{ref(), ref(), ref()})
 		inner, irefs := w.table([]*fbField{u16(status), ref(), u16(1)})
-		w.patch(refs[0], inner)
+		w.patch(refs[2], inner)
 		w.patch(irefs[1], w.str(js))
 		w.patch(refs[1], w.str(userID))
-		w.patch(refs[2], w.str(daID))
+		w.patch(refs[0], w.str(daID))
 		return pos
 	})
 }
@@ -107,5 +109,22 @@ func TestSubscribeTopicPowerStateAndDAPresenceAreAckedWithTheIdNpnsStored(t *tes
 	da := daPresenceFrame(now, 2, "{}", "2a1a27dd90f47c89", "cba93c582facbb8a")
 	if id := ackID(s.frontlineReply(da[4:], frontlineDAPresence)); id != "2a1a27dd90f47c89/cba93c582facbb8a" {
 		t.Fatalf("presence ack id = %q", id)
+	}
+}
+
+// The frame npns sent on hardware (2026-10-10), byte for byte: the device
+// account is field 0 and the presence table field 2. Reading them the other
+// way round acked a garbage id, which npns aborts on.
+func TestAHardwareDAPresenceIsReadFieldForField(t *testing.T) {
+	frame, _ := hex.DecodeString("180000000000000000000e002400070008000c00100018000e0000000000001b30000000180000008349ca6a000000009357ca6a0000000000000000020000004e58000000000a001200040008000c000a000000fc000000e00000001000000000000a000c000400080006000a0000000200010004000000b90000007b2273656c66223a7b7d2c226661766f72697465467269656e6473223a7b7d2c22667269656e6473223a7b226170704669656c64223a227b7d222c22617070496e666f3a6170704964223a2230313030633235303066633230303030222c22617070496e666f3a616364496e646578223a302c22617070496e666f3a70726573656e636547726f75704964223a2230313030633235303066633230303030227d2c22666f6166223a7b7d2c2265766572796f6e65223a7b7d7d000000100000003261316132376464393066343763383900000000100000006362613933633538326661636262386100000000")
+	d, err := parseDAPresence(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.UserID != "2a1a27dd90f47c89" || d.DeviceAccountID != "cba93c582facbb8a" || d.Status != 2 {
+		t.Fatalf("parsed %+v", d)
+	}
+	if !strings.Contains(d.JSON, `"appInfo:appId":"0100c2500fc20000"`) {
+		t.Fatalf("json = %s", d.JSON)
 	}
 }
