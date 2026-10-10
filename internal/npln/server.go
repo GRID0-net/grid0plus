@@ -279,12 +279,17 @@ func New(opts Options) (*Server, error) {
 // TTL rather than reading as an empty queue forever.
 const statsInterval = 10 * time.Second
 
-// sweepInterval is how often expired matchmaking tickets are swept.
+// sweepInterval is how often expired matchmaking tickets are swept, and how
+// often a waiting room's grace period is checked.
 //
 // Sweeping on a timer rather than when a ticket arrives, because a queue nobody
 // is joining is exactly the one whose tickets need to expire: doing it only on
 // arrival means the last player to give up waits forever.
-const sweepInterval = 15 * time.Second
+//
+// One second, not fifteen: a grace period only ends at a sweep, so at fifteen
+// a 10 s grace really lasted 10 to 25 s. A sweep is one pass over the waiting
+// tickets under the queue lock, which is cheap at this size.
+const sweepInterval = 1 * time.Second
 
 func (s *Server) sweepTickets() {
 	ticker := time.NewTicker(sweepInterval)
