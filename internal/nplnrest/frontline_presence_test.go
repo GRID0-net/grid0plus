@@ -63,3 +63,36 @@ func TestAConsolesFrontlinePresenceMakesItPlaying(t *testing.T) {
 		t.Fatalf("presence = %+v", p)
 	}
 }
+
+// npns waits 10 s for an Ack carrying the id it stored, and aborts on a
+// different one: "topic.subscription" for a subscribe, user/device account for
+// a presence.
+func TestSubscribeTopicAndDAPresenceAreAckedWithTheIdNpnsStored(t *testing.T) {
+	s := newServer(t, t.TempDir())
+	now := time.Unix(1, 0)
+	ackID := func(reply []byte) string {
+		t.Helper()
+		if frontlineFrameType(reply[4:]) != frontlineAck {
+			t.Fatalf("reply type = %d, want Ack", frontlineFrameType(reply[4:]))
+		}
+		body, _ := frontlineBody(reply[4:])
+		slot, ok := fbFieldPos(reply[4:], body, 0)
+		if !ok {
+			t.Fatal("Ack has no id")
+		}
+		return fbString(reply[4:], slot)
+	}
+	sub := frontlineFrame(frontlineSubscribeTopic, now, func(w *fbWriter) int {
+		pos, refs := w.table([]*fbField{nil, ref(), ref()})
+		w.patch(refs[1], w.str(""))
+		w.patch(refs[2], w.str("nx_data_0100c2500fc20000"))
+		return pos
+	})
+	if id := ackID(s.frontlineReply(sub[4:], frontlineSubscribeTopic)); id != "topic.subscription" {
+		t.Fatalf("subscribe ack id = %q", id)
+	}
+	da := daPresenceFrame(now, 2, "{}", "2a1a27dd90f47c89", "cba93c582facbb8a")
+	if id := ackID(s.frontlineReply(da[4:], frontlineDAPresence)); id != "2a1a27dd90f47c89/cba93c582facbb8a" {
+		t.Fatalf("presence ack id = %q", id)
+	}
+}

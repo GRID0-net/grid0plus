@@ -98,6 +98,16 @@ func frontlineTypeName(t int) string {
 //     drops any stale mirror and goes FUN_71000dba50 -> FUN_71000dbe50 ->
 //     FUN_71000da010, state 8. The list field must be present: npns follows
 //     it without checking (FUN_71000da2f0).
+//   - SubscribeTopic and DAPresence: an Ack. Both leave npns with a request
+//     pending and a 10 s deadline (FUN_71000dd980, FUN_71000de140); with no
+//     Ack it drops the connection, which on hardware meant a reconnect every
+//     ~11 s and no presence ever settling. The Ack's field 0 must be the id
+//     npns stored, compared with strcmp and aborting on a mismatch
+//     (FUN_71000deab0): the constant "topic.subscription" for a subscribe,
+//     "%016llx/%016llx" of the user and device account ids for a presence --
+//     the frame's own fields 1 and 2 (argument order read from the
+//     disassembly at 0x71000de254 and the string order in FUN_71000ebf40).
+//     Other request kinds stay unanswered until their ids are confirmed.
 //   - Ping: a Pong carrying the Ping's first field, which npns compares with
 //     the id it stored when it sent the Ping (FUN_71000df9e0).
 func (s *Server) frontlineReply(frame []byte, t int) []byte {
@@ -112,6 +122,14 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 			w.patch(refs[0], w.emptyVector())
 			return pos
 		})
+	case frontlineSubscribeTopic:
+		return frontlineAckFrame(now, "topic.subscription")
+	case frontlineDAPresence:
+		d, err := parseDAPresence(frame)
+		if err != nil {
+			return nil
+		}
+		return frontlineAckFrame(now, d.UserID+"/"+d.DeviceAccountID)
 	case frontlinePing:
 		body, ok := frontlineBody(frame)
 		if !ok {
@@ -127,11 +145,12 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 }
 
 const (
-	frontlineRootHash   = 6
-	frontlinePing       = 16
-	frontlinePong       = 17
-	frontlineAck        = 9
-	frontlineDAPresence = 27
+	frontlineRootHash       = 6
+	frontlinePing           = 16
+	frontlinePong           = 17
+	frontlineAck            = 9
+	frontlineDAPresence     = 27
+	frontlineSubscribeTopic = 23
 )
 
 // firstBytesLogger logs the first bytes the console sends on the frontline,
@@ -150,4 +169,13 @@ func (l *firstBytesLogger) Read(p []byte) (int, error) {
 		l.log.Info("nplnrest: frontline bytes from console", "bytes", n, "hex", hex.EncodeToString(shown))
 	}
 	return n, err
+}
+
+// frontlineAckFrame acknowledges the request npns has pending under id.
+func frontlineAckFrame(now time.Time, id string) []byte {
+	return frontlineFrame(frontlineAck, now, func(w *fbWriter) int {
+		pos, refs := w.table([]*fbField{ref()})
+		w.patch(refs[0], w.str(id))
+		return pos
+	})
 }
