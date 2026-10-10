@@ -589,6 +589,9 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 						s.log.Info("nplnrest: console presence refused", "error", err)
 					} else {
 						keeper.add(s, r.Context(), user)
+						if conn != nil {
+							s.bindFrontline(r.Context(), conn, user)
+						}
 					}
 				}
 				if conn != nil {

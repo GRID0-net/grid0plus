@@ -766,6 +766,8 @@ type Store interface {
 	// PenneTokens returns the known tokens among tokens; unknown ones are
 	// skipped, not an error.
 	PenneTokens(ctx context.Context, tokens []string) ([]PenneToken, error)
+	// PenneTokensOf returns every token registered by one console (penne id).
+	PenneTokensOf(ctx context.Context, penneID string) ([]PenneToken, error)
 	// SetPushChannel records or replaces a user's push channel on a device.
 	SetPushChannel(ctx context.Context, c PushChannel) error
 	// PushChannels returns every push channel of the given users.

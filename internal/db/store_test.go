@@ -2486,6 +2486,14 @@ func testPenne(t *testing.T, s Store) {
 		t.Fatalf("penne tokens = %+v, %v", got, err)
 	}
 
+	// The token moved to penne-b, so penne-a owns nothing any more.
+	if of, err := s.PenneTokensOf(ctx, "penne-b"); err != nil || len(of) != 1 || of[0] != tok {
+		t.Fatalf("tokens of penne-b = %+v, %v", of, err)
+	}
+	if of, err := s.PenneTokensOf(ctx, "penne-a"); err != nil || len(of) != 0 {
+		t.Fatalf("tokens of penne-a = %+v, %v", of, err)
+	}
+
 	if err := s.SetPushChannel(ctx, PushChannel{UserID: u.ID, DeviceAccountID: "da1", DeviceToken: "old"}); err != nil {
 		t.Fatal(err)
 	}

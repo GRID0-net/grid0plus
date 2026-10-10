@@ -1790,6 +1790,19 @@ func (m *Memory) PenneTokens(_ context.Context, tokens []string) ([]PenneToken, 
 	return out, nil
 }
 
+func (m *Memory) PenneTokensOf(_ context.Context, penneID string) ([]PenneToken, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []PenneToken
+	for _, t := range m.penneTokens {
+		if t.PenneID == penneID {
+			out = append(out, t)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Token < out[j].Token })
+	return out, nil
+}
+
 func (m *Memory) SetPushChannel(_ context.Context, c PushChannel) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

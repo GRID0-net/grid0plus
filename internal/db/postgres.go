@@ -1947,6 +1947,24 @@ func (p *Postgres) PenneTokens(ctx context.Context, tokens []string) ([]PenneTok
 	return out, mapErr(rows.Err())
 }
 
+func (p *Postgres) PenneTokensOf(ctx context.Context, penneID string) ([]PenneToken, error) {
+	rows, err := p.pool.Query(ctx, `SELECT token, penne_id, account, application_id
+		FROM penne_tokens WHERE penne_id = $1 ORDER BY token`, penneID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []PenneToken
+	for rows.Next() {
+		var t PenneToken
+		if err := rows.Scan(&t.Token, &t.PenneID, &t.Account, &t.ApplicationID); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, t)
+	}
+	return out, mapErr(rows.Err())
+}
+
 func (p *Postgres) SetPushChannel(ctx context.Context, c PushChannel) error {
 	_, err := p.pool.Exec(ctx, `INSERT INTO push_channels (user_id, device_account_id, device_token, updated_at)
 		VALUES ($1, $2, $3, now())

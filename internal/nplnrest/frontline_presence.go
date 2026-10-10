@@ -238,3 +238,27 @@ func presenceExtras(current, reported db.ExtrasByScope) db.ExtrasByScope {
 	}
 	return out
 }
+
+// bindFrontline ties a verified DAPresence's user to its frontline, so pushes
+// for that user reach this console. A notification names the console account
+// (Uid) it is for, which only the console's notification token records; with
+// more than one account on the console the user's own cannot be told apart,
+// so nothing is bound rather than risk delivering to the wrong one.
+func (s *Server) bindFrontline(ctx context.Context, conn *frontlineConn, userID string) {
+	tokens, err := s.store.PenneTokensOf(ctx, conn.penneID)
+	if err != nil {
+		s.log.Warn("nplnrest: look up console accounts", "error", err)
+		return
+	}
+	accounts := map[string]bool{}
+	for _, t := range tokens {
+		accounts[t.Account] = true
+	}
+	if len(accounts) != 1 {
+		s.log.Info("nplnrest: frontline not bound", "user", userID, "accounts", len(accounts))
+		return
+	}
+	for a := range accounts {
+		conn.bind(userID, a)
+	}
+}

@@ -104,7 +104,8 @@ type frontlineConn struct {
 	send    func([]byte) error
 
 	mu       sync.Mutex
-	ready    bool // the twin sync is over: npns is in state 8
+	users    map[string]string // user id -> console account Uid, from DAPresence
+	ready    bool              // the twin sync is over: npns is in state 8
 	inflight bool
 	closed   bool // the handler is returning; its ResponseWriter is gone
 	queue    [][]byte
@@ -188,6 +189,38 @@ func (r *frontlineRegistry) remove(c *frontlineConn) {
 	}
 }
 
+// bind records that userID is signed in on this console as account (Uid).
+func (c *frontlineConn) bind(userID, account string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.users == nil {
+		c.users = map[string]string{}
+	}
+	c.users[userID] = account
+}
+
+func (c *frontlineConn) accountOf(userID string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	a, ok := c.users[userID]
+	return a, ok
+}
+
+// boundTo returns the connections a verified DAPresence tied to userID.
+func (r *frontlineRegistry) boundTo(userID string) []*frontlineConn {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []*frontlineConn
+	for _, set := range r.conns {
+		for c := range set {
+			if _, ok := c.accountOf(userID); ok {
+				out = append(out, c)
+			}
+		}
+	}
+	return out
+}
+
 func (r *frontlineRegistry) of(penneID string) []*frontlineConn {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -205,6 +238,20 @@ func (s *Server) Notify(ctx context.Context, userID, topic string, payload []byt
 	if s.store == nil {
 		return
 	}
+	now := s.clock()
+	sent := map[string]bool{}
+	// Consoles whose DAPresence named this user. This reaches consoles that
+	// linked their Nintendo Account before push channels were remembered,
+	// which never send PUT /push_channels again until they re-link.
+	for _, c := range s.registry.boundTo(userID) {
+		account, _ := c.accountOf(userID)
+		key := c.penneID + "/" + account
+		if sent[key] {
+			continue
+		}
+		sent[key] = true
+		c.push(notificationFrame(now, topic, account, payload))
+	}
 	chans, err := s.store.PushChannels(ctx, []string{userID})
 	if err != nil || len(chans) == 0 {
 		return
@@ -218,8 +265,6 @@ func (s *Server) Notify(ctx context.Context, userID, topic string, payload []byt
 		s.log.Warn("nplnrest: look up notification tokens", "error", err)
 		return
 	}
-	now := s.clock()
-	sent := map[string]bool{}
 	for _, o := range owners {
 		key := o.PenneID + "/" + o.Account
 		if sent[key] {
