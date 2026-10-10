@@ -286,6 +286,8 @@ func (s *Server) addBlock(w http.ResponseWriter, r *http.Request, c *caller) {
 		!errors.Is(err, db.ErrNotFound) {
 		s.log.Warn("baas: remove friendship while blocking",
 			"user", c.UserID, "blocked", target, "error", err)
+	} else if err == nil {
+		s.notifyFriendDeleted(r.Context(), target)
 	}
 	for _, pair := range [][2]string{{c.UserID, target}, {target, c.UserID}} {
 		if req, err := s.store.FindPendingRequest(r.Context(), pair[0], pair[1]); err == nil {

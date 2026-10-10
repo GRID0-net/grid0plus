@@ -104,6 +104,9 @@ type Options struct {
 	// answering but pushing nothing.
 	Store db.Store
 	Bus   presencebus.Bus
+	// Notify carries BAAS's push notifications (friend requests and
+	// removals) for the recipient's consoles.
+	Notify presencebus.Bus
 }
 
 // Server serves the NPLN JSON front end.
@@ -119,6 +122,7 @@ type Server struct {
 
 	store    db.Store
 	bus      presencebus.Bus
+	notify   presencebus.Bus
 	registry frontlineRegistry
 }
 
@@ -163,16 +167,22 @@ func New(opts Options) (*Server, error) {
 		now:           opts.Now,
 		store:         opts.Store,
 		bus:           opts.Bus,
+		notify:        opts.Notify,
 	}, nil
 }
 
 // Run pushes presence changes to consoles until ctx ends. A no-op without a
 // store and a bus.
 func (s *Server) Run(ctx context.Context) {
-	if s.store == nil || s.bus == nil {
+	if s.store == nil {
 		return
 	}
-	s.watchPresence(ctx)
+	if s.notify != nil {
+		go s.watchNotifications(ctx)
+	}
+	if s.bus != nil {
+		s.watchPresence(ctx)
+	}
 }
 
 // Handler returns the routed handler.
@@ -577,7 +587,9 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 					switch t {
 					case frontlineRootHash:
 						// Equal roots end the sync: npns is in state 8
-						// and can take records.
+						// and can take records. The first tells it to keep
+						// presence on BAAS, see presenceModeFrame.
+						conn.pushFirst(presenceModeFrame(s.clock()))
 						conn.synced()
 					case frontlineAck:
 						conn.acked()

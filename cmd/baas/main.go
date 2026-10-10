@@ -48,6 +48,19 @@ func main() {
 	}
 	defer func() { _ = bus.Close() }()
 
+	// Push notifications for consoles (friend requests and removals), read
+	// by npln's frontline. Only over Redis: in-process, nothing would read
+	// them.
+	var notifyBus presencebus.Bus
+	if cfg.Redis.URL != "" {
+		nb, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel+".notify", log)
+		if err != nil {
+			service.Fatal(log, "open notification bus", err)
+		}
+		defer func() { _ = nb.Close() }()
+		notifyBus = nb
+	}
+
 	keys := sjwt.NewKeyring(cfg.Keys.Dir, cfg.Keys.GenerateIfMissing)
 
 	// Five keys, one per issuer. The BAAS keys are published at JWK set URLs
@@ -110,6 +123,7 @@ func main() {
 	}, baas.Deps{
 		Store:          store,
 		Bus:            bus,
+		Notify:         notifyBus,
 		Log:            log,
 		AccessIssuer:   accessIssuer,
 		IDIssuer:       idIssuer,

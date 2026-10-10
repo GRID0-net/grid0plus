@@ -2,6 +2,7 @@ package nplnrest
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -94,7 +95,14 @@ func TestAPresenceChangeIsPushedToAFriendsConsoleOneRecordAtATime(t *testing.T) 
 	sendChunk(frontlineFrame(frontlineRootHash, now, func(w *fbWriter) int { pos, _ := w.table(nil); return pos }))
 	read() // the RootHash echo
 
-	// The queued record goes out once the sync is over.
+	// First npns's own control record, keeping presence on BAAS.
+	ctl := read()
+	if frontlineFrameType(ctl) != 4 || !strings.Contains(string(ctl), "presence:nxbaas") || !strings.Contains(string(ctl), "penne") {
+		t.Fatalf("first record is not the presence-mode control: % x", ctl)
+	}
+	sendChunk(frontlineFrame(frontlineAck, now, func(w *fbWriter) int { pos, _ := w.table(nil); return pos }))
+
+	// The queued presence record goes out once that one is acknowledged.
 	put := read()
 	if frontlineFrameType(put) != 4 {
 		t.Fatalf("pushed type = %d, want PutRecord", frontlineFrameType(put))
@@ -194,5 +202,47 @@ func TestANotificationTokenIsStableAndRemembersItsConsole(t *testing.T) {
 	if err != nil || len(owners) != 1 || owners[0].PenneID != "pzlfh504x771mrn0rpq0mutguiutqebj2" ||
 		owners[0].Account != "10001ed3f08dc3b4679c13b4a847679c" {
 		t.Fatalf("token owner = %+v, %v", owners, err)
+	}
+}
+
+// BAAS's friend notifications reach the recipient's consoles unchanged.
+func TestAFriendRequestNotificationReachesTheRecipientsConsole(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	store := db.NewMemory()
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	if err := store.CreateUser(ctx, db.User{ID: "bbbbbbbbbbbbbbbb", CreatedAt: now}, db.DeviceAccount{ID: "da-b"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.SetPushChannel(ctx, db.PushChannel{UserID: "bbbbbbbbbbbbbbbb", DeviceAccountID: "da-b", DeviceToken: "tok-b"})
+	_ = store.SetPenneToken(ctx, db.PenneToken{Token: "tok-b", PenneID: "penne-b", Account: "0123456789abcdef0123456789abcdef"})
+	bus := presencebus.NewLocal()
+	s, err := New(Options{
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), FrontlineHost: frontlineHost,
+		Now: func() time.Time { return now }, Store: store, Notify: bus,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan []byte, 1)
+	conn := &frontlineConn{penneID: "penne-b", send: func(f []byte) error { got <- f; return nil }}
+	conn.synced()
+	s.registry.add(conn)
+	go s.Run(ctx)
+
+	payload := []byte(`{"type":"friend_request_received","value":{"id":"7cfa2df61adf4e7a"}}`)
+	deadline := time.After(2 * time.Second)
+	for {
+		_ = bus.Publish(ctx, presencebus.Event{UserID: "bbbbbbbbbbbbbbbb", Type: "friend_request_received", Payload: payload})
+		select {
+		case f := <-got:
+			if frontlineFrameType(f[4:]) != 4 || !strings.Contains(string(f), string(payload)) {
+				t.Fatalf("pushed % x", f)
+			}
+			return
+		case <-time.After(20 * time.Millisecond):
+		case <-deadline:
+			t.Fatal("nothing pushed")
+		}
 	}
 }

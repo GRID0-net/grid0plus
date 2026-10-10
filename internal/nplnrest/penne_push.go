@@ -128,6 +128,14 @@ func (c *frontlineConn) push(frame []byte) {
 	c.flushLocked()
 }
 
+// pushFirst queues frame ahead of everything waiting.
+func (c *frontlineConn) pushFirst(frame []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.queue = append([][]byte{frame}, c.queue...)
+	c.flushLocked()
+}
+
 // acked is the console's Ack for the record in flight.
 func (c *frontlineConn) acked() {
 	c.mu.Lock()
@@ -252,12 +260,18 @@ func notificationFrame(now time.Time, topic, account string, payload []byte) []b
 		w.patch(vec+4, rec)
 		n, nRefs := w.table([]*fbField{ref(), u16(1), ref(), nil, ref(), nil, nil, i64(now.Add(24 * time.Hour).Unix())})
 		w.patch(recRefs[1], n)
-		sub, subRefs := w.table([]*fbField{nil, ref(), ref(), nil, ref()})
+		uidField := ref()
+		if account == "" {
+			uidField = nil
+		}
+		sub, subRefs := w.table([]*fbField{nil, ref(), uidField, nil, ref()})
 		w.patch(nRefs[2], sub)
 		w.patch(nRefs[0], w.str(hex.EncodeToString(id)))
 		w.patch(nRefs[4], w.str(string(payload)))
 		w.patch(subRefs[1], w.str(topic))
-		w.patch(subRefs[2], w.str(account))
+		if account != "" {
+			w.patch(subRefs[2], w.str(account))
+		}
 		w.patch(subRefs[4], w.str(""))
 		return put
 	})
@@ -328,4 +342,39 @@ func presenceUpdated(e presencebus.Event) map[string]any {
 		value["logoutAt"] = e.At.Unix()
 	}
 	return map[string]any{"type": "presence_updated", "createdAt": e.At.Unix(), "value": value}
+}
+
+// presenceModeFrame is npns's own control record: payload "presence:nxbaas"
+// on topic "penne" (FUN_71000d64c0 recognises the topic, FUN_71000d6070 the
+// payload) sets its presence mode to BAAS. In the other mode, "penne", the
+// friends sysmodule hands its presence to npns to send up the frontline
+// (friends FUN_001bf220) instead of PATCHing /1.0.0/users/<id>
+// (FUN_001bf3c0), and the BAAS path is the one GRID0+ stores, resolves and
+// shows on the dashboard.
+func presenceModeFrame(now time.Time) []byte {
+	return notificationFrame(now, "penne", "", []byte("presence:nxbaas"))
+}
+
+// watchNotifications forwards BAAS's notifications to the recipient's
+// consoles, on the friends topic: every type BAAS sends today is one the
+// friends sysmodule dispatches (FUN_001a15c0).
+func (s *Server) watchNotifications(ctx context.Context) {
+	events, err := s.notify.Subscribe(ctx)
+	if err != nil {
+		s.log.Warn("nplnrest: notification bus unavailable", "error", err)
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e, ok := <-events:
+			if !ok {
+				return
+			}
+			if e.Type != "" && len(e.Payload) > 0 {
+				s.Notify(ctx, e.UserID, friendsTopic, e.Payload)
+			}
+		}
+	}
 }

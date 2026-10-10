@@ -987,3 +987,59 @@ func TestOpeningARequestersProfileMayMarkTheRequestRead(t *testing.T) {
 	resp = h.do(request{method: "PATCH", path: "/2.0.0/friend_requests/" + sent.ID, token: a.AccessToken, patch: read})
 	requireError(t, resp, 404, "resource_is_not_found")
 }
+
+// The console's npns hands these to the friends sysmodule, which switches on
+// $.type and, for a new request, reads it under $.value in the inbox's shape.
+func TestFriendEventsAreQueuedAsConsoleNotifications(t *testing.T) {
+	h := newHarness(t)
+	a := h.newAccount()
+	b := h.newAccount()
+	resp := h.do(request{
+		method: "POST", path: "/2.0.0/friend_requests",
+		token: a.AccessToken, json: `{"friendCode":"` + h.friendCode(b) + `"}`,
+	})
+	requireStatus(t, resp, 201)
+	var sent FriendRequestResponse
+	decode(t, resp, &sent)
+	resp = h.do(request{
+		method: "PATCH", path: "/2.0.0/friend_requests/" + sent.ID, token: b.AccessToken,
+		patch: `[{"op":"replace","path":"/state","value":"AUTHORIZED"}]`,
+	})
+	requireStatus(t, resp, 200)
+	resp = h.do(request{method: "DELETE", path: "/2.0.0/users/" + a.UserID + "/friends/" + b.UserID, token: a.AccessToken})
+	requireStatus(t, resp, 204)
+
+	h.notify.mu.Lock()
+	events := append([]presencebus.Event(nil), h.notify.events...)
+	h.notify.mu.Unlock()
+	want := []struct{ user, typ string }{
+		{b.UserID, "friend_request_received"},
+		{a.UserID, "friend_request_authorized"},
+		{b.UserID, "friend_deleted"},
+	}
+	if len(events) != len(want) {
+		t.Fatalf("%d notifications, want %d: %+v", len(events), len(want), events)
+	}
+	for i, w := range want {
+		var payload struct {
+			Type  string         `json:"type"`
+			Value map[string]any `json:"value"`
+		}
+		if err := json.Unmarshal(events[i].Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if events[i].UserID != w.user || events[i].Type != w.typ || payload.Type != w.typ {
+			t.Errorf("notification %d = %s %s (payload type %q), want %s %s", i, events[i].UserID, events[i].Type, payload.Type, w.user, w.typ)
+		}
+	}
+	var first struct {
+		Value struct {
+			ID       string `json:"id"`
+			Channels []any  `json:"channels"`
+		} `json:"value"`
+	}
+	_ = json.Unmarshal(events[0].Payload, &first)
+	if first.Value.ID != sent.ID || len(first.Value.Channels) == 0 {
+		t.Errorf("the request notification does not carry the request: %s", events[0].Payload)
+	}
+}

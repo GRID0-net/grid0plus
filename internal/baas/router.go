@@ -29,6 +29,7 @@ package baas
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -92,10 +93,11 @@ type Config struct {
 
 // Server is the BAAS HTTP server.
 type Server struct {
-	cfg   Config
-	store db.Store
-	bus   presencebus.Bus
-	log   *slog.Logger
+	cfg       Config
+	store     db.Store
+	bus       presencebus.Bus
+	notifyBus presencebus.Bus
+	log       *slog.Logger
 
 	// accessIssuer signs access and user tokens; idIssuer signs the id tokens
 	// embedded in a login/federation response (iss = the BAAS host, read by
@@ -147,8 +149,12 @@ type Server struct {
 
 // Deps are the collaborators a Server needs.
 type Deps struct {
-	Store          db.Store
-	Bus            presencebus.Bus
+	Store db.Store
+	Bus   presencebus.Bus
+	// Notify, when set, carries push notifications for consoles (friend
+	// requests and removals) to internal/nplnrest, on its own channel so
+	// presence subscribers never see them.
+	Notify         presencebus.Bus
 	Log            *slog.Logger
 	AccessIssuer   *sjwt.Issuer
 	IDIssuer       *sjwt.Issuer
@@ -165,6 +171,7 @@ func New(cfg Config, d Deps) *Server {
 		cfg:            cfg,
 		store:          d.Store,
 		bus:            d.Bus,
+		notifyBus:      d.Notify,
 		log:            d.Log,
 		accessIssuer:   d.AccessIssuer,
 		idIssuer:       d.IDIssuer,
@@ -556,6 +563,22 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 		}
 		s.log.Log(r.Context(), level, "baas request", attrs...)
 	})
+}
+
+// notify queues a push notification for userID's consoles: the friends
+// sysmodule's event typ with its JSON payload. Logged and swallowed like
+// publishPresence: a push is a nicety on top of the request that caused it.
+func (s *Server) notify(ctx context.Context, userID, typ string, payload any) {
+	if s.notifyBus == nil {
+		return
+	}
+	raw, err := json.Marshal(payload)
+	if err == nil {
+		err = s.notifyBus.Publish(ctx, presencebus.Event{UserID: userID, Type: typ, Payload: raw, At: s.now(), Source: "baas"})
+	}
+	if err != nil {
+		s.log.Warn("baas: publish notification", "user", userID, "type", typ, "error", err)
+	}
 }
 
 // publishPresence sends a presence change to the bus.

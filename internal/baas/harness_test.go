@@ -39,6 +39,7 @@ type harness struct {
 	srv    *Server
 	store  *db.Memory
 	bus    *recordingBus
+	notify *recordingBus
 
 	deviceIssuer *sjwt.Issuer
 	appIssuer    *sjwt.Issuer
@@ -124,9 +125,10 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 	}
 
 	h := &harness{
-		t:     t,
-		store: db.NewMemory(),
-		bus:   &recordingBus{},
+		t:      t,
+		store:  db.NewMemory(),
+		bus:    &recordingBus{},
+		notify: &recordingBus{},
 		// Anchored to real time, not a fixed instant: JWT expiry is verified
 		// against the real wall clock (see the note on the expiry tests below),
 		// so a frozen date drifts out of every token's validity window after a
@@ -146,6 +148,7 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		srv := New(cfg, Deps{
 			Store:          h.store,
 			Bus:            h.bus,
+			Notify:         h.notify,
 			Log:            slog.New(slog.DiscardHandler),
 			AccessIssuer:   sjwt.NewIssuer(accessKey, cfg.AccessTokenJWKSURL, true),
 			IDIssuer:       sjwt.NewIssuer(idKey, cfg.IDTokenJWKSURL, true),

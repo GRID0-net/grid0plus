@@ -252,6 +252,7 @@ func (s *Server) removeFriend(w http.ResponseWriter, r *http.Request, c *caller)
 	}
 
 	s.log.Info("baas: unfriended", "user", c.UserID, "friend", other)
+	s.notifyFriendDeleted(r.Context(), other)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -491,6 +492,11 @@ func (s *Server) sendFriendRequest(ctx context.Context, fromID string, target db
 		return db.FriendRequest{}, err
 	}
 	s.log.Info("baas: friend request sent", "from", fromID, "to", target.ID, "request", req.ID)
+	// friends FUN_001a1ad0 reads the request under $.value, in the inbox's
+	// own item shape.
+	s.notify(ctx, target.ID, "friend_request_received", map[string]any{
+		"type": "friend_request_received", "value": s.friendRequestResponse(ctx, req, target.ID),
+	})
 	return req, nil
 }
 
@@ -717,7 +723,13 @@ func (s *Server) acceptRequest(ctx context.Context, req db.FriendRequest) error 
 	if err := s.store.AddFriendship(ctx, req.FromUserID, req.ToUserID, now); err != nil {
 		return err
 	}
-	return s.store.SetFriendRequestState(ctx, req.ID, db.RequestAccepted, now)
+	if err := s.store.SetFriendRequestState(ctx, req.ID, db.RequestAccepted, now); err != nil {
+		return err
+	}
+	// The sender's console refreshes its friend list on this (friends
+	// FUN_001a1bb0 reads nothing but the type).
+	s.notify(ctx, req.FromUserID, "friend_request_authorized", map[string]any{"type": "friend_request_authorized"})
+	return nil
 }
 
 // parseRequestState reads the target state out of a PATCH body.
@@ -961,4 +973,10 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 	out.Sender = fill(req.FromUserID)
 	out.Receiver = fill(req.ToUserID)
 	return out
+}
+
+// notifyFriendDeleted tells the other side's consoles to drop the friend
+// (friends FUN_001a1c60 reads nothing but the type).
+func (s *Server) notifyFriendDeleted(ctx context.Context, userID string) {
+	s.notify(ctx, userID, "friend_deleted", map[string]any{"type": "friend_deleted"})
 }

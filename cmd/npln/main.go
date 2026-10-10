@@ -80,7 +80,7 @@ func main() {
 	// and the dashboard's matchmaking gauge honestly reports no data rather
 	// than a zero that reads as "nobody is queuing". Same tradeoff
 	// internal/dashboard makes for the same reason -- see cmd/dashboard/main.go.
-	var bus presencebus.Bus
+	var bus, notifyBus presencebus.Bus
 	if cfg.Redis.URL != "" {
 		r, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel, log)
 		if err != nil {
@@ -88,6 +88,12 @@ func main() {
 		}
 		defer r.Close()
 		bus = r
+		nb, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel+".notify", log)
+		if err != nil {
+			service.Fatal(log, "connect redis notifications", err)
+		}
+		defer nb.Close()
+		notifyBus = nb
 	} else {
 		log.Warn("npln: redis.url is not set, so Friends and PresenceService only refresh " +
 			"on their own keep-alive timer rather than the moment a friend's presence changes, " +
@@ -152,6 +158,7 @@ func main() {
 		RecordDir:     cfg.NPLN.RestRecordDir,
 		Store:         store,
 		Bus:           bus,
+		Notify:        notifyBus,
 	})
 	if err != nil {
 		service.Fatal(log, "build json front end", err)

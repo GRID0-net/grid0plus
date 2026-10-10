@@ -9,6 +9,7 @@ package presencebus
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -30,6 +31,13 @@ type Event struct {
 	// Source names what reported the change, for debugging: "baas" for a
 	// console's own report, "liveness" for the request-traffic heartbeat.
 	Source string `json:"source"`
+
+	// Type and Payload are set only on the notification channel (the
+	// presence channel's name plus ".notify"): Type is the friends
+	// sysmodule's event name, Payload the JSON npns hands it, and UserID the
+	// recipient rather than whose presence changed.
+	Type    string          `json:"type,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 // Stats is a snapshot of what a game server is doing right now.

@@ -570,6 +570,7 @@ func (b *botAPI) removeFriend(w http.ResponseWriter, r *http.Request, user db.Us
 		b.internal(w, "remove friendship", err)
 		return
 	}
+	b.s.notifyFriendDeleted(r.Context(), strings.ToLower(r.PathValue("userId")))
 	b.s.log.Info("botapi: unfriended", "user", user.ID, "friend", r.PathValue("userId"))
 	w.WriteHeader(http.StatusNoContent)
 }

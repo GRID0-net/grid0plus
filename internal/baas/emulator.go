@@ -265,5 +265,6 @@ func (s *Server) emulatorRemoveFriend(w http.ResponseWriter, r *http.Request, c 
 		writeInternalError(s.log, w, r, "remove friendship", err)
 		return
 	}
+	s.notifyFriendDeleted(r.Context(), strings.ToLower(r.PathValue("id")))
 	w.WriteHeader(http.StatusNoContent)
 }
