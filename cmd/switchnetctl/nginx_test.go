@@ -115,6 +115,15 @@ func TestTheNPLNJSONHostsUseProxyPassAndTheTenantUsesGRPCPass(t *testing.T) {
 		}
 	}
 
+	// npns streams its frames on an HTTP/2 request body; over HTTP/1.1 curl
+	// sends an empty body and the console never leaves state 7.
+	for _, server := range strings.Split(restBlock, "server {")[1:] {
+		fro := strings.Contains(server, "fro-1.hac.lp1.penne.srv.nintendo.net")
+		if fro != hasDirective(server, "http2 on") {
+			t.Errorf("http2 on must be set exactly for the frontline hosts; this block has fro=%v:\n%s", fro, server)
+		}
+	}
+
 	grpcBlock := sectionOf(t, conf, "npln")
 	if !hasDirective(grpcBlock, "grpc_pass grpc://switchnet_npln") {
 		t.Error("the NPLN tenant is not grpc_pass'd")

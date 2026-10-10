@@ -535,8 +535,20 @@ func nginxConf(cfg config.Config) string {
 			// per-host interop flag, so grouping by variant would only ever
 			// produce one bucket -- and picking the wrong one silently emits a
 			// server block with an empty server_name.
-			b.WriteString(frontlineServerBlock(cfg, tlsNamesOf(hosts)))
+			var rest, fro []string
+			for _, n := range tlsNamesOf(hosts) {
+				if strings.HasPrefix(n, "fro-") {
+					fro = append(fro, n)
+				} else {
+					rest = append(rest, n)
+				}
+			}
+			b.WriteString(frontlineServerBlock(cfg, rest, false))
 			b.WriteString("\n")
+			if len(fro) > 0 {
+				b.WriteString(frontlineServerBlock(cfg, fro, true))
+				b.WriteString("\n")
+			}
 			continue
 		}
 
@@ -797,16 +809,21 @@ func tlsNamesOf(hosts []nintendo.Host) []string {
 //     Splatoon 2, 2321-* on Splatoon 3 -- so an idle-timeout disconnect looks
 //     to the player like the game losing its connection for no reason.
 //
-// No "http2 on", so nginx serves these over HTTP/1.1. That is what the console
-// is known to be served today rather than a measured requirement: unlike
-// accounts.nintendo.com and m-lp1.baas.nintendo.com, no capture shows this
-// client failing on HTTP/2, so no NoHTTP2 flag is claimed on the hosts
-// themselves. If a capture ever shows HTTP/2 working here, turning it on is a
-// one-line change; the reverse -- inventing a flag with no capture behind it --
-// is the thing this repository has been bitten by before.
-func frontlineServerBlock(cfg config.Config, serverNames []string) string {
+// The fro-N hosts get their own block with HTTP/2 on. npns asks curl for
+// HTTP/2 (CURLOPT_HTTP_VERSION=3, FUN_71000d9250) and streams its frames on a
+// request body that never ends; over HTTP/1.1 curl sends the POST with an
+// empty body instead, so the digital-twin sync never starts, npns times out
+// in state 7 after 70 s and reconnects -- what grid0's log showed on
+// 2026-10-10 (content_length=0, a close every ~70 s, no frame ever read).
+// The other NPLN JSON hosts stay on HTTP/1.1, which is what they are known
+// to work with.
+func frontlineServerBlock(cfg config.Config, serverNames []string, http2 bool) string {
+	h2 := ""
+	if http2 {
+		h2 = "\n    http2 on;"
+	}
 	return fmt.Sprintf(`server {
-    listen %d ssl;
+    listen %d ssl;%s
     server_name %s;
 
     ssl_certificate     /etc/switchnet/certs/edge.crt;
@@ -831,7 +848,7 @@ func frontlineServerBlock(cfg config.Config, serverNames []string) string {
         client_body_timeout 3600s;
     }
 }
-`, cfg.Network.EdgeTLSPort, strings.Join(serverNames, "\n                "))
+`, cfg.Network.EdgeTLSPort, h2, strings.Join(serverNames, "\n                "))
 }
 
 // websocketServerBlock is the edge for the NEX hosts.
