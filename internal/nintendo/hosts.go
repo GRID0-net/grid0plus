@@ -197,7 +197,14 @@ var Hosts = []Host{
 	},
 	{
 		Pattern: "cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
-		Service: ServiceBAAS, TLS: true, NoHTTP2: true,
+		Service: ServiceBAAS, TLS: true, NoHTTP2: true, NoClientCertRequest: true,
+		// No client-cert request for the same reason as the friends host
+		// above: the friends sysmodule downloads the thumbnails, tries to
+		// answer the CertificateRequest and aborts its own handshake. No
+		// console fetch of /1/<image> ever reached nginx while emulators,
+		// which ignore the request, fetched every one. Nothing here reads
+		// a client certificate.
+		//
 		// Never individually verified against a real capture until
 		// 2026-08-28: it was running nginx's default HTTP/2-on variant, the
 		// exact configuration m-lp1.baas.nintendo.com needed NoHTTP2 for. The
