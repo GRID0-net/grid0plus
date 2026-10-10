@@ -106,3 +106,28 @@ is "Unexpected command … in steady state".
 - what the client sends periodically in state 8 (Ping cadence from
   `awake.interval`, and whether Pong is required);
 - error codes 0xcd–0x24e are named in `FUN_71000d7b30`.
+
+## Implemented (2026-10-10, `internal/nplnrest`)
+
+- **Sync:** a console RootHash is echoed back (no server-side records, so the
+  twins agree), which takes npns to state 8. Pings get a Pong carrying their
+  first field. Nothing is sent unprompted.
+- **Presence mode:** the first record after the sync is the control
+  notification `presence:nxbaas` on topic `penne` (FUN_71000d64c0 /
+  FUN_71000d6070), keeping the friends sysmodule on the BAAS presence path
+  (friends FUN_001bf3c0) rather than handing presence to npns (FUN_001bf220).
+- **Push path:** `god.hac` `/v1/accounts/<Uid>/notification_tokens` records
+  `token -> (penne_id, Uid)`; BAAS `PUT /1.0.0/push_channels` records
+  `user -> token`; `/v1/login_tickets` records `ticket -> penne_id`; the
+  frontline's `Bearer` ticket names its penne id.
+- **Notifications:** PutRecord { records: [ { kind 1, Notification { id,
+  kind 1, { topic "0x010000000000000e", Uid, target "" }, payload, expiry } } ] }.
+  One in flight per connection until npns acks (it aborts on a second).
+  Payloads are the friends sysmodule's JSON: `presence_updated` with the
+  friend-list presence object under `value`, `friend_request_received` with
+  the inbox item, `friend_request_authorized`, `friend_deleted`.
+
+Still unconfirmed on hardware: whether npns reaches state 8 on the echo,
+which field of a Ping is its id, and whether the Ack that releases the next
+record is the type-9 frame this server waits for. The frontline logs every
+frame in both directions to settle each.

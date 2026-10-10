@@ -6,15 +6,29 @@ console that cannot get past it never reaches the gateway at all.
 
 | | |
 | --- | --- |
-| Reimplements | `gw.hac.lp1.vermillion.srv.nintendo.net`, `val.hac.lp1.penne.srv.nintendo.net`, `fro-N.hac.lp1.penne.srv.nintendo.net` |
-| Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
-| Needs a database | no |
+| Reimplements | `gw.hac.lp1.vermillion.srv.nintendo.net`, `god.hac.lp1.penne.srv.nintendo.net`, `val.hac.lp1.penne.srv.nintendo.net`, `fro-N.hac.lp1.penne.srv.nintendo.net` |
+| Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers), [`docs/CAPTURES/npns-sysmodule-decompile.md`](../../docs/CAPTURES/npns-sysmodule-decompile.md) |
+| Needs a database | for push notifications only (penne tokens, push channels, tickets) |
 
 | Host | What it does |
 | --- | --- |
 | `gw.hac.lp1.vermillion…` | device initialisation, account config |
+| `god.hac.lp1.penne…` | npns's penne id and notification tokens, remembered so a push can find the console |
 | `val.hac.lp1.penne…` | login tickets, and **the frontline FQDN** |
 | `fro-N.hac.lp1.penne…` | a persistent connection the console holds open |
+
+## npns uses the same frontline, for push notifications
+
+The console's push service (npns, not only Splatoon 3) holds a frontline
+too. Its frames, both ways, are a 4-byte little-endian length and a
+FlatBuffer. npns does not count as connected — and the friends sysmodule
+does not upload presence — until its digital-twin sync ends, which this
+server answers by echoing the console's RootHash. After that it pushes
+PutRecord notifications: friends' presence changes from the presence bus,
+and friend requests/acceptances/removals from BAAS on the `.notify`
+channel, one record in flight per connection until the console acks it.
+The protocol, from a decompile of npns, is in
+[`docs/CAPTURES/npns-sysmodule-decompile.md`](../../docs/CAPTURES/npns-sysmodule-decompile.md).
 
 ## Nothing here is confirmed against a capture, and that shapes the whole package
 
