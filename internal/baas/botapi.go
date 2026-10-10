@@ -52,11 +52,17 @@ type BotAPIOptions struct {
 	Token string
 	// Health reports each service's health for /status. Optional.
 	Health func(ctx context.Context) []ServiceStatus
+	// SaveRecordPrefix is the Ugcstore name prefix of Splatoon 3's cloud save
+	// records, "tenants/<tenant>/saveRecords/". Empty disables the wipe.
+	SaveRecordPrefix string
+	// SaveBackupDir is where a wiped save record is archived first.
+	SaveBackupDir string
 }
 
 // BotHandler serves the bot API.
 func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
-	b := &botAPI{s: s, token: opts.Token, health: opts.Health}
+	b := &botAPI{s: s, token: opts.Token, health: opts.Health,
+		saveRecordPrefix: opts.SaveRecordPrefix, saveBackupDir: opts.SaveBackupDir}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bot/v1/register", b.register)
 	mux.HandleFunc("POST /bot/v1/link", b.link)
@@ -72,6 +78,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux.HandleFunc("GET /bot/v1/users/by-discord/{discordId}", b.lookupDiscordUser)
 	mux.HandleFunc("GET /bot/v1/online", b.online)
 	mux.HandleFunc("GET /bot/v1/status", b.status)
+	mux.HandleFunc("POST /bot/v1/splatoon3/save/wipe", b.withDiscordID(b.wipeSplatoon3Save))
 	return b.authenticate(mux)
 }
 
@@ -79,6 +86,9 @@ type botAPI struct {
 	s      *Server
 	token  string
 	health func(ctx context.Context) []ServiceStatus
+
+	saveRecordPrefix string
+	saveBackupDir    string
 }
 
 // botError is the API's one error shape. Code is stable for the bot to switch

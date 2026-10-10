@@ -134,6 +134,10 @@ func main() {
 	if cfg.BAAS.BotAPI.Listen != "" {
 		bot := srv.BotHandler(baas.BotAPIOptions{
 			Token: cfg.BAAS.BotAPI.Token,
+			// Splatoon 3's cloud save records, as toyohr's CloudSave names them.
+			SaveRecordPrefix: "tenants/" + cfg.NPLN.Tenant + "/saveRecords/",
+			// Its own folder: scsi.storage_dir holds OLSC console saves.
+			SaveBackupDir: "data/splat3-save-backups",
 			Health: func(ctx context.Context) []baas.ServiceStatus {
 				probed := dashboard.ProbeServices(ctx, cfg)
 				out := make([]baas.ServiceStatus, 0, len(probed))
