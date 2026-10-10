@@ -192,8 +192,12 @@ func main() {
 					return err
 				}
 			} else {
+				festTeams, err := toyohr.FestTeamsOf(ctx, store, report)
+				if err != nil {
+					return err
+				}
 				if err := ugcstore.RecordVsResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
-					report.Players, report.Fields, report.Verdict, report.Profiles, now); err != nil {
+					report.Players, report.Fields, report.Verdict, report.Profiles, festTeams, now); err != nil {
 					return err
 				}
 			}

@@ -139,3 +139,30 @@ func otherTeam(r gamesync.RefereeReport, votes map[string]string) string {
 	}
 	return other
 }
+
+// FestTeamsOf maps the players of a fest battle's report to the teams they
+// voted for, for the battle history; nil for any other battle.
+func FestTeamsOf(ctx context.Context, store db.Store, r gamesync.RefereeReport) (map[string]string, error) {
+	festID := r.Fields.GetFields()["fest_id"].GetStringValue()
+	if festID == "" {
+		festID = r.Verdict.GetFields()["fest_id"].GetStringValue()
+	}
+	if festID == "" || !strings.Contains(strings.ToLower(r.Mode), "fest") {
+		return nil, nil
+	}
+	entries, err := store.ListFestEntries(ctx, festID)
+	if err != nil {
+		return nil, err
+	}
+	members := make(map[string]bool, len(r.Players))
+	for _, id := range r.Players {
+		members[id] = true
+	}
+	out := map[string]string{}
+	for _, e := range entries {
+		if members[e.UserID] {
+			out[e.UserID] = e.Team
+		}
+	}
+	return out, nil
+}

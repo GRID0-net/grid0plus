@@ -33,7 +33,7 @@ func TestAFinishedBattleAppearsInEachPlayersHistory(t *testing.T) {
 	}}
 	ctx := context.Background()
 	for _, battle := range []string{"20261003T135000_old", "20261003T140000_new"} {
-		if err := RecordVsResults(ctx, store, "dce9377b", battle, []string{"alice", "bob"}, report, nil, nil, now); err != nil {
+		if err := RecordVsResults(ctx, store, "dce9377b", battle, []string{"alice", "bob"}, report, nil, nil, nil, now); err != nil {
 			t.Fatalf("RecordVsResults: %v", err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestTheHistoryFieldsSitAtTheTopOfTheBattleDocument(t *testing.T) {
 	verdict := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 		"stage": integer(14), "game_rule": integer(0), "game_mode": integer(1),
 	}}
-	if err := RecordVsResults(ctx, store, "dce9377b", "20261003T215000_m", []string{"alice"}, report, verdict, nil, now); err != nil {
+	if err := RecordVsResults(ctx, store, "dce9377b", "20261003T215000_m", []string{"alice"}, report, verdict, nil, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	d, err := store.GetUGCDocument(ctx, "tenants/dce9377b/documents/services/GameRecord/users/alice/VsResults/20261003T215000_m")
@@ -130,7 +130,7 @@ func TestEachHistoryRowCarriesThePlayersProfile(t *testing.T) {
 	}}
 	info := mapOf(map[string]*commonpb.Value{"name": str("Alice")})
 	if err := RecordVsResults(ctx, store, "dce9377b", "20261006T180000_m", []string{"alice"}, report, nil,
-		map[string]*commonpb.Value{"alice": info}, now); err != nil {
+		map[string]*commonpb.Value{"alice": info}, nil, now); err != nil {
 		t.Fatalf("RecordVsResults: %v", err)
 	}
 	doc, err := store.GetUGCDocument(ctx, "tenants/dce9377b/documents/services/GameRecord/users/alice/VsResults/20261006T180000_m")
@@ -145,5 +145,26 @@ func TestEachHistoryRowCarriesThePlayersProfile(t *testing.T) {
 	name := row["profile"].GetMapValue().GetFields()["player_info"].GetMapValue().GetFields()["name"].GetStringValue()
 	if name != "Alice" {
 		t.Errorf("profile.player_info.name = %q, want Alice", name)
+	}
+}
+
+func TestHistoryEntriesNestStatsInResultAndCarryTheFestTeam(t *testing.T) {
+	entry := &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"npln_user_id":  {ValueType: &commonpb.Value_StringValue{StringValue: "alice"}},
+		"kill_num":      {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 5}},
+		"deemed_result": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 1}},
+		"paint_point":   {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 900}},
+	}}}}
+	got := historyEntry(entry, map[string]string{"alice": "Bravo"}).GetMapValue().GetFields()
+	result := got["result"].GetMapValue().GetFields()
+	if result["kill_num"].GetIntegerValue() != 5 || result["deemed_result"].GetIntegerValue() != 1 ||
+		result["paint_point"].GetIntegerValue() != 900 {
+		t.Fatalf("result = %v", result)
+	}
+	if team := got["fest_info"].GetMapValue().GetFields()["fest_team"].GetStringValue(); team != "Bravo" {
+		t.Fatalf("fest_team = %q", team)
+	}
+	if plain := historyEntry(entry, nil).GetMapValue().GetFields(); plain["fest_info"] != nil {
+		t.Fatal("a non-fest battle got fest_info")
 	}
 }

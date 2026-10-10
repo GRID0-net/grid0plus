@@ -30,7 +30,8 @@ import (
 // looks for in some modes, and any value Nintendo computes that the report
 // does not carry. Change historyFields.
 func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID string,
-	players []string, report, verdict *commonpb.MapValue, profiles map[string]*commonpb.Value, now time.Time) error {
+	players []string, report, verdict *commonpb.MapValue, profiles map[string]*commonpb.Value,
+	festTeams map[string]string, now time.Time) error {
 	if battleID == "" || strings.Contains(battleID, "/") || report == nil {
 		return nil
 	}
@@ -50,6 +51,7 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 	for _, key := range keys {
 		p := people[key]
 		p = withProfile(p, profiles)
+		p = historyEntry(p, festTeams)
 		switch p.GetMapValue().GetFields()["team"].GetIntegerValue() {
 		case 1:
 			teams["personal_data_team1"] = append(teams["personal_data_team1"], p)
@@ -153,4 +155,49 @@ func historyFields(report, verdict *commonpb.MapValue) map[string]*commonpb.Valu
 		}
 	}
 	return out
+}
+
+// historyEntry nests a player's stats the way the history screen reads them.
+// Its per-player reader (raw 0x7103dc4234) takes kill_num, kill_assist_num,
+// death_num, special_num, paint_point, deemed_result, disconnected and
+// group_leader from a "result" map inside the entry, not from the entry
+// itself; with them only at the top every player showed 0p and x00, and a
+// missing deemed_result read as a win, so the loser's history said VICTORY
+// and its Recent Battles count was wrong (2026-10-10, hardware). The top-level
+// copies stay for anything else that reads them.
+//
+// A Splatfest player also gets fest_info.fest_team (Alpha/Bravo/Charlie, read
+// at 0x7103dc4ef0) and the Tricolor signal fields the same reader takes from
+// fest_info, so the row is drawn in its team's colour.
+func historyEntry(p *commonpb.Value, festTeams map[string]string) *commonpb.Value {
+	f := p.GetMapValue().GetFields()
+	if f == nil {
+		return p
+	}
+	out := make(map[string]*commonpb.Value, len(f)+2)
+	for k, v := range f {
+		out[k] = v
+	}
+	if out["result"].GetMapValue() == nil {
+		result := map[string]*commonpb.Value{}
+		for _, k := range []string{"kill_num", "kill_assist_num", "death_num", "special_num",
+			"paint_point", "deemed_result", "disconnected", "group_leader"} {
+			if v := f[k]; v != nil {
+				result[k] = v
+			}
+		}
+		out["result"] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: result}}}
+	}
+	if team := festTeams[f["npln_user_id"].GetStringValue()]; team != "" && out["fest_info"].GetMapValue() == nil {
+		info := map[string]*commonpb.Value{
+			"fest_team": {ValueType: &commonpb.Value_StringValue{StringValue: team}},
+		}
+		for _, k := range []string{"did_get_noroshi1", "did_get_noroshi2", "noroshi_try_num", "contribution"} {
+			if v := f[k]; v != nil {
+				info[k] = v
+			}
+		}
+		out["fest_info"] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: info}}}
+	}
+	return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: out}}}
 }

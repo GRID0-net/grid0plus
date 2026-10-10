@@ -30,7 +30,7 @@ func TestALaterIndividualReportKeepsEveryPlayerInBattleHistory(t *testing.T) {
 				report := &commonpb.MapValue{Fields: map[string]*commonpb.Value{"personal_result": mapValue(map[string]*commonpb.Value{entry.key: entry.value})}}
 				var err error
 				if mode == "VsResults" {
-					err = RecordVsResults(ctx, store, "dce9377b", battle, []string{"alice", "bob"}, report, verdict, nil, now)
+					err = RecordVsResults(ctx, store, "dce9377b", battle, []string{"alice", "bob"}, report, verdict, nil, nil, now)
 				} else {
 					err = RecordCoopResults(ctx, store, "dce9377b", battle, report, verdict, nil, nil, now)
 				}
