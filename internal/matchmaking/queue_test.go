@@ -1146,3 +1146,39 @@ func TestSquadsThatCannotMakeEvenTeamsDoNotFormAMatch(t *testing.T) {
 	}
 	_ = clock
 }
+
+// TestAnarchySeriesFormsOneSidedLobbiesInPairsThenPairsThem: the team step
+// is one side of four, never eight, and two lobbies always form together so
+// each meets the other on the second step.
+func TestAnarchySeriesFormsOneSidedLobbiesInPairsThenPairsThem(t *testing.T) {
+	q, clock := testGraceQueue(t, 8, 20*time.Second, 0)
+	team := "bankara_match_challenge_ar_team_config"
+	for i := 0; i < 7; i++ {
+		if _, f, _ := q.Enqueue(userName(i), team); len(f) != 0 {
+			t.Fatalf("a lobby formed with %d waiting: %v", i+1, f[0].Players)
+		}
+	}
+	_, formed, _ := q.Enqueue(userName(7), team)
+	if len(formed) != 2 || len(formed[0].Players) != 4 || len(formed[1].Players) != 4 {
+		t.Fatalf("formed %v, want two lobbies of 4", formed)
+	}
+
+	// Three waiting: after the grace period, two lobbies of one.
+	for i := 10; i < 13; i++ {
+		q.Enqueue(userName(i), team)
+	}
+	*clock = clock.Add(time.Minute)
+	if _, f := q.Sweep(); len(f) != 2 || len(f[0].Players) != 1 || len(f[1].Players) != 1 {
+		t.Fatalf("after the grace period formed %v, want two lobbies of 1", f)
+	}
+
+	challenge := bankaraChallengeMode(team)
+	q.EnqueueSquad("l1", []string{"l2", "l3", "l4"}, challenge, "")
+	if _, f, _ := q.EnqueueSquad("m1", []string{"m2"}, challenge, ""); len(f) != 0 {
+		t.Fatalf("a lobby of 4 met a lobby of 2: %v", f[0].Players)
+	}
+	_, f, _ := q.EnqueueSquad("n1", []string{"n2", "n3", "n4"}, challenge, "")
+	if len(f) != 1 || len(f[0].Players) != 8 {
+		t.Fatalf("formed %v, want the two lobbies of 4 together", f)
+	}
+}

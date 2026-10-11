@@ -927,6 +927,10 @@ func (q *Queue) formMatchesLocked() []Session {
 			formed = append(formed, q.formCoopLocked(mode)...)
 		} else if isTricolorTeamMode(mode) {
 			formed = append(formed, q.formTricolorTeamLocked(mode)...)
+		} else if isBankaraTeamMode(mode) {
+			formed = append(formed, q.formBankaraTeamLocked(mode)...)
+		} else if isBankaraChallengeMode(mode) {
+			formed = append(formed, q.formBankaraChallengeLocked(mode)...)
 		} else if isFestRegularNormalMode(mode) {
 			formed = append(formed, q.formFestRegularNormalLocked(mode)...)
 		} else if isFestMode(mode) && isDirectPairMode(mode) {
