@@ -358,9 +358,18 @@ func (s *Service) CommitDocuments(ctx context.Context, req *ugcpb.CommitDocument
 				res.TransformResults = append(res.TransformResults, v)
 			}
 			p.deleted, p.dirty = false, true
+		case *ugcpb.WriteOperation_UnsetAttachment:
+			// No attachment is ever stored here (SetAttachment and the
+			// upload URIs are not served), so the one being removed is
+			// already absent. Side Order sends this beside its
+			// users/<id>/sideOrder/stats writes (2026-10-10); refusing it
+			// threw the whole batch away and the stats were never kept.
+			if _, err := load(w.UnsetAttachment.GetParent()); err != nil {
+				return nil, err
+			}
 		default:
-			// Attachments: not implemented. Refusing the whole batch is
-			// what "all or nothing" requires.
+			// Other attachment writes: not implemented. Refusing the whole
+			// batch is what "all or nothing" requires.
 			s.log.Info("ugcstore: unsupported write operation", "type", op.GetOperationType())
 			return nil, status.Error(codes.Unimplemented, "write operation not implemented")
 		}

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/n-popescu/grid0plus/internal/db"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
@@ -79,5 +80,37 @@ func TestRunQueryRefusesAnUnauthenticatedCaller(t *testing.T) {
 	err := svc.RunQuery(&ugcpb.RunQueryRequest{}, stream)
 	if err == nil {
 		t.Fatal("RunQuery succeeded with no authenticated caller")
+	}
+}
+
+// TestRemovingAnAbsentAttachmentDoesNotLoseTheBatch is Side Order's stats
+// write: an UnsetAttachment beside an ordinary update. Refused, the console's
+// whole batch was dropped and its stats never stored.
+func TestRemovingAnAbsentAttachmentDoesNotLoseTheBatch(t *testing.T) {
+	const uid = "26baf7658281f2b1"
+	s := newServiceForTest(t, uid)
+	name := "tenants/current/documents/users/" + uid + "/sideOrder/stats"
+	_, err := s.CommitDocuments(context.Background(), &ugcpb.CommitDocumentsRequest{
+		WriteOperations: []*ugcpb.WriteOperation{
+			{OperationType: &ugcpb.WriteOperation_UnsetAttachment{
+				UnsetAttachment: &ugcpb.UnsetAttachmentRequest{Parent: name},
+			}},
+			{OperationType: &ugcpb.WriteOperation_UpdateDocument{
+				UpdateDocument: &ugcpb.UpdateDocumentRequest{Document: &ugcpb.Document{
+					Name:   name,
+					Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"floor": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 3}}}},
+				}},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("commit with an UnsetAttachment: %v", err)
+	}
+	doc, err := s.GetDocument(context.Background(), &ugcpb.GetDocumentRequest{Name: name})
+	if err != nil {
+		t.Fatalf("the update in the same batch was not stored: %v", err)
+	}
+	if doc.GetFields().GetFields()["floor"].GetIntegerValue() != 3 {
+		t.Errorf("stored fields = %v", doc.GetFields())
 	}
 }
