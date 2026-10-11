@@ -983,7 +983,7 @@ is:
 | Capture | What it settles |
 | --- | --- |
 | **a real save backup, start to finish** | whether a console cryptographically validates `generate_key_seed_package`'s response before it will accept a restore — the single most likely hard blocker in this whole feature, the same category of unknown `nxAccountBlob`'s header prefix turned out to be for phase 1's account linking. If it does, no shape guessed here will pass, and the real wrapping format needs to come from this capture |
-| the same capture | `generate_key_package` (`permission.lp1.sata.srv.nintendo.net`) — not even a confirmed field name exists for this one, only the bare endpoint string (independently confirmed by decompile) |
+| the same capture | `generate_key_package` (`permission.lp1.sata.srv.nintendo.net`) — field name `encoded_key_package` and request `{encoded_key_seed, encoded_mac}` are now confirmed from OLSC strings; whether fs accepts bytes it did not seal is the open part |
 | the same capture | `component_files/create`'s request body and `signed_uri`'s response shape — both listed on the wiki with method `"?"` and no fields at all |
 | the same capture | whether `start_upload` really has no `application_id` field, or whether this project's own `X-SwitchNet-Application-Id` header workaround (see `applicationIDFrom`) is masking a real field name |
 | a restore on a console that already has a real backup | `start_download`/`finish_download`'s actual shape, currently answered as "the same as GET .../{id}" and "a bare acknowledgement" respectively with no evidence either way |

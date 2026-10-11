@@ -684,15 +684,16 @@ func (s *Server) listSaveDataSets(w http.ResponseWriter, r *http.Request) {
 
 // generateKeyPackage answers POST /api/nx/v1/save_data_sets/generate_key_package.
 //
-// TODO(capture-needed): confirmed to exist (both the wiki's URL table and a
-// literal "%s/api/nx/v1/save_data_sets/generate_key_package" string found
-// directly in a decompile of title 010000000000003E) but with zero
-// documented request/response fields -- not even a field name, unlike
-// generate_key_seed_package's confirmed 512-character response. This is
-// flagged as being possibly on equal footing with that one as a hard
-// blocker: if a console cryptographically validates whatever this returns
-// before it will even attempt an upload, no answer given here without a
-// capture will pass. See internal/scsi/README.md.
+// The response field name, encoded_key_package, is confirmed by the JSON
+// path ".encoded_key_package" in title 010000000000003E's main (FW 22.5.0),
+// and the request body by the format string
+// {"encoded_key_seed": "%s","encoded_mac": "%s"} beside it. The same module
+// carries fs's ISaveDataExporter/ISaveDataImporter proxies, so both key
+// packages are most likely handed to fs to unseal rather than read by OLSC.
+//
+// TODO(capture-needed): the bytes. fs unsealing them with a key only it holds
+// would make any answer from here fail; a GDB break on the fs import call
+// after this response would settle it. See internal/scsi/README.md.
 func (s *Server) generateKeyPackage(w http.ResponseWriter, r *http.Request) {
 	pkg, err := opaqueKeyMaterial(384)
 	if err != nil {

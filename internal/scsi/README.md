@@ -64,10 +64,12 @@ capture of real OLSC traffic exists yet:
 4. **The two `generate_key_*package` endpoints — the most likely hard
    blocker in this whole feature.** `generate_key_seed_package` (SCSI) has a
    confirmed field name and response length (512 base64url characters) but
-   an unconfirmed byte meaning; `generate_key_package` (SATA) has neither —
-   not even a field name, just a bare URL in the wiki's own table, though a
-   2026-09-20 decompile of title `010000000000003E` independently confirms
-   the literal endpoint string exists. Both are answered with freshly
+   an unconfirmed byte meaning; `generate_key_package` (SATA) now has its field name too:
+   `.encoded_key_package`, with the request body
+   `{"encoded_key_seed": "%s","encoded_mac": "%s"}`, both read from strings
+   in title `010000000000003E`'s main (FW 22.5.0, 2026-10-11). That module
+   also carries fs's `ISaveDataExporter`/`ISaveDataImporter` proxies, so the
+   packages are most likely unsealed by fs, not by OLSC. Both are answered with freshly
    random, correctly-sized opaque bytes. **If a real console
    cryptographically validates either value — plausibly by wrapping it
    around the console's own SSL device key via an HSM GRID0+ has no
