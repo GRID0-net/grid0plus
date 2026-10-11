@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -137,6 +138,24 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 		return frontlineAckFrame(now, id)
 	case frontlineSubscribeTopic:
 		return frontlineAckFrame(now, "topic.subscription")
+	case frontlineReloadLink:
+		// npns builds "reload_link-<8 hex>", sends it as the frame's first
+		// field and keeps the same string as the id it waits on, 10 s, like
+		// the others (FUN_71000de920). Unanswered, it dropped the connection
+		// exactly 10 s later on grid0.
+		body, ok := frontlineBody(frame)
+		if !ok {
+			return nil
+		}
+		slot, ok := fbFieldPos(frame, body, 0)
+		if !ok {
+			return nil
+		}
+		id := fbString(frame, slot)
+		if !strings.HasPrefix(id, "reload_link-") {
+			return nil
+		}
+		return frontlineAckFrame(now, id)
 	case frontlineDAPresence:
 		d, err := parseDAPresence(frame)
 		if err != nil {
@@ -165,6 +184,7 @@ const (
 	frontlineDAPresence     = 27
 	frontlineSubscribeTopic = 23
 	frontlinePowerState     = 14
+	frontlineReloadLink     = 30
 )
 
 // firstBytesLogger logs the first bytes the console sends on the frontline,

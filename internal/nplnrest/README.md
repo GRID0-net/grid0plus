@@ -27,6 +27,9 @@ server answers by echoing the console's RootHash. After that it pushes
 PutRecord notifications: friends' presence changes from the presence bus,
 and friend requests/acceptances/removals from BAAS on the `.notify`
 channel, one record in flight per connection until the console acks it.
+Requests npns sends with a pending id and a 10 s deadline (SubscribeTopic,
+PowerState, DAPresence, ReloadLink) are each answered with an Ack carrying
+that id; one left unanswered makes npns drop and redial the connection.
 The protocol, from a decompile of npns, is in
 [`docs/CAPTURES/npns-sysmodule-decompile.md`](../../docs/CAPTURES/npns-sysmodule-decompile.md).
 
