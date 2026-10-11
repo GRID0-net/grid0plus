@@ -1616,6 +1616,15 @@ order, leaving out a player with no post. Still open: whether Nintendo leaves
 such a player out or sends a placeholder, and whether the two lists ever
 differ.
 
+Seen live on grid0, 2026-10-11 (one console, `JUEA-90003` running):
+`Locker` `Normal3` with `UIDs` = four of **this server's own user ids**
+(16 hex, not `u-...`), `UIDsInOrder` present but **empty**, `FestRegion`
+`JP`. So `plaza` falls back to `UIDs` and matches a post's owner as well as
+its `UID` field. Also seen: `Canola` with **`type: "Fest"`** and params
+`FestID` (the running fest's id) and `FestRegion` -- a third kind, answered
+with the ordinary plaza for now. What it should list (posts from that fest's
+players? fest-themed decks?) is open; it is logged.
+
 ### GameSessionService/IssueMatchmakingIdToken (2026-10-11)
 
 Splatoon 3 links the stub (0x71005f0164), but no session has called it.

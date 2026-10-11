@@ -72,7 +72,9 @@ const (
 // answering such a request with those players' posts, which carry the name
 // plate, title and badges drawn beside a name (facts only, none of their
 // code used). Without them the game draws "?". The plain plaza request is
-// type "Normal" with FestRegion alone (Nextendo's captures).
+// type "Normal" with FestRegion alone (Nextendo's captures). On grid0 the
+// ids arrive in UIDs as this server's user ids, with UIDsInOrder empty.
+// A third type, "Fest" with FestID, gets the ordinary plaza for now.
 //
 // TODO(capture-needed): whether Nintendo answers a named player with no
 // post by leaving them out (done here) or with a placeholder, and whether

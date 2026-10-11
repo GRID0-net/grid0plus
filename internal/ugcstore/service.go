@@ -674,10 +674,11 @@ func (s *Service) Published(ctx context.Context, collection string, limit int) (
 }
 
 // PublishedBy lists, for each of uids in order, that player's newest
-// document under collection, matched on the document's own top-level "UID"
-// field -- the id the console writes into every post it publishes, so the
-// match does not depend on how this server names its users. A player with
-// no post is skipped.
+// document under collection. A player is matched on the post's owner -- a
+// console asking for name plates on grid0 (2026-10-11) sent this server's own
+// user ids -- or on the post's top-level "UID" field, the id the console
+// writes into it, whose format on this server no post has shown yet. A
+// player with no post is skipped.
 func (s *Service) PublishedBy(ctx context.Context, collection string, uids []string) ([]*ugcpb.Document, error) {
 	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
 	rows, err := s.store.ListUGCDocuments(ctx, prefix)
@@ -691,9 +692,10 @@ func (s *Service) PublishedBy(ctx context.Context, collection string, uids []str
 		if err != nil {
 			continue
 		}
-		uid := d.GetFields().GetFields()["UID"].GetStringValue()
-		if _, seen := newest[uid]; uid != "" && !seen {
-			newest[uid] = d
+		for _, id := range []string{r.Owner, d.GetFields().GetFields()["UID"].GetStringValue()} {
+			if _, seen := newest[id]; id != "" && !seen {
+				newest[id] = d
+			}
 		}
 	}
 	var out []*ugcpb.Document

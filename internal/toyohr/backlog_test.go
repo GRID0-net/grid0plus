@@ -229,11 +229,14 @@ func TestARequestNamingPlayersGetsTheirPosts(t *testing.T) {
 	post("alice", "a2", "u-alice", 3)
 	post("carol", "c1", "u-carol", 4)
 
+	// As a console sent it on grid0: UIDsInOrder present but empty, the
+	// players in UIDs as this server's own user ids (the posts' owners).
 	list := &commonpb.Value{ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{
-		Values: []*commonpb.Value{str("u-bob"), str("u-nobody"), str("u-alice")}}}}
+		Values: []*commonpb.Value{str("bob"), str("nobody"), str("u-alice")}}}}
+	empty := &commonpb.Value{ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{}}}
 	resp, err := (canolaService{Service: svc}).SelectDocuments(ctx, &toyohrpb.SelectDocumentsRequest{
 		Type:   "Normal3",
-		Params: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"UIDsInOrder": list, "FestRegion": str("EU")}},
+		Params: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"UIDs": list, "UIDsInOrder": empty, "FestRegion": str("JP")}},
 	})
 	if err != nil {
 		t.Fatalf("SelectDocuments: %v", err)
