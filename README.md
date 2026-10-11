@@ -266,6 +266,19 @@ different address. Point both at one IP and the console de-duplicates the probe,
 never finishes NAT detection, and matchmaking finds matches that will not start.
 Set `network.natcheck_secondary_ip`; `make config-check` warns if you have not.
 
+## A console that keeps failing to sign in
+
+`baas: login for unknown device account` repeating for one id means the
+console is holding a device account this server never issued: one made
+against a previous install, or by an emulator with old credentials. GRID0+
+refuses it on purpose (identity is fail-closed, see `CLAUDE.md`), and the
+console retries every few minutes without recovering. The fix is on the
+console: add a new user and link it with the player's GRID0+ account, which
+issues a fresh device account. Check first that the id really is absent
+(`select * from device_accounts where id = '<id>'`); one that exists but is
+deleted was revoked, for example by a password reset, and relinking that
+user fixes it the same way.
+
 ## What phase 1 implements
 
 | Feature | Endpoint |
