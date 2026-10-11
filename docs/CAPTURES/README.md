@@ -905,6 +905,7 @@ mitmproxy, and it does need the console.
 | an invite sent while the receiving console is off, then a boot | `Messaging.RecvMessage`'s empty-resume-token behaviour, and its resource-name shapes |
 | post-match results upload | `GameRecord` |
 | picking a team during a running fest, then the fest concluding | `CreateFestEntry`'s response shape and `GetFestResult`'s real (non-`is_valid:false`) content |
+| a three-console Tricolor battle, gamesync log of the host from match to start | which list the Tricolor host checks before it starts (`__us` or `__pus`). On 2026-10-11 it started 0.4 s after joining, before the third console connected; grid0 now leaves unconnected players out of `__us` for Tricolor only (`matchedPlayerDocuments` in `internal/gamesync/session_docs.go`) |
 | any real `WriteDocuments`/`CommitTransaction` call carrying a `DefermentOperation` or a `LoadGlobalValue`/`StoreGlobalValue`/`ClearGlobalValue` transform | what either feature is for, which nothing public documents |
 
 [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) also ships an
