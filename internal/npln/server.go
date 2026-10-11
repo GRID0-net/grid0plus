@@ -15,7 +15,6 @@ package npln
 import (
 	"context"
 	"fmt"
-	"github.com/n-popescu/grid0plus/internal/ugcstore"
 	"log/slog"
 	"net"
 	"strings"
@@ -36,8 +35,10 @@ import (
 	"github.com/n-popescu/grid0plus/internal/messaging"
 	"github.com/n-popescu/grid0plus/internal/presence"
 	"github.com/n-popescu/grid0plus/internal/presencebus"
+	"github.com/n-popescu/grid0plus/internal/service"
 	"github.com/n-popescu/grid0plus/internal/splatdiag"
 	"github.com/n-popescu/grid0plus/internal/toyohr"
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
 )
 
 // Server is the NPLN gRPC gateway.
@@ -383,7 +384,7 @@ func (s *Server) Serve(l net.Listener) error { return s.grpc.Serve(l) }
 // again, and closing a closed channel panics.
 func (s *Server) Stop() {
 	s.stopOnce.Do(func() { close(s.stop) })
-	s.grpc.GracefulStop()
+	service.StopGRPC(s.grpc, stopGrace)
 }
 
 // Queue exposes the match queue, for the dashboard's live view.
@@ -707,3 +708,7 @@ func (c *countingStream) SendMsg(m any) error {
 	}
 	return err
 }
+
+// stopGrace is how long Stop lets in-flight calls finish before closing the
+// streams consoles hold open; see service.StopGRPC.
+const stopGrace = 5 * time.Second

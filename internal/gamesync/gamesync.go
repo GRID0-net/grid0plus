@@ -46,6 +46,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/n-popescu/grid0plus/internal/service"
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	syncpb "github.com/n-popescu/grid0plus/proto/gamesync/v1"
 )
@@ -231,7 +232,7 @@ func New(opts Options) (*Server, error) {
 func (s *Server) Serve(l net.Listener) error { return s.grpc.Serve(l) }
 
 // Stop stops the server, waiting for in-flight RPCs.
-func (s *Server) Stop() { s.grpc.GracefulStop() }
+func (s *Server) Stop() { service.StopGRPC(s.grpc, stopGrace) }
 
 // GRPCServer exposes the underlying server, for tests.
 func (s *Server) GRPCServer() *grpc.Server { return s.grpc }
@@ -1102,3 +1103,7 @@ func (s *Server) WatchLobbyLogFlag(ctx context.Context, every time.Duration) {
 		}
 	}
 }
+
+// stopGrace is how long Stop lets in-flight calls finish before closing the
+// streams consoles hold open; see service.StopGRPC.
+const stopGrace = 5 * time.Second
