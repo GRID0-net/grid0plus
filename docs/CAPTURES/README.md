@@ -1678,3 +1678,13 @@ A capture of a console reading a post back after it was liked would settle
 whether a like is ever shown (a count field on the post, a notice to its
 owner) and so needs storing. Change: `ikasu` in
 `internal/toyohr/backlog.go`. Log line: `toyohr: ikasu`.
+
+### Versus rule ids 1–4 (2026-10-11)
+
+`internal/toyohr/vs_ids.go` labels the four ranked rule ids "Rule 1" to
+"Rule 4" on purpose. SplatNet 3's public API numbers the rules VsRule-0
+Turf War, 1 Splat Zones, 2 Tower Control, 3 Rainmaker, 4 Clam Blitz, and the
+game's stage layers follow the same order (Pnt, Var, Vlf, Vgl, Vcl). That is
+very likely the wire mapping. To settle it, schedule one Anarchy slot with a
+single rule id and read the rule the console shows; then rename `VsRuleName`
+and replace `TestVsRuleNameNeverGuessesAName`.

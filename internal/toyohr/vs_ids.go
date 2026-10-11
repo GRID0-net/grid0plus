@@ -109,7 +109,11 @@ func VsStageByID(id int32) (stage VsStage, ok bool) {
 // still gets a real rule it can play -- only this project's own labels
 // would be wrong, and nothing here guesses at them (see VsRuleName).
 // TODO(capture-needed): watch which id renders as which rule on real
-// hardware and rename these once known.
+// hardware and rename these once known. Strong but indirect evidence:
+// SplatNet 3's public API numbers rules VsRule-0 Turf War, 1 Splat Zones,
+// 2 Tower Control, 3 Rainmaker, 4 Clam Blitz, the same order as the game's
+// own stage layers (Pnt, Var, Vlf, Vgl, Vcl). One Anarchy schedule checked
+// against the console's screen would confirm it.
 var VsRuleIDs = []int32{1, 2, 3, 4}
 
 // VsRuleName is deliberately just "Rule <n>" for every id in VsRuleIDs --
