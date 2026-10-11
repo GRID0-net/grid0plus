@@ -124,7 +124,8 @@ func (s *Server) squadMembers(leader string, tokens []string) []string {
 //
 // TODO(capture-needed): when Splatoon 3 calls this. The game links the stub
 // (GameSessionService ctor at 0x71005ec2d0, method at 0x71005f0164) but no
-// hardware session has called it yet, and nothing shows whether it expects
+// hardware session has called it yet (grid0's logs, 2026-09-27 to 10-11:
+// turf, private, fest, Anarchy and Salmon Run sessions, not one call), and nothing shows whether it expects
 // entries for include_id_token_users only or for every user. This answers
 // include_id_token_users when given, otherwise every user. Change: this
 // function.

@@ -540,7 +540,9 @@ this version deliberately names no number to keep stale).
   `NextendoNetwork`'s source settled, 2026-09-16" below for why -- but nothing
   confirms Splatoon 3 calls this RPC at all, or what a private-battle room
   browser (the plausible candidate, since ticket-based matchmaking never needs
-  one) would expect back if it does.
+  one) would expect back if it does. grid0's logs from 2026-09-27 to 10-11,
+  covering private battles, Turf War, Anarchy, Splatfest and Salmon Run on
+  hardware, contain no call at all.
 - **Whether Splatoon 3 dials `GameSession.Port` at all**
   (`internal/npln/matchmaking.go:394` area, `SyncGameSession`): gameplay is
   peer-to-peer over ICE, and a client that connects entirely through
@@ -1631,7 +1633,9 @@ order, and whether region or team narrows it.
 
 ### GameSessionService/IssueMatchmakingIdToken (2026-10-11)
 
-Splatoon 3 links the stub (0x71005f0164), but no session has called it.
+Splatoon 3 links the stub (0x71005f0164), but no session has called it:
+grid0's logs from 2026-09-27 to 10-11, every match kind played on hardware,
+contain no call.
 `IssueMatchmakingIdToken` in `internal/npln/delegation.go` mints a token for
 each user in `include_id_token_users` (else each user), only for teammates
 who delegated to the caller and are already in the session. A logged call

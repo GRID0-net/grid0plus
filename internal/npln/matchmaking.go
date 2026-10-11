@@ -431,8 +431,9 @@ func (g *gameSessionService) BatchGetGameSessions(
 //
 // TODO(capture-needed): whether Splatoon 3 ever calls QueryGameSessions, and
 // for what -- a private-battle room browser is the plausible candidate, since
-// ticket-based matchmaking never needs one. A capture of that flow would
-// settle it. Change: this function, and sessionProto's IsPublic if the answer
+// ticket-based matchmaking never needs one. grid0's logs from 2026-09-27
+// to 10-11, private battles included, show no call at all, so the answer is
+// likely "never"; a capture of an untried flow would settle it. Change: this function, and sessionProto's IsPublic if the answer
 // is that some GRID0+-formed sessions should be browsable after all.
 func (g *gameSessionService) QueryGameSessions(
 	ctx context.Context, _ *mmpb.QueryGameSessionsRequest,
