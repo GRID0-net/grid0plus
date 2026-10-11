@@ -976,7 +976,7 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 			break
 		}
 		delete(q.grace, mode)
-		formed = append(formed, q.formSessionLocked(mode, chosen))
+		formed = append(formed, q.formVersusSessionLocked(mode, chosen))
 		ids = q.liveWaitingLocked(mode)
 		if isFestMode(mode) {
 			ids = q.selectFestPlayersLocked(ids, size)
@@ -1023,7 +1023,7 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 		return formed
 	}
 	delete(q.grace, mode)
-	return append(formed, q.formSessionLocked(mode, ids))
+	return append(formed, q.formVersusSessionLocked(mode, ids))
 }
 
 // isTricolorTeamMode reports fest_match_tricolor_team_config, the first of
@@ -1503,6 +1503,13 @@ func (q *Queue) wholeSquadsLocked(ids []string, size int) []string {
 // It is a small dynamic program over (team A, team B) head counts, never
 // more than (size/2+1)^2 states, so the queue length does not matter.
 func (q *Queue) evenSquadsLocked(ids []string, size int) []string {
+	chosen, _ := q.evenSidesLocked(ids, size)
+	return chosen
+}
+
+// evenSidesLocked is evenSquadsLocked that also says which side each chosen
+// ticket's squad plays on, "team1" or "team2".
+func (q *Queue) evenSidesLocked(ids []string, size int) ([]string, map[string]string) {
 	group := func(id string) string {
 		if p := q.tickets[id].Party; p != "" {
 			return p
@@ -1520,39 +1527,78 @@ func (q *Queue) evenSquadsLocked(ids []string, size int) []string {
 	}
 	half := size / 2
 	type state struct{ a, b int }
+	type pick struct {
+		group, side string
+	}
 	// best[s] is the list of units reaching s, built from the oldest units
 	// first: a state keeps the first way it was reached.
-	best := map[state][]string{{0, 0}: nil}
+	best := map[state][]pick{{0, 0}: nil}
 	for _, g := range order {
 		n := len(members[g])
-		next := make(map[state][]string, len(best)*3)
+		next := make(map[state][]pick, len(best)*3)
 		for s, units := range best {
-			if _, ok := next[s]; !ok {
-				next[s] = units
-			}
+			next[s] = units
 		}
 		for s, units := range best {
-			for _, t := range []state{{s.a + n, s.b}, {s.a, s.b + n}} {
-				if t.a > half || t.b > half {
+			for _, c := range []struct {
+				t    state
+				side string
+			}{{state{s.a + n, s.b}, "team1"}, {state{s.a, s.b + n}, "team2"}} {
+				if c.t.a > half || c.t.b > half {
 					continue
 				}
-				if _, ok := next[t]; !ok {
-					next[t] = append(slices.Clone(units), g)
+				if _, ok := next[c.t]; !ok {
+					next[c.t] = append(slices.Clone(units), pick{g, c.side})
 				}
 			}
 		}
 		best = next
 	}
 	for k := half; k >= 1; k-- {
-		if units, ok := best[state{k, k}]; ok {
-			out := make([]string, 0, 2*k)
-			for _, id := range ids {
-				if slices.Contains(units, group(id)) {
-					out = append(out, id)
-				}
-			}
-			return out
+		units, ok := best[state{k, k}]
+		if !ok {
+			continue
 		}
+		side := map[string]string{}
+		for _, u := range units {
+			side[u.group] = u.side
+		}
+		out := make([]string, 0, 2*k)
+		sides := map[string]string{}
+		for _, id := range ids {
+			if sd, ok := side[group(id)]; ok {
+				out = append(out, id)
+				sides[id] = sd
+			}
+		}
+		return out, sides
 	}
-	return nil
+	return nil, nil
+}
+
+// isBankaraOpenMode reports Anarchy Battle (Open), where friends queue
+// together.
+func isBankaraOpenMode(mode string) bool {
+	return strings.Contains(strings.ToLower(mode), "bankara_match_open")
+}
+
+// formVersusSessionLocked forms a plain versus match. In Anarchy Open it
+// also puts each squad on one side, team1 or team2: NextendoNetwork's
+// server (facts only, none of its code used) assigns the sides there and in
+// Splatfest, and leaves Turf War's to the game, so only Open gets them.
+func (q *Queue) formVersusSessionLocked(mode string, chosen []string) Session {
+	var sides map[string]string
+	if isBankaraOpenMode(mode) {
+		_, sides = q.evenSidesLocked(chosen, len(chosen))
+	}
+	users := map[string]string{}
+	for id, side := range sides {
+		users[q.tickets[id].UserID] = side
+	}
+	s := q.formSessionLocked(mode, chosen)
+	if len(users) == len(s.Players) {
+		s.TeamSlots = users
+		q.sessions[s.ID].TeamSlots = users
+	}
+	return s
 }

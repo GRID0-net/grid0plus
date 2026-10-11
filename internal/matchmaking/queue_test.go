@@ -1182,3 +1182,32 @@ func TestAnarchySeriesFormsOneSidedLobbiesInPairsThenPairsThem(t *testing.T) {
 		t.Fatalf("formed %v, want the two lobbies of 4 together", f)
 	}
 }
+
+// TestAnarchyOpenPutsEachSquadOnOneSide: in Open the server says who plays
+// on which side, and a squad must never face itself.
+func TestAnarchyOpenPutsEachSquadOnOneSide(t *testing.T) {
+	q, _ := testQueue(t, 8)
+	mode := "bankara_match_open_oneshot_config"
+	q.EnqueueSquad("a1", []string{"a2"}, mode, "")
+	q.EnqueueSquad("b1", []string{"b2", "b3"}, mode, "")
+	q.Enqueue("s1", mode)
+	q.Enqueue("s2", mode)
+	_, formed, _ := q.Enqueue("s3", mode)
+	if len(formed) != 1 || len(formed[0].Players) != 8 {
+		t.Fatalf("formed %v, want one 4v4", formed)
+	}
+	slots := formed[0].TeamSlots
+	count := map[string]int{}
+	for _, p := range formed[0].Players {
+		count[slots[p]]++
+	}
+	if count["team1"] != 4 || count["team2"] != 4 {
+		t.Errorf("sides %v, want four on each", count)
+	}
+	if slots["a1"] != slots["a2"] || slots["b1"] != slots["b2"] || slots["b2"] != slots["b3"] {
+		t.Errorf("a squad was split across sides: %v", slots)
+	}
+	if got, _ := q.Session(formed[0].ID); got.TeamSlots["a1"] != slots["a1"] {
+		t.Errorf("the stored session lost its sides")
+	}
+}
