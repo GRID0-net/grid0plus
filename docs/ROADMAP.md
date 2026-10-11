@@ -12,7 +12,7 @@ hardware: phase 1 works, and phase 2 gets as far as Splatoon 3's hall.
 | Phase | Scope | State |
 | --- | --- | --- |
 | [1](#phase-1--accounts-and-the-stock-friends-list) | accounts, friend codes, friends, presence | **running on a real console**; received-requests view still shows 2124-0104 |
-| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | **running on a real console up to the hall**, which fails ([`TODO.md`](../TODO.md) §4.2) |
+| [2](#phase-2--splatoon-3-npln--dashboard) | NPLN game server for Splatoon 3, web dashboard | **running on a real console**: hall, Turf War (one network and across networks), private battles, Salmon Run (incl. Big Run and "Again!"), the Splatfest hall with native BCAT, and two-player fest battles have all worked on hardware; the newest fest matchmaking flow is not yet tried |
 | [S2](#splatoon-2--nex) | NEX game server for Splatoon 2, dashboard tab | code complete, exercised end to end with Kinnay's NintendoClients, **not yet tried on a console** |
 | [3](#phase-3--the-eshop-a-separate-module) | eShop, served from local NSP dumps | **lives outside this repository** as a separate, optional module — not started |
 | [4](#phase-4--cloud-save-backup-olsc) | per-game save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, **not yet tried on a console** |
@@ -84,8 +84,10 @@ means a firmware update needs a new patch before anything works.
 
 ## Phase 2 — Splatoon 3 (NPLN) + dashboard
 
-**Implemented, and running on a real console up to Splatoon 3's hall**, where
-it stops with a communication error ([`../TODO.md`](../TODO.md) §4.2).
+**Implemented, and running on a real console.** The hall, Turf War on one
+network and across networks, private battles, Salmon Run (Big Run and
+"Again!" included), the Splatfest hall with native BCAT download, and
+two-player Splatfest battles have all worked on hardware.
 
 Splatoon 3 does not use NEX/PRUDP. It uses **NPLN**: gRPC over HTTP/2 with
 protobuf payloads, one tenant per title. The Splatoon 3 tenant is `dce9377b`, at
@@ -401,9 +403,9 @@ applying silently.
 
 ### What is left
 
-[`../TODO.md`](../TODO.md) is the live list. The current blocker is the hall
-(§4.2); after that, native BCAT serving (§2.4) and fest asset conversion
-(§2.1) are the large pieces left.
+[`../TODO.md`](../TODO.md) is the live list. The large pieces left are fest
+asset conversion (§2.1) and the BCAT signature question (§2.4); the newest
+Splatfest matchmaking flow and the plaza's posts still need a hardware run.
 
 ## Splatoon 2 — NEX
 

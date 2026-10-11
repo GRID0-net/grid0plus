@@ -61,7 +61,7 @@ Four phases, in [`docs/ROADMAP.md`](docs/ROADMAP.md):
 | Phase | Scope | State |
 | --- | --- | --- |
 | **1** | accounts, friend codes, friends, presence | **running on a real console**: sign-in, Nintendo Account linking and the friend list work; the received-requests view still shows 2124-0104 |
-| **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | **running on a real console** up to the hall, where it stops with a communication error — see [`TODO.md`](TODO.md) §4.2 |
+| **2** | NPLN game server for Splatoon 3, Splatfests, web dashboard | **running on a real console**: hall, Turf War (one network and across networks), private battles, Salmon Run (incl. Big Run and "Again!"), the Splatfest hall with native BCAT, and two-player fest battles have all worked on hardware; the newest fest matchmaking flow is not yet tried — see [`TODO.md`](TODO.md) |
 | **3** | eShop, served from local `.NSP` dumps of games you own | planned as a **separate, optional module**, not started |
 | **4** | per-game cloud save backup (OLSC) | code complete on a defensible-but-unconfirmed shape, not yet tried on a console |
 
