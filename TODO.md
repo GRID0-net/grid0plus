@@ -607,7 +607,7 @@ commit** so the source and the notes cannot disagree.
 
 ## 5. Housekeeping
 
-### 5.3 A mode table for matchmaking — **P3, mostly done**
+### 5.3 A mode table for matchmaking — **done**
 
 Versus modes default to eight (`npln.players_per_match`) as a cap: an even
 count below it starts after the grace period, so two friends still get a
@@ -616,8 +616,9 @@ into `config.Default`, so a fresh install no longer needs `mode_players` /
 `coop_modes` to form Salmon Run correctly. Anarchy Series' one-sided lobbies
 of four are handled in `internal/matchmaking/bankara.go`.
 
-Still read from nothing but the config: the per-kind Splatfest lobby sizes
-(see `internal/matchmaking`'s fest forms), which come from the game's own
-code rather than its parameter tables.
+The Splatfest lobby sizes are built in too, from the game's own lobby
+checks rather than its parameter tables: regular fest lobbies of one fest
+team at 4 or 2 in `internal/matchmaking/fest_regular.go`, Tricolor team pairs
+in `internal/matchmaking/queue.go`. Nothing in this section is left to build.
 
 ---
