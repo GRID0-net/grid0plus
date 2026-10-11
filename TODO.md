@@ -116,15 +116,23 @@ Where each stands:
   `CreateSaveRecord` stores a new console's record.
 - **`GameRecord`**: `InitializeAttributes` creates the Vs/Coop attribute
   document with only the fields the request carries;
-  `InitializeTag`/`GetTag`/`SelectTags` acknowledge without storing.
+  `InitializeTag`/`GetTag`/`SelectTags` acknowledge without storing (they
+  carry a League schedule and rule; GRID0+ authors no League events);
+  battle results, Salmon Run results, point cards and grades are written by
+  the server (see `internal/ugcstore/README.md`).
 - **`LobbyMessaging`**: real, backed by `messaging.go`'s per-lobby hub. The
   self-addressed `NplnLogin` echo the hall waits for is covered by
   `TestSelfAddressedNplnLoginIsEchoedBack`.
-- **`Canola`/`Locker`**: `SelectDocuments` answers empty and `IkasuDocument`
-  answers `NotFound`; `RegisterDocument` stays `Unimplemented`.
-- **`CoopScenario`/`Replay`**: `Resolve*Code` answers `NotFound`;
-  `Replay.FulfillReservations` answers an empty list.
-- **`UserScreening`**: `GetViolation`/`SelectSnapshot` answer `NotFound`;
+- **`Canola`/`Locker`**: `SelectDocuments` serves the plaza (newest post
+  per player), name plates for named players (`Normal3`) and the fest plaza's
+  drawings (`Fest`); `RegisterDocument` acknowledges; `IkasuDocument` (a
+  like) acknowledges a real post. Posts and their images go through
+  Ugcstore and its attachment uploads.
+- **`CoopScenario`/`Replay`**: `RegisterDocument` issues share codes and
+  `Resolve*Code` resolves them; `Replay.FulfillReservations` answers an
+  empty list.
+- **`UserScreening`**: `GetViolation`/`SelectSnapshot` answer `NotFound`
+  (Nintendo's own answer for `GetViolation`, per Nextendo's captures);
   `CreateReport` is accepted and logged.
 
 An unimplemented RPC answers `codes.Unimplemented` and logs, and **that log is
