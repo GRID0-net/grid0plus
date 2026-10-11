@@ -561,6 +561,21 @@ matches on grid0, hosting included, so whatever blocked it is gone. If a new
 console shows that pattern again, a VM-side packet capture while it boots
 (UDP included) shows whether its STUN packets arrive and are answered.
 
+### 4.6 A console looped publish/revoke on the licence host — **P3, watch**
+
+On 2026-10-09 from 12:24 to 15:55 UTC one console (`did:6265994bb2240805`)
+alternated `POST /v2/elicense_archives/publish` and `POST /v2/elicenses/revoke`
+on `dragons` about ten times a second (~123,000 requests), starting the moment
+it connected and stopping on its own. It has not recurred. GRID0+ answers
+publish with an empty `elicense_archives` list and revoke with `{}`
+(`internal/stubs/handler.go`, `dragons`); `nim` most likely reads one of those
+as unfinished and retries. The paths are in `nim`'s request tables
+(`/{version}/elicenses/revoke` at 0x71001b7c98, a Ghidra project is now at
+`~/switchnet-re/ghidra_projects/nim_main`), but the response it expects means
+tracing nim's generic HTTP layer, and the rights layer belongs to the separate
+eShop module (Phase 3). If it recurs, note what the console was doing at
+12:24 (it had just signed in and opened Splatoon 3's BCAT list).
+
 ### 4.3 Undocumented shapes — **P2**
 
 `grep -rn 'TODO(capture-needed)' internal/` for the live list;
