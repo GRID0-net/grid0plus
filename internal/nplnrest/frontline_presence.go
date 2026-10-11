@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +114,15 @@ func (s *Server) recordDAPresence(ctx context.Context, frame []byte) (string, er
 		}
 	}
 	f := scopes.Friends
+	// In a game npns mostly reports status 1 with the game's id (grid0,
+	// 2026-10-11: 26 of 31 Splatoon 3 reports), keeping 2 for moments of
+	// online play. BAAS clears the app of anything not PLAYING, so stored as
+	// ONLINE a friend read "Online (Nintendo Switch)" for someone in a game.
+	// npns sends an all-zero id in the Home Menu, so a real id is current,
+	// unlike the stale app a console's BAAS PATCH can leave behind.
+	if state == db.StateOnline && strings.Trim(f.AppID, "0") != "" {
+		state = db.StatePlaying
+	}
 	if len(f.AppField) > 1024 || len(f.AppID) > 32 || len(f.PresenceGroupID) > 32 {
 		return "", fmt.Errorf("DAPresence fields too long")
 	}

@@ -69,6 +69,25 @@ func TestAConsolesFrontlinePresenceMakesItPlaying(t *testing.T) {
 		t.Fatalf("extras.friends appInfo:appId = %v, want the game; extras = %v", got, p.Extras)
 	}
 
+	// In a game npns mostly says status 1 with the game's id: still playing.
+	frame = daPresenceFrame(now, 1, js, "2a1a27dd90f47c89", "da"+"1a27dd90f47c89")
+	if _, err := s.recordDAPresence(ctx, frame[4:]); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ = store.GetPresence(ctx, "2a1a27dd90f47c89"); p.State != db.StatePlaying {
+		t.Fatalf("status 1 in a game: state %s, want PLAYING", p.State)
+	}
+
+	// The Home Menu reports an all-zero id: online, not playing.
+	home := strings.ReplaceAll(js, "0100c2500fc20000", "0000000000000000")
+	frame = daPresenceFrame(now, 1, home, "2a1a27dd90f47c89", "da"+"1a27dd90f47c89")
+	if _, err := s.recordDAPresence(ctx, frame[4:]); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ = store.GetPresence(ctx, "2a1a27dd90f47c89"); p.State != db.StateOnline {
+		t.Fatalf("Home Menu: state %s, want ONLINE", p.State)
+	}
+
 	// Closing the game: the next report has no app keys, and none linger.
 	frame = daPresenceFrame(now, 1, `{"self":{},"favoriteFriends":{},"friends":{},"foaf":{},"everyone":{}}`, "2a1a27dd90f47c89", "da"+"1a27dd90f47c89")
 	if _, err := s.recordDAPresence(ctx, frame[4:]); err != nil {
