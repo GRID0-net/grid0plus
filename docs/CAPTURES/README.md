@@ -1607,3 +1607,10 @@ players. `MatchmakingTicket.backfill.game_session` exists for this, but
 GRID0+ has never received a ticket with it set and queues one as a new
 ticket (`npln: backfill ticket queued as a new ticket`). A logged one would
 show whether the session should be filled instead.
+
+### UserService/QueryUserExternalIds (2026-10-11)
+
+Answered by `QueryUserExternalIds` in `internal/npln/user_service.go`: on
+GRID0+ an NPLN user id is the NSA id, so both directions return the id for
+an existing account. `UserExternalId.name` is this server's own format; a
+logged call (`npln: external ids queried`) would show which screen uses it.
