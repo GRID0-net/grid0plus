@@ -1496,6 +1496,16 @@ arrived within 50 ms and were placed together, then both were dropped from
 the dashboard ("operator cancelled a ticket", 18:07:52 and :56, 4 s apart).
 That manual drop accounts for part of the ~75 s.
 
+**Settled on hardware, 2026-10-10** (grid0 logs, three presses in two
+sessions): with `bfmin` 0 published on the reopen (223b2e6), every "Again!"
+started the next job in the same Gamesync session -- referee step and
+`game_status` 4 for each player -- 3-4 s after `lockAfterAgain` locked the
+session at the end of its 20 s window. The lock is what lets the host's
+rejoin complete; a player who did not press "Again!" falls back to ordinary
+matchmaking as before. What remains is cost, not correctness: the group waits
+the whole grace window. Only the host's reopen write is seen, so the server
+cannot tell when everyone has pressed and lock earlier.
+
 ### Special Big Run: the community egg total
 
 `internal/ugcstore/bigrun_eggs.go`. With `BigRunParams.IsSpecial` the game

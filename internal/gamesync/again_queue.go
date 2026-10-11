@@ -28,11 +28,11 @@ import (
 // rematches; lowering a protocol field is not a substitute for the client's
 // separate eight-player minimum in its retained-lobby controller.
 //
-// TODO(capture-needed): the lock did not change anything on hardware. The
-// host's State::ActivateBackFill runs a session-join operation and gives it
-// ~32 s to complete before falling back to ordinary matchmaking (see
-// docs/CAPTURES/README.md, Salmon Run "Again!"); what GRID0+ fails to deliver
-// for that join is still open. Change: lockAfterAgain.
+// Confirmed on hardware 2026-10-10: with bfmin 0 on the reopen, the next job
+// starts in the same session 3-4 s after this lock, every time. The host's
+// State::ActivateBackFill rejoin completes only once the session is locked,
+// so the grace window is the whole of the group's wait. It cannot end early
+// on everyone having pressed: only the host's reopen write is seen.
 var againGrace = 20 * time.Second
 
 type againQueue struct {
