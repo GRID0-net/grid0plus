@@ -553,19 +553,13 @@ fall 14 hours later (10:00/02:00/18:00 UTC). Only the timing differs.
 **Done when** each shape either matches the capture on hardware or has a
 written reason it cannot.
 
-### 4.5 A friend's console stalls before the hall — **P1**
+### 4.5 A friend's console stalls before the hall — **resolved**
 
-A second console (account Musi, `7b8cd8861212a1b8`) signs in, gets a game
-session (`IssuePrearrangedUserToken`) and `ListLatencyMeasurementServers`,
-then sends only `Auth/ValidateToken` every ~10 s and shows 2123-8028. It never
-opens `RecvMessage` or asks for schedules, unlike a working console. The next
-step for a working console is measuring latency over UDP to the addresses
-`ListLatencyMeasurementServers` returned (STUN, `internal/stunresponder`).
-The `content-length` fix does not reach this point, since none of those calls
-is made yet.
-
-**Next:** a VM-side packet capture while that console boots (any host, UDP
-included) to see whether its STUN packets arrive and are answered.
+Musi's console used to stop after `ListLatencyMeasurementServers` with
+2123-8028. Since 2026-10-09 the same player reaches the hall and plays
+matches on grid0, hosting included, so whatever blocked it is gone. If a new
+console shows that pattern again, a VM-side packet capture while it boots
+(UDP included) shows whether its STUN packets arrive and are answered.
 
 ### 4.3 Undocumented shapes — **P2**
 
