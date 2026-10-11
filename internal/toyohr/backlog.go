@@ -5,6 +5,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
@@ -44,10 +45,20 @@ type canolaService struct {
 	toyohrpb.UnimplementedCanolaServer
 }
 
-func (canolaService) SelectDocuments(
-	context.Context, *toyohrpb.SelectDocumentsRequest,
+func (s canolaService) SelectDocuments(
+	_ context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
+	s.logSelect("canola", req)
 	return &toyohrpb.SelectDocumentsResponse{}, nil
+}
+
+// logSelect records what a console asks SelectDocuments for. Nothing
+// documents the request's type and params; the console's own requests are
+// the cheapest way to learn which posts it wants listed.
+func (s *Service) logSelect(service string, req *toyohrpb.SelectDocumentsRequest) {
+	params, _ := protojson.Marshal(req.GetParams())
+	s.log.Info("toyohr: select documents", "service", service,
+		"type", req.GetType(), "tenant", req.GetTenant(), "params", string(params))
 }
 
 func (canolaService) IkasuDocument(
@@ -61,9 +72,10 @@ type lockerService struct {
 	toyohrpb.UnimplementedLockerServer
 }
 
-func (lockerService) SelectDocuments(
-	context.Context, *toyohrpb.SelectDocumentsRequest,
+func (s lockerService) SelectDocuments(
+	_ context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
+	s.logSelect("locker", req)
 	return &toyohrpb.SelectDocumentsResponse{}, nil
 }
 
