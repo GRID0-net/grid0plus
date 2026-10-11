@@ -95,7 +95,10 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		}
 		var selectedStart time.Time
 		for _, row := range fests {
-			phase := (toyohr.Fest{Start: row.StartAt}).PhaseAt(m.s.now())
+			// The operator's end of play counts: the schedule the game is served
+			// already uses it, and a fest extended past 48 h refused every ticket
+			// (2321-1536) on 2026-10-11 while the game still showed it running.
+			phase := (toyohr.Fest{Start: row.StartAt, End: row.EndAt}).PhaseAt(m.s.now())
 			if !row.Enabled || (phase != toyohr.PhaseFirstHalf && phase != toyohr.PhaseSecondHalf) {
 				continue
 			}

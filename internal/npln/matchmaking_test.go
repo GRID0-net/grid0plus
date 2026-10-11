@@ -1024,3 +1024,28 @@ func TestATicketMatchedOnCreateStreamsSearchingPlacingSucceeded(t *testing.T) {
 		}
 	}
 }
+
+// A fest the operator extended past its standard 48 h still takes tickets:
+// on 2026-10-11 every fest ticket answered NotFound (2321-1536) after the
+// standard end, while the game showed the extended fest still running.
+func TestAnExtendedFestStillTakesTicketsAfterItsStandardEnd(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("player", "device")
+	start := h.now.Add(-50 * time.Hour).Truncate(2 * time.Hour)
+	if err := h.store.UpsertFest(context.Background(), db.Fest{
+		ID: "JUEA-00016", Resource: "test-fest", StartAt: start, EndAt: start.Add(80 * time.Hour),
+		Revision: strings.Repeat("a", 40), Regions: []string{"EU"}, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.UpsertFestEntry(context.Background(), db.FestEntry{
+		FestID: "JUEA-00016", UserID: "player", Team: "Alpha",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client := mmpb.NewMatchmakerClient(h.conn)
+	ctx := h.ctx(h.sessionFor(t, "player", "device"), "")
+	if _, err := client.CreateMatchmakingTicket(ctx, ticketFor("fest_match_regular_normal_config")); err != nil {
+		t.Fatalf("ticket in an extended fest: %v", err)
+	}
+}

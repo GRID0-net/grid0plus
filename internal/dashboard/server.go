@@ -775,7 +775,7 @@ func (s *Server) festRows(ctx context.Context) ([]festRow, error) {
 	for _, r := range rows {
 		f := toyohr.Fest{
 			ID: r.ID, Resource: r.Resource, Revision: r.Revision,
-			Start: r.StartAt.UTC(), Regions: r.Regions,
+			Start: r.StartAt.UTC(), End: r.EndAt.UTC(), Regions: r.Regions,
 		}
 		tt := f.Timetable()
 
