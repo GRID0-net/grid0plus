@@ -678,6 +678,17 @@ func (q *Queue) SetModeSize(mode string, players int) ([]Session, error) {
 	return q.formMatchesLocked(), nil
 }
 
+// SetGracePeriods changes how long a short match waits for more players,
+// without a restart. A countdown already running keeps its deadline; the next
+// one uses the new length. Zero turns that kind of early start off, as in
+// Config.
+func (q *Queue) SetGracePeriods(versus, coop time.Duration) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.cfg.VersusGracePeriod = versus
+	q.cfg.CoopGracePeriod = coop
+}
+
 // ModeQueue is one mode's queue, for the operator's view.
 type ModeQueue struct {
 	Mode string

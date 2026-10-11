@@ -19,9 +19,12 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/n-popescu/grid0plus/config"
@@ -218,6 +221,7 @@ func main() {
 		service.Fatal(log, "build gamesync", err)
 	}
 	srv.SetSessionPhaseReader(sync.SessionPhase)
+	go reloadOnHangup(ctx, log, *configPath, srv)
 
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)
 	if err != nil {
@@ -284,4 +288,29 @@ func restWithAttachments(rest, attachments http.Handler) http.Handler {
 	mux.Handle("/grid0/ugc/", attachments)
 	mux.Handle("/", rest)
 	return mux
+}
+
+// reloadOnHangup re-reads config.yaml on SIGHUP (systemctl reload
+// switchnet-npln) and applies the matchmaking grace periods, the settings an
+// operator tunes while people are playing. Everything else still needs a
+// restart. A file that no longer loads is reported and changes nothing.
+func reloadOnHangup(ctx context.Context, log *slog.Logger, path string, srv *npln.Server) {
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-hup:
+			cfg, err := config.Load(path)
+			if err != nil {
+				log.Error("npln: reload refused, config does not load", "error", err)
+				continue
+			}
+			srv.ApplyGracePeriods(cfg.NPLN)
+			log.Info("npln: matchmaking grace periods reloaded",
+				"versus_s", cfg.NPLN.VersusGracePeriod, "coop_s", cfg.NPLN.CoopGracePeriod)
+		}
+	}
 }

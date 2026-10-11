@@ -431,6 +431,8 @@ npln:
   # however long that takes, same as always. Zero forms the instant two
   # players are present.
   coop_grace_period: 20
+  # Both grace periods can be changed while people play: edit this file, then
+  # `sudo systemctl reload switchnet-npln`. Only these two are reloaded.
 
   # Experimental: advertise seven measured latency regions, all mapped to
   # the first reachable STUN endpoint (or network.public_ip:3478). Leave

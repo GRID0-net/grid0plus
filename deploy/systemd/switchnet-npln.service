@@ -13,6 +13,7 @@ User=switchnet
 Group=switchnet
 WorkingDirectory=/opt/switchnet
 ExecStart=/opt/switchnet/bin/npln -config /opt/switchnet/config/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=2
 

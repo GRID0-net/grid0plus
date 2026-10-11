@@ -1183,6 +1183,14 @@ func iceServersFrom(cfg []config.IceServer) []config.IceServer {
 	return out
 }
 
+// ApplyGracePeriods takes the NPLN section's grace periods into the running
+// queue: cmd/npln calls it when the operator reloads the service after
+// editing config.yaml, so a change needs no restart and drops no player.
+func (s *Server) ApplyGracePeriods(c config.NPLN) {
+	cfg := queueConfig(c)
+	s.queue.SetGracePeriods(cfg.VersusGracePeriod, cfg.CoopGracePeriod)
+}
+
 // queueConfig builds the matchmaking queue's config from the NPLN section.
 func queueConfig(c config.NPLN) matchmaking.Config {
 	cfg := matchmaking.Config{
