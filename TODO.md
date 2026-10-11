@@ -576,9 +576,12 @@ tracing nim's generic HTTP layer, and the rights layer belongs to the separate
 eShop module (Phase 3). The request side is now read: the revoke request
 class's body builder (FUN_7100122a00, vtable 0x7100223fb0) sends
 `{"elicense_ids": [...]}`, 16-byte licence ids, so nim revokes licences it
-holds locally; its URL builder is FUN_7100122920. The answer goes through a
-shared parser not yet read. `elicenses/exercise` only worked with an empty
-200, so an empty 200 for revoke is the first thing to try if it recurs. If it recurs, note what the console was doing at
+holds locally; its URL builder is FUN_7100122920. Its response slot
+(0x7100016ec0) just returns 0, so the revoke answer's body is never read and
+`{}` is not the problem. The likelier trigger is publish: GRID0+ returns no
+archives, nim revokes what the server did not return, then publishes again.
+Answering publish properly means echoing real licence archives, which is the
+rights layer Phase 3 owns. If it recurs, note what the console was doing at
 12:24 (it had just signed in and opened Splatoon 3's BCAT list).
 
 ### 4.3 Undocumented shapes — **P2**
