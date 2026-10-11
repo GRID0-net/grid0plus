@@ -1598,3 +1598,12 @@ each user in `include_id_token_users` (else each user), only for teammates
 who delegated to the caller and are already in the session. A logged call
 (`npln: matchmaking id tokens issued`) would show which flow uses it and
 whether the response wants every user or only the included ones.
+
+### Matchmaking backfill tickets (2026-10-11)
+
+A lobby with fewer players than its match kind requires enters lobby state 21,
+`State::ActivateBackFill`, which re-runs the config chooser and asks for more
+players. `MatchmakingTicket.backfill.game_session` exists for this, but
+GRID0+ has never received a ticket with it set and queues one as a new
+ticket (`npln: backfill ticket queued as a new ticket`). A logged one would
+show whether the session should be filled instead.

@@ -66,6 +66,17 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	// from the log instead of guessed at.
 	m.s.log.Info("npln: matchmaking ticket requested", "user", caller.UserID,
 		"request", protojson.Format(req))
+	if bf := req.GetMatchmakingTicket().GetBackfill(); bf.GetGameSession() != "" {
+		// TODO(capture-needed): a backfill ticket asks for players to be added
+		// to an existing session. The game sends one from lobby state 21
+		// (State::ActivateBackFill, FUN_710389df10) when its lobby holds fewer
+		// than the match kind requires; nothing has sent one to GRID0+ yet, so
+		// it is queued like any other ticket. A logged one settles whether to
+		// fill bf.game_session instead. Change: this function and
+		// matchmaking.Queue.
+		m.s.log.Warn("npln: backfill ticket queued as a new ticket",
+			"user", caller.UserID, "game_session", bf.GetGameSession(), "mode", mode)
+	}
 	if mode == "" {
 		// A ticket with no mode would match against every other modeless
 		// ticket, which is every mode at once. Refusing is better than forming
