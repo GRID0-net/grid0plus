@@ -2,12 +2,15 @@ package toyohr
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
@@ -45,7 +48,7 @@ func TestCanolaAndLockerIkasuDocumentIsNotFound(t *testing.T) {
 	}
 }
 
-func TestCoopScenarioAndReplayCodesAreNeverFound(t *testing.T) {
+func TestAnUnissuedCodeIsNotFound(t *testing.T) {
 	svc, _ := newService(t, time.Now())
 
 	if _, err := (coopScenarioService{Service: svc}).ResolveCoopScenarioCode(
@@ -57,6 +60,44 @@ func TestCoopScenarioAndReplayCodesAreNeverFound(t *testing.T) {
 		context.Background(), &toyohrpb.ResolveReplayCodeRequest{Name: "ABCDEF"},
 	); status.Code(err) != codes.NotFound {
 		t.Errorf("ResolveReplayCode = %v, want NotFound", err)
+	}
+}
+
+// TestASharedScenarioCodeResolvesToTheJob: the code another player types
+// in, with dashes and in lower case, hands back the job document that was
+// registered. Unimplemented, the console showed an error at the end of
+// sharing (2026-10-08).
+func TestASharedScenarioCodeResolvesToTheJob(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	svc.docs = ugcstore.NewService(ugcstore.Options{
+		Store: svc.store, Log: discardLogger(), Tenant: testTenant,
+		CallerID: func(context.Context) (string, bool) { return testCaller, true },
+		Now:      time.Now,
+	})
+	ctx := context.Background()
+	job := "tenants/current/documents/services/GameRecord/users/" + testCaller + "/CoopResults/job1"
+	if _, err := svc.docs.Put(ctx, testCaller, job, &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"wave": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 3}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := (coopScenarioService{Service: svc}).RegisterDocument(ctx,
+		&toyohrpb.CoopScenarioRegisterDocumentRequest{Name: job})
+	if err != nil {
+		t.Fatalf("RegisterDocument: %v", err)
+	}
+	code := reg.GetCode().GetName()[strings.LastIndex(reg.GetCode().GetName(), "/")+1:]
+	if len(code) != 16 || code[0] != 'S' {
+		t.Fatalf("code = %q", code)
+	}
+	typed := strings.ToLower(code[:4] + "-" + code[4:8] + "-" + code[8:12] + "-" + code[12:])
+	got, err := (coopScenarioService{Service: svc}).ResolveCoopScenarioCode(ctx,
+		&toyohrpb.ResolveCoopScenarioCodeRequest{Name: typed})
+	if err != nil {
+		t.Fatalf("resolve %q: %v", typed, err)
+	}
+	if got.GetDocument().GetFields().GetFields()["wave"].GetIntegerValue() != 3 {
+		t.Errorf("resolved %v, want the registered job", got.GetDocument())
 	}
 }
 

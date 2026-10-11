@@ -2,13 +2,17 @@ package toyohr
 
 import (
 	"context"
+	"crypto/rand"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // This file is TODO.md §1.4's backlog: everything besides FestService,
@@ -22,7 +26,7 @@ import (
 // what GRID0+ actually has, which for every one of these is nothing --
 // no CoopScenario/Replay code was ever registered, and no violation or
 // screening snapshot was ever produced. A write with an unknown validation or
-// storage contract (RegisterDocument on CoopScenario and Replay,
+// storage contract (RegisterDocument on Replay,
 // CreateBankaraChallenge) is left to the embedded
 // Unimplemented default instead of guessed at -- the same boundary
 // CloudSave's own five unimplemented RPCs already draw, for the same
@@ -127,16 +131,92 @@ type coopScenarioService struct {
 	toyohrpb.UnimplementedCoopScenarioServer
 }
 
-// ResolveCoopScenarioCode looks up a shared Salmon Run scenario by its
-// share code. RegisterDocument -- what would create one -- is left to the
-// embedded Unimplemented default, so no code this server did not create can
-// ever exist to resolve: NotFound is the honest answer for every code,
-// exactly the way CloudSave.GetSaveRecord's NotFound is correct rather than
-// a stub for an account with no cloud save.
-func (coopScenarioService) ResolveCoopScenarioCode(
-	context.Context, *toyohrpb.ResolveCoopScenarioCodeRequest,
+// RegisterDocument shares a Salmon Run job as a scenario code. The console
+// names the job's document; the code maps to it in Ugcstore under
+// grid0/coopScenarioCodes/<code>, and ResolveCoopScenarioCode hands that
+// document back to whoever types the code in.
+//
+// TODO(capture-needed): the code's exact alphabet and the shape of
+// CoopScenarioCode.name. This answers tenants/<t>/coopScenarioCodes/<code>
+// (the game carries the "/coopScenarioCodes" segment) with a 16-character
+// code starting with S, like the codes players share. Change: newScenarioCode
+// and scenarioCodeFrom.
+func (s coopScenarioService) RegisterDocument(
+	ctx context.Context, req *toyohrpb.CoopScenarioRegisterDocumentRequest,
+) (*toyohrpb.CoopScenarioRegisterDocumentResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	if s.docs == nil || req.GetName() == "" {
+		return nil, status.Error(codes.FailedPrecondition, "scenario codes are not available")
+	}
+	code, err := newScenarioCode()
+	if err != nil {
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	if _, err := s.docs.Put(ctx, uid, scenarioCodeDoc(code), &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"document": {ValueType: &commonpb.Value_StringValue{StringValue: req.GetName()}},
+	}}); err != nil {
+		return nil, err
+	}
+	s.log.Info("toyohr: scenario code registered", "user", uid, "code", code, "document", req.GetName())
+	return &toyohrpb.CoopScenarioRegisterDocumentResponse{
+		Code: &toyohrpb.CoopScenarioCode{Name: s.tenantPath() + "/coopScenarioCodes/" + code},
+	}, nil
+}
+
+// ResolveCoopScenarioCode looks up a shared Salmon Run scenario by its code.
+// A code this server never issued is NotFound.
+func (s coopScenarioService) ResolveCoopScenarioCode(
+	ctx context.Context, req *toyohrpb.ResolveCoopScenarioCodeRequest,
 ) (*toyohrpb.ResolveCoopScenarioCodeResponse, error) {
-	return nil, status.Error(codes.NotFound, "no such scenario code")
+	code := scenarioCodeFrom(req.GetName())
+	if s.docs == nil || code == "" {
+		return nil, status.Error(codes.NotFound, "no such scenario code")
+	}
+	link, err := s.docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: scenarioCodeDoc(code)})
+	if err != nil {
+		s.log.Info("toyohr: unknown scenario code", "code", code)
+		return nil, status.Error(codes.NotFound, "no such scenario code")
+	}
+	target := link.GetFields().GetFields()["document"].GetStringValue()
+	doc, err := s.docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: target})
+	if err != nil {
+		return nil, status.Error(codes.NotFound, "no such scenario code")
+	}
+	return &toyohrpb.ResolveCoopScenarioCodeResponse{Document: doc}, nil
+}
+
+const scenarioCodeAlphabet = "0123456789ABCDEFGHJKLMNPQRSTUVWXY"
+
+func newScenarioCode() (string, error) {
+	b := make([]byte, 15)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	out := []byte{'S'}
+	for _, c := range b {
+		out = append(out, scenarioCodeAlphabet[int(c)%len(scenarioCodeAlphabet)])
+	}
+	return string(out), nil
+}
+
+// scenarioCodeFrom takes a code from a resource name or as typed, with or
+// without dashes, in any case.
+func scenarioCodeFrom(name string) string {
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	code := strings.ToUpper(strings.ReplaceAll(name, "-", ""))
+	if len(code) != 16 || strings.Trim(code, scenarioCodeAlphabet) != "" {
+		return ""
+	}
+	return code
+}
+
+func scenarioCodeDoc(code string) string {
+	return "tenants/current/documents/grid0/coopScenarioCodes/" + code
 }
 
 // ---- nn.npln.toyohr.v1.Replay ------------------------------------------------
