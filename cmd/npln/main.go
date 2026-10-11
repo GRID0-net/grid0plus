@@ -239,13 +239,6 @@ func main() {
 			Handler:           restWithAttachments(rest.Handler(), srv.AttachmentHandler()),
 			ReadHeaderTimeout: 10 * time.Second,
 			IdleTimeout:       120 * time.Second,
-			// Requests inherit the service's context, so shutting down ends
-			// the frontline connections the console holds open. Shutdown
-			// waits for every connection to go idle and these never do: each
-			// restart sat out the whole grace period and then exited with
-			// "shutdown ... context deadline exceeded". The console reopens
-			// its frontline on its own, as it does every ~30 s anyway.
-			BaseContext: func(net.Listener) context.Context { return ctx },
 		})
 	}()
 

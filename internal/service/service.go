@@ -69,6 +69,13 @@ func SignalContext() (context.Context, context.CancelFunc) {
 // anything legitimate and short enough that a container restart is not held up.
 const shutdownGrace = 10 * time.Second
 
+// heldRequestGrace is how long after shutdown starts the requests still open
+// are cancelled. Shutdown waits for connections to go idle, and some never do
+// on their own: the frontline a console holds, a dashboard live view. Without
+// this every restart sat out shutdownGrace and exited 1 ("shutdown ...
+// context deadline exceeded"). Ordinary requests finish well inside it.
+const heldRequestGrace = 2 * time.Second
+
 // ServeHTTP runs an HTTP server until ctx is cancelled, then drains it.
 //
 // Read and write timeouts are set because these servers face consoles on a home
@@ -122,6 +129,11 @@ func ServeHTTPWithHealth(
 // wrong for that one.
 func Serve(ctx context.Context, log *slog.Logger, srv *http.Server) error {
 	addr := srv.Addr
+	reqCtx, cancelRequests := context.WithCancel(context.Background())
+	defer cancelRequests()
+	if srv.BaseContext == nil {
+		srv.BaseContext = func(net.Listener) context.Context { return reqCtx }
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -143,8 +155,13 @@ func Serve(ctx context.Context, log *slog.Logger, srv *http.Server) error {
 		log.Info("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 		defer cancel()
+		held := time.AfterFunc(heldRequestGrace, cancelRequests)
+		defer held.Stop()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("shutdown %s: %w", addr, err)
+			// Something ignored its cancelled context; close it rather than
+			// fail the stop over it.
+			log.Warn("shutdown grace exceeded; closing remaining connections", "addr", addr)
+			_ = srv.Close()
 		}
 		return <-errCh
 	}
