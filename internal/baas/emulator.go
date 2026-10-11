@@ -140,6 +140,11 @@ func (s *Server) emulatorPresence(w http.ResponseWriter, r *http.Request, c *cal
 		body.State = db.StatePlaying
 	}
 	now := s.now()
+	prev, err := s.store.GetPresence(r.Context(), c.UserID)
+	if err != nil {
+		writeInternalError(s.log, w, r, "load presence", err)
+		return
+	}
 	patch := db.PresencePatch{State: &body.State, AppID: &body.AppID, AppField: &body.AppField, ReportedAt: &now}
 	if body.State == db.StateOffline {
 		patch.LogoutAt = &now
@@ -153,6 +158,7 @@ func (s *Server) emulatorPresence(w http.ResponseWriter, r *http.Request, c *cal
 		UserID: c.UserID, State: updated.State, AppID: updated.AppID,
 		AppField: updated.AppField, At: now, Source: "emulator",
 	})
+	s.recordEmulatorPlay(r.Context(), c.UserID, prev, body.State, body.AppID, now)
 	w.WriteHeader(http.StatusNoContent)
 }
 
