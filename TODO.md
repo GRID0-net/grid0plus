@@ -56,15 +56,16 @@ What each open item is waiting on:
 | Item | Blocked on |
 | --- | --- |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
-| §4.5 | **the friend's console** — it stalls before any game call |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
-| §2.4 | **the server's own `list`/`data` answers** — the signature patch that blocked it is built — then a console test |
+| §4.6 | **nothing now** — the licence publish/revoke loop is Phase 3 scope; watch the logs |
+| §3.3 | **a second operator** — the shared token is the honest minimum until then |
 | §3.2 | **§2.1** |
 
 Splatoon 3 reached the hall on GRID0+ on 2026-09-25 (see
 `docs/CAPTURES/splat3-hall-reached-2026-09-25.md`); what is left is behind
-it — matches, Splatfests, BCAT.
+it, and matches, Salmon Run, Splatfests and native BCAT have since worked on
+hardware too.
 
 ---
 
