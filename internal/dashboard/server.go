@@ -187,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.guardPage(s.handleIndex))
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("GET /login/link", s.handleLoginLink)
 	mux.HandleFunc("POST /logout", s.handleLogout)
 	mux.HandleFunc("GET /api/overview", s.guard(s.handleOverview))
 	mux.HandleFunc("GET /api/players", s.guard(s.handlePlayers))
