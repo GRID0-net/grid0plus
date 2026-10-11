@@ -27,9 +27,11 @@ func ApplyCoopGrades(ctx context.Context, store db.Store, tenant, battleID, mode
 	if result == nil || wave == nil {
 		return nil
 	}
-	// TODO(capture-needed): confirm all non-clear result enum values. The
-	// completed three-wave job on 2026-10-08 reports result=0, final_wave=2.
-	// Unknown results must not award or deduct grade. Change ApplyCoopGrades.
+	// grid0's 37 stored jobs (2026-10-11): result=0 always with final_wave=2
+	// (a clear; final_wave counts from 0), result=1 with final_wave 0, 1 or 2
+	// (failed in that wave). TODO(capture-needed): any other result value, a
+	// disconnect or a King Salmonid wave, has never been seen. Unknown results
+	// must not award or deduct grade. Change ApplyCoopGrades.
 	if result.GetIntegerValue() < 0 || result.GetIntegerValue() > 1 || wave.GetIntegerValue() < 0 || wave.GetIntegerValue() > 3 {
 		return nil
 	}
