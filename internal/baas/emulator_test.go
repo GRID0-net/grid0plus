@@ -74,6 +74,17 @@ func TestEmulatorsBecomeFriendsAndSeeEachOthersPresence(t *testing.T) {
 		t.Errorf("friend = %+v", f)
 	}
 
+	// In a game the forks mostly pass the game's status 1: still playing.
+	resp = h.do(request{method: "POST", path: "/emulator/v1/presence", token: bob,
+		json: `{"state":"ONLINE","appId":"0100c2500fc20000","appField":"AAEC"}`})
+	requireStatus(t, resp, 204)
+	resp = h.do(request{method: "GET", path: "/emulator/v1/friends", token: alice})
+	requireStatus(t, resp, 200)
+	decode(t, resp, &list)
+	if f := list.Friends[0]; f.State != "PLAYING" || f.AppID != "0100c2500fc20000" {
+		t.Errorf("ONLINE with a game: friend = %+v, want PLAYING it", f)
+	}
+
 	resp = h.do(request{method: "POST", path: "/emulator/v1/presence", token: bob,
 		json: `{"state":"SLEEPING"}`})
 	requireStatus(t, resp, 400)

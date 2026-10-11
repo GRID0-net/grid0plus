@@ -132,6 +132,13 @@ func (s *Server) emulatorPresence(w http.ResponseWriter, r *http.Request, c *cal
 		writeError(w, r, errInvalidParams)
 		return
 	}
+	// The forks pass the game's own status through, and in a game that is
+	// mostly 1, ONLINE, with the title id set, the same as a console's npns
+	// reports; BAAS clears the app of anything not PLAYING, so friends read
+	// "Online". The forks send no id outside a game, so one here is current.
+	if body.State == db.StateOnline && strings.Trim(body.AppID, "0") != "" {
+		body.State = db.StatePlaying
+	}
 	now := s.now()
 	patch := db.PresencePatch{State: &body.State, AppID: &body.AppID, AppField: &body.AppField, ReportedAt: &now}
 	if body.State == db.StateOffline {
