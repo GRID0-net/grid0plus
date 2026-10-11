@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -102,6 +103,9 @@ func (s *Server) penneNotificationToken(w http.ResponseWriter, r *http.Request, 
 type frontlineConn struct {
 	penneID string
 	send    func([]byte) error
+	// log, when set, records each pushed record: replies are logged where
+	// they are made, pushes were not, and console Acks were the only trace.
+	log *slog.Logger
 
 	mu       sync.Mutex
 	users    map[string]string // user id -> console account Uid, from DAPresence
@@ -160,6 +164,9 @@ func (c *frontlineConn) flushLocked() {
 	c.queue = c.queue[1:]
 	if err := c.send(frame); err == nil {
 		c.inflight = true
+		if c.log != nil {
+			c.log.Info("nplnrest: frontline record pushed", "penne_id", c.penneID, "bytes", len(frame)-4, "queued", len(c.queue))
+		}
 	}
 }
 

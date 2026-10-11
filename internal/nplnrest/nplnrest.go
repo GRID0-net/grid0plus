@@ -525,7 +525,7 @@ func (s *Server) frontline(w http.ResponseWriter, r *http.Request) {
 	var conn *frontlineConn
 	if ticket, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && s.store != nil {
 		if penneID, err := s.store.PenneTicket(r.Context(), ticket, now); err == nil {
-			conn = &frontlineConn{penneID: penneID, send: send}
+			conn = &frontlineConn{penneID: penneID, send: send, log: s.log}
 			s.registry.add(conn)
 			defer func() {
 				s.registry.remove(conn)
