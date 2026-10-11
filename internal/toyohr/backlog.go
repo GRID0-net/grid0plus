@@ -39,10 +39,9 @@ import (
 // shapes (proto/toyohr/v1/common.proto), backed by the same
 // nn.npln.ugcstore.v1.Document the wiki's Server-List places under a
 // separate Ugcstore/Screening pair of services GRID0+ does not
-// implement. Without that store there is no document either service could
-// honestly return, so both get the same two answers: a select finds
-// nothing, and activating ("Ikasu") one specific document that was never
-// registered is NotFound.
+// implement. A select lists what this server's players have published (see
+// plaza); activating ("Ikasu") one specific document is still NotFound,
+// since nothing documents what activating one does.
 
 type canolaService struct {
 	*Service
@@ -50,10 +49,38 @@ type canolaService struct {
 }
 
 func (s canolaService) SelectDocuments(
-	_ context.Context, req *toyohrpb.SelectDocumentsRequest,
+	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	s.logSelect("canola", req)
-	return &toyohrpb.SelectDocumentsResponse{}, nil
+	return s.plaza(ctx, "canola/deckPosts", plazaDecks)
+}
+
+// How many published posts the plaza is sent at once. NextendoNetwork/
+// splatoon-3 measured Nintendo's own answer at launch (facts only, none of
+// its code used): 31 locker posts and 6 card-game decks, each a document
+// under services/toyohr/interfaces/<service>/<collection>/<uuid> carrying
+// only what was published -- no identity.
+const (
+	plazaLockers = 31
+	plazaDecks   = 6
+)
+
+// plaza answers SelectDocuments with what players on this server have
+// published to collection: written through Ugcstore/CommitDocuments, then
+// announced by RegisterDocument. Before this, both services answered
+// nothing and the plaza showed no player's locker or deck.
+func (s *Service) plaza(
+	ctx context.Context, collection string, limit int,
+) (*toyohrpb.SelectDocumentsResponse, error) {
+	if s.docs == nil {
+		return &toyohrpb.SelectDocumentsResponse{}, nil
+	}
+	docs, err := s.docs.Published(ctx, "services/toyohr/interfaces/"+collection, limit)
+	if err != nil {
+		s.log.Error("toyohr: list published posts", "collection", collection, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	return &toyohrpb.SelectDocumentsResponse{Documents: docs}, nil
 }
 
 // logSelect records what a console asks SelectDocuments for. Nothing
@@ -77,10 +104,10 @@ type lockerService struct {
 }
 
 func (s lockerService) SelectDocuments(
-	_ context.Context, req *toyohrpb.SelectDocumentsRequest,
+	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	s.logSelect("locker", req)
-	return &toyohrpb.SelectDocumentsResponse{}, nil
+	return s.plaza(ctx, "locker/lockerPosts", plazaLockers)
 }
 
 func (lockerService) IkasuDocument(
@@ -98,10 +125,7 @@ func (lockerService) IkasuDocument(
 // posting.
 //
 // This only acknowledges. The document itself is already stored by
-// Ugcstore/CommitDocuments; what is not built is showing it to other
-// players, which is SelectDocuments' job and still answers nothing.
-// TODO(capture-needed): the shape a real SelectDocuments answer lists
-// registered documents in. Change: both SelectDocuments above.
+// Ugcstore/CommitDocuments, and SelectDocuments shows it to other players.
 func (s canolaService) RegisterDocument(
 	ctx context.Context, req *toyohrpb.CanolaRegisterDocumentRequest,
 ) (*toyohrpb.CanolaRegisterDocumentResponse, error) {

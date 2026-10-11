@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -571,4 +572,35 @@ func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 func emptyWhenAbsent(key, uid string) bool {
 	_, docPath, _ := strings.Cut(key, documentsSegment)
 	return strings.HasPrefix(docPath, "services/GameRecord/users/"+uid+"/WeaponPowerMeasurement/")
+}
+
+// Published lists what players have published under collection -- a path
+// below documents/, such as services/toyohr/interfaces/locker/lockerPosts --
+// for the plaza: each owner's newest document only, newest first, at most
+// limit. A console publishes a post only when its player agreed to show it,
+// so the document existing is the consent; there is no flag to re-read.
+func (s *Service) Published(ctx context.Context, collection string, limit int) ([]*ugcpb.Document, error) {
+	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
+	rows, err := s.store.ListUGCDocuments(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].UpdateTime.After(rows[j].UpdateTime) })
+	seen := map[string]bool{}
+	var out []*ugcpb.Document
+	for _, r := range rows {
+		if len(out) == limit {
+			break
+		}
+		if r.Owner != "" && seen[r.Owner] {
+			continue
+		}
+		seen[r.Owner] = true
+		d, err := toProto(r, r.Name)
+		if err != nil {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out, nil
 }

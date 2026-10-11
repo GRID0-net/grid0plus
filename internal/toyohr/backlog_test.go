@@ -139,3 +139,42 @@ func TestGameRecordWithoutADocumentStoreIsUnimplemented(t *testing.T) {
 		t.Errorf("CreateFestPowerMeasurement = %v, want Unimplemented", err)
 	}
 }
+
+// TestThePlazaShowsEachPlayersNewestPublishedLocker: a locker post a player
+// published must reach other consoles' plaza, once per player however often
+// they republished, and a drawing must not show up among the lockers.
+func TestThePlazaShowsEachPlayersNewestPublishedLocker(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	clock := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	svc.docs = ugcstore.NewService(ugcstore.Options{
+		Store: svc.store, Log: discardLogger(), Tenant: testTenant,
+		CallerID: func(context.Context) (string, bool) { return testCaller, true },
+		Now:      func() time.Time { clock = clock.Add(time.Second); return clock },
+	})
+	ctx := context.Background()
+	post := func(owner, path string, v int64) {
+		t.Helper()
+		if _, err := svc.docs.Put(ctx, owner, "tenants/current/documents/services/toyohr/interfaces/"+path,
+			&commonpb.MapValue{Fields: map[string]*commonpb.Value{
+				"v": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}},
+			}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	post("alice", "locker/lockerPosts/a1", 1)
+	post("bob", "locker/lockerPosts/b1", 2)
+	post("alice", "locker/lockerPosts/a2", 3)
+	post("alice", "canola/picturePosts/p1", 4)
+
+	resp, err := (lockerService{Service: svc}).SelectDocuments(ctx, &toyohrpb.SelectDocumentsRequest{})
+	if err != nil {
+		t.Fatalf("SelectDocuments: %v", err)
+	}
+	var got []int64
+	for _, d := range resp.GetDocuments() {
+		got = append(got, d.GetFields().GetFields()["v"].GetIntegerValue())
+	}
+	if len(got) != 2 || got[0] != 3 || got[1] != 2 {
+		t.Errorf("plaza lockers = %v, want [3 2]: alice's newest, then bob's", got)
+	}
+}
