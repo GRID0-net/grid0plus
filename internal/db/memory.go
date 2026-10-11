@@ -50,6 +50,7 @@ type Memory struct {
 
 	naRefreshTokens map[string]NARefreshToken
 	ugcDocuments    map[string]UGCDocument
+	ugcBlobs        map[string]UGCBlob
 	nexRecords      map[nexRecordKey]NEXRecord
 
 	// botLinks is keyed by user id, so an account belongs to at most one
@@ -85,6 +86,7 @@ func NewMemory() *Memory {
 
 		naRefreshTokens: map[string]NARefreshToken{},
 		ugcDocuments:    map[string]UGCDocument{},
+		ugcBlobs:        map[string]UGCBlob{},
 		nexRecords:      map[nexRecordKey]NEXRecord{},
 
 		botLinks: map[string]botLink{},
@@ -1855,4 +1857,89 @@ func (m *Memory) PenneTicket(_ context.Context, ticket string, now time.Time) (s
 		return "", ErrNotFound
 	}
 	return t.penneID, nil
+}
+
+// ---- NPLN Ugcstore attachments ---------------------------------------------
+
+func copyBlob(b UGCBlob) UGCBlob {
+	b.Data = append([]byte(nil), b.Data...)
+	return b
+}
+
+// PutUGCBlob creates or replaces an attachment, keeping its document link.
+func (m *Memory) PutUGCBlob(_ context.Context, b UGCBlob) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if old, ok := m.ugcBlobs[b.ID]; ok {
+		b.Document = old.Document
+	} else {
+		b.Document = ""
+	}
+	m.ugcBlobs[b.ID] = copyBlob(b)
+	return nil
+}
+
+// GetUGCBlob returns an attachment by id, or ErrNotFound.
+func (m *Memory) GetUGCBlob(_ context.Context, id string) (UGCBlob, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	b, ok := m.ugcBlobs[id]
+	if !ok {
+		return UGCBlob{}, ErrNotFound
+	}
+	return copyBlob(b), nil
+}
+
+// GetUGCDocumentBlob returns a document's attachment, or ErrNotFound.
+func (m *Memory) GetUGCDocumentBlob(_ context.Context, document string) (UGCBlob, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, b := range m.ugcBlobs {
+		if b.Document == document {
+			return copyBlob(b), nil
+		}
+	}
+	return UGCBlob{}, ErrNotFound
+}
+
+// AttachUGCBlob makes id the document's only attachment.
+func (m *Memory) AttachUGCBlob(_ context.Context, id, document string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.ugcBlobs[id]
+	if !ok {
+		return ErrNotFound
+	}
+	for other, o := range m.ugcBlobs {
+		if other != id && o.Document == document {
+			delete(m.ugcBlobs, other)
+		}
+	}
+	b.Document = document
+	m.ugcBlobs[id] = b
+	return nil
+}
+
+// DetachUGCDocumentBlob deletes a document's attachment, if any.
+func (m *Memory) DetachUGCDocumentBlob(_ context.Context, document string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, b := range m.ugcBlobs {
+		if b.Document == document {
+			delete(m.ugcBlobs, id)
+		}
+	}
+	return nil
+}
+
+// PurgeUnattachedUGCBlobs deletes old blobs that were never attached.
+func (m *Memory) PurgeUnattachedUGCBlobs(_ context.Context, before time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, b := range m.ugcBlobs {
+		if b.Document == "" && b.CreateTime.Before(before) {
+			delete(m.ugcBlobs, id)
+		}
+	}
+	return nil
 }

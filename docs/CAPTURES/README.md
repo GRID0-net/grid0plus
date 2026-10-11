@@ -1614,3 +1614,12 @@ Answered by `QueryUserExternalIds` in `internal/npln/user_service.go`: on
 GRID0+ an NPLN user id is the NSA id, so both directions return the id for
 an existing account. `UserExternalId.name` is this server's own format; a
 logged call (`npln: external ids queried`) would show which screen uses it.
+
+### Ugcstore attachments (2026-10-11)
+
+`internal/ugcstore/attachments.go` serves uploads (GCS resumable protocol,
+read from the game's uploader) and downloads on a vermillion host. Two things
+are unconfirmed: which commit write names the upload (`ImportAttachment` with
+the URL, or `SetAttachment` with the bytes; both are accepted), and the body
+of the final 200. The first post from a console, logged as `ugcstore: upload
+opened` and `ugcstore: attachment set`, settles both.

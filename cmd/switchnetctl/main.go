@@ -846,6 +846,11 @@ func frontlineServerBlock(cfg config.Config, serverNames []string, http2 bool) s
         # Buffered, nginx waits for that end and the frames never arrive.
         proxy_request_buffering off;
         client_body_timeout 3600s;
+
+        # Ugcstore attachment uploads (drawings, locker photos, replays)
+        # arrive here too, under /grid0/ugc/; nginx's 1 MB default would
+        # refuse the larger ones before npln saw them.
+        client_max_body_size 16m;
     }
 }
 `, cfg.Network.EdgeTLSPort, h2, strings.Join(serverNames, "\n                "))

@@ -49,7 +49,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
 		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts, npln_matches,
-		          scsi_save_data_archives RESTART IDENTITY CASCADE`)
+		          scsi_save_data_archives, ugc_blobs RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -67,6 +67,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"friendships":               testFriendships,
 		"naRefreshTokens":           testNARefreshTokens,
 		"ugcDocuments":              testUGCDocuments,
+		"ugcBlobs":                  testUGCBlobs,
 		"nexRecords":                testNEXRecords,
 		"friendRequests":            testFriendRequests,
 		"blocks":                    testBlocks,
@@ -2537,5 +2538,57 @@ func testPenne(t *testing.T, s Store) {
 	}
 	if _, err := s.PenneTicket(ctx, "nope", now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("an unknown ticket = %v, want ErrNotFound", err)
+	}
+}
+
+// testUGCBlobs: an upload attaches to one document, replacing what it had,
+// keeps its link when its bytes are rewritten chunk by chunk, and only blobs
+// nobody attached are purged.
+func testUGCBlobs(t *testing.T, s Store) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	doc := "tenants/t/documents/services/toyohr/interfaces/canola/picturePosts/p1"
+	put := func(id string, data []byte) {
+		t.Helper()
+		if err := s.PutUGCBlob(ctx, UGCBlob{ID: id, Owner: "alice", Total: int64(len(data)),
+			Complete: true, Data: data, CreateTime: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("b1", []byte("one"))
+	put("b2", []byte("two"))
+	if err := s.AttachUGCBlob(ctx, "b1", doc); err != nil {
+		t.Fatal(err)
+	}
+	put("b1", []byte("one, rewritten"))
+	got, err := s.GetUGCDocumentBlob(ctx, doc)
+	if err != nil || string(got.Data) != "one, rewritten" || got.Document != doc {
+		t.Fatalf("document blob = %+v, %v", got, err)
+	}
+	if err := s.AttachUGCBlob(ctx, "b2", doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetUGCBlob(ctx, "b1"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the replaced attachment survived: %v", err)
+	}
+	if err := s.AttachUGCBlob(ctx, "missing", doc); !errors.Is(err, ErrNotFound) {
+		t.Errorf("attaching a missing blob: %v, want ErrNotFound", err)
+	}
+
+	put("stale", []byte("x"))
+	if err := s.PurgeUnattachedUGCBlobs(ctx, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetUGCBlob(ctx, "stale"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an unattached blob was not purged: %v", err)
+	}
+	if _, err := s.GetUGCBlob(ctx, "b2"); err != nil {
+		t.Errorf("an attached blob was purged: %v", err)
+	}
+	if err := s.DetachUGCDocumentBlob(ctx, doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetUGCDocumentBlob(ctx, doc); !errors.Is(err, ErrNotFound) {
+		t.Errorf("detached document still has a blob: %v", err)
 	}
 }

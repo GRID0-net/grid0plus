@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -52,6 +53,10 @@ type Service struct {
 	callerID   func(context.Context) (string, bool)
 	now        func() time.Time
 	diagnostic *splatdiag.Bundle
+
+	signer        URLSigner
+	baseURL       string
+	maxAttachment int64
 }
 
 // Options configures the service.
@@ -64,6 +69,14 @@ type Options struct {
 	CallerID   func(context.Context) (string, bool)
 	Now        func() time.Time
 	Diagnostic *splatdiag.Bundle
+	// Signer and AttachmentBaseURL turn attachments on (attachments.go):
+	// the base is an https origin on a host the console trusts, served by
+	// AttachmentHandler. Without both, the attachment RPCs answer
+	// Unimplemented.
+	Signer            URLSigner
+	AttachmentBaseURL string
+	// MaxAttachmentBytes bounds one attachment; 0 means the default.
+	MaxAttachmentBytes int64
 }
 
 // NewService builds the service.
@@ -74,8 +87,13 @@ func NewService(opts Options) *Service {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
 	}
+	if opts.MaxAttachmentBytes <= 0 {
+		opts.MaxAttachmentBytes = DefaultMaxAttachmentBytes
+	}
 	return &Service{store: opts.Store, log: opts.Log, tenant: opts.Tenant,
-		callerID: opts.CallerID, now: opts.Now, diagnostic: opts.Diagnostic}
+		callerID: opts.CallerID, now: opts.Now, diagnostic: opts.Diagnostic,
+		signer: opts.Signer, baseURL: strings.TrimRight(opts.AttachmentBaseURL, "/"),
+		maxAttachment: opts.MaxAttachmentBytes}
 }
 
 // Register attaches the service to a gRPC server.
@@ -321,6 +339,10 @@ func (s *Service) CommitDocuments(ctx context.Context, req *ugcpb.CommitDocument
 		return p, nil
 	}
 
+	// attach collects each document's attachment change, applied once the
+	// documents are stored: a blob to attach, or nil to remove the one there.
+	attach := map[string]*db.UGCBlob{}
+
 	results := make([]*ugcpb.WriteResult, 0, len(req.GetWriteOperations()))
 	for _, op := range req.GetWriteOperations() {
 		res := &ugcpb.WriteResult{UpdateTime: timestamppb.New(now)}
@@ -346,6 +368,7 @@ func (s *Service) CommitDocuments(ctx context.Context, req *ugcpb.CommitDocument
 			}
 			p.deleted, p.dirty = true, true
 			p.fields = &commonpb.MapValue{Fields: map[string]*commonpb.Value{}}
+			attach[p.row.Name] = nil
 		case *ugcpb.WriteOperation_TransformDocument:
 			p, err := load(w.TransformDocument.GetName())
 			if err != nil {
@@ -360,14 +383,40 @@ func (s *Service) CommitDocuments(ctx context.Context, req *ugcpb.CommitDocument
 			}
 			p.deleted, p.dirty = false, true
 		case *ugcpb.WriteOperation_UnsetAttachment:
-			// No attachment is ever stored here (SetAttachment and the
-			// upload URIs are not served), so the one being removed is
-			// already absent. Side Order sends this beside its
-			// users/<id>/sideOrder/stats writes (2026-10-10); refusing it
-			// threw the whole batch away and the stats were never kept.
-			if _, err := load(w.UnsetAttachment.GetParent()); err != nil {
+			// Side Order sends this beside its users/<id>/sideOrder/stats
+			// writes (2026-10-10), usually for an attachment that was never
+			// set; refusing it threw the whole batch away.
+			p, err := load(w.UnsetAttachment.GetParent())
+			if err != nil {
 				return nil, err
 			}
+			attach[p.row.Name] = nil
+		case *ugcpb.WriteOperation_SetAttachment:
+			p, err := load(w.SetAttachment.GetParent())
+			if err != nil {
+				return nil, err
+			}
+			body := w.SetAttachment.GetBody()
+			if int64(len(body)) > s.maxAttachment {
+				return nil, status.Error(codes.InvalidArgument, "attachment too large")
+			}
+			attach[p.row.Name] = &db.UGCBlob{ID: uuid.NewString(), Owner: uid, Data: body,
+				Total: int64(len(body)), Complete: true, MimeType: w.SetAttachment.GetMimeType(), CreateTime: now}
+		case *ugcpb.WriteOperation_ImportAttachment:
+			p, err := load(w.ImportAttachment.GetParent())
+			if err != nil {
+				return nil, err
+			}
+			b, err := s.blobFromURI(ctx, uid, w.ImportAttachment.GetUri())
+			if err != nil {
+				s.log.Warn("ugcstore: import attachment refused", "user", uid,
+					"document", p.row.Name, "error", err)
+				return nil, err
+			}
+			if mt := w.ImportAttachment.GetMimeType(); mt != "" {
+				b.MimeType = mt
+			}
+			attach[p.row.Name] = &b
 		default:
 			// Other attachment writes: not implemented. Refusing the whole
 			// batch is what "all or nothing" requires.
@@ -398,6 +447,24 @@ func (s *Service) CommitDocuments(ctx context.Context, req *ugcpb.CommitDocument
 		p.row.Fields, p.row.UpdateTime = b, now
 		if err := s.store.PutUGCDocument(ctx, p.row); err != nil {
 			s.log.Error("ugcstore: store document", "name", key, "error", err)
+			return nil, status.Error(codes.Internal, "internal error")
+		}
+	}
+	for _, name := range sortedNames(attach) {
+		b := attach[name]
+		var err error
+		if b == nil {
+			err = s.store.DetachUGCDocumentBlob(ctx, name)
+		} else {
+			if err = s.store.PutUGCBlob(ctx, *b); err == nil {
+				err = s.store.AttachUGCBlob(ctx, b.ID, name)
+			}
+			if err == nil {
+				s.log.Info("ugcstore: attachment set", "user", uid, "document", name, "bytes", len(b.Data))
+			}
+		}
+		if err != nil {
+			s.log.Error("ugcstore: store attachment", "document", name, "error", err)
 			return nil, status.Error(codes.Internal, "internal error")
 		}
 	}
@@ -603,4 +670,13 @@ func (s *Service) Published(ctx context.Context, collection string, limit int) (
 		out = append(out, d)
 	}
 	return out, nil
+}
+
+func sortedNames(m map[string]*db.UGCBlob) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

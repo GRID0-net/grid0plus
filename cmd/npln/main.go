@@ -236,7 +236,7 @@ func main() {
 	go func() {
 		restErr <- service.Serve(ctx, log.With("listener", "rest"), &http.Server{
 			Addr:              cfg.NPLN.RestListen,
-			Handler:           rest.Handler(),
+			Handler:           restWithAttachments(rest.Handler(), srv.AttachmentHandler()),
 			ReadHeaderTimeout: 10 * time.Second,
 			IdleTimeout:       120 * time.Second,
 		})
@@ -274,4 +274,14 @@ func lobbyLogFlag() string {
 		return p
 	}
 	return "data/gamesync-lobby-log"
+}
+
+// restWithAttachments puts Ugcstore's attachment URLs beside the JSON front
+// end on the same listener: the console reaches both through the same
+// vermillion host (internal/npln's attachmentHost).
+func restWithAttachments(rest, attachments http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/grid0/ugc/", attachments)
+	mux.Handle("/", rest)
+	return mux
 }

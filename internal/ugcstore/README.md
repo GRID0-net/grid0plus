@@ -38,13 +38,24 @@ Fields are stored as the encoded `MapValue`, so value types survive exactly.
 | RPC | |
 | --- | --- |
 | `GetDocument` | yes |
-| `CommitDocuments` | update (with or without a field mask, with preconditions), delete, field transforms (`increment`, `maximum`, `minimum`, `set_server_value: REQUEST_TIME`); attachment operations refuse the batch |
+| `CommitDocuments` | update (with or without a field mask, with preconditions), delete, field transforms (`increment`, `maximum`, `minimum`, `set_server_value: REQUEST_TIME`), and `SetAttachment` / `ImportAttachment` / `UnsetAttachment` |
 | `RunQuery` | lists the documents directly in the requested collections under `parent`, newest name first; with no match, the captured one-message `read_time` answer. The in-game battle history is this query over `VsResults`, which the server writes after each match (`RecordVsResults`) |
 
 The server also writes two kinds of `services/GameRecord` documents the console only reads: each player's `VsResults/<battle>` after a versus battle (`RecordVsResults`) and `CoopResults/<job>` after a Salmon Run job (`RecordCoopResults`), each row carrying the player's `player_info` from the battle's `@@Profile` documents, and Salmon Run's point cards, `PointCardTotal/Data` and `PointCardRegular/<shift_id>`, after each job (`RecordCoopPointCards`). Without the point cards the Bonus Meter never moves.
 
 `ApplyCoopGrades` updates `CoopUserAttribute/Data` before the final referee verdict is published. A clear adds 20; failures in waves one, two and three deduct 20, 10 and zero. A real reported teammate disconnect halves a survivor's deduction; deliberately empty player slots do not. Each player's before/after grade is retained in the verdict, history and shift card. Attribute changes and the private `grid0/coopGradeCredits` retry marker commit atomically, so retries and late peer reports cannot credit the same job twice. Private jobs and Eggstra Work do not use this ordinary grade rule.
-| `BulkGetDocuments`, attachments, short aliases, `IssueUploadUri` | **no** — `Unimplemented`, logged once by the gateway when a console asks |
+| `IssueUploadUri`, `IssueAttachmentUri`, `BulkIssueAttachmentUri` | yes — see below |
+| `BulkGetDocuments`, short aliases | **no** — `Unimplemented`, logged once by the gateway when a console asks |
+
+**Attachments** (`attachments.go`): the bytes behind a document (a drawing, a
+locker photo, a replay) never travel over gRPC. `IssueUploadUri` hands out a
+signed URL on `gw.hac.lp1.vermillion.srv.nintendo.net` under `/grid0/ugc/`,
+which the console uploads to with Google Cloud Storage's resumable protocol
+(the game's own uploader, found in its main); a commit then names the upload,
+and `IssueAttachmentUri` signs a download URL for other consoles. The bytes
+live in `ugc_blobs`, one attachment per document, 8 MB each; uploads nobody
+attached are purged after a day. Before this, posting a drawing or a locker
+stopped at `IssueUploadUri`, so nothing was ever published.
 
 **`RunQuery` used to be Unimplemented too, and that broke the lobby.** It is
 the last RPC in the confirmed boot sequence, called right after

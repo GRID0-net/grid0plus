@@ -2022,3 +2022,71 @@ func (p *Postgres) PenneTicket(ctx context.Context, ticket string, now time.Time
 		ticket, now).Scan(&id)
 	return id, mapErr(err)
 }
+
+// ---- NPLN Ugcstore attachments ---------------------------------------------
+
+const ugcBlobColumns = `id, owner, COALESCE(document, ''), mime_type, total, complete, data, create_time`
+
+func scanBlob(row pgx.Row) (UGCBlob, error) {
+	var b UGCBlob
+	err := row.Scan(&b.ID, &b.Owner, &b.Document, &b.MimeType, &b.Total, &b.Complete, &b.Data, &b.CreateTime)
+	return b, mapErr(err)
+}
+
+// PutUGCBlob creates or replaces an attachment, keeping its document link.
+func (p *Postgres) PutUGCBlob(ctx context.Context, b UGCBlob) error {
+	if b.Data == nil {
+		b.Data = []byte{}
+	}
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO ugc_blobs (id, owner, mime_type, total, complete, data, create_time)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (id) DO UPDATE
+		SET owner = EXCLUDED.owner, mime_type = EXCLUDED.mime_type, total = EXCLUDED.total,
+		    complete = EXCLUDED.complete, data = EXCLUDED.data`,
+		b.ID, b.Owner, b.MimeType, b.Total, b.Complete, b.Data, b.CreateTime)
+	return err
+}
+
+// GetUGCBlob returns an attachment by id, or ErrNotFound.
+func (p *Postgres) GetUGCBlob(ctx context.Context, id string) (UGCBlob, error) {
+	return scanBlob(p.pool.QueryRow(ctx, `SELECT `+ugcBlobColumns+` FROM ugc_blobs WHERE id = $1`, id))
+}
+
+// GetUGCDocumentBlob returns a document's attachment, or ErrNotFound.
+func (p *Postgres) GetUGCDocumentBlob(ctx context.Context, document string) (UGCBlob, error) {
+	return scanBlob(p.pool.QueryRow(ctx, `SELECT `+ugcBlobColumns+` FROM ugc_blobs WHERE document = $1`, document))
+}
+
+// AttachUGCBlob makes id the document's only attachment, in one transaction
+// so a document is never left with two or with none half-way.
+func (p *Postgres) AttachUGCBlob(ctx context.Context, id, document string) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM ugc_blobs WHERE document = $1 AND id <> $2`, document, id); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE ugc_blobs SET document = $2 WHERE id = $1`, id, document)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
+// DetachUGCDocumentBlob deletes a document's attachment, if any.
+func (p *Postgres) DetachUGCDocumentBlob(ctx context.Context, document string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM ugc_blobs WHERE document = $1`, document)
+	return err
+}
+
+// PurgeUnattachedUGCBlobs deletes old blobs that were never attached.
+func (p *Postgres) PurgeUnattachedUGCBlobs(ctx context.Context, before time.Time) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM ugc_blobs WHERE document IS NULL AND create_time < $1`, before)
+	return err
+}

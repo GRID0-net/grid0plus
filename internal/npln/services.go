@@ -2,6 +2,8 @@ package npln
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"time"
 
 	"google.golang.org/grpc"
@@ -53,9 +55,12 @@ func (s *Server) register() {
 	// console then reads through this service.
 	docs := ugcstore.NewService(ugcstore.Options{
 		Store: s.store, Log: s.log, Tenant: s.tenant, Now: s.now, CallerID: callerID,
-		Diagnostic: s.diagnostic,
+		Diagnostic:        s.diagnostic,
+		Signer:            ugcstore.URLSigner{Sign: s.signAttachmentURL, Verify: s.verifyAttachmentURL},
+		AttachmentBaseURL: "https://" + attachmentHost,
 	})
 	docs.Register(s.grpc)
+	s.docs = docs
 
 	// Splatoon 3's own services. They authenticate through the same
 	// interceptor as everything else -- a fest is announced to a console that
@@ -284,3 +289,41 @@ func keepAlive() *maintpb.SubscribeMaintenanceSchedulesResponse {
 		},
 	}
 }
+
+// attachmentHost is where the console uploads and downloads Ugcstore
+// attachments (internal/ugcstore/attachments.go). Nintendo's are on
+// storage.googleapis.com, which GRID0+ does not and must not redirect; this
+// is a vermillion host the console already resolves to GRID0+ and trusts,
+// whose nginx block proxies to this process's JSON front end, where
+// AttachmentHandler is mounted.
+const attachmentHost = "gw.hac.lp1.vermillion.srv.nintendo.net"
+
+// attachmentTokenIssuer prefixes the issuer of an attachment URL's token.
+// authenticate accepts only an access token's issuer, so a URL token can
+// never be used as a bearer.
+const attachmentTokenIssuer = "npln-ugc-"
+
+func (s *Server) signAttachmentURL(kind, owner, blobID string, expires time.Time) (string, error) {
+	return s.issuer.Sign(nplnClaims{
+		Subject:  owner,
+		Issuer:   attachmentTokenIssuer + kind,
+		Audience: blobID,
+		IssuedAt: s.now().Unix(),
+		Expires:  expires.Unix(),
+	})
+}
+
+func (s *Server) verifyAttachmentURL(kind, token string) (string, string, error) {
+	var c nplnClaims
+	if err := s.tokens.Verify(token, &c); err != nil {
+		return "", "", err
+	}
+	if c.Issuer != attachmentTokenIssuer+kind || c.Subject == "" || c.Audience == "" {
+		return "", "", errors.New("not an attachment token of this kind")
+	}
+	return c.Subject, c.Audience, nil
+}
+
+// AttachmentHandler serves Ugcstore attachment uploads and downloads, for
+// the JSON front end to mount under /grid0/ugc/.
+func (s *Server) AttachmentHandler() http.Handler { return s.docs.AttachmentHandler() }

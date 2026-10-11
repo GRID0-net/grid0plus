@@ -207,6 +207,20 @@ type UGCDocument struct {
 	UpdateTime time.Time
 }
 
+// UGCBlob is one Ugcstore attachment: the bytes a console uploaded, and the
+// document it is attached to once a commit links it ("" until then). Total
+// is the size the uploader declared, -1 while unknown.
+type UGCBlob struct {
+	ID         string
+	Owner      string
+	Document   string
+	MimeType   string
+	Total      int64
+	Complete   bool
+	Data       []byte
+	CreateTime time.Time
+}
+
 // UGCDocumentCAS pairs a replacement with its expected prior revision. Nil
 // requires absence. A batch commits together, so a grade credit cannot be
 // saved without its retry marker (or vice versa).
@@ -875,6 +889,21 @@ type Store interface {
 	// ListUGCDocuments returns every Ugcstore document whose name starts with
 	// prefix, newest name first.
 	ListUGCDocuments(ctx context.Context, prefix string) ([]UGCDocument, error)
+	// PutUGCBlob creates or replaces an attachment's bytes and state. It does
+	// not change which document the blob is attached to.
+	PutUGCBlob(ctx context.Context, b UGCBlob) error
+	// GetUGCBlob returns an attachment by id, or ErrNotFound.
+	GetUGCBlob(ctx context.Context, id string) (UGCBlob, error)
+	// GetUGCDocumentBlob returns the attachment of a document, or ErrNotFound.
+	GetUGCDocumentBlob(ctx context.Context, document string) (UGCBlob, error)
+	// AttachUGCBlob makes blob id the document's only attachment, deleting
+	// any it had before. ErrNotFound if the blob does not exist.
+	AttachUGCBlob(ctx context.Context, id, document string) error
+	// DetachUGCDocumentBlob deletes a document's attachment, if it has one.
+	DetachUGCDocumentBlob(ctx context.Context, document string) error
+	// PurgeUnattachedUGCBlobs deletes blobs never attached that were created
+	// before the given time.
+	PurgeUnattachedUGCBlobs(ctx context.Context, before time.Time) error
 	// DeleteUGCDocument removes a Ugcstore document, or returns ErrNotFound.
 	DeleteUGCDocument(ctx context.Context, name string) error
 

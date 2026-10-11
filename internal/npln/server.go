@@ -15,6 +15,7 @@ package npln
 import (
 	"context"
 	"fmt"
+	"github.com/n-popescu/grid0plus/internal/ugcstore"
 	"log/slog"
 	"net"
 	"strings"
@@ -68,6 +69,9 @@ type Server struct {
 	// them. Both wrap the same key.
 	tokens *sjwt.ECVerifier
 	issuer *sjwt.ECIssuer
+
+	// docs is the Ugcstore service, kept for its attachment HTTP handler.
+	docs *ugcstore.Service
 
 	// idTokens verifies the RS256 BAAS id tokens presented at the phase-1 seam.
 	// A different key AND a different algorithm from the one above, which is
