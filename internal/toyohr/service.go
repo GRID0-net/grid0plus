@@ -451,6 +451,7 @@ func festFromRow(r db.Fest) Fest {
 		Resource: r.Resource,
 		Revision: r.Revision,
 		Start:    r.StartAt.UTC(),
+		End:      r.EndAt.UTC(),
 		Regions:  append([]string(nil), r.Regions...),
 	}
 }
@@ -462,6 +463,7 @@ func RowFromFest(f Fest, enabled bool, packKeys []string) db.Fest {
 		Resource: f.Resource,
 		Revision: f.Revision,
 		StartAt:  f.Start.UTC(),
+		EndAt:    f.End,
 		Regions:  append([]string(nil), f.Regions...),
 		PackKeys: append([]string(nil), packKeys...),
 		Enabled:  enabled,

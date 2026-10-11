@@ -42,6 +42,12 @@ type Fest struct {
 	// it, so this is the only time the operator picks.
 	Start time.Time
 
+	// End, when set, replaces the standard end of play (48 h after Start).
+	// Results still come out offsetClose-offsetEnd after it. The game only
+	// checks that the phases are in order, so a longer second half is a
+	// server-side choice; see Timetable.
+	End time.Time
+
 	// Regions the fest is published in.
 	Regions []string
 }
@@ -130,13 +136,21 @@ func (f Fest) Timetable() Timetable {
 	at := func(offset int) time.Time {
 		return start.Add(time.Duration(offset) * time.Second)
 	}
-	return Timetable{
+	tt := Timetable{
 		Open:  at(offsetOpen),
 		Start: at(offsetStart),
 		Mid:   at(offsetMid),
 		End:   at(offsetEnd),
 		Close: at(offsetClose),
 	}
+	// An operator's end of play, aligned like Start. Ignored unless it falls
+	// after the midpoint: the game's fest state machine (FUN_710352f160)
+	// treats a timetable out of order as no fest at all.
+	if end := AlignToSlot(f.End); !f.End.IsZero() && end.After(tt.Mid) {
+		tt.End = end
+		tt.Close = end.Add((offsetClose - offsetEnd) * time.Second)
+	}
+	return tt
 }
 
 // PublishWindow returns the window a region's fest data is published in.

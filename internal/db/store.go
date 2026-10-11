@@ -398,6 +398,10 @@ type Fest struct {
 	Revision string
 	// StartAt is when play opens; every other phase derives from it.
 	StartAt time.Time
+	// EndAt, when set, is an operator-chosen end of play replacing the
+	// standard 48 h one. Zero keeps the standard. An upsert with a zero EndAt
+	// keeps the stored one, so rebuilding a fest's packs does not undo it.
+	EndAt time.Time
 	// Regions the fest is published in.
 	Regions []string
 	// PackKeys are the hex-encoded AES-128 keys that decrypt this fest's BCAT

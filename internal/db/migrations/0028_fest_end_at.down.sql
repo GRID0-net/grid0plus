@@ -1,0 +1,1 @@
+ALTER TABLE npln_fests DROP COLUMN IF EXISTS end_at;

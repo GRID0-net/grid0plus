@@ -1541,6 +1541,24 @@ func testFests(t *testing.T, s Store) {
 		t.Errorf("pack keys = %v, want them back in order", got.PackKeys)
 	}
 
+	if !got.EndAt.IsZero() {
+		t.Errorf("end_at = %s, want unset for a fest stored without one", got.EndAt)
+	}
+	// An operator's end of play survives a later upsert that does not name
+	// one: rebuilding a fest's packs must not quietly shorten it again.
+	end := sept.Add(54 * time.Hour)
+	withEnd := first
+	withEnd.EndAt = end
+	if err := s.UpsertFest(ctx, withEnd); err != nil {
+		t.Fatalf("upsert with end: %v", err)
+	}
+	if err := s.UpsertFest(ctx, first); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	if got, err := s.GetFest(ctx, "NXTD-00042"); err != nil || !got.EndAt.UTC().Equal(end) {
+		t.Errorf("end_at after a re-upsert without one = %v (%v), want %s kept", got.EndAt, err, end)
+	}
+
 	// Soonest first.
 	list, err := s.ListFests(ctx)
 	if err != nil {

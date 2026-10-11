@@ -1469,6 +1469,9 @@ func (m *Memory) UpsertFest(_ context.Context, f Fest) error {
 
 	if existing, ok := m.fests[f.ID]; ok {
 		f.CreatedAt = existing.CreatedAt
+		if f.EndAt.IsZero() {
+			f.EndAt = existing.EndAt
+		}
 	} else if f.CreatedAt.IsZero() {
 		f.CreatedAt = time.Now().UTC()
 	}

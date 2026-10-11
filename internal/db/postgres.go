@@ -1362,7 +1362,7 @@ var _ Store = (*Postgres)(nil)
 
 // ---- splatfests ----------------------------------------------------------
 
-const festColumns = `id, resource, revision, start_at, regions, pack_keys, enabled, created_at, updated_at`
+const festColumns = `id, resource, revision, start_at, end_at, regions, pack_keys, enabled, created_at, updated_at`
 
 func (p *Postgres) UpsertFest(ctx context.Context, f Fest) error {
 	// A nil slice becomes SQL NULL, which the NOT NULL columns reject -- while
@@ -1379,17 +1379,18 @@ func (p *Postgres) UpsertFest(ctx context.Context, f Fest) error {
 	}
 
 	_, err := p.pool.Exec(ctx,
-		`INSERT INTO npln_fests (id, resource, revision, start_at, regions, pack_keys, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO npln_fests (id, resource, revision, start_at, regions, pack_keys, enabled, end_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 ON CONFLICT (id) DO UPDATE SET
 		     resource   = EXCLUDED.resource,
 		     revision   = EXCLUDED.revision,
 		     start_at   = EXCLUDED.start_at,
+		     end_at     = COALESCE(EXCLUDED.end_at, npln_fests.end_at),
 		     regions    = EXCLUDED.regions,
 		     pack_keys  = EXCLUDED.pack_keys,
 		     enabled    = EXCLUDED.enabled,
 		     updated_at = now()`,
-		f.ID, f.Resource, f.Revision, f.StartAt, f.Regions, f.PackKeys, f.Enabled)
+		f.ID, f.Resource, f.Revision, f.StartAt, f.Regions, f.PackKeys, f.Enabled, nullTime(f.EndAt))
 	return mapErr(err)
 }
 
@@ -1553,12 +1554,24 @@ func scanFestEntry(row interface{ Scan(...any) error }) (FestEntry, error) {
 	return e, nil
 }
 
+// nullTime stores a zero time as NULL.
+func nullTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 func scanFest(row interface{ Scan(...any) error }) (Fest, error) {
 	var f Fest
-	err := row.Scan(&f.ID, &f.Resource, &f.Revision, &f.StartAt,
+	var end *time.Time
+	err := row.Scan(&f.ID, &f.Resource, &f.Revision, &f.StartAt, &end,
 		&f.Regions, &f.PackKeys, &f.Enabled, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		return Fest{}, mapErr(err)
+	}
+	if end != nil {
+		f.EndAt = *end
 	}
 	return f, nil
 }

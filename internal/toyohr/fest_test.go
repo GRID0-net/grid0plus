@@ -209,3 +209,27 @@ func TestThePublicationWindowOpensBeforeTheAnnouncementAndOutlastsTheFest(t *tes
 		t.Errorf("publication ends at %s, before the fest closes at %s", end, tt.Close)
 	}
 }
+
+// TestAnOperatorEndLengthensTheSecondHalfAndMovesTheResults pins the per-fest
+// end of play: results still follow it by two hours, and an end that would
+// put the timetable out of order is ignored rather than served.
+func TestAnOperatorEndLengthensTheSecondHalfAndMovesTheResults(t *testing.T) {
+	start := time.Date(2026, 10, 9, 18, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 10, 13, 0, 30, 0, 0, time.UTC) // aligns down to 00:00
+
+	tt := Fest{Start: start, End: end}.Timetable()
+	if want := time.Date(2026, 10, 10, 18, 0, 0, 0, time.UTC); !tt.Mid.Equal(want) {
+		t.Errorf("mid = %s, want %s unchanged", tt.Mid, want)
+	}
+	if want := time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC); !tt.End.Equal(want) {
+		t.Errorf("end = %s, want %s", tt.End, want)
+	}
+	if want := time.Date(2026, 10, 13, 2, 0, 0, 0, time.UTC); !tt.Close.Equal(want) {
+		t.Errorf("close = %s, want %s", tt.Close, want)
+	}
+
+	early := Fest{Start: start, End: start.Add(12 * time.Hour)}.Timetable()
+	if !early.End.Equal(start.Add(48 * time.Hour)) {
+		t.Errorf("an end before the midpoint was served: end = %s", early.End)
+	}
+}
