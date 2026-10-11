@@ -88,6 +88,19 @@ func (w *watchers) removeTarget(sub *subscriber, name string) {
 	delete(sub.collections, name)
 }
 
+// playersIn counts the distinct players with a stream open in a game session.
+func (w *watchers) playersIn(scope string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	seen := map[string]bool{}
+	for sub := range w.subs {
+		if sub.sessionID == scope {
+			seen[sub.userID] = true
+		}
+	}
+	return len(seen)
+}
+
 // publish delivers changes to every subscriber watching the documents they
 // affect.
 //

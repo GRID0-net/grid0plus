@@ -635,7 +635,8 @@ func (q *Queue) ForceMatch(mode string) (Session, bool, error) {
 	if isFestMode(mode) {
 		ids = q.selectFestPlayersLocked(ids, q.playersForLocked(mode))
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 || (q.cfg.CoopModes[mode] && len(ids) < 2) {
+		// Salmon Run is never started for one player, not even by force.
 		return Session{}, false, nil
 	}
 	// Everyone waiting, not the first `size` of them: an operator forcing a
@@ -1281,6 +1282,16 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 		}
 		ids = q.wholeSquadsLocked(ids, size)
 	}
+	// Keeping whole squads in arrival order can leave one player: a solo
+	// queued ahead of a squad too big to join them. Taking the biggest
+	// squads first lets that squad play; Salmon Run never starts with one.
+	if len(ids) < 2 {
+		ids = q.wholeSquadsLocked(q.biggestSquadsFirstLocked(q.liveWaitingLocked(mode)), size)
+	}
+	if len(ids) < 2 {
+		q.cancelGraceLocked(mode)
+		return nil
+	}
 
 	if q.cfg.CoopGracePeriod <= 0 {
 		return []Session{q.formSessionLocked(mode, ids)}
@@ -1489,6 +1500,24 @@ func (q *Queue) wholeSquadsLocked(ids []string, size int) []string {
 			out = append(out, members[g]...)
 		}
 	}
+	return out
+}
+
+// biggestSquadsFirstLocked orders waiting ids so larger squads come first,
+// arrival order kept within a size.
+func (q *Queue) biggestSquadsFirstLocked(ids []string) []string {
+	size := map[string]int{}
+	group := func(id string) string {
+		if p := q.tickets[id].Party; p != "" {
+			return p
+		}
+		return id
+	}
+	for _, id := range ids {
+		size[group(id)]++
+	}
+	out := slices.Clone(ids)
+	slices.SortStableFunc(out, func(a, b string) int { return size[group(b)] - size[group(a)] })
 	return out
 }
 

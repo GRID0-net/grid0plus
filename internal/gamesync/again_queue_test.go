@@ -24,6 +24,7 @@ func TestAgainReopensTheSessionAndLocksItAfterTheGraceWindow(t *testing.T) {
 		UserID: "alice", SessionID: "job", Mode: "tenants/current/matchmakingConfigs/coop_regular_config",
 		Host: "example.invalid", Port: 443, ParticipantCount: 2, CreatedAt: time.Unix(1000, 0),
 	}, userSession: "gameSessions/job/userSessions/us-alice"}
+	twoPlayersConnected(s, caller)
 	boolean := func(b bool) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: b}}
 	}
@@ -67,6 +68,7 @@ func TestAgainReopensTheSessionAndLocksItAfterTheGraceWindow(t *testing.T) {
 func TestAnAlreadyStartedAgainTimerCannotLockTheReplacementWindow(t *testing.T) {
 	s := &Server{docs: newStoreSet(time.Now), watch: newWatchers(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	caller := &session{userID: "alice", details: &SessionDetails{SessionID: "job", Mode: "coop", CreatedAt: time.Unix(1000, 0)}, userSession: "userSessions/us-alice"}
+	twoPlayersConnected(s, caller)
 	ops := []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(true), "ebf": boolean(true)}))}
 	s.seedRoomDocuments(caller, ops)
 	if _, _, err := s.docsFor(caller).apply(ops); err != nil {
@@ -138,5 +140,34 @@ func TestANewMatchLockCancelsTheOldRematchTimer(t *testing.T) {
 	m, _ := s.docsFor(caller).snapshot("docs/__gs/m")
 	if !m.GetFields().GetFields()["cp"].GetBooleanValue() {
 		t.Fatal("cancelled callback changed the new lobby")
+	}
+}
+
+// twoPlayersConnected opens two players' streams in caller's session, as a
+// Salmon Run lobby has when more than its host stays for "Again!".
+func twoPlayersConnected(s *Server, caller *session) {
+	s.watch.subscribe("alice", "us-alice", scopeOf(caller))
+	s.watch.subscribe("bob", "us-bob", scopeOf(caller))
+}
+
+// TestSalmonRunAgainNeverLocksWithOnePlayerLeft: only the host's press is
+// seen, so the lobby used to lock after the grace window even when everyone
+// else had gone, and the host started a one-player job.
+func TestSalmonRunAgainNeverLocksWithOnePlayerLeft(t *testing.T) {
+	s := &Server{docs: newStoreSet(time.Now), watch: newWatchers(), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	caller := &session{userID: "alice", details: &SessionDetails{SessionID: "job", Mode: "coop", CreatedAt: time.Unix(1000, 0)}, userSession: "userSessions/us-alice"}
+	s.watch.subscribe("alice", "us-alice", scopeOf(caller))
+	ops := []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(true), "ebf": boolean(true)}))}
+	s.seedRoomDocuments(caller, ops)
+	if _, _, err := s.docsFor(caller).apply(ops); err != nil {
+		t.Fatal(err)
+	}
+	s.noteAgain(caller, ops)
+	w := s.again.timers[scopeOf(caller)]
+	w.timer.Stop()
+	s.lockAfterAgain(caller, w)
+	m, _ := s.docsFor(caller).snapshot("docs/__gs/m")
+	if !m.GetFields().GetFields()["cp"].GetBooleanValue() {
+		t.Fatal("a Salmon Run lobby with one player left was locked and would start")
 	}
 }

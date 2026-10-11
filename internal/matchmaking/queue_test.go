@@ -1211,3 +1211,31 @@ func TestAnarchyOpenPutsEachSquadOnOneSide(t *testing.T) {
 		t.Errorf("the stored session lost its sides")
 	}
 }
+
+// TestSalmonRunNeverStartsWithOnePlayer: keeping squads whole used to leave
+// a solo queued ahead of a full squad as the only player picked, and the
+// grace period then started a one-player job. The squad must play, the solo
+// keep waiting, and a force-start must not start the solo alone either.
+func TestSalmonRunNeverStartsWithOnePlayer(t *testing.T) {
+	q, clock := testGraceQueue(t, 4, 0, 30*time.Second, "coop")
+
+	q.Enqueue("solo", "coop")
+	_, formed, err := q.EnqueueSquadTeams("lead", []string{"m1", "m2", "m3"}, "coop", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*clock = clock.Add(time.Minute)
+	_, swept := q.Sweep()
+	formed = append(formed, swept...)
+	if len(formed) != 1 || len(formed[0].Players) != 4 || slices.Contains(formed[0].Players, "solo") {
+		t.Fatalf("formed = %v, want the squad of four alone", formed)
+	}
+	for _, s := range formed {
+		if len(s.Players) < 2 {
+			t.Fatalf("a Salmon Run job formed with %v", s.Players)
+		}
+	}
+	if _, ok, _ := q.ForceMatch("coop"); ok {
+		t.Fatal("force-start began a Salmon Run job for one player")
+	}
+}

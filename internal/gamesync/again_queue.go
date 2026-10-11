@@ -130,6 +130,17 @@ func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 	}
 	delete(s.again.timers, scope)
 
+	// Only the host's press is seen, so the window cannot tell who stayed.
+	// The open streams can: a Salmon Run lobby everyone else left would
+	// otherwise lock with the host alone and start a one-player job.
+	if strings.Contains(caller.details.Mode, "coop") {
+		if n := s.watch.playersIn(scope); n < 2 {
+			s.log.Info("gamesync: Again! lobby left unlocked; one player cannot start Salmon Run alone",
+				"session", scope, "players", n)
+			return
+		}
+	}
+
 	s.writeSessionMeta(caller, map[string]*commonpb.Value{
 		"cp": boolean(false), "ebf": boolean(false), "bfmin": integer(1),
 	}, "gamesync: Again! grace window over; session locked")
