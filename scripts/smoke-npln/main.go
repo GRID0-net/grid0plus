@@ -158,10 +158,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("issue matchmaking id token: %v", err)
 	}
-	var matchmakingIDToken string
+	// The token is bound to the user session it was issued with, and
+	// gamesync checks the two match, so keep both.
+	var matchmakingIDToken, userSession string
 	for _, s := range issued.GetMatchedUserSessions() {
 		if s.GetMatchmakingIdToken() != "" {
-			matchmakingIDToken = s.GetMatchmakingIdToken()
+			matchmakingIDToken, userSession = s.GetMatchmakingIdToken(), s.GetUserSession()
 		}
 	}
 	if matchmakingIDToken == "" {
@@ -175,7 +177,7 @@ func main() {
 	sync := syncpb.NewGamesyncClient(syncConn)
 	syncSession, err := sync.IssueToken(context.Background(), &syncpb.IssueTokenRequest{
 		MatchmakingIdToken: matchmakingIDToken,
-		UserSession:        "userSessions/" + userIDs[0],
+		UserSession:        userSession,
 	})
 	if err != nil {
 		log.Fatalf("gamesync: IssueToken: %v", err)

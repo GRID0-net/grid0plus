@@ -130,8 +130,9 @@ for i in $(seq 0 $((COUNT - 1))); do
     api PATCH "$BAAS/1.0.0/users/$uid" "$access" "application/json-patch+json" \
         "[{\"op\":\"replace\",\"path\":\"/nickname\",\"value\":\"$nickname\"}]" > /dev/null
 
-    code="$(api POST "$BAAS/1.0.0/users/$uid/generate_code" "$access" \
-        "application/x-www-form-urlencoded" "type=NX" | jq -r '.links.friendCode.id')"
+    # The account was given a friend code when it was created; asking
+    # generate_code for one now is a regeneration, refused for 24 hours.
+    code="$(echo "$login" | jq -r '.user.links.friendCode.id')"
 
     USER_IDS+=("$uid")
     DEVICE_ACCOUNT_IDS+=("$daid")
