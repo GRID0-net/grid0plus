@@ -262,7 +262,15 @@ so that changing the assumption later, if GRID0+'s own hardware disagrees,
 is a contained change rather than a rewrite — keep the naming decision in one
 place.
 
-### 2.4 Serving BCAT natively — **P1, the patch is built; the server responses are not**
+### 2.4 Serving BCAT natively — **done, working on hardware**
+
+**State (2026-10-11):** both halves are built. The signature check in the
+`bcat` sysmodule is skipped by a firmware 22.5.0 IPS patch shipped through
+the Toolbox (d24f066), and `internal/bcat` serves the list and data
+responses from GRID0+'s own hosts. On 2026-10-09 a real console downloaded
+all five packs of a custom Splatfest natively from grid0. What follows is
+the investigation as it was written, kept for its reasoning; a new firmware
+needs the patch re-derived the same way.
 
 **The goal is a vanilla path:** the console downloads fest packs and other
 delivery-cache content from GRID0+'s own `bcat-list`/`bcat-data` hosts,
