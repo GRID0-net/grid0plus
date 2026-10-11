@@ -49,7 +49,11 @@ func (u *userService) GetUser(
 		if errors.Is(err, db.ErrNotFound) {
 			return nil, ErrNotFound
 		}
-		u.s.log.Error("npln: load user", "user", id, "error", err)
+		if !callerGone(err) {
+			if !callerGone(err) {
+				u.s.log.Error("npln: load user", "user", id, "error", err)
+			}
+		}
 		return nil, errInternal()
 	}
 	return &authpb.User{Name: u.s.userResourceName(id)}, nil
@@ -112,7 +116,11 @@ func (u *userService) QueryUserExternalIds(
 			continue
 		}
 		if err != nil {
-			u.s.log.Error("npln: load user", "user", id, "error", err)
+			if !callerGone(err) {
+				if !callerGone(err) {
+					u.s.log.Error("npln: load user", "user", id, "error", err)
+				}
+			}
 			return nil, errInternal()
 		}
 		name := u.s.userResourceName(id)

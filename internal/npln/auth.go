@@ -238,7 +238,9 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 			// still valid; the user is not.
 			return Caller{}, ErrUnauthenticated
 		}
-		s.log.Error("npln: load user", "user", claims.Subject, "error", err)
+		if !callerGone(err) {
+			s.log.Error("npln: load user", "user", claims.Subject, "error", err)
+		}
 		return Caller{}, ErrUnauthenticated
 	}
 	if user.Deleted {

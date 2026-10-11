@@ -168,7 +168,9 @@ func (p *presenceService) KeepAlive(
 				// Liveness is a nicety, same as internal/baas's own
 				// TouchPresence call: failing the stream over it would turn a
 				// cosmetic problem into a dropped connection.
-				p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
+				if !callerGone(err) {
+					p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
+				}
 			}
 			if err := send(); err != nil {
 				sendErr <- err
@@ -234,7 +236,9 @@ func (p *presenceService) SubscribePresences(
 	send := func() error {
 		presences, err := p.s.presence.EffectiveMany(ctx, watched, p.s.now())
 		if err != nil {
-			p.s.log.Error("npln: load presences", "user", caller.UserID, "error", err)
+			if !callerGone(err) {
+				p.s.log.Error("npln: load presences", "user", caller.UserID, "error", err)
+			}
 			return errInternal()
 		}
 		out := make([]*friendspb.Presence, 0, len(watched))
@@ -299,7 +303,9 @@ func (p *presenceService) SubscribePresences(
 	sendOne := func(userID string) error {
 		presences, err := p.s.presence.EffectiveMany(ctx, []string{userID}, p.s.now())
 		if err != nil {
-			p.s.log.Error("npln: load presence", "user", userID, "error", err)
+			if !callerGone(err) {
+				p.s.log.Error("npln: load presence", "user", userID, "error", err)
+			}
 			return errInternal()
 		}
 		return stream.Send(&friendspb.SubscribePresencesResponse{

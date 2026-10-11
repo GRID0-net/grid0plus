@@ -1,6 +1,9 @@
 package npln
 
 import (
+	"context"
+	"errors"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -67,4 +70,11 @@ var (
 // rather than sent: a database error is not the console's to read.
 func errInternal() error {
 	return status.Error(codes.Internal, "")
+}
+
+// callerGone reports a store error that only means the console hung up or
+// the server is shutting down mid-request. Those are not server faults and
+// were filling the log with ERROR lines a console's normal reconnect causes.
+func callerGone(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

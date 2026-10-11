@@ -670,7 +670,9 @@ func (s *Server) enter(ctx context.Context, method string) (context.Context, err
 	if err := s.store.TouchPresence(ctx, c.UserID, s.now()); err != nil {
 		// Liveness is a nicety. Failing the call over it would turn a
 		// cosmetic problem into every RPC failing.
-		s.log.Warn("npln: touch presence", "user", c.UserID, "error", err)
+		if !callerGone(err) {
+			s.log.Warn("npln: touch presence", "user", c.UserID, "error", err)
+		}
 	}
 
 	return context.WithValue(ctx, callerKey{}, c), nil
