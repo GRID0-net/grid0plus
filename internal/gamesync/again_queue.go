@@ -132,7 +132,10 @@ func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 
 	// Only the host's press is seen, so the window cannot tell who stayed.
 	// The open streams can: a Salmon Run lobby everyone else left would
-	// otherwise lock with the host alone and start a one-player job.
+	// otherwise lock with the host alone and start a one-player job. Streams
+	// do stay open across Again!: on 2026-10-10 a two-player job's streams
+	// opened 12:24:36 and held through the press (12:31:40) and the lock
+	// (12:32:00), so a real group counts as two here.
 	if strings.Contains(caller.details.Mode, "coop") {
 		if n := s.watch.playersIn(scope); n < 2 {
 			s.log.Info("gamesync: Again! lobby left unlocked; one player cannot start Salmon Run alone",
