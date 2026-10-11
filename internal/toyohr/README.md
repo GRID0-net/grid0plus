@@ -22,7 +22,7 @@ any key that is absent.
 
 | | |
 | --- | --- |
-| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, `CloudSave.{GetSaveRecord,WriteSaveRecord}` |
+| Reimplements | `nn.npln.toyohr.v1.FestService`, `Schedule`, `LobbyMessaging`, `UserScreening`, `CloudSave.{GetSaveRecord,WriteSaveRecord}`, `GameRecord`, `Locker`, `Canola`, `Replay`, `CoopScenario` |
 | Reference | [NPLN Servers](https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers) |
 | Definitions | [kinnay/NPLN-Protocols](https://github.com/kinnay/NPLN-Protocols) `latest/proto/toyohr/v1/{fest,schedule,cloud_save,messaging}.proto` |
 | Needs a database | yes, for fests and coop shifts -- the rest of `Schedule` and `GetSaveRecord` need none |
@@ -498,3 +498,20 @@ and playable phases, matching Nextendo's active-fest capture. Stored team-key
 fields are exposed only after results on an explicit `show_all_keys` request; a schema field
 being available does not establish that the game expects it during startup.
 The result key and winning team remain withheld until the results phase.
+
+## Locker, Canola, Replay, CoopScenario: the plaza and share codes
+
+All in `backlog.go`. The posts themselves are Ugcstore documents (and
+attachments, see `internal/ugcstore`); these services only list, register
+and resolve them.
+
+| RPC | What GRID0+ does |
+| --- | --- |
+| `Locker`/`Canola` `SelectDocuments` | the plaza: each player's newest published post, newest first, 31 lockers / 6 decks (NextendoNetwork's measurement of Nintendo's answer, facts only). The request's `type`/`params` are logged, not read -- `TODO(capture-needed)` |
+| `Locker`/`Canola` `RegisterDocument` | acknowledged with the empty message Nintendo answers |
+| `Locker`/`Canola` `IkasuDocument` | a "fresh!" (like): acknowledged for a post in that service's plaza collection, NotFound otherwise, nothing kept -- `TODO(capture-needed)` on whether a like is ever shown back |
+| `CoopScenario` `RegisterDocument` / `ResolveCoopScenarioCode` | a Salmon Run job shared as a code under `grid0/coopScenarioCodes` |
+| `Replay` `RegisterDocument` / `ResolveReplayCode` | a replay shared as an `R` code under `grid0/replayCodes`, resolved through the same code path |
+
+A code is resolved only to a document of its own kind: a scenario code typed
+into the replay screen is NotFound, not some other document.
