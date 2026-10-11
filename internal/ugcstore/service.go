@@ -122,6 +122,7 @@ func (s *Service) Register(srv grpc.ServiceRegistrar) {
 	})
 	desc.Streams = streams
 	srv.RegisterService(&desc, s)
+	ugcpb.RegisterScreeningServer(srv, screeningService{s})
 }
 
 func getDocumentStreamHandler(srv any, stream grpc.ServerStream) error {

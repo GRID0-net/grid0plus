@@ -8,12 +8,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	timberpb "github.com/n-popescu/grid0plus/proto/timber/v1"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
-	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // TestAnUnregisteredServiceAnswersInTwoFrames pins the answer to a service this
-// server does not register (Screening here). grpc-go's own default is a single
+// server does not register (Timber's TradeBoxService here). grpc-go's own default is a single
 // Trailers-Only frame -- no response headers at all -- which is the shape
 // measured crashing Splatoon 3 (2162-0001). Response headers arriving, with
 // npln-grpc-type in them, is what proves the reply was split in two.
@@ -23,8 +23,8 @@ func TestAnUnregisteredServiceAnswersInTwoFrames(t *testing.T) {
 	ctx := h.ctx(h.sessionFor(t, "ugc-user", "device-ugc"), "")
 
 	var header metadata.MD
-	_, err := ugcpb.NewScreeningClient(h.conn).CreateReport(ctx,
-		&ugcpb.CreateReportRequest{}, grpc.Header(&header))
+	_, err := timberpb.NewTradeBoxServiceClient(h.conn).CreateTradeBox(ctx,
+		&timberpb.CreateTradeBoxRequest{}, grpc.Header(&header))
 	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("err = %v, want Unimplemented", err)
 	}
@@ -33,7 +33,7 @@ func TestAnUnregisteredServiceAnswersInTwoFrames(t *testing.T) {
 	}
 
 	// And it is still behind authentication, like every registered service.
-	_, err = ugcpb.NewScreeningClient(h.conn).CreateReport(h.ctx("", ""), &ugcpb.CreateReportRequest{})
+	_, err = timberpb.NewTradeBoxServiceClient(h.conn).CreateTradeBox(h.ctx("", ""), &timberpb.CreateTradeBoxRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Errorf("unauthenticated call: err = %v, want Unauthenticated", err)
 	}
