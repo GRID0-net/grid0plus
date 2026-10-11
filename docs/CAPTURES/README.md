@@ -1598,7 +1598,13 @@ answered with `canola/deckPosts/<id>` documents whose `Player` map carries
 `UserName`, `NamePlate` (`Badge1-3`, `Background`), `Byname`, `NplnUserId`
 and the outfit -- what a console published, passed through unchanged, which is
 what `plaza` does. `Locker/SelectDocuments` there was empty both ways. The
-request naming player ids is not in these captures; that half stays open.
+request naming player ids is not in these captures, but the game's request
+builder is (FUN_71032920a0): type `"Normal3"`, params `UIDs` and `UIDsInOrder`
+(lists of player ids) and `FestRegion`. `plaza` now answers it with each named
+player's newest post, matched on the post's `UID` field, in `UIDsInOrder`
+order, leaving out a player with no post. Still open: whether Nintendo leaves
+such a player out or sends a placeholder, and whether the two lists ever
+differ.
 
 ### GameSessionService/IssueMatchmakingIdToken (2026-10-11)
 

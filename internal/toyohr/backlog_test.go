@@ -199,6 +199,54 @@ func TestThePlazaShowsEachPlayersNewestPublishedLocker(t *testing.T) {
 	}
 }
 
+// TestARequestNamingPlayersGetsTheirPosts: when the game asks for specific
+// players (type Normal3, UIDsInOrder) to draw their name plates, it must get
+// exactly those players' newest posts in the order asked, not the plaza.
+func TestARequestNamingPlayersGetsTheirPosts(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	clock := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	svc.docs = ugcstore.NewService(ugcstore.Options{
+		Store: svc.store, Log: discardLogger(), Tenant: testTenant,
+		CallerID: func(context.Context) (string, bool) { return testCaller, true },
+		Now:      func() time.Time { clock = clock.Add(time.Second); return clock },
+	})
+	ctx := context.Background()
+	str := func(v string) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
+	}
+	post := func(owner, id, uid string, v int64) {
+		t.Helper()
+		if _, err := svc.docs.Put(ctx, owner, "tenants/current/documents/services/toyohr/interfaces/canola/deckPosts/"+id,
+			&commonpb.MapValue{Fields: map[string]*commonpb.Value{
+				"UID": str(uid),
+				"v":   {ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}},
+			}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	post("alice", "a1", "u-alice", 1)
+	post("bob", "b1", "u-bob", 2)
+	post("alice", "a2", "u-alice", 3)
+	post("carol", "c1", "u-carol", 4)
+
+	list := &commonpb.Value{ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{
+		Values: []*commonpb.Value{str("u-bob"), str("u-nobody"), str("u-alice")}}}}
+	resp, err := (canolaService{Service: svc}).SelectDocuments(ctx, &toyohrpb.SelectDocumentsRequest{
+		Type:   "Normal3",
+		Params: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"UIDsInOrder": list, "FestRegion": str("EU")}},
+	})
+	if err != nil {
+		t.Fatalf("SelectDocuments: %v", err)
+	}
+	var got []int64
+	for _, d := range resp.GetDocuments() {
+		got = append(got, d.GetFields().GetFields()["v"].GetIntegerValue())
+	}
+	if len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Errorf("posts = %v, want [2 3]: bob's, then alice's newest; carol was not asked for", got)
+	}
+}
+
 // TestASharedReplayCodeResolvesToTheReplay: a replay code a player shares
 // must bring up that replay for whoever types it in, and a scenario code
 // must not resolve as a replay.

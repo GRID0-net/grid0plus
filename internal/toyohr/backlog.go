@@ -48,7 +48,7 @@ func (s canolaService) SelectDocuments(
 	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	s.logSelect("canola", req)
-	return s.plaza(ctx, "canola/deckPosts", plazaDecks)
+	return s.plaza(ctx, "canola/deckPosts", plazaDecks, req)
 }
 
 // How many published posts the plaza is sent at once. NextendoNetwork/
@@ -66,17 +66,31 @@ const (
 // announced by RegisterDocument. Before this, both services answered
 // nothing and the plaza showed no player's locker or deck.
 //
-// TODO(capture-needed): requests that name specific players (Nextendo's
-// notes describe friend name plates asked for by id) may want those
-// players' documents rather than the plaza set. The request is logged by
-// logSelect; see docs/CAPTURES/README.md. Change: this function.
+// The same RPC also asks for specific players. The game's request builder
+// (FUN_71032920a0) sends type "Normal3" with params UIDs and UIDsInOrder,
+// lists of player ids, beside FestRegion; NextendoNetwork recorded Nintendo
+// answering such a request with those players' posts, which carry the name
+// plate, title and badges drawn beside a name (facts only, none of their
+// code used). Without them the game draws "?". The plain plaza request is
+// type "Normal" with FestRegion alone (Nextendo's captures).
+//
+// TODO(capture-needed): whether Nintendo answers a named player with no
+// post by leaving them out (done here) or with a placeholder, and whether
+// UIDs and UIDsInOrder can differ. See docs/CAPTURES/README.md. Change:
+// this function.
 func (s *Service) plaza(
-	ctx context.Context, collection string, limit int,
+	ctx context.Context, collection string, limit int, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	if s.docs == nil {
 		return &toyohrpb.SelectDocumentsResponse{}, nil
 	}
-	docs, err := s.docs.Published(ctx, "services/toyohr/interfaces/"+collection, limit)
+	var docs []*ugcpb.Document
+	var err error
+	if uids := requestedUIDs(req); len(uids) > 0 {
+		docs, err = s.docs.PublishedBy(ctx, "services/toyohr/interfaces/"+collection, uids)
+	} else {
+		docs, err = s.docs.Published(ctx, "services/toyohr/interfaces/"+collection, limit)
+	}
 	if err != nil {
 		s.log.Error("toyohr: list published posts", "collection", collection, "error", err)
 		return nil, status.Error(codes.Internal, "internal error")
@@ -117,6 +131,24 @@ func (s *Service) ikasu(
 	return &toyohrpb.IkasuDocumentResponse{}, nil
 }
 
+// requestedUIDs is the players a SelectDocuments request names, in the
+// order it wants them: UIDsInOrder, else UIDs.
+func requestedUIDs(req *toyohrpb.SelectDocumentsRequest) []string {
+	params := req.GetParams().GetFields()
+	for _, key := range []string{"UIDsInOrder", "UIDs"} {
+		var out []string
+		for _, v := range params[key].GetArrayValue().GetValues() {
+			if id := v.GetStringValue(); id != "" {
+				out = append(out, id)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
+}
+
 // logSelect records what a console asks SelectDocuments for. Nothing
 // documents the request's type and params; the console's own requests are
 // the cheapest way to learn which posts it wants listed.
@@ -141,7 +173,7 @@ func (s lockerService) SelectDocuments(
 	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	s.logSelect("locker", req)
-	return s.plaza(ctx, "locker/lockerPosts", plazaLockers)
+	return s.plaza(ctx, "locker/lockerPosts", plazaLockers, req)
 }
 
 func (s lockerService) IkasuDocument(

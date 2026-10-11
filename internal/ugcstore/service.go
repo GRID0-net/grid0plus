@@ -673,6 +673,38 @@ func (s *Service) Published(ctx context.Context, collection string, limit int) (
 	return out, nil
 }
 
+// PublishedBy lists, for each of uids in order, that player's newest
+// document under collection, matched on the document's own top-level "UID"
+// field -- the id the console writes into every post it publishes, so the
+// match does not depend on how this server names its users. A player with
+// no post is skipped.
+func (s *Service) PublishedBy(ctx context.Context, collection string, uids []string) ([]*ugcpb.Document, error) {
+	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
+	rows, err := s.store.ListUGCDocuments(ctx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].UpdateTime.After(rows[j].UpdateTime) })
+	newest := map[string]*ugcpb.Document{}
+	for _, r := range rows {
+		d, err := toProto(r, r.Name)
+		if err != nil {
+			continue
+		}
+		uid := d.GetFields().GetFields()["UID"].GetStringValue()
+		if _, seen := newest[uid]; uid != "" && !seen {
+			newest[uid] = d
+		}
+	}
+	var out []*ugcpb.Document
+	for _, uid := range uids {
+		if d, ok := newest[uid]; ok {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
 // IsPublished reports whether name -- a full document name, in any tenant
 // spelling the console uses -- is a document under collection. It looks nowhere else, so
 // a request naming some other document learns nothing about it.
