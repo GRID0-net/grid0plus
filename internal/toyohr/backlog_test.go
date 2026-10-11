@@ -250,6 +250,59 @@ func TestARequestNamingPlayersGetsTheirPosts(t *testing.T) {
 	}
 }
 
+// TestTheFestPlazaShowsThisFestsDrawings: the fest plaza's Canola request
+// (type Fest, FestID) must get drawings posted during that fest -- not card
+// decks, not another fest's drawings, not ones their player hid.
+func TestTheFestPlazaShowsThisFestsDrawings(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	clock := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	svc.docs = ugcstore.NewService(ugcstore.Options{
+		Store: svc.store, Log: discardLogger(), Tenant: testTenant,
+		CallerID: func(context.Context) (string, bool) { return testCaller, true },
+		Now:      func() time.Time { clock = clock.Add(time.Second); return clock },
+	})
+	ctx := context.Background()
+	str := func(v string) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
+	}
+	drawing := func(owner, id, postType, fest string, hidden bool) {
+		t.Helper()
+		pic := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"PostType": str(postType), "FestID": str(fest),
+			"IsHidden": {ValueType: &commonpb.Value_BooleanValue{BooleanValue: hidden}},
+		}}
+		if _, err := svc.docs.Put(ctx, owner, "tenants/current/documents/services/toyohr/interfaces/canola/picturePosts/"+id,
+			&commonpb.MapValue{Fields: map[string]*commonpb.Value{
+				"Picture": {ValueType: &commonpb.Value_MapValue{MapValue: pic}},
+			}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drawing("alice", "this-fest", "Fest", "JUEA-90003", false)
+	drawing("bob", "other-fest", "Fest", "JUEA-90002", false)
+	drawing("carol", "normal", "Normal", "", false)
+	drawing("dave", "hidden", "Fest", "JUEA-90003", true)
+	if _, err := svc.docs.Put(ctx, "erin", "tenants/current/documents/services/toyohr/interfaces/canola/deckPosts/d1",
+		&commonpb.MapValue{Fields: map[string]*commonpb.Value{"UID": str("erin")}}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := (canolaService{Service: svc}).SelectDocuments(ctx, &toyohrpb.SelectDocumentsRequest{
+		Type:   "Fest",
+		Params: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"FestID": str("JUEA-90003"), "FestRegion": str("JP")}},
+	})
+	if err != nil {
+		t.Fatalf("SelectDocuments: %v", err)
+	}
+	var got []string
+	for _, d := range resp.GetDocuments() {
+		got = append(got, d.GetName()[strings.LastIndex(d.GetName(), "/")+1:])
+	}
+	if len(got) != 1 || got[0] != "this-fest" {
+		t.Errorf("fest plaza = %v, want only [this-fest]", got)
+	}
+}
+
 // TestASharedReplayCodeResolvesToTheReplay: a replay code a player shares
 // must bring up that replay for whoever types it in, and a scenario code
 // must not resolve as a replay.

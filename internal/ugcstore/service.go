@@ -648,6 +648,15 @@ func emptyWhenAbsent(key, uid string) bool {
 // limit. A console publishes a post only when its player agreed to show it,
 // so the document existing is the consent; there is no flag to re-read.
 func (s *Service) Published(ctx context.Context, collection string, limit int) ([]*ugcpb.Document, error) {
+	return s.PublishedMatching(ctx, collection, limit, nil)
+}
+
+// PublishedMatching is Published restricted to the documents keep accepts
+// (all of them when keep is nil). A document keep refuses does not take its
+// owner's place: their newest matching post is listed instead.
+func (s *Service) PublishedMatching(
+	ctx context.Context, collection string, limit int, keep func(*ugcpb.Document) bool,
+) ([]*ugcpb.Document, error) {
 	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
 	rows, err := s.store.ListUGCDocuments(ctx, prefix)
 	if err != nil {
@@ -663,11 +672,11 @@ func (s *Service) Published(ctx context.Context, collection string, limit int) (
 		if r.Owner != "" && seen[r.Owner] {
 			continue
 		}
-		seen[r.Owner] = true
 		d, err := toProto(r, r.Name)
-		if err != nil {
+		if err != nil || (keep != nil && !keep(d)) {
 			continue
 		}
+		seen[r.Owner] = true
 		out = append(out, d)
 	}
 	return out, nil

@@ -1621,9 +1621,13 @@ Seen live on grid0, 2026-10-11 (one console, `JUEA-90003` running):
 (16 hex, not `u-...`), `UIDsInOrder` present but **empty**, `FestRegion`
 `JP`. So `plaza` falls back to `UIDs` and matches a post's owner as well as
 its `UID` field. Also seen: `Canola` with **`type: "Fest"`** and params
-`FestID` (the running fest's id) and `FestRegion` -- a third kind, answered
-with the ordinary plaza for now. What it should list (posts from that fest's
-players? fest-themed decks?) is open; it is logged.
+`FestID` (the running fest's id) and `FestRegion` -- the fest plaza. The
+game's drawing-post builder (FUN_7103262dd0) shows what it lists: a
+`canola/picturePosts` document's `Picture` map carries `PostType` (`Fest` or
+`Normal`), `FestID`, `FestTeam`, `IsHidden`, `IsVerticalWriting`, `Score` and
+the image `Data`. `festDrawings` answers with that fest's unhidden drawings,
+newest per player. Open: the count (31, borrowed from the locker plaza), the
+order, and whether region or team narrows it.
 
 ### GameSessionService/IssueMatchmakingIdToken (2026-10-11)
 

@@ -48,7 +48,49 @@ func (s canolaService) SelectDocuments(
 	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	s.logSelect("canola", req)
+	if req.GetType() == "Fest" {
+		return s.festDrawings(ctx, req)
+	}
 	return s.plaza(ctx, "canola/deckPosts", plazaDecks, req)
+}
+
+// plazaFestDrawings is how many drawings a fest plaza is sent. Not measured:
+// the same count as the locker plaza until a capture says otherwise.
+const plazaFestDrawings = plazaLockers
+
+// festDrawings answers the fest plaza's Canola request, type "Fest" with the
+// running fest's FestID (seen live on grid0, 2026-10-11): drawings players
+// posted during that fest. The game's drawing-post builder
+// (FUN_7103262dd0) writes them to canola/picturePosts with a Picture map
+// carrying PostType "Fest", FestID, FestTeam and IsHidden; before this the
+// request got card-game decks, the wrong kind of post. A drawing its player
+// hid is left out.
+//
+// TODO(capture-needed): the count, the order, and whether Nintendo mixes in
+// the other teams' drawings or only the asker's region. See
+// docs/CAPTURES/README.md. Change: this function.
+func (s *Service) festDrawings(
+	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
+) (*toyohrpb.SelectDocumentsResponse, error) {
+	if s.docs == nil {
+		return &toyohrpb.SelectDocumentsResponse{}, nil
+	}
+	fest := req.GetParams().GetFields()["FestID"].GetStringValue()
+	if fest == "" {
+		return &toyohrpb.SelectDocumentsResponse{}, nil
+	}
+	docs, err := s.docs.PublishedMatching(ctx, "services/toyohr/interfaces/canola/picturePosts", plazaFestDrawings,
+		func(d *ugcpb.Document) bool {
+			pic := d.GetFields().GetFields()["Picture"].GetMapValue().GetFields()
+			return pic["PostType"].GetStringValue() == "Fest" &&
+				pic["FestID"].GetStringValue() == fest &&
+				!pic["IsHidden"].GetBooleanValue()
+		})
+	if err != nil {
+		s.log.Error("toyohr: list fest drawings", "fest", fest, "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	return &toyohrpb.SelectDocumentsResponse{Documents: docs}, nil
 }
 
 // How many published posts the plaza is sent at once. NextendoNetwork/
@@ -74,7 +116,7 @@ const (
 // code used). Without them the game draws "?". The plain plaza request is
 // type "Normal" with FestRegion alone (Nextendo's captures). On grid0 the
 // ids arrive in UIDs as this server's user ids, with UIDsInOrder empty.
-// A third type, "Fest" with FestID, gets the ordinary plaza for now.
+// A third type, "Fest" with FestID, is the fest plaza: see festDrawings.
 //
 // TODO(capture-needed): whether Nintendo answers a named player with no
 // post by leaving them out (done here) or with a placeholder, and whether

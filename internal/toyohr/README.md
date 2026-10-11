@@ -508,6 +508,7 @@ and resolve them.
 | RPC | What GRID0+ does |
 | --- | --- |
 | `Locker`/`Canola` `SelectDocuments` | the plaza: each player's newest published post, newest first, 31 lockers / 6 decks (NextendoNetwork's measurement of Nintendo's answer, facts only). A request naming players (`Normal3`, `UIDsInOrder`, from the game's request builder) gets those players' newest posts instead: the name plates beside their names. `TODO(capture-needed)` on players with no post |
+| `Canola` `SelectDocuments`, type `Fest` | the fest plaza: drawings posted during that `FestID` (`canola/picturePosts`, `Picture.PostType` `Fest`), unhidden, newest per player. `TODO(capture-needed)` on count and order |
 | `Locker`/`Canola` `RegisterDocument` | acknowledged with the empty message Nintendo answers |
 | `Locker`/`Canola` `IkasuDocument` | a "fresh!" (like): acknowledged for a post in that service's plaza collection, NotFound otherwise, nothing kept -- `TODO(capture-needed)` on whether a like is ever shown back |
 | `CoopScenario` `RegisterDocument` / `ResolveCoopScenarioCode` | a Salmon Run job shared as a code under `grid0/coopScenarioCodes` |
