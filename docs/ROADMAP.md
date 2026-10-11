@@ -403,8 +403,8 @@ applying silently.
 
 ### What is left
 
-[`../TODO.md`](../TODO.md) is the live list. The large pieces left are fest
-asset conversion (§2.1) and the BCAT signature question (§2.4); the newest
+[`../TODO.md`](../TODO.md) is the live list. The large piece left is fest
+asset conversion (§2.1); native BCAT (§2.4) works on hardware. The newest
 Splatfest matchmaking flow and the plaza's posts still need a hardware run.
 
 ## Splatoon 2 — NEX
