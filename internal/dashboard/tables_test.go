@@ -276,3 +276,18 @@ func TestDebugUpdateRowRejectsAnUnknownPrimaryKey(t *testing.T) {
 		t.Fatalf("status %d: %s, want 404", rec.Code, rec.Body)
 	}
 }
+
+// TestEveryDebugTableCanBeRead: the registry names columns by hand, and a
+// name that is not in the schema only fails when an operator opens that
+// table -- npln_fest_entries listed fest_team/fest_region for weeks while
+// the columns are team/region. Read every table against the real schema.
+func TestEveryDebugTableCanBeRead(t *testing.T) {
+	srv, _ := newPostgresTestServer(t)
+	for _, def := range debugTables {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/debug/tables/"+def.Table, nil))
+		if rec.Code != 200 {
+			t.Errorf("%s: status %d: %s", def.Table, rec.Code, rec.Body)
+		}
+	}
+}

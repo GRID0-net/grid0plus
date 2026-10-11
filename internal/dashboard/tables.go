@@ -173,7 +173,7 @@ var debugTables = []debugTableDef{
 	}},
 	{Table: "npln_fest_entries", Columns: []debugColumn{
 		pk("fest_id", kindText), pk("user_id", kindText),
-		edit("fest_team", kindText), edit("fest_region", kindText),
+		edit("team", kindText), edit("region", kindText),
 		col("created_at", kindTimestamp),
 	}},
 	{Table: "npln_matches", Columns: []debugColumn{
