@@ -1114,3 +1114,35 @@ func TestTricolorSinglesWaitForAllThreeTeamsAndRestartOnArrival(t *testing.T) {
 		t.Fatalf("formed %v, want Alpha and Charlie alone after the grace", f)
 	}
 }
+
+// TestSquadsThatCannotMakeEvenTeamsDoNotFormAMatch: squads of 3, 3 and 2
+// add up to eight, but no 4v4 holds them without splitting a squad; a squad
+// of 3 and a solo add up to an even four that no 2v2 holds.
+func TestSquadsThatCannotMakeEvenTeamsDoNotFormAMatch(t *testing.T) {
+	q, clock := testGraceQueue(t, 8, 20*time.Second, 0)
+	q.EnqueueSquad("a1", []string{"a2", "a3"}, "regular", "")
+	q.EnqueueSquad("b1", []string{"b2", "b3"}, "regular", "")
+	if _, formed, _ := q.EnqueueSquad("c1", []string{"c2"}, "regular", ""); len(formed) != 0 {
+		t.Fatalf("formed %v: 3+3+2 cannot split into two teams of 4", formed[0].Players)
+	}
+	// Two solos make 3+1 against 3+1.
+	q.Enqueue("s1", "regular")
+	_, formed, _ := q.Enqueue("s2", "regular")
+	if len(formed) != 1 || len(formed[0].Players) != 8 {
+		t.Fatalf("formed %v, want one 4v4 of both squads of 3 and both solos", formed)
+	}
+	if slices.Contains(formed[0].Players, "c1") {
+		t.Errorf("the squad of 2 was chosen over a solo: %v", formed[0].Players)
+	}
+
+	q2, clock2 := testGraceQueue(t, 8, 20*time.Second, 0)
+	q2.EnqueueSquad("x1", []string{"x2", "x3"}, "regular", "")
+	q2.Enqueue("solo", "regular")
+	*clock2 = clock2.Add(time.Minute)
+	q2.Sweep()
+	*clock2 = clock2.Add(time.Minute)
+	if _, formed := q2.Sweep(); len(formed) != 0 {
+		t.Errorf("formed %v: a squad of 3 and a solo cannot play 2v2", formed[0].Players)
+	}
+	_ = clock
+}

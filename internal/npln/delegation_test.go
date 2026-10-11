@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/n-popescu/grid0plus/config"
 	authpb "github.com/n-popescu/grid0plus/proto/auth/v1"
 	mmpb "github.com/n-popescu/grid0plus/proto/matchmaking/v1"
 )
@@ -80,7 +81,9 @@ func TestADelegationCannotBeIssuedInSomebodyElsesName(t *testing.T) {
 // host's one ticket carries that token, and the guest follows the host's
 // ticket. Refusing the guest's Track was error 2321-1536.
 func TestASquadQueuesOnItsLeadersTicketAndEveryMemberFollowsIt(t *testing.T) {
-	h := newHarness(t)
+	// Salmon Run: one side, so the squad alone is a match. In a versus mode
+	// a squad of two alone would be two against nobody.
+	h := newHarnessWith(t, func(c *config.NPLN) { c.CoopModes = []string{"salmon-run"} })
 	h.createUser("member0000000003", "device-member-3")
 	h.createUser("leader0000000003", "device-leader-3")
 	h.createUser("outsider00000003", "device-outsider-3")
@@ -95,7 +98,7 @@ func TestASquadQueuesOnItsLeadersTicketAndEveryMemberFollowsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := ticketFor("turf-war")
+	req := ticketFor("salmon-run")
 	req.UserDelegationTokens = []string{d.GetUserDelegationDetail().GetUserDelegationToken()}
 	client := mmpb.NewMatchmakerClient(h.conn)
 	ticket, err := client.CreateMatchmakingTicket(leader, req)

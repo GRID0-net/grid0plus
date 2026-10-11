@@ -960,8 +960,14 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	if isFestMode(mode) {
 		ids = q.selectFestPlayersLocked(ids, size)
 	}
+	// Two even teams with every squad whole; fest and Tricolor lobbies are
+	// chosen by fest team above instead.
+	pick := q.wholeSquadsLocked
+	if !isFestMode(mode) && !isTricolorMode(mode) {
+		pick = q.evenSquadsLocked
+	}
 	for len(ids) >= size {
-		chosen := q.wholeSquadsLocked(ids, size)
+		chosen := pick(ids, size)
 		if len(chosen) < size {
 			break
 		}
@@ -972,10 +978,12 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 			ids = q.selectFestPlayersLocked(ids, size)
 		}
 	}
-	if len(ids) > size {
+	waiting := len(ids)
+	if len(ids) > size || (!isFestMode(mode) && !isTricolorMode(mode)) {
 		// Squads that cannot fill a match exactly wait on the clock below
-		// with a set that fits.
-		ids = q.wholeSquadsLocked(ids, size)
+		// with a set that fits -- for a plain versus mode, one that also
+		// splits into two equal teams.
+		ids = pick(ids, size)
 	}
 
 	if isDirectPairMode(mode) && len(ids) >= 2 && q.oneSquadLocked(ids) &&
@@ -993,7 +1001,9 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	n := len(ids)
 	// Tricolor's three sides are never two even halves; its selection above
 	// already decides which counts can play.
-	odd := n%2 != 0 && !isTricolorMode(mode)
+	// An odd number waiting waits for one more rather than leaving the
+	// odd one out of a match that starts without them.
+	odd := (n%2 != 0 || (waiting <= size && waiting%2 != 0)) && !isTricolorMode(mode)
 	if q.cfg.VersusGracePeriod <= 0 || n < 2 || odd {
 		q.cancelGraceLocked(mode)
 		return formed
@@ -1476,4 +1486,69 @@ func (q *Queue) wholeSquadsLocked(ids []string, size int) []string {
 		}
 	}
 	return out
+}
+
+// evenSquadsLocked picks, from the waiting ids, whole squads that make the
+// largest match of at most size players that splits into two equal teams
+// with no squad divided -- so at least one player per team, and the same
+// number on each side. A squad of three and a solo add up to an even four
+// that no 2v2 holds; squads of 3, 3 and 2 add up to eight that no 4v4
+// holds. wholeSquadsLocked fills greedily and would form either. Squads
+// that have waited longest are preferred.
+//
+// It is a small dynamic program over (team A, team B) head counts, never
+// more than (size/2+1)^2 states, so the queue length does not matter.
+func (q *Queue) evenSquadsLocked(ids []string, size int) []string {
+	group := func(id string) string {
+		if p := q.tickets[id].Party; p != "" {
+			return p
+		}
+		return id
+	}
+	members := map[string][]string{}
+	var order []string
+	for _, id := range ids {
+		g := group(id)
+		if _, seen := members[g]; !seen {
+			order = append(order, g)
+		}
+		members[g] = append(members[g], id)
+	}
+	half := size / 2
+	type state struct{ a, b int }
+	// best[s] is the list of units reaching s, built from the oldest units
+	// first: a state keeps the first way it was reached.
+	best := map[state][]string{{0, 0}: nil}
+	for _, g := range order {
+		n := len(members[g])
+		next := make(map[state][]string, len(best)*3)
+		for s, units := range best {
+			if _, ok := next[s]; !ok {
+				next[s] = units
+			}
+		}
+		for s, units := range best {
+			for _, t := range []state{{s.a + n, s.b}, {s.a, s.b + n}} {
+				if t.a > half || t.b > half {
+					continue
+				}
+				if _, ok := next[t]; !ok {
+					next[t] = append(slices.Clone(units), g)
+				}
+			}
+		}
+		best = next
+	}
+	for k := half; k >= 1; k-- {
+		if units, ok := best[state{k, k}]; ok {
+			out := make([]string, 0, 2*k)
+			for _, id := range ids {
+				if slices.Contains(units, group(id)) {
+					out = append(out, id)
+				}
+			}
+			return out
+		}
+	}
+	return nil
 }
