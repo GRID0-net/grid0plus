@@ -110,3 +110,84 @@ func (s *Server) squadMembers(leader string, tokens []string) []string {
 	}
 	return out
 }
+
+// IssueMatchmakingIdToken mints the session tokens a squad leader asks for on
+// behalf of the squad: one MatchedUserSession per user, the same entry
+// JoinGameSession hands each player for itself.
+//
+// Fail-closed on identity, as everywhere else: every user named must be the
+// caller, or a teammate who delegated to the caller with a token this server
+// signed (squadMembers); and every one of them must already be a player of
+// the session. Anything else refuses the whole request, rather than issuing a
+// partial set -- the half-filled lobby matchedUserSessions' comment
+// describes.
+//
+// TODO(capture-needed): when Splatoon 3 calls this. The game links the stub
+// (GameSessionService ctor at 0x71005ec2d0, method at 0x71005f0164) but no
+// hardware session has called it yet, and nothing shows whether it expects
+// entries for include_id_token_users only or for every user. This answers
+// include_id_token_users when given, otherwise every user. Change: this
+// function.
+func (g *gameSessionService) IssueMatchmakingIdToken(
+	ctx context.Context, req *mmpb.IssueMatchmakingIdTokenRequest,
+) (*mmpb.IssueMatchmakingIdTokenResponse, error) {
+	caller, ok := CallerFrom(ctx)
+	if !ok {
+		return nil, ErrUnauthenticated
+	}
+	id := lastSegment(req.GetGameSession())
+	sess, found := g.s.queue.Session(id)
+	if !found {
+		return nil, ErrNotFound
+	}
+
+	vouched := map[string]bool{caller.UserID: true}
+	for _, m := range g.s.squadMembers(caller.UserID, req.GetUserDelegationTokens()) {
+		vouched[m] = true
+	}
+	resolve := func(name string) string {
+		u := lastSegment(name)
+		if u == "" || u == "current" {
+			return caller.UserID
+		}
+		return u
+	}
+	users := req.GetIncludeIdTokenUsers()
+	if len(users) == 0 {
+		users = req.GetUsers()
+	}
+	if len(users) == 0 {
+		users = []string{caller.UserID}
+	}
+
+	var out []*mmpb.MatchedUserSession
+	seen := map[string]bool{}
+	for _, name := range users {
+		u := resolve(name)
+		if seen[u] {
+			continue
+		}
+		seen[u] = true
+		if !vouched[u] {
+			g.s.log.Warn("npln: id token asked for a user who did not delegate to the caller",
+				"caller", caller.UserID, "user", u, "session", id)
+			return nil, ErrPermissionDenied
+		}
+		if !g.s.queue.IsPlayer(id, u) {
+			g.s.log.Warn("npln: id token asked for a user outside the session",
+				"caller", caller.UserID, "user", u, "session", id)
+			return nil, ErrNotFound
+		}
+		m, err := g.s.matchedUserSessions(sess, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m...)
+	}
+	g.s.log.Info("npln: matchmaking id tokens issued", "caller", caller.UserID,
+		"session", id, "users", len(out))
+	return &mmpb.IssueMatchmakingIdTokenResponse{
+		MatchedUserSessions: out,
+		GameSession:         g.s.sessionProto(sess),
+	}, nil
+}

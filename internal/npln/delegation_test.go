@@ -2,6 +2,7 @@ package npln
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -120,5 +121,59 @@ func TestASquadQueuesOnItsLeadersTicketAndEveryMemberFollowsIt(t *testing.T) {
 	}
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("an outsider following the squad's ticket: %v, want NotFound", err)
+	}
+}
+
+// TestALeaderGetsIdTokensOnlyForTeammatesWhoDelegated: the leader may mint a
+// teammate's session token only with that teammate's delegation, and only
+// for someone already in the session -- otherwise one console could open a
+// gamesync session as another, the bug this codebase is shaped around.
+func TestALeaderGetsIdTokensOnlyForTeammatesWhoDelegated(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("host0000000000009", "device-host-9")
+	h.createUser("friend00000000009", "device-friend-9")
+	h.createUser("other000000000009", "device-other-9")
+	host := h.ctx(h.sessionFor(t, "host0000000000009", "device-host-9"), "")
+	friend := h.ctx(h.sessionFor(t, "friend00000000009", "device-friend-9"), "")
+	other := h.ctx(h.sessionFor(t, "other000000000009", "device-other-9"), "")
+	client := mmpb.NewGameSessionServiceClient(h.conn)
+
+	room := openRoom(t, h, host, "coop_private_config", nil, "").GetGameSession()
+	for _, c := range []context.Context{friend, other} {
+		if _, err := client.JoinGameSession(c, &mmpb.JoinGameSessionRequest{Name: room.GetName()}); err != nil {
+			t.Fatalf("JoinGameSession: %v", err)
+		}
+	}
+	d, err := client.IssueUserDelegationToken(friend, &mmpb.IssueUserDelegationTokenRequest{
+		DelegatorUser: "tenants/current/users/current",
+		MandataryUser: "tenants/" + testTenant + "/users/host0000000000009",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := d.GetUserDelegationDetail().GetUserDelegationToken()
+
+	resp, err := client.IssueMatchmakingIdToken(host, &mmpb.IssueMatchmakingIdTokenRequest{
+		GameSession:          room.GetName(),
+		Users:                []string{"tenants/current/users/current", "tenants/" + testTenant + "/users/friend00000000009"},
+		UserDelegationTokens: []string{token},
+	})
+	if err != nil {
+		t.Fatalf("IssueMatchmakingIdToken: %v", err)
+	}
+	subs := map[any]bool{}
+	for _, m := range resp.GetMatchedUserSessions() {
+		subs[decodeJWTSegment(t, strings.Split(m.GetMatchmakingIdToken(), ".")[1])["sub"]] = true
+	}
+	if len(subs) != 2 || !subs["host0000000000009"] || !subs["friend00000000009"] {
+		t.Errorf("tokens issued for %v, want the host and the friend", subs)
+	}
+
+	_, err = client.IssueMatchmakingIdToken(host, &mmpb.IssueMatchmakingIdTokenRequest{
+		GameSession: room.GetName(),
+		Users:       []string{"tenants/" + testTenant + "/users/other000000000009"},
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("a token for a player who never delegated: %v, want PermissionDenied", err)
 	}
 }

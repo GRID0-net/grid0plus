@@ -1578,3 +1578,23 @@ every team on hardware. `displayRatio` in `internal/toyohr/fest_scoring.go`
 caps shares at 0.9999. A capture of the console rendering a near-100% share,
 or RE of the halftime UI's number formatting, would settle whether the display
 overflows at 100 or rejects the block for another reason.
+
+### Plaza lockers and decks: what SelectDocuments asks for (2026-10-11)
+
+`plaza` in `internal/toyohr/backlog.go` answers every Locker and Canola
+`SelectDocuments` with the newest published post per player (31 lockers, 6
+decks: NextendoNetwork's measurement of Nintendo's launch answer). It ignores
+the request's `type` and `params`. Nextendo's notes also describe calls that
+name a list of player ids (friend name plates), which would want those
+players' documents instead. The request is logged as
+`toyohr: select documents`; a few logged requests of each kind would settle
+how to tell the two apart.
+
+### GameSessionService/IssueMatchmakingIdToken (2026-10-11)
+
+Splatoon 3 links the stub (0x71005f0164), but no session has called it.
+`IssueMatchmakingIdToken` in `internal/npln/delegation.go` mints a token for
+each user in `include_id_token_users` (else each user), only for teammates
+who delegated to the caller and are already in the session. A logged call
+(`npln: matchmaking id tokens issued`) would show which flow uses it and
+whether the response wants every user or only the included ones.
