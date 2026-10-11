@@ -23,11 +23,8 @@ import (
 // and CoopScenarioServer/ReplayServer cannot both be satisfied by one type.
 //
 // The rule applied throughout: a lookup or a query answers honestly with
-// what GRID0+ actually has, which for every one of these is nothing --
-// no CoopScenario/Replay code was ever registered, and no violation or
-// screening snapshot was ever produced. A write with an unknown validation or
-// storage contract (RegisterDocument on Replay,
-// CreateBankaraChallenge) is left to the embedded
+// what GRID0+ actually has. A write with an unknown validation or
+// storage contract (CreateBankaraChallenge) is left to the embedded
 // Unimplemented default instead of guessed at -- the same boundary
 // CloudSave's own five unimplemented RPCs already draw, for the same
 // reason: implementing "write" convincingly would mean inventing a shape
@@ -168,8 +165,8 @@ type coopScenarioService struct {
 // TODO(capture-needed): the code's exact alphabet and the shape of
 // CoopScenarioCode.name. This answers tenants/<t>/coopScenarioCodes/<code>
 // (the game carries the "/coopScenarioCodes" segment) with a 16-character
-// code starting with S, like the codes players share. Change: newScenarioCode
-// and scenarioCodeFrom.
+// code starting with S, like the codes players share. Change: newShareCode
+// and shareCodeFrom.
 func (s coopScenarioService) RegisterDocument(
 	ctx context.Context, req *toyohrpb.CoopScenarioRegisterDocumentRequest,
 ) (*toyohrpb.CoopScenarioRegisterDocumentResponse, error) {
@@ -180,11 +177,11 @@ func (s coopScenarioService) RegisterDocument(
 	if s.docs == nil || req.GetName() == "" {
 		return nil, status.Error(codes.FailedPrecondition, "scenario codes are not available")
 	}
-	code, err := newScenarioCode()
+	code, err := newShareCode('S')
 	if err != nil {
 		return nil, status.Error(codes.Internal, "internal error")
 	}
-	if _, err := s.docs.Put(ctx, uid, scenarioCodeDoc(code), &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+	if _, err := s.docs.Put(ctx, uid, shareCodeDoc("coopScenarioCodes", code), &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 		"document": {ValueType: &commonpb.Value_StringValue{StringValue: req.GetName()}},
 	}}); err != nil {
 		return nil, err
@@ -200,40 +197,53 @@ func (s coopScenarioService) RegisterDocument(
 func (s coopScenarioService) ResolveCoopScenarioCode(
 	ctx context.Context, req *toyohrpb.ResolveCoopScenarioCodeRequest,
 ) (*toyohrpb.ResolveCoopScenarioCodeResponse, error) {
-	code := scenarioCodeFrom(req.GetName())
-	if s.docs == nil || code == "" {
-		return nil, status.Error(codes.NotFound, "no such scenario code")
-	}
-	link, err := s.docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: scenarioCodeDoc(code)})
+	doc, err := s.resolveShareCode(ctx, "coopScenarioCodes", req.GetName())
 	if err != nil {
-		s.log.Info("toyohr: unknown scenario code", "code", code)
-		return nil, status.Error(codes.NotFound, "no such scenario code")
-	}
-	target := link.GetFields().GetFields()["document"].GetStringValue()
-	doc, err := s.docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: target})
-	if err != nil {
-		return nil, status.Error(codes.NotFound, "no such scenario code")
+		return nil, err
 	}
 	return &toyohrpb.ResolveCoopScenarioCodeResponse{Document: doc}, nil
 }
 
+// resolveShareCode follows a shared code to the document it was registered
+// for. A code this server never issued is NotFound.
+func (s *Service) resolveShareCode(ctx context.Context, collection, name string) (*ugcpb.Document, error) {
+	code := shareCodeFrom(name)
+	if s.docs == nil || code == "" {
+		return nil, status.Error(codes.NotFound, "no such code")
+	}
+	link, err := s.docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: shareCodeDoc(collection, code)})
+	if err != nil {
+		s.log.Info("toyohr: unknown share code", "collection", collection, "code", code)
+		return nil, status.Error(codes.NotFound, "no such code")
+	}
+	target := link.GetFields().GetFields()["document"].GetStringValue()
+	doc, err := s.docs.GetDocument(ctx, &ugcpb.GetDocumentRequest{Name: target})
+	if err != nil {
+		return nil, status.Error(codes.NotFound, "no such code")
+	}
+	return doc, nil
+}
+
 const scenarioCodeAlphabet = "0123456789ABCDEFGHJKLMNPQRSTUVWXY"
 
-func newScenarioCode() (string, error) {
+// newShareCode makes a 16-character code: prefix ('S' for a Salmon Run
+// scenario, 'R' for a replay, like the codes players share) and 15 random
+// characters.
+func newShareCode(prefix byte) (string, error) {
 	b := make([]byte, 15)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	out := []byte{'S'}
+	out := []byte{prefix}
 	for _, c := range b {
 		out = append(out, scenarioCodeAlphabet[int(c)%len(scenarioCodeAlphabet)])
 	}
 	return string(out), nil
 }
 
-// scenarioCodeFrom takes a code from a resource name or as typed, with or
+// shareCodeFrom takes a code from a resource name or as typed, with or
 // without dashes, in any case.
-func scenarioCodeFrom(name string) string {
+func shareCodeFrom(name string) string {
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		name = name[i+1:]
 	}
@@ -244,8 +254,8 @@ func scenarioCodeFrom(name string) string {
 	return code
 }
 
-func scenarioCodeDoc(code string) string {
-	return "tenants/current/documents/grid0/coopScenarioCodes/" + code
+func shareCodeDoc(collection, code string) string {
+	return "tenants/current/documents/grid0/" + collection + "/" + code
 }
 
 // ---- nn.npln.toyohr.v1.Replay ------------------------------------------------
@@ -255,18 +265,57 @@ type replayService struct {
 	toyohrpb.UnimplementedReplayServer
 }
 
-// ResolveReplayCode is CoopScenario's ResolveCoopScenarioCode, for replays:
-// RegisterDocument (unimplemented) is the only thing that could create a
-// code, so no code exists to resolve.
-func (replayService) ResolveReplayCode(
-	context.Context, *toyohrpb.ResolveReplayCodeRequest,
+// RegisterDocument shares an uploaded replay as a replay code, the same way
+// CoopScenario shares a job: the console names the replay's document (its
+// bytes are the document's Ugcstore attachment), and the code maps to it
+// under grid0/replayCodes/<code>. The game carries the "/replayCodes"
+// segment beside "/coopScenarioCodes", and the two services' messages have
+// the same shape.
+//
+// TODO(capture-needed): the replay code's exact alphabet and
+// ReplayCode.name. Same reading as CoopScenario's, with codes starting with
+// R like the codes players share. Change: newShareCode and shareCodeFrom.
+func (s replayService) RegisterDocument(
+	ctx context.Context, req *toyohrpb.ReplayRegisterDocumentRequest,
+) (*toyohrpb.ReplayRegisterDocumentResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	if s.docs == nil || req.GetName() == "" {
+		return nil, status.Error(codes.FailedPrecondition, "replay codes are not available")
+	}
+	code, err := newShareCode('R')
+	if err != nil {
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	if _, err := s.docs.Put(ctx, uid, shareCodeDoc("replayCodes", code), &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"document": {ValueType: &commonpb.Value_StringValue{StringValue: req.GetName()}},
+	}}); err != nil {
+		return nil, err
+	}
+	s.log.Info("toyohr: replay code registered", "user", uid, "code", code, "document", req.GetName())
+	return &toyohrpb.ReplayRegisterDocumentResponse{
+		Code: &toyohrpb.ReplayCode{Name: s.tenantPath() + "/replayCodes/" + code},
+	}, nil
+}
+
+// ResolveReplayCode hands the replay's document back to whoever types the
+// code in; the console then downloads its attachment.
+func (s replayService) ResolveReplayCode(
+	ctx context.Context, req *toyohrpb.ResolveReplayCodeRequest,
 ) (*toyohrpb.ResolveReplayCodeResponse, error) {
-	return nil, status.Error(codes.NotFound, "no such replay code")
+	doc, err := s.resolveShareCode(ctx, "replayCodes", req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &toyohrpb.ResolveReplayCodeResponse{Document: doc}, nil
 }
 
 // FulfillReservations reports which of a player's replay reservations are
-// ready to download. Since RegisterDocument never runs, nothing is ever
-// reserved, so the honest answer is an empty list -- not an error, the same
+// ready to download. A reservation is made outside the game (a code
+// entered in the phone app), which GRID0+ has no way to receive, so the
+// honest answer is an empty list -- not an error, the same
 // distinction ListDeviceAccounts (empty, not NotFound) draws against
 // GetDeviceAccount (NotFound) for a single missing one.
 func (s replayService) FulfillReservations(

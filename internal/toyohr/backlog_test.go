@@ -178,3 +178,38 @@ func TestThePlazaShowsEachPlayersNewestPublishedLocker(t *testing.T) {
 		t.Errorf("plaza lockers = %v, want [3 2]: alice's newest, then bob's", got)
 	}
 }
+
+// TestASharedReplayCodeResolvesToTheReplay: a replay code a player shares
+// must bring up that replay for whoever types it in, and a scenario code
+// must not resolve as a replay.
+func TestASharedReplayCodeResolvesToTheReplay(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	svc.docs = ugcstore.NewService(ugcstore.Options{
+		Store: svc.store, Log: discardLogger(), Tenant: testTenant,
+		CallerID: func(context.Context) (string, bool) { return testCaller, true },
+		Now:      time.Now,
+	})
+	ctx := context.Background()
+	replay := "tenants/current/documents/services/toyohr/interfaces/replay/replayPosts/r1"
+	if _, err := svc.docs.Put(ctx, testCaller, replay, &commonpb.MapValue{Fields: map[string]*commonpb.Value{
+		"stage": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 7}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := (replayService{Service: svc}).RegisterDocument(ctx, &toyohrpb.ReplayRegisterDocumentRequest{Name: replay})
+	if err != nil {
+		t.Fatalf("RegisterDocument: %v", err)
+	}
+	code := reg.GetCode().GetName()[strings.LastIndex(reg.GetCode().GetName(), "/")+1:]
+	if len(code) != 16 || code[0] != 'R' {
+		t.Fatalf("code = %q", code)
+	}
+	got, err := (replayService{Service: svc}).ResolveReplayCode(ctx, &toyohrpb.ResolveReplayCodeRequest{Name: code})
+	if err != nil || got.GetDocument().GetFields().GetFields()["stage"].GetIntegerValue() != 7 {
+		t.Fatalf("resolve: %v, %v", got.GetDocument(), err)
+	}
+	if _, err := (coopScenarioService{Service: svc}).ResolveCoopScenarioCode(ctx,
+		&toyohrpb.ResolveCoopScenarioCodeRequest{Name: code}); status.Code(err) != codes.NotFound {
+		t.Errorf("a replay code resolved as a scenario: %v", err)
+	}
+}
