@@ -508,13 +508,13 @@ The dashboard's only protection is a shared token in config
 (`dashboard.token`), and with it unset there is none at all: anyone who can
 reach the port can schedule and cancel Splatfests.
 
-That is deliberate rather than lazy — **nothing in phase 1 authenticates a
-person.** Every credential in the stack belongs to a console, so there is no
-user account to check against. A shared token is the honest minimum.
-
-A real answer probably arrives with phase 3's Nintendo Account work, which
-introduces the first human-facing login. Until then, do not build a bespoke
-user system for the dashboard alone.
+Phase 5 changed the premise this section used to rest on. People now have
+accounts, created only through the Discord bot (`internal/baas/botapi.go`),
+and each is tied to a Discord user id. So a person-level login for the
+dashboard no longer needs a bespoke user system. The natural shape is the
+bot handing out a short-lived dashboard link to a Discord user the operator
+has marked as an admin. Until someone needs more than one operator, the
+shared token remains the honest minimum.
 
 ---
 
