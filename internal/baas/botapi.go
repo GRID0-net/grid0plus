@@ -200,8 +200,16 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
 		return
 	}
-	if !discordIDPattern.MatchString(req.DiscordUserID) || !loginUsernamePattern.MatchString(req.Username) {
-		writeBotError(w, http.StatusBadRequest, "bad_request", "malformed Discord id or username")
+	// Its own code, so the bot can tell the person what to change: a login
+	// with a capital, a dash or a space used to fail as a generic
+	// bad_request, and the bot said only "something went wrong" (2026-10-11).
+	if !discordIDPattern.MatchString(req.DiscordUserID) {
+		writeBotError(w, http.StatusBadRequest, "bad_request", "malformed Discord id")
+		return
+	}
+	if !loginUsernamePattern.MatchString(req.Username) {
+		writeBotError(w, http.StatusBadRequest, "bad_username",
+			"a login is 2 to 32 characters: lowercase letters, digits, '_' and '.'")
 		return
 	}
 	hasMain, err := b.hasMainAccount(r.Context(), req.DiscordUserID)
