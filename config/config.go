@@ -335,17 +335,19 @@ type NPLN struct {
 
 	// ModePlayers overrides players_per_match for one matchmaking mode.
 	//
-	// Keyed on the mode name the game sends in the ticket's matchmaking_config,
-	// which nothing public documents — so this is empty by default and every
-	// unknown mode is logged, and that log is how an operator learns the names
-	// to put here. Turf War and Anarchy are 4v4 (eight), Salmon Run is four.
+	// Keyed on the mode name the game sends in the ticket's matchmaking_config.
+	// The default holds Splatoon 3's three Salmon Run configs at four; every
+	// versus mode is eight, players_per_match. Entries in config.yaml are
+	// added to the default, so an operator only lists what they change.
 	ModePlayers map[string]int `yaml:"mode_players"`
 
 	// CoopModes names the modes formed like Salmon Run -- one team, not two,
 	// no even split -- rather than like Turf War/Anarchy. Keyed the same way
-	// as ModePlayers: real mode strings from a capture, which this project
-	// does not have for Salmon Run yet, so this is empty (every mode versus-
-	// shaped) until an operator adds one from the "unknown mode" log.
+	// as ModePlayers. The default is Splatoon 3's three Salmon Run configs:
+	// coop_regular_config is seen on hardware, Big Run and Eggstra Work come
+	// from the game binary. Without them a fresh install would split a
+	// Salmon Run crew into two versus teams. A list in config.yaml replaces
+	// the default.
 	CoopModes []string `yaml:"coop_modes"`
 
 	// VersusGracePeriod is how many seconds a versus-shaped match below its
@@ -725,6 +727,11 @@ type Log struct {
 	Format string `yaml:"format"`
 }
 
+// salmonRunConfig names one of Splatoon 3's Salmon Run matchmaking configs.
+func salmonRunConfig(kind string) string {
+	return "tenants/current/matchmakingConfigs/coop_" + kind + "_config"
+}
+
 // Default returns the configuration GRID0+ uses when nothing is set. The
 // Nintendo-facing values (issuers, audiences, JWKS URLs) match what a real
 // console sees, because captures are compared against them.
@@ -810,7 +817,17 @@ func Default() Config {
 			AccessTokenTTL: 28800,
 			// Eight as a cap; smaller even matches start after the grace
 			// period. See the field comments.
-			PlayersPerMatch:   8,
+			PlayersPerMatch: 8,
+			ModePlayers: map[string]int{
+				salmonRunConfig("regular"):      4,
+				salmonRunConfig("bigrun"):       4,
+				salmonRunConfig("team_contest"): 4,
+			},
+			CoopModes: []string{
+				salmonRunConfig("regular"),
+				salmonRunConfig("bigrun"),
+				salmonRunConfig("team_contest"),
+			},
 			VersusGracePeriod: 20,
 			CoopGracePeriod:   20,
 			TicketTTL:         180,

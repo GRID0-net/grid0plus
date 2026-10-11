@@ -362,3 +362,23 @@ func TestDNSDefaultsAreUsable(t *testing.T) {
 		t.Errorf("dns.ttl = %d, want something short and non-zero", cfg.DNS.TTL)
 	}
 }
+
+// TestSalmonRunIsFourPlayersWithoutBeingConfigured: a config that never
+// mentions Salmon Run must still form it as one crew of four, and a size an
+// operator sets for another mode must not drop it.
+func TestSalmonRunIsFourPlayersWithoutBeingConfigured(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, "npln:\n  mode_players:\n    \"tenants/current/matchmakingConfigs/regular_match_config\": 4\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coop := salmonRunConfig("regular")
+	if cfg.NPLN.ModePlayers[coop] != 4 || len(cfg.NPLN.CoopModes) != 3 {
+		t.Errorf("Salmon Run size %d, coop modes %v; want 4 and the three Salmon Run configs",
+			cfg.NPLN.ModePlayers[coop], cfg.NPLN.CoopModes)
+	}
+	if cfg.NPLN.ModePlayers["tenants/current/matchmakingConfigs/regular_match_config"] != 4 {
+		t.Error("the operator's own entry was lost")
+	}
+}

@@ -591,17 +591,17 @@ commit** so the source and the notes cannot disagree.
 
 ## 5. Housekeeping
 
-### 5.3 A mode table for matchmaking — **P3**
+### 5.3 A mode table for matchmaking — **P3, mostly done**
 
-`matchmaking.DefaultConfig.PlayersPerMatch` is still **2**, and per-mode sizes
-are now settable at runtime from the dashboard and seeded from
-`matchmaking.Config.ModeSizes`. So an operator can already make a mode the right
-size without a code change.
+Versus modes default to eight (`npln.players_per_match`) as a cap: an even
+count below it starts after the grace period, so two friends still get a
+match. The three Salmon Run configs default to four and coop-shaped, built
+into `config.Default`, so a fresh install no longer needs `mode_players` /
+`coop_modes` to form Salmon Run correctly. Anarchy Series' one-sided lobbies
+of four are handled in `internal/matchmaking/bankara.go`.
 
-What is still missing is knowing what the **faithful** sizes are. They belong in
-the config's `ModeSizes`, read from the game's own match/lobby parameter tables
-(the same Leanny/splat3 dump `vs_ids.go` uses, or the game's romfs). Until
-then, a number that lets two friends start a match beats one that is
-correct and idle.
+Still read from nothing but the config: the per-kind Splatfest lobby sizes
+(see `internal/matchmaking`'s fest forms), which come from the game's own
+code rather than its parameter tables.
 
 ---
