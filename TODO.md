@@ -573,7 +573,12 @@ as unfinished and retries. The paths are in `nim`'s request tables
 (`/{version}/elicenses/revoke` at 0x71001b7c98, a Ghidra project is now at
 `~/switchnet-re/ghidra_projects/nim_main`), but the response it expects means
 tracing nim's generic HTTP layer, and the rights layer belongs to the separate
-eShop module (Phase 3). If it recurs, note what the console was doing at
+eShop module (Phase 3). The request side is now read: the revoke request
+class's body builder (FUN_7100122a00, vtable 0x7100223fb0) sends
+`{"elicense_ids": [...]}`, 16-byte licence ids, so nim revokes licences it
+holds locally; its URL builder is FUN_7100122920. The answer goes through a
+shared parser not yet read. `elicenses/exercise` only worked with an empty
+200, so an empty 200 for revoke is the first thing to try if it recurs. If it recurs, note what the console was doing at
 12:24 (it had just signed in and opened Splatoon 3's BCAT list).
 
 ### 4.3 Undocumented shapes — **P2**
