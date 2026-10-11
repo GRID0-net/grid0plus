@@ -177,6 +177,26 @@ func TestThePlazaShowsEachPlayersNewestPublishedLocker(t *testing.T) {
 	if len(got) != 2 || got[0] != 3 || got[1] != 2 {
 		t.Errorf("plaza lockers = %v, want [3 2]: alice's newest, then bob's", got)
 	}
+
+	// A "fresh!" on a post the plaza showed is acknowledged, in either tenant
+	// spelling; one on anything that is not a locker post is not.
+	locker := lockerService{Service: svc}
+	for _, name := range []string{
+		resp.GetDocuments()[0].GetName(),
+		"tenants/current/documents/services/toyohr/interfaces/locker/lockerPosts/b1",
+	} {
+		if _, err := locker.IkasuDocument(ctx, &toyohrpb.IkasuDocumentRequest{Name: name}); err != nil {
+			t.Errorf("IkasuDocument(%s): %v", name, err)
+		}
+	}
+	for _, name := range []string{
+		"tenants/current/documents/services/toyohr/interfaces/locker/lockerPosts/nope",
+		"tenants/current/documents/services/toyohr/interfaces/canola/picturePosts/p1",
+	} {
+		if _, err := locker.IkasuDocument(ctx, &toyohrpb.IkasuDocumentRequest{Name: name}); status.Code(err) != codes.NotFound {
+			t.Errorf("IkasuDocument(%s) = %v, want NotFound", name, err)
+		}
+	}
 }
 
 // TestASharedReplayCodeResolvesToTheReplay: a replay code a player shares

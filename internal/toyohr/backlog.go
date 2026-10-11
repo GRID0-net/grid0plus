@@ -37,8 +37,7 @@ import (
 // nn.npln.ugcstore.v1.Document the wiki's Server-List places under a
 // separate Ugcstore/Screening pair of services GRID0+ does not
 // implement. A select lists what this server's players have published (see
-// plaza); activating ("Ikasu") one specific document is still NotFound,
-// since nothing documents what activating one does.
+// plaza); "Ikasu" on one of them is acknowledged, see ikasu.
 
 type canolaService struct {
 	*Service
@@ -85,6 +84,39 @@ func (s *Service) plaza(
 	return &toyohrpb.SelectDocumentsResponse{Documents: docs}, nil
 }
 
+// ikasu answers IkasuDocument: a player giving a plaza post a "fresh!"
+// (イカす, Splatoon's word for a like). Its response is an empty message, so
+// acknowledging a post that exists invents nothing; before the plaza showed
+// real posts this answered NotFound for everything, which a console showing
+// a real post would report as an error.
+//
+// TODO(capture-needed): whether a like is ever shown back -- a count on the
+// post, a notice to its owner -- and so needs keeping. Nothing the game
+// reads back has been seen carrying one; this only logs it. See
+// docs/CAPTURES/README.md. Change: this function.
+func (s *Service) ikasu(
+	ctx context.Context, collection string, req *toyohrpb.IkasuDocumentRequest,
+) (*toyohrpb.IkasuDocumentResponse, error) {
+	uid, ok := s.caller(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+	}
+	if s.docs == nil {
+		return nil, status.Error(codes.NotFound, "no such document")
+	}
+	found, err := s.docs.IsPublished(ctx, "services/toyohr/interfaces/"+collection, req.GetName())
+	if err != nil {
+		s.log.Error("toyohr: ikasu lookup", "document", req.GetName(), "error", err)
+		return nil, status.Error(codes.Internal, "internal error")
+	}
+	if !found {
+		s.log.Warn("toyohr: ikasu for an unknown post", "user", uid, "document", req.GetName())
+		return nil, status.Error(codes.NotFound, "no such document")
+	}
+	s.log.Info("toyohr: ikasu", "user", uid, "document", req.GetName())
+	return &toyohrpb.IkasuDocumentResponse{}, nil
+}
+
 // logSelect records what a console asks SelectDocuments for. Nothing
 // documents the request's type and params; the console's own requests are
 // the cheapest way to learn which posts it wants listed.
@@ -94,10 +126,10 @@ func (s *Service) logSelect(service string, req *toyohrpb.SelectDocumentsRequest
 		"type", req.GetType(), "tenant", req.GetTenant(), "params", string(params))
 }
 
-func (canolaService) IkasuDocument(
-	context.Context, *toyohrpb.IkasuDocumentRequest,
+func (s canolaService) IkasuDocument(
+	ctx context.Context, req *toyohrpb.IkasuDocumentRequest,
 ) (*toyohrpb.IkasuDocumentResponse, error) {
-	return nil, status.Error(codes.NotFound, "no such document")
+	return s.ikasu(ctx, "canola/deckPosts", req)
 }
 
 type lockerService struct {
@@ -112,10 +144,10 @@ func (s lockerService) SelectDocuments(
 	return s.plaza(ctx, "locker/lockerPosts", plazaLockers)
 }
 
-func (lockerService) IkasuDocument(
-	context.Context, *toyohrpb.IkasuDocumentRequest,
+func (s lockerService) IkasuDocument(
+	ctx context.Context, req *toyohrpb.IkasuDocumentRequest,
 ) (*toyohrpb.IkasuDocumentResponse, error) {
-	return nil, status.Error(codes.NotFound, "no such document")
+	return s.ikasu(ctx, "locker/lockerPosts", req)
 }
 
 // RegisterDocument on Canola (a drawing) and Locker (a locker) is the last

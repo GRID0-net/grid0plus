@@ -673,6 +673,22 @@ func (s *Service) Published(ctx context.Context, collection string, limit int) (
 	return out, nil
 }
 
+// IsPublished reports whether name -- a full document name, in any tenant
+// spelling the console uses -- is a document under collection. It looks nowhere else, so
+// a request naming some other document learns nothing about it.
+func (s *Service) IsPublished(ctx context.Context, collection, name string) (bool, error) {
+	name, ok := s.canonicalName(name)
+	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
+	if !ok || !strings.HasPrefix(name, prefix) || strings.Contains(strings.TrimPrefix(name, prefix), "/") {
+		return false, nil
+	}
+	_, err := s.store.GetUGCDocument(ctx, name)
+	if errors.Is(err, db.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func sortedNames(m map[string]*db.UGCBlob) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

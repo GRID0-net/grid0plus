@@ -1623,3 +1623,15 @@ are unconfirmed: which commit write names the upload (`ImportAttachment` with
 the URL, or `SetAttachment` with the bytes; both are accepted), and the body
 of the final 200. The first post from a console, logged as `ugcstore: upload
 opened` and `ugcstore: attachment set`, settles both.
+
+### Locker/Canola IkasuDocument: is a "fresh!" kept? (2026-10-11)
+
+The game calls `Locker.IkasuDocument` and `Canola.IkasuDocument` (dotted
+names in its descriptor pool) with one document name, and the response is an
+empty message. GRID0+ acknowledges it for a post that exists in that service's
+plaza collection, NotFound otherwise, and keeps nothing.
+
+A capture of a console reading a post back after it was liked would settle
+whether a like is ever shown (a count field on the post, a notice to its
+owner) and so needs storing. Change: `ikasu` in
+`internal/toyohr/backlog.go`. Log line: `toyohr: ikasu`.
