@@ -1590,6 +1590,16 @@ players' documents instead. The request is logged as
 `toyohr: select documents`; a few logged requests of each kind would settle
 how to tell the two apart.
 
+Partly settled 2026-10-11 from Nextendo's own decrypted captures of a console
+talking to their server (`session-20261003/captures-nextendo/nxm.jsonl`,
+facts only): every plaza `Canola/SelectDocuments` there is
+`{tenant: "tenants/current", type: "Normal", params: {FestRegion: "EU"}}`,
+answered with `canola/deckPosts/<id>` documents whose `Player` map carries
+`UserName`, `NamePlate` (`Badge1-3`, `Background`), `Byname`, `NplnUserId`
+and the outfit -- what a console published, passed through unchanged, which is
+what `plaza` does. `Locker/SelectDocuments` there was empty both ways. The
+request naming player ids is not in these captures; that half stays open.
+
 ### GameSessionService/IssueMatchmakingIdToken (2026-10-11)
 
 Splatoon 3 links the stub (0x71005f0164), but no session has called it.
