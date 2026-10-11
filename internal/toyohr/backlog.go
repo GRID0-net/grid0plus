@@ -69,6 +69,11 @@ const (
 // published to collection: written through Ugcstore/CommitDocuments, then
 // announced by RegisterDocument. Before this, both services answered
 // nothing and the plaza showed no player's locker or deck.
+//
+// TODO(capture-needed): requests that name specific players (Nextendo's
+// notes describe friend name plates asked for by id) may want those
+// players' documents rather than the plaza set. The request is logged by
+// logSelect; see docs/CAPTURES/README.md. Change: this function.
 func (s *Service) plaza(
 	ctx context.Context, collection string, limit int,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
