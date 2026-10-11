@@ -612,6 +612,25 @@ func (q *Queue) ForceMatch(mode string) (Session, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	if isFestRegularNormalMode(mode) {
+		// One-team lobbies in pairs, the only shapes the game proceeds with
+		// (see fest_regular.go); "start now" just skips the wait for them.
+		var formed []Session
+		for {
+			a, b := pairedLobbies(q.festUnitsLocked(q.liveWaitingLocked(mode)), 4)
+			if a == nil {
+				break
+			}
+			formed = append(formed, q.formSessionLocked(mode, unitIDs(a)), q.formSessionLocked(mode, unitIDs(b)))
+		}
+		formed = append(formed, q.formSmallFestLobbiesLocked(mode)...)
+		delete(q.grace, mode)
+		if len(formed) == 0 {
+			return Session{}, false, nil
+		}
+		return formed[0], true, nil
+	}
+
 	ids := q.liveWaitingLocked(mode)
 	if isFestMode(mode) {
 		ids = q.selectFestPlayersLocked(ids, q.playersForLocked(mode))
@@ -908,6 +927,10 @@ func (q *Queue) formMatchesLocked() []Session {
 			formed = append(formed, q.formCoopLocked(mode)...)
 		} else if isTricolorTeamMode(mode) {
 			formed = append(formed, q.formTricolorTeamLocked(mode)...)
+		} else if isFestRegularNormalMode(mode) {
+			formed = append(formed, q.formFestRegularNormalLocked(mode)...)
+		} else if isFestMode(mode) && isDirectPairMode(mode) {
+			formed = append(formed, q.formFestDirectPairLocked(mode)...)
 		} else {
 			formed = append(formed, q.formVersusLocked(mode)...)
 		}

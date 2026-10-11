@@ -117,7 +117,7 @@ func TestFestMatchmakingUsesStoredVotesInsteadOfClientTeamClaims(t *testing.T) {
 		}
 	}
 	client := mmpb.NewMatchmakerClient(h.conn)
-	request := ticketFor("fest_match_regular_normal_config")
+	request := ticketFor("fest_match_regular_direct_pair_config")
 	request.MatchmakingTicket.UserDefinitions = []*mmpb.UserDefinition{{Team: "Charlie"}}
 	one := h.ctx(h.sessionFor(t, "alpha-player", "alpha-device"), "")
 	two := h.ctx(h.sessionFor(t, "bravo-player", "bravo-device"), "")

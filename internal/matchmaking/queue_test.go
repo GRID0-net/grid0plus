@@ -59,29 +59,118 @@ func TestAMatchFormsWhenEnoughPlayersAreWaiting(t *testing.T) {
 	}
 }
 
-func TestFestMatchKeepsEachSideOnOneVotedTeam(t *testing.T) {
-	q, _ := testQueue(t, 4)
+func TestFestOpenLobbiesAreOneTeamAndFormInPairs(t *testing.T) {
+	q, _ := testQueue(t, 8)
 	mode := "fest_match_regular_normal_config"
 	for _, p := range []struct{ user, team string }{
-		{"a1", "Alpha"}, {"a2", "Alpha"}, {"a3", "Alpha"},
-		{"b1", "Bravo"}, {"c1", "Charlie"},
+		{"a1", "Alpha"}, {"a2", "Alpha"}, {"a3", "Alpha"}, {"a4", "Alpha"},
+		{"b1", "Bravo"}, {"b2", "Bravo"}, {"b3", "Bravo"},
 	} {
 		if _, formed, err := q.EnqueueWithFestTeam(p.user, mode, p.team); err != nil || len(formed) != 0 {
-			t.Fatalf("premature fest match: %v, %v", formed, err)
+			t.Fatalf("a lobby of 4 formed with no opposing lobby of 4: %v, %v", formed, err)
 		}
 	}
-	_, formed, err := q.EnqueueWithFestTeam("b2", mode, "Bravo")
-	if err != nil || len(formed) != 1 {
-		t.Fatalf("two complete fest teams did not form: %v, %v", formed, err)
+	_, formed, err := q.EnqueueWithFestTeam("b4", mode, "Bravo")
+	if err != nil || len(formed) != 2 {
+		t.Fatalf("formed %v, %v; want an Alpha lobby and a Bravo lobby", formed, err)
 	}
-	s := formed[0]
-	if len(s.Players) != 4 || s.TeamSlots["a1"] != "team1" || s.TeamSlots["a2"] != "team1" ||
-		s.TeamSlots["b1"] != "team2" || s.TeamSlots["b2"] != "team2" ||
-		s.TeamSlots["a3"] != "" || s.TeamSlots["c1"] != "" {
-		t.Fatalf("fest slots mix voted teams or include waiting players: %v", s)
+	for _, s := range formed {
+		if len(s.Players) != 4 {
+			t.Fatalf("lobby %v is not 4 players", s.Players)
+		}
+		team := s.Players[0][:1]
+		for _, p := range s.Players {
+			if p[:1] != team {
+				t.Fatalf("lobby %v mixes fest teams", s.Players)
+			}
+		}
 	}
-	if waiting := q.Waiting()[mode]; waiting != 2 {
-		t.Fatalf("waiting after one 2v2 match = %d, want 2", waiting)
+}
+
+// TestAFestSquadOfThreeFillsWithItsOwnTeamAndIsNeverSplit is a host with two
+// friends: the lobby is completed by one stranger of the same team, never
+// split, and never completed from the other team.
+func TestAFestSquadOfThreeFillsWithItsOwnTeamAndIsNeverSplit(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	mode := "fest_match_regular_normal_config"
+	if _, _, err := q.EnqueueSquad("a1", []string{"a2", "a3"}, mode, "Alpha"); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []string{"b1", "b2", "b3", "b4"} {
+		q.EnqueueWithFestTeam(u, mode, "Bravo")
+	}
+	*clock = clock.Add(time.Minute)
+	if _, f := q.Sweep(); len(f) != 0 {
+		t.Fatalf("formed %v: the squad of 3 cannot make a lobby of 2 or 4 yet", f)
+	}
+	_, formed, _ := q.EnqueueWithFestTeam("a4", mode, "Alpha")
+	if len(formed) != 2 {
+		t.Fatalf("formed %v, want the completed Alpha lobby and the Bravo lobby", formed)
+	}
+	for _, sess := range formed {
+		if slices.Contains(sess.Players, "a1") {
+			for _, p := range []string{"a1", "a2", "a3", "a4"} {
+				if !slices.Contains(sess.Players, p) {
+					t.Fatalf("squad lobby %v is missing %s", sess.Players, p)
+				}
+			}
+			return
+		}
+	}
+	t.Fatalf("formed %v without the squad", formed)
+}
+
+// TestTwoPerTeamPlaysAsTwoPairedLobbies is the 2 v 2 that failed on
+// 2026-10-10 as one mixed lobby: after the wait it is a pair of one-team
+// lobbies of 2, which then meet in direct_pair.
+func TestTwoPerTeamPlaysAsTwoPairedLobbies(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	open := "fest_match_regular_normal_config"
+	pair := "fest_match_regular_direct_pair_config"
+	for _, p := range []struct{ user, team string }{
+		{"a1", "Alpha"}, {"b1", "Bravo"}, {"a2", "Alpha"}, {"b2", "Bravo"},
+	} {
+		if _, f, _ := q.EnqueueWithFestTeam(p.user, open, p.team); len(f) != 0 {
+			t.Fatalf("premature: %v", f)
+		}
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, formed := q.Sweep()
+	if len(formed) != 2 || len(formed[0].Players) != 2 || len(formed[1].Players) != 2 {
+		t.Fatalf("formed %v, want two lobbies of 2", formed)
+	}
+
+	// Each lobby's host re-queues it as a squad; the two squads meet.
+	if _, f, _ := q.EnqueueSquad("a1", []string{"a2"}, pair, "Alpha"); len(f) != 0 {
+		t.Fatalf("a one-team squad played alone: %v", f)
+	}
+	_, f, _ := q.EnqueueSquad("b1", []string{"b2"}, pair, "Bravo")
+	if len(f) != 1 || len(f[0].Players) != 4 {
+		t.Fatalf("formed %v, want one 2 v 2", f)
+	}
+	s := f[0].TeamSlots
+	if s["a1"] != s["a2"] || s["b1"] != s["b2"] || s["a1"] == s["b1"] {
+		t.Fatalf("slots = %v, want each squad on its own side", s)
+	}
+}
+
+// TestOnePerTeamStillPlaysOneVersusOne keeps the smallest game: one player
+// of each team share a lobby of 2 after the wait.
+func TestOnePerTeamStillPlaysOneVersusOne(t *testing.T) {
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = 20 * time.Second
+	mode := "fest_match_regular_normal_config"
+	q.EnqueueWithFestTeam("a1", mode, "Alpha")
+	q.EnqueueWithFestTeam("b1", mode, "Bravo")
+	*clock = clock.Add(21 * time.Second)
+	_, formed := q.Sweep()
+	if len(formed) != 1 || len(formed[0].Players) != 2 {
+		t.Fatalf("formed %v, want a 1 v 1 lobby", formed)
+	}
+	if s := formed[0].TeamSlots; s["a1"] == s["b1"] {
+		t.Fatalf("slots = %v", s)
 	}
 }
 
