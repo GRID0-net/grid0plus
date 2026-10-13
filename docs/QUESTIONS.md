@@ -20,32 +20,12 @@ an answer cheap to act on later.
 
 ---
 
-## Is there a STUN/TURN (coturn) deployment, and at what addresses?
+## ~~Is there a STUN/TURN (coturn) deployment, and at what addresses?~~ — resolved
 
-Splatoon 3 uses ICE rather than the Pia NAT-check pair, so `AllocateIceServerSet`
-has to hand the console real STUN/TURN addresses — and they must be reachable
-**from the console**, not merely from the server. Wrong addresses produce "the
-lobby fills but the match never starts", which is indistinguishable from a
-matchmaking bug when read from the server side.
-
-**Proceeding on:** `npln.ice_servers` in config, empty by default, served
-verbatim by `AllocateIceServerSet`, with a `switchnetctl check` warning when
-unset. Nothing is discovered: a server behind NAT cannot know its own reachable
-address, and a guess there produces exactly the failure above. **This is
-built** — an empty list means no ICE servers are offered, and matchmaking
-works for peers on the same LAN without any of it.
-
-So the question is now only *what to put in the file*, not what to write. If
-coturn exists, its addresses and a TURN username/password go in
-`config.yaml`; if it does not, this stays empty and consoles on one LAN are
-unaffected.
-
-**Changes if answered:** `config.yaml` only. One further thing would need code
-if coturn is deployed with the time-limited HMAC credential scheme rather than a
-static user: `AllocateIceServerSet` in `internal/npln/matchmaking.go` would have
-to derive the username, which it currently does not.
-
----
+grid0 runs STUN and TURN on its own address (89.168.58.206:3478), listed in
+`npln.ice_servers`, and cross-network matches have formed and played on
+hardware with it (43df69e). A new deployment still needs its own entries; an
+empty list stays the default.
 
 ## Does the game key Splatfest assets on the announced fest id, or only on the pack it is handed?
 
@@ -118,29 +98,12 @@ This would close it completely rather than fix anything.
 
 ---
 
-## Does the console treat an all-`is_valid: false` FestResult as "not concluded"?
+## ~~Does the console treat an all-`is_valid: false` FestResult as "not concluded"?~~ — resolved
 
-`GetFestResult` now answers rather than returning `Unimplemented`, but every
-sub-result (`Yobisai`, `HonsaiMidterm`, `HonsaiFinal`, `Overall`) reports
-`IsValid: false` -- GRID0+ has no real battle-outcome data to compute a
-ratio or point total from (`npln_fest_entries` records team *choice*, not who
-won, and `GameRecord` is unimplemented), and deriving one from entry counts
-alone would be actively misleading rather than merely incomplete.
-
-Two readings are both plausible for what the console does with an
-all-invalid result: treats the fest as still running (the same as before
-`GetFestResult` existed, since it previously errored), or shows an empty/tied
-outcome. Nothing here can tell which without seeing it happen.
-
-**Proceeding on:** `IsValid: false` is what the proto's own field exists to
-say, so it is the defensible reading rather than inventing a plausible ratio.
-
-**Changes if answered:** `internal/toyohr/entries.go`'s `GetFestResult`.
-If the console needs a genuinely valid result, the entry-count-derived ratio
-this pass rejected becomes the next thing to reconsider -- explicitly, in a
-commit that says why it is no longer considered misleading enough to avoid.
-
----
+The premise is gone: `internal/toyohr/fest_scoring.go` now computes the
+midterm, final and overall results from recorded fest battles, valid
+whenever there are battles to count. An all-invalid answer remains only for a
+fest with no battles at all.
 
 ## What do `CoopSchedule`'s `Name`/`ScheduleSetId`/`ShiftId`/`RewardType` fields actually carry?
 
@@ -268,33 +231,8 @@ apart.
 
 ---
 
-## Does a first-time Nintendo Account link actually request any of the eight unserved `accounts.nintendo.com` paths?
+## ~~Does a first-time Nintendo Account link actually request any of the eight unserved `accounts.nintendo.com` paths?~~ — resolved
 
-Decompiling the console's own `account` sysmodule (fw 22.5.0) shows it can
-construct eight `accounts.nintendo.com` URLs that GRID0+ does not route:
-`/profile`, `connect/1.0.0/api/term_agreement_token`,
-`connect/1.0.0/term_confirm`, `connect/1.0.0/api/transfer_na_tokens` (plus its
-`/%lld` and `_inherit` forms), and `analytics/device/opt_in` with its `app/`
-variant. All are first-link surface, and the terms pair matches the licence
-scene in the add-user wizard. See
-[`CAPTURES/account-sysmodule-decompile.md`](CAPTURES/account-sysmodule-decompile.md).
-
-This is the open candidate for the post-federation "account couldn't be linked"
-dialog: if the console walks terms → analytics → profile after federation,
-every one of those requests currently gets a 404. It needs no MITM to
-answer — `docker compose logs nginx` from the failed attempt already holds every
-request line, and `CAPTURES/nintendo-account-link.md` documents the working
-tail to compare against. **This can only be answered on the console**, which is
-why it is here rather than in `TODO.md`.
-
-**Proceeding on:** nothing is implemented for these paths, and no response
-shape is guessed for them. A URL appearing in the binary proves it is
-constructible, never that it is called.
-
-**Changes if answered:** `internal/baas/router.go` plus one handler next to
-`naAuthorizePage`/`naToken`. If the log shows a request, the response shape
-comes from the parser that consumes it — `0x1c1eb0` reads
-`$.analyticsPermissions.*` with `$.birthday`/`$.country`, and `0x1c44a0` reads
-the flattened `$.analyticsFor*` with `$.isNnLinked` — not from invention. If the
-log shows none of them, they stay unimplemented and the dialog's cause is
-somewhere else.
+No. Account linking works on hardware (2124-0292 fixed 2026-09-21, the
+post-federation dialog b129027), and grid0's logs from 2026-09-20 to
+2026-10-13 hold no request for any of the eight paths. They stay unserved.

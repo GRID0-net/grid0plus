@@ -486,14 +486,6 @@ The ones that change behaviour rather than cosmetics:
 - **`GameSession.Port`.** Whether a real client dials it at all now that
   `SyncGameSession` publishes it: a match on GRID0+ with tcpdump on the
   VM answers it.
-- **Eight `accounts.nintendo.com` paths** the `account` sysmodule can build
-  and GRID0+ does not serve (`/profile`,
-  `connect/1.0.0/api/term_agreement_token`, `connect/1.0.0/term_confirm`,
-  three `connect/1.0.0/api/transfer_na_tokens*`, both
-  `analytics/device/opt_in` forms; see
-  [account-sysmodule-decompile.md](docs/CAPTURES/account-sysmodule-decompile.md)).
-  The nginx access log during one link attempt against GRID0+ says
-  whether any is requested.
 
 Write findings up under `docs/CAPTURES/` using the template, redacted,
 reconcile the implementation, and **delete the `TODO` comment in the same
