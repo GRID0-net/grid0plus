@@ -389,9 +389,12 @@ function renderFests(fests) {
             ${f.hasKeys ? "" : `<span class="pill warn" title="GetFestDecryptionKey will return nothing, so the packs cannot be opened">no keys</span>`}
           </div>
           <div class="meta">${escape(f.resource)} · rev ${escape(f.revision.slice(0, 12))}… · ${f.regions.join(" ")}</div>
-          <div class="meta">starts ${new Date(f.startAt).toLocaleString()}</div>
+          <div class="meta">starts ${new Date(f.startAt).toLocaleString()} · play ends ${new Date(f.timetable.end).toLocaleString()}${f.extended ? " (extended)" : ""}</div>
+          <div class="fest-entries" data-entries-for="${escape(f.id)}" hidden></div>
         </div>
         <div class="actions">
+          <button class="btn btn-ghost" data-entries="${escape(f.id)}">Teams</button>
+          <button class="btn btn-ghost" data-end="${escape(f.id)}" data-current="${escape(f.timetable.end)}">Change end</button>
           <button class="btn btn-ghost" data-toggle="${escape(f.id)}" data-next="${!f.enabled}">
             ${f.enabled ? "Hold" : "Announce"}
           </button>
@@ -701,11 +704,70 @@ $("#player-detail").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
 });
 
+/** Converts an ISO time to the value a datetime-local prompt shows. */
+function localInputValue(iso) {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+async function showFestEntries(festId) {
+  const box = $(`[data-entries-for="${CSS.escape(festId)}"]`);
+  const { entries } = await api(`/api/fests/${encodeURIComponent(festId)}/entries`);
+  // The team names live in the pack, so the choices are the teams the fest's
+  // consoles have actually sent.
+  const teams = [...new Set(entries.map((x) => x.team))].sort();
+  const counts = teams.map((t) => `${escape(t)}: ${entries.filter((x) => x.team === t).length}`).join(" · ");
+  box.innerHTML = entries.length
+    ? `<div class="meta">${counts}</div>
+       <table class="grid"><thead><tr><th>Player</th><th>Team</th><th>Region</th><th>Entered</th></tr></thead><tbody>
+       ${entries.map((x) => `<tr><td>${escape(playerName(x.userId))}</td>
+         <td><select data-fest="${escape(festId)}" data-user="${escape(x.userId)}">
+           ${teams.map((t) => `<option ${t === x.team ? "selected" : ""}>${escape(t)}</option>`).join("")}
+         </select></td><td>${escape(x.region)}</td><td>${new Date(x.enteredAt).toLocaleString()}</td></tr>`).join("")}
+       </tbody></table>`
+    : `<p class="empty">Nobody has picked a team yet.</p>`;
+  box.hidden = false;
+}
+
+$("#fest-list").addEventListener("change", async (e) => {
+  const sel = e.target.closest("select[data-user]");
+  if (!sel) return;
+  try {
+    await api(`/api/fests/${encodeURIComponent(sel.dataset.fest)}/entries/${encodeURIComponent(sel.dataset.user)}`, {
+      method: "POST",
+      body: JSON.stringify({ team: sel.value }),
+    });
+    await showFestEntries(sel.dataset.fest);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
 $("#fest-list").addEventListener("click", async (e) => {
   const toggle = e.target.closest("[data-toggle]");
   const del = e.target.closest("[data-delete]");
+  const end = e.target.closest("[data-end]");
+  const entries = e.target.closest("[data-entries]");
   try {
-    if (toggle) {
+    if (entries) {
+      const box = $(`[data-entries-for="${CSS.escape(entries.dataset.entries)}"]`);
+      if (!box.hidden) {
+        box.hidden = true;
+        return;
+      }
+      await showFestEntries(entries.dataset.entries);
+    } else if (end) {
+      const v = prompt(
+        "End of play, local time (YYYY-MM-DDTHH:MM). Snapped to a two-hour slot. Leave empty for the standard 48 h.",
+        localInputValue(end.dataset.current)
+      );
+      if (v === null) return;
+      await api(`/api/fests/${encodeURIComponent(end.dataset.end)}/end`, {
+        method: "POST",
+        body: JSON.stringify({ endAt: v.trim() ? new Date(v.trim()).toISOString() : "" }),
+      });
+      await refresh();
+    } else if (toggle) {
       await api(`/api/fests/${encodeURIComponent(toggle.dataset.toggle)}/enabled`, {
         method: "POST",
         body: JSON.stringify({ enabled: toggle.dataset.next === "true" }),

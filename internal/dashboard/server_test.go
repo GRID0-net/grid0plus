@@ -843,3 +843,76 @@ func TestAConsoleThatHasNeverReportedDoesNotLookLikeOneThatReportedOffline(t *te
 		t.Error("lastSeenAt is empty, so there is nothing to explain the ONLINE")
 	}
 }
+
+// An extended fest is what kept fest matchmaking open past its standard
+// end; the dashboard has to set it, show it, and refuse an end the
+// timetable would silently ignore.
+func TestAFestEndCanBeExtendedAndPutBack(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	h := srv.Handler()
+	ctx := context.Background()
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests", strings.NewReader(`{"regions":["EU"]}`)))
+	var created struct{ ID string }
+	json.Unmarshal(rec.Body.Bytes(), &created)
+	row, _ := store.GetFest(ctx, created.ID)
+	standard := toyohr.Fest{Start: row.StartAt}.Timetable()
+
+	later := standard.End.Add(24 * time.Hour)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests/"+created.ID+"/end",
+		strings.NewReader(`{"endAt":"`+later.Format(time.RFC3339)+`"}`)))
+	if rec.Code != 200 {
+		t.Fatalf("extend: %d %s", rec.Code, rec.Body)
+	}
+	rows, _ := srv.festRows(ctx)
+	if !rows[0].Extended || rows[0].Timetable.End != later.Format(time.RFC3339) {
+		t.Errorf("listed as extended=%v end=%s, want true %s", rows[0].Extended, rows[0].Timetable.End, later.Format(time.RFC3339))
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests/"+created.ID+"/end",
+		strings.NewReader(`{"endAt":"`+standard.Start.Format(time.RFC3339)+`"}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("an end before the midpoint was accepted: %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests/"+created.ID+"/end", strings.NewReader(`{"endAt":""}`)))
+	rows, _ = srv.festRows(ctx)
+	if rec.Code != 200 || rows[0].Extended {
+		t.Errorf("putting the standard end back: %d extended=%v", rec.Code, rows[0].Extended)
+	}
+}
+
+func TestAPlayersFestTeamCanBeChangedButNotInvented(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	h := srv.Handler()
+	ctx := context.Background()
+	store.UpsertFestEntry(ctx, db.FestEntry{FestID: "F1", UserID: "u1", Team: "Bravo", Region: "EU"})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests/F1/entries/u1", strings.NewReader(`{"team":"Alpha"}`)))
+	if rec.Code != 200 {
+		t.Fatalf("change team: %d %s", rec.Code, rec.Body)
+	}
+	e, _ := store.GetFestEntry(ctx, "F1", "u1")
+	if e.Team != "Alpha" || e.Region != "EU" {
+		t.Errorf("entry = %+v, want Alpha and the region kept", e)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests/F1/entries/u2", strings.NewReader(`{"team":"Alpha"}`)))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("an entry was invented for a player who never voted: %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/fests/F1/entries", nil))
+	if !strings.Contains(rec.Body.String(), `"team":"Alpha"`) {
+		t.Errorf("entries = %s", rec.Body)
+	}
+}

@@ -197,6 +197,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/fests", s.guard(s.handleCreateFest))
 	mux.HandleFunc("POST /api/fests/{id}/enabled", s.guard(s.handleSetFestEnabled))
 	mux.HandleFunc("DELETE /api/fests/{id}", s.guard(s.handleDeleteFest))
+	mux.HandleFunc("POST /api/fests/{id}/end", s.guard(s.handleSetFestEnd))
+	mux.HandleFunc("GET /api/fests/{id}/entries", s.guard(s.handleFestEntries))
+	mux.HandleFunc("POST /api/fests/{id}/entries/{user}", s.guard(s.handleSetFestTeam))
 	mux.HandleFunc("GET /api/coop-shifts", s.guard(s.handleCoopShifts))
 	mux.HandleFunc("POST /api/coop-shifts", s.guard(s.handleCreateCoopShift))
 	mux.HandleFunc("POST /api/coop-shifts/generate", s.guard(s.handleGenerateCoopShifts))
@@ -747,10 +750,13 @@ func (s *Server) matchmakingGauge(ctx context.Context) map[string]any {
 // ---- splatfests -----------------------------------------------------------
 
 type festRow struct {
-	ID        string   `json:"id"`
-	Resource  string   `json:"resource"`
-	Revision  string   `json:"revision"`
-	StartAt   string   `json:"startAt"`
+	ID       string `json:"id"`
+	Resource string `json:"resource"`
+	Revision string `json:"revision"`
+	StartAt  string `json:"startAt"`
+	// Extended is whether the operator moved the end of play off the
+	// standard 48 h; the timetable already reflects it.
+	Extended  bool     `json:"extended"`
 	Regions   []string `json:"regions"`
 	Enabled   bool     `json:"enabled"`
 	Phase     string   `json:"phase"`
@@ -786,6 +792,7 @@ func (s *Server) festRows(ctx context.Context) ([]festRow, error) {
 			Phase:   f.PhaseAt(now).String(),
 			HasKeys: len(r.PackKeys) > 0,
 		}
+		row.Extended = !tt.End.Equal(toyohr.Fest{Start: f.Start}.Timetable().End)
 		row.Timetable.Open = tt.Open.Format(time.RFC3339)
 		row.Timetable.Start = tt.Start.Format(time.RFC3339)
 		row.Timetable.Mid = tt.Mid.Format(time.RFC3339)
@@ -888,6 +895,104 @@ func (s *Server) handleDeleteFest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("dashboard: fest deleted", "fest", id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetFestEnd moves a fest's end of play. An empty endAt puts it back
+// on the standard 48 h; the store keeps a stored end on a zero upsert, so the
+// standard end is written out explicitly rather than as zero.
+func (s *Server) handleSetFestEnd(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		EndAt string `json:"endAt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	row, err := s.store.GetFest(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, "no such fest", http.StatusNotFound)
+			return
+		}
+		s.fail(w, "load fest", err)
+		return
+	}
+	standard := toyohr.Fest{Start: row.StartAt.UTC()}.Timetable()
+	end := standard.End
+	if body.EndAt != "" {
+		parsed, err := time.Parse(time.RFC3339, body.EndAt)
+		if err != nil {
+			http.Error(w, "endAt must be RFC3339", http.StatusBadRequest)
+			return
+		}
+		end = toyohr.AlignToSlot(parsed.UTC())
+		// Timetable ignores an end at or before the midpoint, so accepting
+		// one would report success and change nothing.
+		if !end.After(standard.Mid) {
+			http.Error(w, "the end must be after the fest's midpoint ("+standard.Mid.Format(time.RFC3339)+")", http.StatusBadRequest)
+			return
+		}
+	}
+	row.EndAt = end
+	if err := s.store.UpsertFest(r.Context(), row); err != nil {
+		s.fail(w, "save fest", err)
+		return
+	}
+	s.log.Info("dashboard: fest end set", "fest", row.ID, "end", end)
+	writeJSON(w, map[string]any{"id": row.ID, "endAt": end.Format(time.RFC3339)})
+}
+
+type festEntryRow struct {
+	UserID    string `json:"userId"`
+	Team      string `json:"team"`
+	Region    string `json:"region"`
+	EnteredAt string `json:"enteredAt"`
+}
+
+func (s *Server) handleFestEntries(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.store.ListFestEntries(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, "list fest entries", err)
+		return
+	}
+	out := make([]festEntryRow, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, festEntryRow{
+			UserID: e.UserID, Team: e.Team, Region: e.Region,
+			EnteredAt: e.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	writeJSON(w, map[string]any{"entries": out})
+}
+
+// handleSetFestTeam changes a player's team, for the player whose save picked
+// one side while the server recorded another. Only an existing entry can be
+// changed: the team names live in the pack, so the valid set is whatever the
+// fest's consoles have already sent.
+func (s *Server) handleSetFestTeam(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Team string `json:"team"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Team) == "" {
+		http.Error(w, "team is required", http.StatusBadRequest)
+		return
+	}
+	e, err := s.store.GetFestEntry(r.Context(), r.PathValue("id"), r.PathValue("user"))
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.Error(w, "that player has not entered this fest", http.StatusNotFound)
+			return
+		}
+		s.fail(w, "load fest entry", err)
+		return
+	}
+	e.Team = strings.TrimSpace(body.Team)
+	if err := s.store.UpsertFestEntry(r.Context(), e); err != nil {
+		s.fail(w, "save fest entry", err)
+		return
+	}
+	s.log.Info("dashboard: fest team changed", "fest", e.FestID, "user", e.UserID, "team", e.Team)
+	writeJSON(w, map[string]any{"userId": e.UserID, "team": e.Team})
 }
 
 // ---- match history ----------------------------------------------------------
