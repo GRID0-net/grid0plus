@@ -1444,9 +1444,10 @@ Versus name remains wrong.
 (`fest_match_regular_normal_config`, different teams) formed, both consoles
 joined gamesync, and both timed out with `MatchGsReadyTimeout` ~30 s later
 (2026-10-04, hardware). The team slot was only on the ticket's user
-definitions; the roster's `UserSession.team` is now set too. A capture of a
-fest match's `GetGameSession`/`TrackMatchmakingTicket` would settle which
-messages carry it.
+definitions; the roster's `UserSession.team` is now set too (bffa01d).
+**Settled:** with it, fest battles have played on hardware since, and grid0
+formed over a hundred fest matches across all five fest configs by
+2026-10-13.
 
 ### Salmon Run "Again!": what restarts the job
 
