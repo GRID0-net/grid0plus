@@ -55,7 +55,7 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
-| §1.6 | **Splatoon 3 `main` from the operator's dump**, to read the `save.dat` format |
+| §1.6 | **nothing now** — decryption is solved; mapping the plaintext's hashed keys to record names is next |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
@@ -215,31 +215,13 @@ different `save.dat` on a console never fills the server record.
   not a multiple of 16 (0x16EF0 + 15), so the format has to be read from the
   game.
 
-**Ruled out by static RE (2026-10-13), so the next person does not repeat it.**
-Every cipher implementation in `main` has been traced to its users, and none
-is the save's:
-
-- `nn::crypto` AES: only the Splatoon 2 PrevSD importer (`FUN_71011937a0`),
-  the amiibo application area (`FUN_71032f8f60`, AES-256-CTR) and the
-  `"enc"` sead resource decompressor (vtable `0x7105c3c7f0`, an asset
-  loader).
-- The one table AES S-box (`0x7105076918`): Pia's session crypto
-  (`FUN_71009265d0`/`FUN_71009269c0`, Pia result codes).
-- Bundled OpenSSL EVP (`external/openssl/...`): its only game-side caller is
-  gRPC's ALTS AEAD crypter (`FUN_7100159e60`).
-- `sead::Random` seeding next to the `State::LoadSaveData` machine
-  (`FUN_7103757ea0`): seeded from the system tick, not a fixed keystream.
-- `nn::fs::MountSaveData` has no direct caller; the mount goes through an
-  indirect call not yet traced.
-- zlib and zstd (framed) do not decompress either local save. zstd's
-  magicless format reads the Eden save's first bytes as a frame header that
-  needs a dictionary -- possibly coincidence, worth one check.
-
-What is left: a hand-written cipher (a `sead::Random` xorshift keystream
-seeded from constants, as Splatoon 2 v4+ generated its keys, fits a
-header-less file with an odd size), or a dictionary-compressed body.
-The quickest way through is still a breakpoint on the save read, which
-the operator has chosen not to use for now.
+**The encryption is solved (2026-10-13):** `[u32 seed][u32 check]` +
+AES-256-CTR, key and IV drawn from `sead::Random` seeded off a 32-word
+table in `main`; verified on three real saves. See
+[`docs/CAPTURES/splat3-save-dat-format-2026-10-13.md`](docs/CAPTURES/splat3-save-dat-format-2026-10-13.md).
+What is left is the plaintext: a MessagePack-shaped body (`MS`, version 4)
+whose keys look like 32-bit hashes, which have to be mapped back to the
+CloudSave record's key names.
 
 **Start at** Splatoon 3 11.3.0 `main` (build `28C4287AEE36F7499DA60F3E68B54C70DA382D75`,
 the build GRID0+ patches), from the operator's dump: Ghidra headless, trace
