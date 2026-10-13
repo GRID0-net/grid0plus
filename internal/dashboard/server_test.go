@@ -916,3 +916,17 @@ func TestAPlayersFestTeamCanBeChangedButNotInvented(t *testing.T) {
 		t.Errorf("entries = %s", rec.Body)
 	}
 }
+
+// The play log is a JSON string inside extras; the detail decodes it, most
+// recent game first, and shows nothing rather than failing on a bad one.
+func TestThePlayerDetailReadsThePlayLog(t *testing.T) {
+	got := playLogFrom(db.ExtrasByScope{db.ScopeEveryone: {"playLog": `[
+		{"appInfo:appId":"0100c2500fc20000","totalPlayCount":3,"totalPlayTime":95,"firstPlayedAt":1790000000,"lastPlayedAt":1790000100},
+		{"appInfo:appId":"01003bc0000a0000","totalPlayCount":1,"totalPlayTime":5,"firstPlayedAt":1790000000,"lastPlayedAt":1790000200}]`}})
+	if len(got) != 2 || got[0].AppID != "01003bc0000a0000" || got[1].PlayMinutes != 95 {
+		t.Errorf("play log = %+v", got)
+	}
+	if bad := playLogFrom(db.ExtrasByScope{db.ScopeEveryone: {"playLog": "{"}}); len(bad) != 0 {
+		t.Errorf("an unreadable log gave %+v", bad)
+	}
+}

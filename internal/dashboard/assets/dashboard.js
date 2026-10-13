@@ -1501,6 +1501,19 @@ function renderPlayerDetail(d) {
         .join("")
     : `<li class="empty">No device accounts.</li>`;
 
+  const playLog = d.playLog || [];
+  const playLogHTML = playLog.length
+    ? playLog
+        .map(
+          (g) => `
+        <li>
+          <span>${escape(g.title || g.appId)}</span>
+          <span class="meta">${g.playCount} session${g.playCount === 1 ? "" : "s"} · ${Math.floor(g.playMinutes / 60)} h ${g.playMinutes % 60} min · last ${ago(g.lastPlayedAt)}</span>
+        </li>`
+        )
+        .join("")
+    : `<li class="empty">Nothing played.</li>`;
+
   const matchesHTML = played.length
     ? played
         .map(
@@ -1534,6 +1547,10 @@ function renderPlayerDetail(d) {
       <section>
         <h4>Device accounts <span class="meta">${d.deviceAccounts.length}</span></h4>
         <ul class="player-detail-list">${devicesHTML}</ul>
+      </section>
+      <section>
+        <h4>Play activity <span class="meta">${playLog.length}</span></h4>
+        <ul class="player-detail-list">${playLogHTML}</ul>
       </section>
       <section>
         <h4>Recent matches <span class="meta">${played.length}</span></h4>

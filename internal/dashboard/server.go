@@ -531,6 +531,9 @@ type playerDetail struct {
 
 	Friends        []playerFriend        `json:"friends"`
 	DeviceAccounts []playerDeviceAccount `json:"deviceAccounts"`
+	// PlayLog is the profile's play activity, extras.everyone.playLog:
+	// written by a console itself, or by GRID0+ for an emulator.
+	PlayLog []playLogEntry `json:"playLog"`
 }
 
 func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
@@ -586,6 +589,8 @@ func (s *Server) handlePlayerDetail(w http.ResponseWriter, r *http.Request) {
 	} else if !errors.Is(err, db.ErrNotFound) {
 		s.log.Debug("dashboard: load raw presence", "user", id, "error", err)
 	}
+
+	detail.PlayLog = playLogFrom(u.Extras)
 
 	if code, err := s.store.GetFriendCode(ctx, id); err == nil {
 		detail.FriendCode = code.Code
@@ -1144,4 +1149,41 @@ func constantTimeEqual(a, b string) bool {
 		diff |= a[i] ^ b[i]
 	}
 	return diff == 0
+}
+
+type playLogEntry struct {
+	AppID         string `json:"appId"`
+	Title         string `json:"title"`
+	PlayCount     int64  `json:"playCount"`
+	PlayMinutes   int64  `json:"playMinutes"`
+	FirstPlayedAt string `json:"firstPlayedAt"`
+	LastPlayedAt  string `json:"lastPlayedAt"`
+}
+
+// playLogFrom reads extras.everyone.playLog, most recently played first. An
+// unreadable log is shown as empty: it is the profile's, not the dashboard's,
+// to fix.
+func playLogFrom(extras db.ExtrasByScope) []playLogEntry {
+	raw, _ := extras[db.ScopeEveryone]["playLog"].(string)
+	var entries []struct {
+		AppID   string `json:"appInfo:appId"`
+		Count   int64  `json:"totalPlayCount"`
+		Minutes int64  `json:"totalPlayTime"`
+		FirstAt int64  `json:"firstPlayedAt"`
+		LastAt  int64  `json:"lastPlayedAt"`
+	}
+	if raw == "" || json.Unmarshal([]byte(raw), &entries) != nil {
+		return []playLogEntry{}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].LastAt > entries[j].LastAt })
+	out := make([]playLogEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, playLogEntry{
+			AppID: e.AppID, Title: titleName(e.AppID),
+			PlayCount: e.Count, PlayMinutes: e.Minutes,
+			FirstPlayedAt: time.Unix(e.FirstAt, 0).UTC().Format(time.RFC3339),
+			LastPlayedAt:  time.Unix(e.LastAt, 0).UTC().Format(time.RFC3339),
+		})
+	}
+	return out
 }
