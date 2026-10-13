@@ -219,6 +219,16 @@ different `save.dat` on a console never fills the server record.
 AES-256-CTR, key and IV drawn from `sead::Random` seeded off a 32-word
 table in `main`; verified on three real saves. See
 [`docs/CAPTURES/splat3-save-dat-format-2026-10-13.md`](docs/CAPTURES/splat3-save-dat-format-2026-10-13.md).
+**The server record does win over a local save.** NextendoNetwork's own
+notes (facts only, `cloudsave_nextendo.go`) record that when they seeded
+every new player's server record from one captured account ("gen", Money
+2658, PlayerRank 1), every player, their main account included, came up
+with that account's name, level, money, gear and ranks despite having
+local saves; their server-side save editor relies on the same. GRID0+'s
+consoles call `GetSaveRecord` on every boot and only upload their own save
+when the record is empty. So replacing the record is enough for an import;
+a one-boot check on hardware is still worth doing, but nothing waits on it.
+
 What is left is the plaintext: a MessagePack-shaped body (`MS`, version 4)
 whose keys look like 32-bit hashes, which have to be mapped back to the
 CloudSave record's key names.
