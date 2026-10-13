@@ -55,7 +55,7 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
-| §1.6 | **the bot command** — server side built (`internal/splat3save`, `POST /bot/v1/splatoon3/save/import`); the operator installs the table file |
+| §1.6 | **deploy + a hardware run** — decoder, bot API route and `/splatoon-save-upload` built; the operator installs the table file |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
@@ -176,7 +176,7 @@ four of them named `Unk1` through `Unk4` in this project's own proto
 reversal, and answering would mean inventing values for fields whose meaning
 is unknown — worse than a logged `Unimplemented`.
 
-### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, server side built, bot command left**
+### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, built, not deployed**
 
 **What:** a `/splatoon-save-upload file:<save.dat> [username:]` command in
 `n-popescu/grid0plus-discord` that replaces the player's CloudSave record
@@ -242,8 +242,8 @@ the operator's 128-byte table file. Refusals: `not_a_save` (check word),
 Left:
 
 1. Install the table on grid0 (`/opt/switchnet/secrets/`) and set the key.
-2. The bot command in `grid0plus-discord`, with a confirm button and
-   "close Splatoon 3 first" (a running game would write over the import).
+2. Deploy both (the bot's `/splatoon-save-upload` is in `grid0plus-discord`
+   e4835c4) and try one import on hardware.
 
 **Rules:** the key table, any constant lifted from `main` and every real
 save stay out of the repository (CLAUDE.md rule 1); load them from an
