@@ -149,8 +149,10 @@ func main() {
 	if cfg.BAAS.BotAPI.Listen != "" {
 		var saveTable *splat3save.Table
 		if p := cfg.BAAS.BotAPI.Splatoon3SaveTable; p != "" {
+			// Not fatal: an optional feature's bad path must not stop
+			// sign-in. switchnetctl check reports it too.
 			if saveTable, err = splat3save.LoadTable(p); err != nil {
-				service.Fatal(log, "load splatoon3_save_table", err)
+				log.Error("Splatoon 3 save import is off: cannot load splatoon3_save_table", "error", err)
 			}
 		}
 		bot := srv.BotHandler(baas.BotAPIOptions{

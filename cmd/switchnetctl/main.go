@@ -23,6 +23,7 @@ import (
 
 	"github.com/n-popescu/grid0plus/config"
 	"github.com/n-popescu/grid0plus/internal/nintendo"
+	"github.com/n-popescu/grid0plus/internal/splat3save"
 )
 
 func main() {
@@ -183,6 +184,14 @@ when you cannot control DNS on the network.
 
 // warn reports configuration that is valid but likely to cause trouble.
 func warn(cfg config.Config) {
+	if p := cfg.BAAS.BotAPI.Splatoon3SaveTable; p != "" {
+		if _, err := splat3save.LoadTable(p); err != nil {
+			fmt.Fprintf(os.Stderr,
+				"warning: baas.bot_api.splatoon3_save_table: %v. The Splatoon 3 save "+
+					"import stays off and /splatoon-save-upload answers that it is not "+
+					"turned on.\n", err)
+		}
+	}
 	if cfg.Network.PublicIP == "" {
 		fmt.Fprintln(os.Stderr,
 			"warning: network.public_ip is empty; 'switchnetctl hosts' cannot run")
