@@ -204,6 +204,10 @@ baas:
   bot_api:
     listen: ""   # e.g. "127.0.0.1:8096"
     token: ""
+    # Lets a player import a Splatoon 3 save.dat into their cloud save. The
+    # game's 128-byte save key table (main 0x71050b6dec in 11.3.0), which is
+    # never in this repository. Empty turns the import off.
+    splatoon3_save_table: ""
 
   # How many login attempts (POST /1.0.0/login and federation) one client
   # address gets per login_window_seconds, before further attempts from it are

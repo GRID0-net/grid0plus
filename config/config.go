@@ -250,6 +250,10 @@ type BotAPI struct {
 	// 32 characters (openssl rand -hex 32). The same value goes in the
 	// bot's own configuration.
 	Token string `yaml:"token"`
+	// Splatoon3SaveTable is the path of the game's 128-byte save key table,
+	// which turns on the save import (internal/splat3save). It is game key
+	// material and stays an operator file. Empty turns the import off.
+	Splatoon3SaveTable string `yaml:"splatoon3_save_table"`
 }
 
 // SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
@@ -924,6 +928,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_BAAS_LISTEN", &c.BAAS.Listen)
 	envStr("SWITCHNET_BAAS_BOT_API_LISTEN", &c.BAAS.BotAPI.Listen)
 	envStr("SWITCHNET_BAAS_BOT_API_TOKEN", &c.BAAS.BotAPI.Token)
+	envStr("SWITCHNET_BAAS_BOT_API_SPLATOON3_SAVE_TABLE", &c.BAAS.BotAPI.Splatoon3SaveTable)
 	envStr("SWITCHNET_BAAS_ISSUER", &c.BAAS.Issuer)
 	envStr("SWITCHNET_BAAS_AUDIENCE", &c.BAAS.Audience)
 	envStr("SWITCHNET_BAAS_IMAGE_DIR", &c.BAAS.ImageDir)

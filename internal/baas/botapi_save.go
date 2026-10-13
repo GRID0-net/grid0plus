@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/splat3save"
 )
 
 // wipeSplatoon3Save deletes the caller's Splatoon 3 cloud save record, after
@@ -54,13 +57,8 @@ func (b *botAPI) wipeSplatoon3Save(w http.ResponseWriter, r *http.Request, disco
 		return
 	}
 
-	backup := filepath.Join(b.saveBackupDir,
-		user.ID+"-"+time.Now().UTC().Format("20060102T150405Z")+"-wipe.pb")
-	if err := os.MkdirAll(b.saveBackupDir, 0o700); err != nil {
-		b.internal(w, "create save backup dir", err)
-		return
-	}
-	if err := os.WriteFile(backup, doc.Fields, 0o600); err != nil {
+	backup, err := b.archiveSave(user.ID, "wipe", doc.Fields)
+	if err != nil {
 		b.internal(w, "archive save record", err)
 		return
 	}
@@ -72,6 +70,105 @@ func (b *botAPI) wipeSplatoon3Save(w http.ResponseWriter, r *http.Request, disco
 	writeJSON(w, http.StatusOK, map[string]any{
 		"login": user.LoginUsername, "bytes": len(doc.Fields), "backup": filepath.Base(backup),
 	})
+}
+
+// archiveSave writes a record about to be replaced or deleted to the backup
+// directory and returns its path.
+func (b *botAPI) archiveSave(uid, why string, fields []byte) (string, error) {
+	backup := filepath.Join(b.saveBackupDir,
+		uid+"-"+time.Now().UTC().Format("20060102T150405Z")+"-"+why+".pb")
+	if err := os.MkdirAll(b.saveBackupDir, 0o700); err != nil {
+		return "", err
+	}
+	return backup, os.WriteFile(backup, fields, 0o600)
+}
+
+// maxSaveUpload bounds an uploaded save.dat, base64 in JSON. The game reads
+// its save into a 1 MiB buffer; real saves are about 80 KB.
+const maxSaveUpload = 2 << 20
+
+// importSplatoon3Save replaces the caller's Splatoon 3 cloud save record with
+// one decoded from an uploaded save.dat (internal/splat3save).
+//
+// It replaces the record whole rather than merging: a console takes the
+// server's record over its own save on every boot (TODO.md §1.6), so the
+// uploaded save only reaches the game through the record, and a merge would
+// keep fields from the save being replaced. The old record is archived first
+// and a failed archive refuses the import, as for the wipe.
+//
+// The console must not be running Splatoon 3 meanwhile: its next write
+// would carry the old save's version token and its own idea of the fields.
+// The bot says so before it calls this; nothing here can tell.
+func (b *botAPI) importSplatoon3Save(w http.ResponseWriter, r *http.Request, discordID string) {
+	if b.saveRecordPrefix == "" || b.saveBackupDir == "" || b.saveTable == nil {
+		writeBotError(w, http.StatusServiceUnavailable, "save_import_disabled", "cloud save import is not configured")
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Save     []byte `json:"save"` // save.dat, base64
+	}
+	if err := decodeJSONBodyLimit(r, &req, maxSaveUpload); err != nil {
+		writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
+		return
+	}
+	user, ok := b.ownAccount(w, r, discordID, req.Username)
+	if !ok {
+		return
+	}
+
+	rec, info, err := splat3save.Decode(req.Save, b.saveTable)
+	if err != nil {
+		code := "bad_save"
+		if errors.Is(err, splat3save.ErrCheck) {
+			code = "not_a_save"
+		}
+		b.s.log.Info("botapi: Splatoon 3 save import refused", "user", user.ID, "bytes", len(req.Save), "error", err)
+		writeBotError(w, http.StatusUnprocessableEntity, code, err.Error())
+		return
+	}
+	fields, err := proto.Marshal(rec)
+	if err != nil {
+		b.internal(w, "encode save record", err)
+		return
+	}
+
+	name := b.saveRecordPrefix + user.ID
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	created, updated := now, now
+	backup := ""
+	old, err := b.s.store.GetUGCDocument(r.Context(), name)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+	case err != nil:
+		b.internal(w, "load save record", err)
+		return
+	default:
+		if backup, err = b.archiveSave(user.ID, "import", old.Fields); err != nil {
+			b.internal(w, "archive save record", err)
+			return
+		}
+		created = old.CreateTime
+		// The record's version must move forward, as toyohr's
+		// nextSaveVersion keeps it, or a console could treat the imported
+		// record as one it already has.
+		if !updated.After(old.UpdateTime) {
+			updated = old.UpdateTime.Add(time.Microsecond)
+		}
+	}
+	if err := b.s.store.PutUGCDocument(r.Context(), db.UGCDocument{
+		Name: name, Owner: user.ID, Fields: fields, CreateTime: created, UpdateTime: updated,
+	}); err != nil {
+		b.internal(w, "store save record", err)
+		return
+	}
+	b.s.log.Info("botapi: Splatoon 3 save imported", "user", user.ID, "game_version", info.GameVersion,
+		"fields", info.Fields, "bytes", len(fields), "backup", backup)
+	resp := map[string]any{"login": user.LoginUsername, "gameVersion": info.GameVersion, "bytes": len(fields)}
+	if backup != "" {
+		resp["backup"] = filepath.Base(backup)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // ownAccount resolves the account a command acts on: the named login if one

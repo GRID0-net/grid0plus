@@ -19,6 +19,7 @@ import (
 	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 	"github.com/n-popescu/grid0plus/internal/service"
+	"github.com/n-popescu/grid0plus/internal/splat3save"
 )
 
 func main() {
@@ -146,12 +147,19 @@ func main() {
 	// The Discord bot's account API, on its own loopback listener. Config
 	// validation has already refused a listen address without a real token.
 	if cfg.BAAS.BotAPI.Listen != "" {
+		var saveTable *splat3save.Table
+		if p := cfg.BAAS.BotAPI.Splatoon3SaveTable; p != "" {
+			if saveTable, err = splat3save.LoadTable(p); err != nil {
+				service.Fatal(log, "load splatoon3_save_table", err)
+			}
+		}
 		bot := srv.BotHandler(baas.BotAPIOptions{
 			Token: cfg.BAAS.BotAPI.Token,
 			// Splatoon 3's cloud save records, as toyohr's CloudSave names them.
 			SaveRecordPrefix: "tenants/" + cfg.NPLN.Tenant + "/saveRecords/",
 			// Its own folder: scsi.storage_dir holds OLSC console saves.
 			SaveBackupDir: "data/splat3-save-backups",
+			SaveTable:     saveTable,
 			Health: func(ctx context.Context) []baas.ServiceStatus {
 				probed := dashboard.ProbeServices(ctx, cfg)
 				out := make([]baas.ServiceStatus, 0, len(probed))

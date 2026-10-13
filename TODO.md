@@ -55,7 +55,7 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
-| §1.6 | **nothing now** — decryption is solved; mapping the plaintext's hashed keys to record names is next |
+| §1.6 | **the bot command** — server side built (`internal/splat3save`, `POST /bot/v1/splatoon3/save/import`); the operator installs the table file |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
@@ -176,7 +176,7 @@ four of them named `Unk1` through `Unk4` in this project's own proto
 reversal, and answering would mean inventing values for fields whose meaning
 is unknown — worse than a logged `Unimplemented`.
 
-### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, blocked on the save format**
+### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, server side built, bot command left**
 
 **What:** a `/splatoon-save-upload file:<save.dat> [username:]` command in
 `n-popescu/grid0plus-discord` that replaces the player's CloudSave record
@@ -229,24 +229,21 @@ consoles call `GetSaveRecord` on every boot and only upload their own save
 when the record is empty. So replacing the record is enough for an import;
 a one-boot check on hardware is still worth doing, but nothing waits on it.
 
-What is left is the plaintext: a MessagePack-shaped body (`MS`, version 4)
-whose keys look like 32-bit hashes, which have to be mapped back to the
-CloudSave record's key names.
+**The server side is built (2026-10-13).** `internal/splat3save` decrypts,
+checks, parses the MessagePack body and converts its server half to a
+`MapValue` with field names and value types the stored records use (checked
+path by path against a real record; see its README for how id maps are
+told apart). `POST /bot/v1/splatoon3/save/import` (`{username?, save:
+<base64>}`) archives the current record, then replaces it whole, moving its
+version forward. It is off until `baas.bot_api.splatoon3_save_table` names
+the operator's 128-byte table file. Refusals: `not_a_save` (check word),
+`bad_save` (header, parse, or a field `names.txt` does not know).
 
-**Start at** Splatoon 3 11.3.0 `main` (build `28C4287AEE36F7499DA60F3E68B54C70DA382D75`,
-the build GRID0+ patches), from the operator's dump: Ghidra headless, trace
-the `save.dat` open on the save mount to the crypto and checksum after it.
-Prove the decryptor on the operator's save and that re-encrypting gives the
-same bytes. Then:
+Left:
 
-1. `internal/splat3save`: decrypt + verify, parse the body (BYML is the
-   likely format), convert `server` to a `MapValue` **keeping the value
-   types** (integer/float/double/bytes are read differently by the game).
-   Tests on synthetic saves only.
-2. A bot API route beside `botapi_save.go`'s wipe: same account resolution,
-   **archive the current record first** (a failed archive refuses), then
-   replace it whole, not merge.
-3. The bot command, with a confirm button and "close Splatoon 3 first".
+1. Install the table on grid0 (`/opt/switchnet/secrets/`) and set the key.
+2. The bot command in `grid0plus-discord`, with a confirm button and
+   "close Splatoon 3 first" (a running game would write over the import).
 
 **Rules:** the key table, any constant lifted from `main` and every real
 save stay out of the repository (CLAUDE.md rule 1); load them from an

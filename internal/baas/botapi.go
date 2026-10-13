@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/splat3save"
 )
 
 // The bot API is how the Discord bot (n-popescu/grid0plus-discord) manages
@@ -55,14 +56,18 @@ type BotAPIOptions struct {
 	// SaveRecordPrefix is the Ugcstore name prefix of Splatoon 3's cloud save
 	// records, "tenants/<tenant>/saveRecords/". Empty disables the wipe.
 	SaveRecordPrefix string
-	// SaveBackupDir is where a wiped save record is archived first.
+	// SaveBackupDir is where a wiped or replaced save record is archived
+	// first.
 	SaveBackupDir string
+	// SaveTable is the game's save key table, from the operator's file. Nil
+	// disables the save import.
+	SaveTable *splat3save.Table
 }
 
 // BotHandler serves the bot API.
 func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	b := &botAPI{s: s, token: opts.Token, health: opts.Health,
-		saveRecordPrefix: opts.SaveRecordPrefix, saveBackupDir: opts.SaveBackupDir}
+		saveRecordPrefix: opts.SaveRecordPrefix, saveBackupDir: opts.SaveBackupDir, saveTable: opts.SaveTable}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bot/v1/register", b.register)
 	mux.HandleFunc("POST /bot/v1/link", b.link)
@@ -79,6 +84,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux.HandleFunc("GET /bot/v1/online", b.online)
 	mux.HandleFunc("GET /bot/v1/status", b.status)
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/wipe", b.withDiscordID(b.wipeSplatoon3Save))
+	mux.HandleFunc("POST /bot/v1/splatoon3/save/import", b.withDiscordID(b.importSplatoon3Save))
 	return b.authenticate(mux)
 }
 
@@ -89,6 +95,7 @@ type botAPI struct {
 
 	saveRecordPrefix string
 	saveBackupDir    string
+	saveTable        *splat3save.Table
 }
 
 // botError is the API's one error shape. Code is stable for the bot to switch
