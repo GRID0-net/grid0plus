@@ -646,7 +646,7 @@ type Stubs struct {
 }
 
 // Toolbox configures the public API the GRID0+ Toolbox homebrew app
-// (net-GRID0/cfw-GRID0plus, toolbox/) talks to. See internal/toolbox's
+// (GRID0-net/GRID0plus-cfw, toolbox/) talks to. See internal/toolbox's
 // package comment for why this exists as its own service rather than a
 // route on stubs or dashboard: it is the one service any console reaches
 // with no credential at all, and it holds a GitHub token specifically so

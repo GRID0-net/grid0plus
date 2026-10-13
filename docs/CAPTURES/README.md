@@ -809,11 +809,10 @@ above):
   matches formed over a night of real testing, fixed by relaxing the
   threshold down to no less than half the nominal count as tickets wait.
   GRID0+ was never exposed to this failure mode in the first place:
-  `matchmaking.DefaultConfig.PlayersPerMatch` is 2, not a title's real mode
-  size, specifically because "a number that lets two friends actually start
-  a match is more useful than one that is faithful and idle" (see
-  `internal/matchmaking/queue.go`'s own `DefaultConfig` comment and TODO.md
-  §5.3) — and an operator who does raise a mode's size at runtime has
+  `matchmaking.DefaultConfig.PlayersPerMatch` was 2 when this was written; it
+  is now 8 as a cap (a full lobby starts at once, an even count below it
+  starts after a grace period), so two friends still get a match (see
+  `internal/matchmaking/README.md`) — and an operator who does raise a mode's size at runtime has
   `Queue.ForceMatch`, a manual escape hatch that forms a match from
   whoever is waiting rather than an automatic time-based relaxation. Recorded
   here because the empirical failure mode is worth knowing, not because it

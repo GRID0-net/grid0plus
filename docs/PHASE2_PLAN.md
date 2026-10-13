@@ -27,7 +27,7 @@ belongs in a roadmap.
 | Certificate pinning decision | settled: accepted, written up in `switch/README.md` part 3 |
 | Match history (`npln_matches`) | done — recorded by `matchmaking.go`/`admin.go`, read by the dashboard |
 | BCAT pack building | done, verified byte-identical against real packs — `internal/bcat` |
-| BCAT serving | stage 1 (does the console reach us) built and needs an operator to run it; stage 2 (does it check the signature) not built — see `TODO.md` §2.4 |
+| BCAT serving | done and working on hardware (2026-10-09): `internal/bcat` answers the list/data requests and a firmware patch skips the signature check — see `TODO.md` §2.4 |
 | Dashboard | done — `internal/dashboard`, `cmd/dashboard`, incl. match history, live matchmaking counts, per-player detail and a Debug tab for database controls |
 
 Everything done so far is verifiable without a console, which is the ordering

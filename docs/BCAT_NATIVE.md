@@ -3,19 +3,22 @@
 For the operator steps to build, stage, and announce a Splatfest, see
 [SPLATFEST_ACTIVATION.md](SPLATFEST_ACTIVATION.md).
 
-**Status:** the opt-in title seed reader and list/data HTTP path are
-implemented. Signature patch and real-hardware acceptance remain open; the
-later sections retain the original design reasoning and pending checks.
+**Status: done.** The seed reader, the list/data HTTP path and the
+`bcat.nso` signature patch are built, and on 2026-10-09 a real console
+downloaded all five packs of a custom Splatfest from grid0 this way. The
+later sections keep the original design reasoning; what is still open (a
+firmware update needs the patch re-derived, the list digest hash, Splatoon 2)
+is in `TODO.md` §2.4.
 
 **Goal:** a console pointed at GRID0+ downloads BCAT delivery-cache
 content — Splatoon 3 Splatfest packs, Splatoon 2 schedule seeds, and
 anything else a title fetches through `nn::bcat` — from GRID0+'s own
 `bcat-list` / `bcat-data` hosts, the same way it downloads them from
 Nintendo. No homebrew installer, no files handed to the player, no save
-editing. This replaces `docs/TODO.md` §2.4a's `.nro` installer as the
+editing. This replaces `TODO.md` §2.4a's `.nro` installer as the
 primary path; keep the installer as the fallback for un-patched consoles.
 
-This plan assumes the reader has read `docs/TODO.md` §2.4 (the RE findings
+This plan assumes the reader has read `TODO.md` §2.4 (the RE findings
 and wire format) and `internal/bcat/README.md`. It does not repeat the byte
 layouts; it references them.
 

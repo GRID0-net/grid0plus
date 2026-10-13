@@ -32,8 +32,10 @@ System News host. This opt-in tree is distinct from the existing
 Splatoon 3 fest cache uses those regional directory names, and the 22.5.0
 BCAT parser returns 2122-0002 when the requested directory is absent from
 the list. An unsigned plaintext container needs the matching firmware patch
-before real hardware will accept it. The list digest algorithm and successful
-native download remain to be confirmed; see `docs/BCAT_NATIVE.md`.
+before real hardware will accept it. On 2026-10-09 a real console on the patched
+22.5.0 firmware downloaded all five packs of a custom Splatfest this way.
+The list digest algorithm is still unconfirmed; see `docs/BCAT_NATIVE.md`
+and `TODO.md` §2.4.
 
 The 22.5.0 `bcat.nso` requires `version.format`, `version.semantics`, and
 `news_id` when a `data_list` entry closes. Its mode parser accepts `sync` and
@@ -76,11 +78,10 @@ So: serving BCAT natively is possible, gated on one `bcat.nso` patch per
 firmware build plus the `list`/`data` responses. The patch for the 22.5.0
 build exists (`switch/atmosphere/exefs_patches/bcat_signature_bypass/`) and
 reaches consoles through the GRID0+ Toolbox's `romfs/sd/` mirror from
-v0.5.9 on; what is still missing is the server's own `list`/`data` answers.
-TODO.md §2.4 tracks it.
-Building the cache directly still sidesteps the patch entirely, which is why
-it remains what this package does today — but §2.4a's homebrew installer is
-now a fallback, not the only option.
+v0.5.9 on, and the server's `list`/`data` answers are the section at the top
+of this file. A firmware update needs the patch re-derived; TODO.md §2.4
+tracks that. Building the cache directly sidesteps the patch entirely, so
+§2.4a's homebrew installer remains as the fallback for an unpatched console.
 
 ## The probe, and why it exists before the experiment does
 
@@ -99,12 +100,9 @@ server is broken and it may stop asking, which loses the only thing the probe
 collects. A fabricated container is worse: the console rejects it for a reason
 nobody can name, and a negative result then means nothing.
 
-**Stage 2 is not built, and cannot honestly be.** Answering with a deliberately
-invalid signature only tests whether the signature is checked if the rest of the
-header is right — and the only public fact about that header is its size and the
-signature's offset. Stage 1's hexdumps are how the rest becomes known. Building
-stage 2 from a guess would produce an experiment whose negative result is
-uninterpretable.
+**Stage 2 (a deliberately invalid signature) was never built, and no longer
+needs to be:** reading `bcat.nso` showed the signature is enforced, and the
+firmware patch skips the check instead. See TODO.md §2.4.
 
 ## Source assets, and the one thing this pipeline refuses to do
 

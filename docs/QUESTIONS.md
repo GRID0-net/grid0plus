@@ -94,38 +94,15 @@ an answer is a one-line change rather than a rewrite.
 
 ---
 
-## Do sigpatches cover the `bcat` sysmodule?
+## ~~Do sigpatches cover the `bcat` sysmodule?~~ — resolved: no, so GRID0+ ships its own patch
 
-See TODO §2.4 for the full experiment. If they do, serving BCAT natively may be
-possible and `switch/bcat-installer/` becomes unnecessary. `sys-patch` covers
-`fs`, `es`, `ldr` and `nifm`; `bcat` is not on that list.
-
-**The server for stage 1 is written and waiting.** `internal/bcat.Probe` logs
-every request the `bcat-*` hosts receive and writes a hexdumped transcript when
-`stubs.bcat_record_dir` is set. Running the experiment is three lines in
-`internal/nintendo/hosts.go` plus a config value — see TODO §2.4.
-
-**Proceeding on:** it is not covered, so GRID0+ builds the delivery cache and
-does not serve BCAT. Note that this is only *half* the blocker — the `list`
-response body is undocumented regardless, and stage 1's transcript is what would
-start to settle it.
-
-**The experiment is now five minutes of your time**, and the tooling for stage 1
-is built and tested:
-
-```sh
-switchnetctl hosts -bcat-probe > .../atmosphere/hosts/sysmmc.txt   # and emummc.txt
-```
-
-Open Splatoon 3, watch the stubs log, then turn the hosts flip back off. Whatever appears
-— including nothing at all — is the first record anyone has. Write it up under
-`docs/CAPTURES/`.
-
-**Changes if answered:** `internal/nintendo/hosts.go` (the three `bcat-*`
-entries), `TestBlackholedHostsAreAccountedFor`, and whether
-`switch/bcat-installer/` is needed at all.
-
----
+`sys-patch` covers `fs`, `es`, `ldr` and `nifm`, not `bcat`. Reading
+`bcat.nso` (22.5.0) showed the container signature is verified and enforced,
+so `switch/atmosphere/exefs_patches/bcat_signature_bypass/` skips that check,
+and `internal/bcat` serves the list and data responses. A real console
+downloaded all five packs of a custom Splatfest natively on 2026-10-09. See
+`TODO.md` §2.4 and `docs/BCAT_NATIVE.md`. A firmware update needs the patch
+re-derived; `switch/bcat-installer/` stays as the fallback until then.
 
 ## Is there a decryption key for the LoveFest pack?
 

@@ -267,10 +267,10 @@ generic communication error. And every fest timestamp must land on a two-hour
 boundary or the game demands its verdict instead of opening.
 
 `internal/bcat` builds and encrypts the packs, verified byte-identical against
-real ones. What it cannot do is **serve** them: the `list` response body is
-undocumented and whether the console verifies the container signature has never
-been established. §2.4 of [`../TODO.md`](../TODO.md) has the experiment that
-would settle it, and the probe for stage 1 is built.
+real ones, and **serves** them natively: the console verifies the container
+signature, so a firmware patch skips that check (§2.4 of
+[`../TODO.md`](../TODO.md)). A real console downloaded a custom Splatfest's
+five packs this way on 2026-10-09.
 
 ### 2.5 Friends integration
 

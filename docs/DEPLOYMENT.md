@@ -179,7 +179,7 @@ PAT, `Contents: Read-only`, scoped to only that one repository) and
 build a `browser_download_url` a console can actually reach — it cannot be
 inferred from the request behind nginx's TLS-terminating proxy) to enable
 `/updates/latest` and `/updates/download` — the mechanism that lets
-the Toolbox's source (`net-GRID0/cfw-GRID0plus`) stay a private repository while its homebrew app
+the Toolbox's release source be a private repository, if the operator wants it private, while the homebrew app
 still auto-updates. Leave all four empty and `/status` still works;
 `/updates/*` answers 503 instead.
 
