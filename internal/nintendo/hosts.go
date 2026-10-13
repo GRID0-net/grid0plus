@@ -427,6 +427,17 @@ var Hosts = []Host{
 			"already handled correctly.",
 	},
 	{
+		Pattern: "bvc-hac-lp1.cdn.nintendo.net",
+		Service: ServiceStubs, TLS: true,
+		Comment: "vulnerable system version list. nim (FW 22.5.0, " +
+			"SafeSystemVersionTask) asks for /<major>-<minor>-<micro>: a file " +
+			"there means \"this firmware is vulnerable\" and blocks Nintendo " +
+			"Account linking, the eShop and NSO behind \"A system update is " +
+			"required before you can proceed.\" Nintendo started listing 22.5.0 " +
+			"around 2026-10-13. Unlisted, this host went to Nintendo's real CDN; " +
+			"the stub answers 404 (safe) for every version.",
+	},
+	{
 		Pattern: "service-status-lp1.cdn.nintendo.net",
 		Service: ServiceStubs, TLS: true,
 		Comment: "game server availability — always reports everything up",

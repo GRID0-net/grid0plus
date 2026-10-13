@@ -113,6 +113,14 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// membership" and this server has never seen either one asked for.
 		h.membership(w, path)
 
+	case strings.HasPrefix(host, "bvc-"):
+		// The vulnerable-version list. nim reads any 2xx for
+		// /<major>-<minor>-<micro> as "this firmware must update" and 404 as
+		// safe (FW 22.5.0 nim, the 0x39d889 branch of the SafeSystemVersion
+		// request), so the default empty object would put the update wall
+		// back. A GRID0+ console must never be told to update.
+		http.NotFound(w, r)
+
 	case strings.Contains(host, "service-status"):
 		// Game server availability. Everything is up; if it were not, the
 		// console finding out from here would not help.

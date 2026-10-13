@@ -504,3 +504,14 @@ func TestBCATRequestsAreRecordedWhileStillAnswered304(t *testing.T) {
 		t.Fatalf("no transcript written (%v)", err)
 	}
 }
+
+// A 2xx here is nim's "this firmware is vulnerable": the console then shows
+// "A system update is required" in front of account linking.
+func TestEveryFirmwareVersionIsReportedSafe(t *testing.T) {
+	h := newTestHandler(t)
+	for _, v := range []string{"/22-5-0", "/23-0-0", "/1-0-0"} {
+		if rec := get(t, h, "bvc-hac-lp1.cdn.nintendo.net", v); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", v, rec.Code)
+		}
+	}
+}
