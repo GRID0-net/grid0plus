@@ -170,103 +170,38 @@ mismatch, not a broken RPC or a pack that fails to open.
 
 ---
 
-## What does `CreateFestEntry`'s response actually name a new entry?
+## ~~What does `CreateFestEntry`'s response actually name a new entry?~~ — resolved
 
-`festEntryProto` builds `tenants/<t>/fests/<ID>/entries/<userID>`, extending
-`GetFestDecryptionKey`'s already-confirmed `tenants/<t>/fests/<ID>/...`
-prefix with an `entries/<userID>` suffix that itself is not confirmed by any
-capture. `GetFestEntry`/`GetFestResult`'s own names follow the same pattern
-for the same reason -- consistency with an established convention, not new
-evidence.
+NextendoNetwork/splatoon-3's notes on a real-console capture (facts only,
+PolyForm Shield, never its code) record the shapes: the request is
+`parent = tenants/current/fests/<FEST-ID>`, the response `name` is
+`tenants/<tenant>/fests/<FEST-ID>/entries/<user id>`, and `GetFestEntry`
+asks for `tenants/current/fests/<FEST-ID>/entries/current`. That is exactly
+what `festEntryProto` and `festEntryIDsFromResourceName` in
+`internal/toyohr/entries.go` already produce and parse.
 
-**Proceeding on:** the extended prefix, parsed by
-`festEntryIDsFromResourceName` the same lenient way `lastSegment` parses
-NPLN's other resource names (per `docs/CAPTURES/README.md`'s "already
-guessed" list) -- a wrong suffix costs a cosmetic mismatch, not a broken
-`Create`/`Get`.
+## ~~Does Splatoon 3's boot sequence need anything from vermillion at all?~~ — resolved: yes
 
-**Changes if answered:** `internal/toyohr/entries.go`'s `festEntryProto`
-and `festEntryIDsFromResourceName`.
+NextendoNetwork's capture notes (facts only) show a real console calling
+`POST /v1/devices/initialize` (answered 204), `GET /v1/devices/vermillion-device-id`
+(`{"vermillionDeviceId": "<base64, 16 bytes>"}`), the penne-id registration and
+the accounts/config reads before it ever reaches penne, and looping on the
+device bootstrap when any of them fails. So vermillion is an NPLN prerequisite,
+`hosts.go`'s classification is right, and `internal/nplnrest` answers it. A
+real console on GRID0+ has been through this stage since 2026-09-25. The two
+endpoints still answering an empty envelope (`acds/search`,
+`nearness-checks`) are tracked in `TODO.md` §1.3.
 
----
+## ~~How does a console obtain a Penne id and password?~~ — resolved: it makes them up
 
-## Does Splatoon 3's boot sequence need anything from vermillion at all?
-
-`internal/nintendo/hosts.go` classifies `gw.hac.lp1.vermillion.srv.nintendo.net`
-as "NPLN device initialisation and account config", contacted before
-penne. But the only public documentation for this host
-([kinnay's wiki](https://github.com/kinnay/NintendoClients/wiki/Vermillion-Server))
-describes it as the **virtual game card** system — device-transfer
-licensing, a general Switch feature with nothing Splatoon-specific about
-it — and gives no field-level schema for either endpoint `internal/nplnrest`
-now answers.
-
-Two readings are both consistent with what is known:
-
-1. Vermillion really is an NPLN prerequisite on real hardware (the reading
-   `hosts.go`'s existing classification asserts, from evidence this pass
-   could not re-derive), and the wiki's "virtual game cards" description is
-   an older or incomplete account of a host that has since grown an
-   NPLN-adjacent purpose.
-2. Vermillion is contacted for unrelated general-account-management
-   reasons on the normal boot path of any title, and has no bearing on
-   whether Splatoon 3's own gRPC channel opens successfully.
-
-**Proceeding on:** `hosts.go`'s existing classification, unchanged — this
-pass did not have grounds to override it either way. `internal/nplnrest`
-answers vermillion's two named endpoints as honestly-empty JSON
-(`internal/nplnrest/README.md` has the detail) rather than leaving the host
-unanswered, since answering costs nothing if the reading is (2) and avoids
-a hang if it is (1).
-
-**Changes if answered:** if (2), `gw.hac.lp1.vermillion.srv.nintendo.net`
-moves out of `ServiceNPLNRest` in `internal/nintendo/hosts.go` (probably to
-`ServiceStubs`, alongside `god`) and `internal/nplnrest` drops its two
-vermillion handlers entirely. If (1), the two handlers gain the real
-response fields a capture would reveal.
-
----
-
-## How does a console obtain a Penne id and password?
-
-`internal/nplnrest`'s `POST /v1/login_tickets` accepts whatever `id` and
-`password` a console presents, without verifying them (CLAUDE.md's second
-ground rule — this is not a credential GRID0+ issued). What is missing
-is how a fresh console gets one to present in the first place: the wiki
-names two `god`-server endpoints that plausibly create one
-(`POST /v1/immigrate`, `POST /v1/penne_ids`) but marks their HTTP method
-as unconfirmed, and `god.hac.lp1.penne.srv.nintendo.net` is not served by
-`internal/nplnrest` at all — `internal/nintendo/hosts.go` still classifies
-it `ServiceStubs`, answering it generically rather than with anything
-Penne-shaped.
-
-**Proceeding on:** nothing needs to, yet — accepting any presented id
-without a provisioning step means a console can always obtain a login
-ticket even though nothing ever formally issued it a Penne identity. This
-is honest about what is unknown rather than a gap in behaviour: GRID0+
-does not need to recognise a *returning* Penne id, only to answer the
-request in front of it.
-
-**Changes if answered:** `god.hac.lp1.penne.srv.nintendo.net` would need to
-move from `ServiceStubs` to `ServiceNPLNRest` in
-`internal/nintendo/hosts.go`, and `internal/nplnrest` would gain handlers
-for whichever of `/v1/immigrate`/`/v1/penne_ids` turns out to be the real
-provisioning call.
-
-**A weaker, unconfirmed lead, 2026-09-05:** `NextendoNetwork/nx-dauth` (a
-from-scratch dauth/aauth reimplementation tested against real hardware;
-PolyForm Shield-licensed, so only this fact is taken, never its code)
-serves `POST /v2/penne_id` from `dragons.hac.lp1.dragons.nintendo.net` —
-not `god` at all — answering `{"id": "nxd<uuid>", "password": "<24 random
-bytes>"}`. Its own source carries no comment tying this to an observed
-console request, unlike the `elicenses/exercise` finding recorded in
-`docs/CAPTURES/README.md`'s item 10, so this is a lead to check before
-spending a capture on `god`, not a settled answer. If it holds up, `god`
-may be the wrong host entirely and this question's "changes if answered"
-above would target `internal/stubs`'s `dragons` handling instead of
-`internal/nplnrest`.
-
----
+The same capture notes show the client fabricates the id and the password
+itself; the password never appears in any server response. Registration only
+has to *succeed*: `POST beach.hac.lp1.eshop.nintendo.net/v1/devices/<device
+id>/penne_id/register` and `PUT dragons.hac.lp1.dragons.nintendo.net/v2/penne_id`,
+then `POST /v1/login_tickets` with the id and password. GRID0+ answers all of
+these (`internal/stubs` for beach and dragons, `internal/nplnrest` for the
+rest), so a fresh console gets through with no provisioning step. The `god`
+host was never the one.
 
 ## What does a frontline connection actually carry?
 
@@ -322,15 +257,16 @@ need a `Service` of its own rather than sharing `ServiceNPLN`.
 
 ## How should the dashboard authenticate a person, long term?
 
-Today it is a shared token (`dashboard.token`), and unset there is none. That is
-deliberate — nothing in phase 1 authenticates a *person*, only consoles — but it
-means anyone reachable can schedule and cancel Splatfests.
+Today it is a shared token (`dashboard.token`); unset, there is none, so anyone
+who can reach the port can schedule and cancel Splatfests.
 
-**Proceeding on:** the shared token. A bespoke user system for one page would
-likely be thrown away when phase 3's Nintendo Account work introduces the first
-real human login.
+**Proceeding on:** the shared token. People now have accounts, created only
+through the Discord bot, so the natural shape is the bot handing a short-lived
+dashboard link to a Discord user the operator marks as an admin; that is not
+worth building until there is a second operator (`TODO.md` §3.3).
 
-**Changes if answered:** `internal/dashboard/server.go` (`guard`).
+**Changes if answered:** `internal/dashboard/server.go` (`guard`) and a new bot
+API route.
 
 ---
 

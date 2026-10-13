@@ -12,12 +12,12 @@ import (
 //
 // # What this is for
 //
-// Nobody has documented BCAT's `list` response body, and no public
-// implementation exists — so GRID0+ builds the delivery cache directly
-// instead of serving BCAT (see the package README). Whether it *could* serve
-// BCAT is an open question with a cheap experiment behind it, recorded in
-// TODO.md §2.4 and docs/QUESTIONS.md, and this handler is that experiment's
-// server.
+// This was written when nobody knew BCAT's `list` response body or whether
+// the console checks the container signature, and GRID0+ built the delivery
+// cache directly instead of serving BCAT. Both have since been settled
+// (TODO.md §2.4) and GRID0+ serves BCAT natively (native.go); the probe stays
+// as the diagnostic that records what a console asks a bcat-* host, for a
+// title or firmware not seen before.
 //
 // Stage 1 of the experiment: **what does the console ask for?** The three
 // `bcat-*` hosts already reach the stubs service, which answers 304. With
@@ -25,14 +25,10 @@ import (
 // here (Observe), hexdumped, without changing the answer. That transcript is
 // the first record anyone has of the list/data paths the console requests.
 //
-// Stage 2 — answering with a container that has a deliberately invalid signature,
-// to find out whether the console verifies one — is **not** built, and cannot
-// honestly be. It needs the container's header shape to be right so that a
-// refusal means "the signature was checked" rather than "the header was wrong",
-// and the only public fact about that header is that it is 0x120 bytes with an
-// RSA-2048 signature at offset 0x20. Stage 1's hexdumps are how the rest gets
-// known. Building it from a guess would produce an experiment whose negative
-// result means nothing.
+// Stage 2 — answering with a deliberately invalid signature, to find out
+// whether the console verifies one — was never built and no longer needs to
+// be: reading bcat.nso showed the signature is enforced, and a firmware patch
+// skips the check (TODO.md §2.4).
 //
 // The `/api/nx/v1/list/<name>` response body is now confirmed, not guessed:
 // predicted below (and in the git history of this comment) that settling it

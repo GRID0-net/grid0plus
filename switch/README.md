@@ -36,8 +36,8 @@ Most guides conflate the two and solve both with Atmosphère — a hosts file pl
 firmware-gated exefs patch. Only the second half actually needs the console.
 
 > **What this deployment actually runs.** The GRID0+ Toolbox homebrew
-> ([`n-popescu/grid0plus-toolbox`](https://github.com/n-popescu/grid0plus-toolbox),
-> private) on an emuMMC that only ever talks to GRID0+: Atmosphère's hosts
+> ([`GRID0-net/GRID0plus-cfw`](https://github.com/GRID0-net/GRID0plus-cfw),
+> `toolbox/`) on an emuMMC that only ever talks to GRID0+: Atmosphère's hosts
 > file for redirection, the public `disable_ca_verification` /
 > `disable_browser_ca_verification` patches for trust, and its own Splatoon 3
 > patches for part 3. The DNS and CA-store routes below are the alternatives,
@@ -300,7 +300,7 @@ alone was not enough: the game also pins the server's public key, sets its
 own `VerifyOption` with its own CA set, and installs a separate TLS verify
 callback on the NPLN gRPC channel. The Toolbox ships one IPS patch for each
 (`s3certpin_bypass`, `s3verifyoption_bypass`, `s3grpcverify_bypass`,
-`s3grpcpeer_bypass`); grid0plus-toolbox's `docs/game-specific-tls-pinning.md` has
+`s3grpcpeer_bypass`); GRID0plus-cfw's `toolbox/docs/game-specific-tls-pinning.md` has
 the addresses and how each was found. `make patch-splatoon3` below builds only
 kinnay's patch, for other builds.
 

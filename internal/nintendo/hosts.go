@@ -675,10 +675,10 @@ var Hosts = []Host{
 	// outright. list/data get the same answer for the same reason, not
 	// because their own failure mode has been separately reproduced here.
 	//
-	// internal/bcat.Probe (TODO.md §2.4's actual open question -- whether
-	// GRID0+ could serve real delivery-cache content, not just "nothing
-	// changed") is unaffected: it is a diagnostic tool for an operator to
-	// reach for deliberately, not what these hosts answer with day to day.
+	// When bcat.seed_dir holds files for a title, list/data serve that
+	// content natively (TODO.md §2.4); internal/bcat.Probe is only a
+	// diagnostic an operator reaches for deliberately, not what these hosts
+	// answer with day to day.
 	// The 2026-09-24 Ethernet capture proved the topics host was reached but
 	// its TLS connection closed before HTTP; nginx had asked for a client
 	// certificate. Do not issue CertificateRequest on these CDN hosts.

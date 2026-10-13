@@ -1,7 +1,7 @@
 # internal/toolbox
 
 The public API for the GRID0+ Toolbox homebrew app
-([`n-popescu/grid0plus-toolbox`](https://github.com/n-popescu/grid0plus-toolbox)):
+([`GRID0-net/GRID0plus-cfw`](https://github.com/GRID0-net/GRID0plus-cfw), `toolbox/`):
 whether a newer build exists, and a coarse status of the other GRID0+
 services.
 
@@ -9,13 +9,14 @@ services.
 | --- | --- |
 | Needs a database | no |
 | Reimplements a Nintendo endpoint | no — this is not part of the console-facing protocol at all |
-| Credential it holds | a fine-grained GitHub PAT, scoped to `grid0plus-toolbox`'s contents, read-only |
+| Credential it holds | a fine-grained GitHub PAT, scoped to `GRID0plus-cfw`'s contents, read-only |
 | Credential the caller needs | none |
 
 ## Why this exists, and why it is its own service
 
-`grid0plus-toolbox` (the homebrew app's own source) is a private repository, so
-an unauthenticated `GET /repos/.../releases/latest` from a console gets a
+`GRID0plus-cfw` (the homebrew app's own source, under `toolbox/`) was a private
+repository when this service was written, and the relay is kept so it can be
+private again without shipping a token. While it is private, an unauthenticated `GET /repos/.../releases/latest` from a console gets a
 404. The two ways around that are: give the console a GitHub token, or give
 it a service that holds the token instead. The first means every console
 carries a real, extractable credential — anyone who runs `strings` on the
@@ -85,7 +86,7 @@ changing it would strand installed copies. `/updates/download?asset=<id>`
 keeps its old headers untouched, because something may already be parsing
 them.
 
-`source/update.c` in `grid0plus-toolbox` already parses exactly three keys out
+`toolbox/source/update.c` in `GRID0plus-cfw` already parses exactly three keys out
 of a GitHub release response — `tag_name`, `browser_download_url`, `size` —
 tolerant of GitHub's own formatting. `/updates/latest` answers those same
 three keys, so the client needed no parsing changes, only a different host

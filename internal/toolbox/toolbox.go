@@ -1,5 +1,5 @@
 // Package toolbox is the public, unauthenticated API the GRID0+ Toolbox
-// homebrew app (github.com/n-popescu/grid0plus-toolbox) talks to: whether a
+// homebrew app (github.com/GRID0-net/GRID0plus-cfw, toolbox/) talks to: whether a
 // newer build exists, and a coarse status of the other GRID0+ services.
 //
 // This is deliberately the one GRID0+ service any console can reach with

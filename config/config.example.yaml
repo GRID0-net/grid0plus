@@ -612,11 +612,11 @@ toolbox:
   listen: "127.0.0.1:8090"
 
   # Identify the private repository /updates/* reads Toolbox releases from
-  # (net-GRID0/cfw-GRID0plus, whose releases carry grid0plus-toolbox.nro). Leave this and the other three toolbox.* keys below empty to serve
+  # (GRID0-net/GRID0plus-cfw, whose releases carry grid0plus-toolbox.nro). Leave this and the other three toolbox.* keys below empty to serve
   # /status only, with /updates/* answering 503 instead of 502ing on every
   # request.
-  github_owner: "net-GRID0"
-  github_repo: "cfw-GRID0plus"
+  github_owner: "GRID0-net"
+  github_repo: "GRID0plus-cfw"
 
   # A fine-grained personal access token (github.com/settings/personal-access-tokens),
   # scoped to ONLY github_owner/github_repo, permission Contents: Read-only,
@@ -627,7 +627,7 @@ toolbox:
   # This is the one credential in all of GRID0+ that exists so a *client*
   # binary never has to hold one: the console asks this service, never
   # GitHub directly, and the token never leaves this box.
-  github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-cfw-GRID0plus-contents-read-only"
+  github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-GRID0plus-cfw-contents-read-only"
 
   # This service's own address as a console reaches it: the same public IP
   # as network.public_ip, fixed port 8443 (deploy/nginx.toolbox.conf),
