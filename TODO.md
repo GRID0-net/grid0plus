@@ -55,12 +55,14 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
+| §1.6 | **Splatoon 3 `main` from the operator's dump**, to read the `save.dat` format |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §4.6 | **nothing now** — the licence publish/revoke loop is Phase 3 scope; watch the logs |
 | §3.3 | **a second operator** — the shared token is the honest minimum until then |
 | §3.2 | **§2.1** |
+| §2.4 | **nothing** — open edges only; the patch needs re-deriving on a firmware update |
 
 Splatoon 3 reached the hall on GRID0+ on 2026-09-25 (see
 `docs/CAPTURES/splat3-hall-reached-2026-09-25.md`); what is left is behind
@@ -175,6 +177,68 @@ four of them named `Unk1` through `Unk4` in this project's own proto
 reversal, and answering would mean inventing values for fields whose meaning
 is unknown — worse than a logged `Unimplemented`.
 
+### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, blocked on the save format**
+
+**What:** a `/splatoon-save-upload file:<save.dat> [username:]` command in
+`n-popescu/grid0plus-discord` that replaces the player's CloudSave record
+with the one inside their own save, so a save made elsewhere (another
+server, an edited save, an old dump) counts on grid0 as if it had been
+played there.
+
+**Why it is needed:** Splatoon 3 keeps two copies of progress. Multiplayer
+data (rank, money, weapons, gear, Splatfest records…) belongs to the
+account and lives on the server, in the record `internal/toyohr/save_store.go`
+stores; the server copy wins, and Flexlion's save editor warns that edits to
+those fields are reset when the game connects. The console only uploads what
+changes (after `/splatoon-save-wipe` it wrote 3 keys, 95 bytes), so putting a
+different `save.dat` on a console never fills the server record.
+
+**What is known:**
+
+- A decrypted save has two halves, `server` and `client` (Flexlion's
+  `saveeditor.js` reads `SaveJson["server"]["UserName"]`, `["PlayerRank"]`,
+  `["Money"]`, `SaveJson["client"]["Common"]…`). The `server` keys are the
+  CloudSave record's own top-level keys
+  ([`docs/CAPTURES/splat3-save-shape-2026-09-24.md`](docs/CAPTURES/splat3-save-shape-2026-09-24.md)),
+  so the import is: decrypt, take `server`, convert to
+  `nn.npln.common.Value`, store. The `client` half never travels over the
+  network; the player keeps it on the console (JKSV, emulator).
+- Flexlion decrypts on its own server (`flexlion3.herokuapp.com/save/decrypt`);
+  its page source has no crypto. No public Splatoon 3 save tool was found.
+- Splatoon 2's scheme ([SciresM's splatsave](https://gist.github.com/SciresM/27f66899b9504343c32b71f05368c654)):
+  0x10 plaintext header (`u64 version`, CRC32), AES-128-CBC body, footer
+  `IV | key seed | AES-CMAC`, keys from `sead::Random` seeded with the key
+  seed over a 64-word table from the game binary; later versions add a
+  CRC-seeded block shuffle. `internal/bcat/seadrand.go` already implements
+  the generator.
+- **Splatoon 3 is not that layout.** A real 11.3.0 save (93,951 bytes) has
+  no plaintext header (entropy 7.99 bits/byte from byte 0) and a size that is
+  not a multiple of 16 (0x16EF0 + 15), so the format has to be read from the
+  game.
+
+**Start at** Splatoon 3 11.3.0 `main` (build `28C4287AEE36F7499DA60F3E68B54C70DA382D75`,
+the build GRID0+ patches), from the operator's dump: Ghidra headless, trace
+the `save.dat` open on the save mount to the crypto and checksum after it.
+Prove the decryptor on the operator's save and that re-encrypting gives the
+same bytes. Then:
+
+1. `internal/splat3save`: decrypt + verify, parse the body (BYML is the
+   likely format), convert `server` to a `MapValue` **keeping the value
+   types** (integer/float/double/bytes are read differently by the game).
+   Tests on synthetic saves only.
+2. A bot API route beside `botapi_save.go`'s wipe: same account resolution,
+   **archive the current record first** (a failed archive refuses), then
+   replace it whole, not merge.
+3. The bot command, with a confirm button and "close Splatoon 3 first".
+
+**Rules:** the key table, any constant lifted from `main` and every real
+save stay out of the repository (CLAUDE.md rule 1); load them from an
+operator file the way `internal/bcat/nisasyst.go` loads its table. Treat an
+upload as untrusted: size cap, MAC check, refuse unknown top-level keys.
+
+**Done when** a player uploads a save through the bot, boots the game on
+grid0, and sees that save's rank, money and gear survive going online.
+
 ---
 
 ## 2. Splatfests and BCAT
@@ -263,232 +327,69 @@ so that changing the assumption later, if GRID0+'s own hardware disagrees,
 is a contained change rather than a rewrite — keep the naming decision in one
 place.
 
-### 2.4 Serving BCAT natively — **done, working on hardware**
+### 2.4 Serving BCAT natively — **done, working on hardware; open edges below**
 
-**State (2026-10-11):** both halves are built. The signature check in the
-`bcat` sysmodule is skipped by a firmware 22.5.0 IPS patch shipped through
-the Toolbox (d24f066), and `internal/bcat` serves the list and data
+**State (2026-10-11):** both halves are built. A firmware 22.5.0 IPS patch
+(`switch/atmosphere/exefs_patches/bcat_signature_bypass/`, shipped through
+the Toolbox from v0.5.9, d24f066) skips the `bcat` sysmodule's signature
+check, and `internal/bcat` (`native.go`) serves the `list` and `data`
 responses from GRID0+'s own hosts. On 2026-10-09 a real console downloaded
-all five packs of a custom Splatfest natively from grid0. What follows is
-the investigation as it was written, kept for its reasoning; a new firmware
-needs the patch re-derived the same way.
+all five packs of a custom Splatfest natively from grid0.
+[`docs/BCAT_NATIVE.md`](docs/BCAT_NATIVE.md) is the design it was built
+from.
 
-**The goal is a vanilla path:** the console downloads fest packs and other
-delivery-cache content from GRID0+'s own `bcat-list`/`bcat-data` hosts,
-the same way it downloads them from Nintendo, with no files handed to the
-player and no homebrew installer. §2.4a is the fallback, not the plan.
+**The facts it rests on** (from BCAT-Manager, read not copied, and a
+Ghidra read of `bcat.nso` 22.5.0, build 6D9772A733E2370B…; no Nintendo key
+bytes recorded anywhere):
 
-Nobody is known to do this. NextendoNetwork (checked 2026-09-25 across
-splatoon-3, nextendo-account and Prelude-Nro) does not serve the live BCAT
-protocol either: its account server hands its homebrew a zip
-(`/api/bcat/<titleId>`), and Prelude only redirects the three BCAT hosts so
-consoles stop presenting a Nextendo-minted token to Nintendo. Public tools
-(ACNH event packs, Switch Gift Data Manager) forge packages into the
-delivery-cache save through JKSV, never over the network.
-
-**What blocks it is one question: does the console verify the container's
-RSA-2048 signature, and where?** switchbrew's BCAT Content Container page
-documents the 0x120-byte header (magic `bcat`, crypto type, RSA/hash type,
-secret-data index, IV, 0x100-byte signature) and the key derivation
-(PBKDF2-HMAC-SHA256 over the title's `control.nacp` passphrase, salt
-`%016llx%s` of title id and a secret string, 4096 rounds). It does not say
-what the signature covers, which key checks it, or what happens when it
-fails. The key derivation is enough to build a correctly *encrypted*
-container; only the signature stands in the way.
-
-**RE target — not yet pinned down, so check each:**
-
-1. **The `bcat` sysmodule** (title `010000000000000C`, `bcat.nso`, already
-   extracted from the operator's SYSTEM partition for the 2026-09-20 list
-   parser work). The most likely place: switchbrew says files are decrypted
-   before the sysmodule hands them over, so whatever checks the signature
-   plausibly runs there, before or beside the decrypt. Look for the RSA
-   verify around the container-header parse, the public key(s) it uses, and
-   the branch taken on failure.
-2. **A crypto helper the sysmodule calls into** — `spl`/`es`-side RSA
-   services, if the check is delegated rather than done in-process. If so,
-   the sigpatches question (`sys-patch` covers `fs`, `es`, `ldr`, `nifm`, not
-   `bcat`) changes shape.
-3. **The game itself** (Splatoon 3 `main`) is the least likely: it reads the
-   delivery cache through `nn::bcat` IPC and gets plaintext. It is still
-   where the fest pack's *own* encryption (nisasyst, key from
-   `GetFestDecryptionKey`) is handled, which GRID0+ already controls.
-
-**What the answer decides:**
-
-- *No verification, or verification a patch can skip:* build the list and
-  data responses (the list JSON field names are already known, see below)
-  and serve GRID0+'s own containers. A one-instruction IPS patch against
-  `bcat.nso`, shipped the same way as the Splatoon 3 TLS patch, is
-  acceptable; forging Nintendo's signature is not (CLAUDE.md, rule 2).
-- *Verification that cannot be skipped:* §2.4a.
-
-Stages 1 and 2 below are the console-side checks. Stage 1 still costs an
-operator five minutes and gives the first transcript of what the console
-asks for; run it alongside the RE, not after it.
-
-#### Stage 1 — what does the console ask for? **Built. Set one config line.**
-
-The three `bcat-*` hosts already reach `internal/stubs`, which answers 304
-(anything else risked the 2122-2403 hard error). Set
-`stubs.bcat_record_dir` and every one of those requests is also recorded by
-`internal/bcat.Probe` — method, path, query, headers, hexdumped body —
-without changing the answer. One boot of Splatoon 3 then gives the list and
-data paths and names the console requests.
-
-#### Stage 2 — does it care about the signature? **Not built.**
-
-Answer `/api/nx/v1/list/<name>` with a container that has the right 0x120 header
-shape and a deliberately garbage signature. If the console proceeds, sigpatches
-cover `bcat` and the signature is a non-issue. If it refuses, that is the first
-real evidence either way.
-
-Stage 1 has to run first, because its transcript is what says which path to
-answer and what the console sent.
-
-**Update, 2026-09-20: the `list` response body's field names are no longer
-undocumented.** A decompile of `bcat.nso` itself (extracted from the
-operator's own SYSTEM partition, title id `010000000000000C`) found the
-complete JSONPath field list its response parser reads --
-`directories[].{name,mode,digest,data_list[]}` and
-`data_list[].{data_id,filename,digest,size,url,default_language,
-deletion_priority,publishing_time,version.{format,semantics},
-conditions.serial[],languages[]}` -- written up in
-`internal/bcat/probe.go`'s own doc comment. Field *names* are confirmed;
-most field *semantics* (what `mode`'s values mean, what `conditions.serial`
-matches) and whether the wire encoding is JSON or MessagePack (a local cache
-path, `list.msgpack.bafmeta`, suggests the latter but doesn't prove it) are
-still open, and the delivery container's binary header remains exactly as
-undocumented as before -- decompiling the *response parser* doesn't touch
-the *signature verification* stage 2 is about. Stage 1 is still the thing
-that needs an operator and a console; this only means stage 2's payoff, if
-run, would land on a server that already knows most of what to answer with.
-
-**Update, 2026-09-26: most of the wire format is now known, from a public
-client of the live servers.** [BCAT-Manager](https://github.com/Random06457/BCAT-Manager)
-downloads and decrypts real lists from Nintendo's CDN. It has no licence, so
-these are facts read from it, not code taken from it:
-
-- **List path:** `bcat-list-lp1…/api/nx/v1/list/nx_data_<title id, 16 lowercase
-  hex>`. No token is sent; the request carries
-  `User-Agent: libcurl (nnBcat; <uuid>; SDK <a.b.c.d>)` and
-  `X-Nintendo-Serial-Number`.
-- **The list body is itself a `bcat` container,** and its decrypted payload
-  is **MessagePack**. That settles the JSON-vs-MessagePack question above.
-  Top-level fields: `topic_id`, `service_status`, `na_required`,
-  `required_application_version`, `directories`. Each directory also has
-  `by_country_group`. Digests are 32 hex characters (16 bytes). The tool's
-  default `mode` is `"async"`.
+- **List path:** `bcat-list-lp1…/api/nx/v1/list/nx_data_<title id, 16
+  lowercase hex>`, no token; `User-Agent: libcurl (nnBcat; <uuid>; SDK
+  <a.b.c.d>)` and `X-Nintendo-Serial-Number`. The body is itself a `bcat`
+  container whose payload is **MessagePack**: `topic_id`, `service_status`,
+  `na_required`, `required_application_version`, `directories[]` (each
+  with `by_country_group`), field names confirmed by `bcat.nso`'s own
+  parser (`internal/bcat/probe.go`).
 - **Container header (0x120 bytes):**
 
   | offset | size | field |
   | --- | --- | --- |
   | 0x0 | 4 | magic `bcat` |
   | 0x4 | 1 | version, written as 1 |
-  | 0x5 | 1 | crypto: 1/2/3 = AES-128/192/256-CTR, 4 = plaintext |
+  | 0x5 | 1 | crypto: **0 = plaintext**, 1/2/3 = AES-128/192/256-CTR |
   | 0x6 | 1 | signature hash: 0 = SHA-1, 1 = SHA-256 |
   | 0x7 | 1 | secret index, 0-31 |
   | 0x8 | 8 | padding |
   | 0x10 | 0x10 | CTR IV |
   | 0x20 | 0x100 | RSA-2048 signature |
 
-  The payload follows at 0x120.
-- **Key:** PBKDF2-HMAC-SHA256, 4096 rounds. The password is the title's
-  passphrase as ASCII. The salt is the 16-hex-digit title id followed by
-  secret string `index`, one of 32 16-hex-character strings. Those strings
-  are Nintendo's; like the nisasyst table, they would live in an
-  operator-local file and never be committed.
+  Plaintext containers are accepted, so the PBKDF2 passphrase/secret-string
+  layer (PBKDF2-HMAC-SHA256, 4096 rounds, salt = title id + secret string)
+  is never needed. Those strings are Nintendo's and would never be
+  committed.
+- **The signature is enforced** (RSA-2048 against a key baked into
+  `bcat.nso`; failure wipes the buffer and returns 2002-4106, on both the
+  whole-file and streaming paths). The patch forces the verify result to
+  pass. Forging a signature is forbidden (rule 2) and impossible.
 
-**Update, 2026-09-26: `bcat.nso` (22.5.0, build id 6D9772A733E2370B…) was
-disassembled and the two questions that decide the design are answered.**
-The operator supplied the firmware; the module was extracted with
-`switchnet_bcat_extract.py` and read in Ghidra. No Nintendo key bytes are
-recorded here or committed anywhere.
+**Still open:**
 
-1. **The signature is verified, and its failure is enforced.** After a
-   container is decrypted, the module runs an RSA-2048 verify over the
-   payload against a public key baked into `bcat.nso` (a production key and
-   a development key, chosen by the `bcat!production_mode` setting). On a
-   failed verify it wipes the decrypted buffer and returns `0x2A07A`
-   (result 2002-4106). Both the whole-file path and the streaming path do
-   this; no input value skips it. So serving a container GRID0+ produced
-   needs **either** Nintendo's private key (impossible, and forging it is
-   forbidden by rule 2) **or** a patch to `bcat.nso` that forces the verify
-   result to pass — the same class of patch this repo already ships for
-   Splatoon 3's TLS, produced the same way (borntohonk's `find_patterns` /
-   `make_patches`). That patch is the whole decision, and it is now known to
-   be the *only* blocker.
-2. **Plaintext containers are accepted; no passphrase or secret strings are
-   needed.** The 0x120 header validator accepts crypto type 0, and the
-   cipher setup treats 0 as "no encryption" (1/2/3 are AES-128/192/256-CTR).
-   The `crypto > 3` guard means BCAT-Manager's "type 4 = plaintext" reading
-   is really "type 0 = plaintext, written by a tool that stored index+1".
-   GRID0+ can therefore serve type-0 containers and skip the whole
-   PBKDF2/secret-string layer; only the signature stands in the way.
+1. **A firmware update breaks it.** The patch matches one `bcat.nso` build;
+   a new firmware needs it re-derived the same way (borntohonk's
+   `find_patterns`/`make_patches`) before consoles update.
+2. **Which hash the list's 16-byte `digest` is,** and whether a mismatch is
+   refused. It works today; nobody has checked what it tolerates.
+3. **Whether a `url` may name a host other than `bcat-data-lp1`.**
+4. **Splatoon 2.** Its schedule seed is the other title §2.4a was for; it
+   has not been tried over the native path. One boot of Splatoon 2 against
+   grid0 with the probe on (`stubs.bcat_record_dir`) shows what it asks
+   for.
 
-Still open, and less important than the two above:
+### 2.4a The `.nro` installer — **P3, fallback only**
 
-3. **Which hash the list's 16-byte `digest` is,** and whether the console
-   rejects a mismatch. (Splatoon 3's own delivery-cache digest is MD5 in
-   Ryujinx/Citron HLE, but bcat's list digest is a separate field.)
-4. **Whether a `url` may name a host other than `bcat-data-lp1`.**
-
-The verify patch is tied to one build of `bcat.nso`, so it must be made
-against the firmware the consoles run. This one is 22.5.0; a firmware
-update needs the patch regenerated.
-
-**Done when** GRID0+ answers the `list` and `data` requests and a patched
-console downloads and reads a GRID0+-built container, with a written
-record under `docs/CAPTURES/`. Both questions that blocked this are settled
-and the signature-bypass patch is built
-(`switch/atmosphere/exefs_patches/bcat_signature_bypass/`) and shipped to
-consoles through the GRID0+ Toolbox's `romfs/sd/` mirror from v0.5.9; what
-remains is the server's own `list`/`data` answers, and the console test that
-nothing here can substitute for.
-
-**Stage 1 (what the console asks for) still needs a console**, and is
-recorded in [`docs/QUESTIONS.md`](docs/QUESTIONS.md); it is no longer on the
-critical path, since the container format and the blocker are both known.
-
-**The full implementation plan is [`docs/BCAT_NATIVE.md`](docs/BCAT_NATIVE.md)**
-— the server (list/data responses from the existing seed folders), the
-`bcat.nso` signature-bypass patch, the emulator-first verification path, and
-the small open questions. The patch is built and shipped; the server side is
-not.
-
-### 2.4a The `.nro` installer — **P2, the path that works today**
-
-A homebrew that fetches a seed from GRID0+ and writes it into Splatoon 3's
-BCAT save data — what JKSV does by hand, automatically.
-
-This exists because §2.4 is unresolved, **not** because serving BCAT is
-forbidden. If §2.4 comes back positive this may become unnecessary; if it comes
-back negative, this is the answer.
-
-**Independent corroboration, 2026-09-05:** `NextendoNetwork/nextendo-account`
-and `NextendoNetwork/splatoon-3` (real, source-available reimplementations
-the operator supplied; PolyForm Shield-licensed, so only this design fact is
-taken, never their code) do not serve native BCAT over the wire either, for
-either of their two titles that use it (Splatoon 2's NEX BCAT and Splatoon
-3's Splatfest packs). Both instead relay a pre-dumped delivery-cache
-directly into the console's save data via their own homebrew installer,
-verbatim, and never attempt to answer the live `bcat-*` protocol at all.
-That is exactly this section's approach, arrived at independently -- it is
-not just "the path that works today" for lack of a better one, it appears to
-be what a real production service settled on too, which raises this
-section's priority relative to §2.4's still-open signature question.
-
-Note that the delivery cache is *downstream* of the wire protocol, so dumping a
-console's BCAT save reveals the seed layout (already known) and **not** the
-`list` response format. Do not expect a save dump to settle §2.4.
-
-**No toolchain in this repository's dev container** — `DEVKITPRO` is unset and
-there is no `aarch64-none-elf-gcc`, so an agent working here can write the
-source and a Makefile but cannot compile or test it. Say so plainly if you
-hand over untested C.
-
-**Start at** `switch/`, and serve the seed over plain HTTPS from the dashboard
-or a small endpoint on `cmd/npln`.
+`switch/bcat-installer` writes a seed straight into a title's BCAT save,
+what JKSV does by hand. Since §2.4 works natively, it is only for a console
+on a firmware the signature patch does not cover yet. Do not extend it;
+fix the patch instead.
 
 ---
 
@@ -554,14 +455,6 @@ fall 14 hours later (10:00/02:00/18:00 UTC). Only the timing differs.
 **Done when** each shape either matches the capture on hardware or has a
 written reason it cannot.
 
-### 4.5 A friend's console stalls before the hall — **resolved**
-
-Musi's console used to stop after `ListLatencyMeasurementServers` with
-2123-8028. Since 2026-10-09 the same player reaches the hall and plays
-matches on grid0, hosting included, so whatever blocked it is gone. If a new
-console shows that pattern again, a VM-side packet capture while it boots
-(UDP included) shows whether its STUN packets arrive and are answered.
-
 ### 4.6 A console looped publish/revoke on the licence host — **P3, watch**
 
 On 2026-10-09 from 12:24 to 15:55 UTC one console (`did:6265994bb2240805`)
@@ -625,18 +518,6 @@ commit** so the source and the notes cannot disagree.
 
 ## 5. Housekeeping
 
-### 5.3 A mode table for matchmaking — **done**
-
-Versus modes default to eight (`npln.players_per_match`) as a cap: an even
-count below it starts after the grace period, so two friends still get a
-match. The three Salmon Run configs default to four and coop-shaped, built
-into `config.Default`, so a fresh install no longer needs `mode_players` /
-`coop_modes` to form Salmon Run correctly. Anarchy Series' one-sided lobbies
-of four are handled in `internal/matchmaking/bankara.go`.
-
-The Splatfest lobby sizes are built in too, from the game's own lobby
-checks rather than its parameter tables: regular fest lobbies of one fest
-team at 4 or 2 in `internal/matchmaking/fest_regular.go`, Tricolor team pairs
-in `internal/matchmaking/queue.go`. Nothing in this section is left to build.
+Nothing open.
 
 ---
