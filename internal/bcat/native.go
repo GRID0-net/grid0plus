@@ -140,9 +140,9 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 		w.arrayLen(len(groups[dir]))
 		for i, file := range groups[dir] {
 			// The 22.5.0 parser requires all three bits at data_list entry close.
-			// Their types are known; the values for Splatoon 3 still need a capture.
-			// TODO(capture-needed): compare these values with a successful
-			// Splatoon 3 list response; change only here.
+			// Zero for each is accepted: from 2026-10-08 a real console's bcat
+			// module (User-Agent nnBcat) downloaded Splatoon 3's packs 138 times
+			// after reading this list, and the fest loaded from them.
 			w.mapLen(7)
 			w.str("data_id")
 			w.uint(uint64(i + 1))

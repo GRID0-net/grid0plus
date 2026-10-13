@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -111,14 +112,14 @@ func (r *rooms) sweep(alive func(sessionID string) bool) {
 //
 // The request carries no size of its own, so the server sets it. Salmon Run's
 // 4 is in the capture. Private battle's 10 (eight players and two spectators)
-// is NextendoNetwork's reading, not a captured value.
-//
-// TODO(capture-needed): the size of every other room mode, and in particular
-// the squad a player opens to bring up to three friends into a Turf War. 4 is
-// that description, not a measurement. The config name is logged the first
-// time each one is seen, so the log names the modes that need settling.
-// Change: this function.
+// is NextendoNetwork's reading, not a captured value. Every other mode the
+// game has opened on grid0 (2026-09-27 to 10-13: private_match_config,
+// coop_private_config and join_room_4_no_referee_config, the squad) names
+// its own size as join_room_<n>, so that number is used.
 func roomCapacity(config string) int {
+	if n, ok := joinRoomSize(config); ok {
+		return n
+	}
 	switch {
 	case strings.Contains(config, "coop"):
 		return 4
@@ -127,6 +128,20 @@ func roomCapacity(config string) int {
 	default:
 		return 4
 	}
+}
+
+// joinRoomSize reads n from a "join_room_<n>_..." config name.
+func joinRoomSize(config string) (int, bool) {
+	_, rest, ok := strings.Cut(config, "join_room_")
+	if !ok {
+		return 0, false
+	}
+	digits, _, _ := strings.Cut(rest, "_")
+	n, err := strconv.Atoi(digits)
+	if err != nil || n < 1 || n > 10 {
+		return 0, false
+	}
+	return n, true
 }
 
 // roomProperties keeps every property the client sent and adds the two the

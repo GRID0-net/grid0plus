@@ -387,3 +387,18 @@ func TestAMatchIsStillHiddenFromOutsiders(t *testing.T) {
 		t.Errorf("an outsider joined a match: %v", err)
 	}
 }
+
+// The squad room's size comes from the name the game gives it, not a guess.
+func TestARoomTakesTheSizeItsConfigNameCarries(t *testing.T) {
+	for config, want := range map[string]int{
+		"join_room_4_no_referee_config": 4,
+		"join_room_2_config":            2,
+		"private_match_config":          10,
+		"coop_private_config":           4,
+		"join_room_x_config":            4,
+	} {
+		if got := roomCapacity(config); got != want {
+			t.Errorf("roomCapacity(%q) = %d, want %d", config, got, want)
+		}
+	}
+}

@@ -45,10 +45,12 @@ Ordered by how much a capture would help.
 ### Native BCAT list metadata (`internal/bcat/native.go`)
 
 The 22.5.0 `bcat.nso` requires `version.format`, `version.semantics`, and
-`news_id` in each data-list entry. The builder sends zero for each, but a
-successful Splatoon 3 list capture is needed to confirm their values. The
-earlier apparent data downloads after omitting them were manual `curl/8.5.0`
-probes, not console requests. The module also accepts `sync` or `copy` as a
+`news_id` in each data-list entry. The builder sends zero for each, and
+that is **settled**: from 2026-10-08 grid0's logs show a real console's
+`bcat` module (`User-Agent: libcurl (nnBcat; ...)`) fetching Splatoon 3's
+data 138 times after reading such a list, and the Splatfest loaded from it.
+(The earlier apparent downloads with the fields omitted were manual
+`curl/8.5.0` probes, not console requests.) The module also accepts `sync` or `copy` as a
 directory mode; `async` yields 2122-0203. The requested directory must appear
 in the list or the module yields 2122-0002. The provided working Splatoon 3
 fest cache uses regional names (`eu-default`, `us-default`, `jp-default`,
@@ -873,10 +875,10 @@ flow is now implemented in `internal/npln/rooms.go`, on what
 
 Still open, each a `TODO(capture-needed)` in `rooms.go`:
 
-- The size of every other room mode. Private battle's 10 is NextendoNetwork's
-  reading; the squad a player opens to bring friends into Turf War is set to
-  4 from its description alone. The config name of each room mode is logged
-  the first time it is seen.
+- Private battle's size: 10 is NextendoNetwork's reading. (The squad room
+  is settled: grid0's logs, 2026-09-27 to 10-13, show the game opening it as
+  `join_room_4_no_referee_config`, and `roomCapacity` reads the size from
+  that name.)
 - The room code's format. Their short-alias capture is a different title's
   (Mario Party Jamboree), and on Splatoon 3 their displayed code relies on a
   console-side patch GRID0+ does not ship. Friends joining from the friend
