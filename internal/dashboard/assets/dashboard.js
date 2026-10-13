@@ -915,7 +915,10 @@ function renderMatchmaking(mm) {
     queuing === 0 ? "no modes queuing" : `across ${queuing} mode${queuing === 1 ? "" : "s"}`;
 
   $("#mm-summary").textContent =
-    `${waiting} waiting · default ${mm.defaultSize} per match`;
+    `${waiting} waiting · default ${mm.defaultSize} per match` +
+    (mm.versusGraceSeconds != null
+      ? ` · a short match waits ${mm.versusGraceSeconds} s (Salmon Run ${mm.coopGraceSeconds} s)`
+      : "");
   $("#mm-empty").hidden = modes.length > 0;
   $("#mm-show-all").onchange = () => renderMatchmaking(matchmaking);
 

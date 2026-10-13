@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // adminHarness is a server with the admin API turned on.
@@ -371,4 +372,19 @@ func TestCompletedBattlesLeaveTheLiveViewWithoutDeletingTheirRematchSession(t *t
 	read(1)
 	phase = "results"
 	read(0)
+}
+
+// The dashboard shows the grace periods in force, so a reload that changed
+// them has to be visible there rather than only in config.yaml.
+func TestTheAdminSnapshotReportsTheGracePeriodsInForce(t *testing.T) {
+	h, admin := adminHarness(t)
+	h.srv.queue.SetGracePeriods(20*time.Second, 10*time.Second)
+	rec := adminDo(t, admin, "GET", "/matchmaking", "test-admin-token", "")
+	var body struct {
+		Versus int `json:"versusGraceSeconds"`
+		Coop   int `json:"coopGraceSeconds"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Versus != 20 || body.Coop != 10 {
+		t.Errorf("grace = %+v (%v), want 20 and 10", body, err)
+	}
 }

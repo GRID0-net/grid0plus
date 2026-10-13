@@ -82,12 +82,15 @@ func (h *AdminHandler) guard(next http.HandlerFunc) http.HandlerFunc {
 // seconds, and names rather than resource paths.
 
 type adminSnapshot struct {
-	DefaultSize int            `json:"defaultSize"`
-	Modes       []adminMode    `json:"modes"`
-	Sessions    []adminSession `json:"sessions"`
-	Waiting     int            `json:"waiting"`
-	Started     *adminSession  `json:"started,omitempty"`
-	Formed      []adminSession `json:"formed,omitempty"`
+	DefaultSize int `json:"defaultSize"`
+	// The grace periods in force, in seconds; SIGHUP reloads them.
+	VersusGraceSeconds int            `json:"versusGraceSeconds"`
+	CoopGraceSeconds   int            `json:"coopGraceSeconds"`
+	Modes              []adminMode    `json:"modes"`
+	Sessions           []adminSession `json:"sessions"`
+	Waiting            int            `json:"waiting"`
+	Started            *adminSession  `json:"started,omitempty"`
+	Formed             []adminSession `json:"formed,omitempty"`
 }
 
 type adminMode struct {
@@ -131,9 +134,11 @@ func (h *AdminHandler) snapshotBody() (adminSnapshot, map[string]int) {
 	snap := h.queue.Snapshot()
 
 	out := adminSnapshot{
-		DefaultSize: snap.DefaultSize,
-		Modes:       make([]adminMode, 0, len(snap.Modes)),
-		Sessions:    make([]adminSession, 0, len(snap.Sessions)),
+		DefaultSize:        snap.DefaultSize,
+		VersusGraceSeconds: int(snap.VersusGrace.Seconds()),
+		CoopGraceSeconds:   int(snap.CoopGrace.Seconds()),
+		Modes:              make([]adminMode, 0, len(snap.Modes)),
+		Sessions:           make([]adminSession, 0, len(snap.Sessions)),
 	}
 
 	sizeOf := map[string]int{}

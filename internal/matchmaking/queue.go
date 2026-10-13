@@ -723,6 +723,9 @@ type Snapshot struct {
 	Sessions []Session
 	// DefaultSize is PlayersPerMatch, for a mode with no override.
 	DefaultSize int
+	// VersusGrace and CoopGrace are the grace periods in force, which a
+	// reload can change without a restart.
+	VersusGrace, CoopGrace time.Duration
 }
 
 // Snapshot returns the queue and the live sessions.
@@ -731,7 +734,10 @@ func (q *Queue) Snapshot() Snapshot {
 	defer q.mu.Unlock()
 
 	now := q.now()
-	out := Snapshot{DefaultSize: q.cfg.PlayersPerMatch}
+	out := Snapshot{
+		DefaultSize: q.cfg.PlayersPerMatch,
+		VersusGrace: q.cfg.VersusGracePeriod, CoopGrace: q.cfg.CoopGracePeriod,
+	}
 
 	// Every mode with somebody waiting, plus every mode with an override, so a
 	// size the operator set stays visible when its queue empties -- otherwise
