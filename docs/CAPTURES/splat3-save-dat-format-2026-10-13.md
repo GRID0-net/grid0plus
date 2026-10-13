@@ -45,7 +45,9 @@ Decryption uses `nn::crypto::AesImpl<32>::Initialize` and
 Starts `4d 53 00 04` — `MS`, version 4, which the loader checks before
 anything else. The body is MessagePack-shaped: most values are `0xce` +
 u32, keys appear to be 32-bit hashes rather than names, and only a few
-strings (NPC names such as `Bukichi`, `Hotaru`) are plain. Mapping the
-hashes back to the CloudSave record's key names is the next step for
-TODO.md §1.6; murmur3_32 with seed 0 is how the game hashes its other
-names (`ApplicationErrorId`) and is the first thing to try.
+strings (NPC names such as `Bukichi`, `Hotaru`) are plain. **Keys are `murmur3_32(name, seed 0)`, stored big-endian** (as MessagePack
+`0xce` u32s): `Money`, `PlayerRank`, `UserName`, `HaveWeaponMap`,
+`LastPlayHaveBadgeMap`, `Udemae`, `Exp` and `Common` (offset 10, the first
+key after the header) all hash to values present in a decrypted save. The
+CloudSave records GRID0+ already stores carry every server-side key by
+name, so hashing those names gives the reverse map for TODO.md §1.6.
