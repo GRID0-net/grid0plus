@@ -260,13 +260,11 @@ need a `Service` of its own rather than sharing `ServiceNPLN`.
 Today it is a shared token (`dashboard.token`); unset, there is none, so anyone
 who can reach the port can schedule and cancel Splatfests.
 
-**Proceeding on:** the shared token. People now have accounts, created only
-through the Discord bot, so the natural shape is the bot handing a short-lived
-dashboard link to a Discord user the operator marks as an admin; that is not
-worth building until there is a second operator (`TODO.md` §3.3).
-
-**Changes if answered:** `internal/dashboard/server.go` (`guard`) and a new bot
-API route.
+**Answered (4301256, bot cb06257):** the bot hands a 15-minute login link,
+signed with the dashboard token, to a Discord member holding the configured
+admin role (`internal/dashboard/loginlink.go`). The token stays the one
+credential underneath; per-person sessions wait for a reason to tell admins
+apart.
 
 ---
 

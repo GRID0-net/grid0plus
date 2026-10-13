@@ -60,7 +60,6 @@ What each open item is waiting on:
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
 | §4.6 | **nothing now** — the licence publish/revoke loop is Phase 3 scope; watch the logs |
-| §3.3 | **a second operator** — the shared token is the honest minimum until then |
 | §3.2 | **§2.1** |
 | §2.4 | **nothing** — open edges only; the patch needs re-deriving on a firmware update |
 
@@ -403,20 +402,6 @@ come from files built elsewhere.
 
 The intended end state is doing all of it from the dashboard. §2.1 is the
 blocker, not the UI.
-
-### 3.3 Real authentication — **P2**
-
-The dashboard's only protection is a shared token in config
-(`dashboard.token`), and with it unset there is none at all: anyone who can
-reach the port can schedule and cancel Splatfests.
-
-Phase 5 changed the premise this section used to rest on. People now have
-accounts, created only through the Discord bot (`internal/baas/botapi.go`),
-and each is tied to a Discord user id. So a person-level login for the
-dashboard no longer needs a bespoke user system. The natural shape is the
-bot handing out a short-lived dashboard link to a Discord user the operator
-has marked as an admin. Until someone needs more than one operator, the
-shared token remains the honest minimum.
 
 ---
 

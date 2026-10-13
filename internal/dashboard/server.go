@@ -241,10 +241,11 @@ func (s *Server) Handler() http.Handler {
 // authCookieName holds the shared token once a browser has presented it
 // once, either via /login's form or a bookmarked ?token= link. It carries
 // the same secret the query string and Authorization header already
-// accept -- there is no separate session store, on purpose: phase 1 has no
-// person to attach a session to (see TODO.md §3.3), so a cookie here is
-// just a fourth, browser-friendly place to say the one shared secret,
-// never a stand-in for an account.
+// accept -- there is no separate session store, on purpose: a person reaches
+// the dashboard through a Discord admin's short-lived login link
+// (loginlink.go), which ends in this same cookie, so a cookie here is just a
+// fourth, browser-friendly place to say the one shared secret, never a
+// stand-in for an account.
 const authCookieName = "switchnet_dashboard_session"
 
 // presentedToken returns whatever credential the request offers: the query
