@@ -45,7 +45,8 @@ func save(server mp) []byte {
 }
 
 func TestASaveBecomesTheRecordWithNamesAndDecimalIds(t *testing.T) {
-	server := mp{}.mapN(5).
+	server := mp{}.mapN(6).
+		key("RewardAry").arrN(0).
 		key("Money").u32(3000000000).
 		key("UserName").str("Nico").
 		key("HaveWeaponMap").mapN(1).fix(10).mapN(1).key("MaxWeaponPower").f32(1500.5).
@@ -56,12 +57,15 @@ func TestASaveBecomesTheRecordWithNamesAndDecimalIds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.GameVersion != "11.3.0" || info.Fields != 5 {
+	if info.GameVersion != "11.3.0" || info.Fields != 6 {
 		t.Errorf("info = %+v", info)
 	}
 	f := rec.GetFields()
 	if got := f["Money"].GetIntegerValue(); got != 3000000000 {
 		t.Errorf("Money = %d, want the unsigned value", got)
+	}
+	if _, ok := f["RewardAry"].GetValueType().(*common.Value_NullValue); !ok {
+		t.Errorf("an empty array is %T, want null as CloudSave stores it", f["RewardAry"].GetValueType())
 	}
 	if got := f["UserName"].GetStringValue(); got != "Nico" {
 		t.Errorf("UserName = %q", got)

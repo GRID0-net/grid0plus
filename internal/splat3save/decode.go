@@ -159,6 +159,13 @@ func convertMap(n node, path string, idMap bool) (*common.MapValue, error) {
 	return out, nil
 }
 
+// convertValue keeps the save's MessagePack type.
+//
+// TODO(capture-needed): about 170 of the 551 path shapes a decoded save
+// carries (most under Sdodr/Fsodr, MiniGame and the Shop histories) appear
+// in none of the 13 records grid0 holds, so their record type is inferred
+// from the wire type rather than seen. A record written by a console that
+// has played those modes would settle it; a mismatch would be fixed here.
 func convertValue(n node, path string, idMap bool) (*common.Value, error) {
 	switch n.kind {
 	case kindUint:
@@ -182,6 +189,12 @@ func convertValue(n node, path string, idMap bool) (*common.Value, error) {
 		}
 		return &common.Value{ValueType: &common.Value_MapValue{MapValue: m}}, nil
 	case kindArray:
+		// Stored as null, the way CloudSave stores a console's own empty
+		// array (toyohr's storedSaveValue), so an imported record reads
+		// back like one the game wrote.
+		if len(n.elems) == 0 {
+			return &common.Value{ValueType: &common.Value_NullValue{}}, nil
+		}
 		a := &common.ArrayValue{Values: make([]*common.Value, len(n.elems))}
 		for i, e := range n.elems {
 			v, err := convertValue(e, path+"[]", false)

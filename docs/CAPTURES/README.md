@@ -56,6 +56,18 @@ in the list or the module yields 2122-0002. The provided working Splatoon 3
 fest cache uses regional names (`eu-default`, `us-default`, `jp-default`,
 `ap-default`), while the earlier VM seed exposed only `fesdata`.
 
+### Splatoon 3 save import: types of record paths never stored (`internal/splat3save/decode.go`)
+
+A decoded `save.dat` server half has 551 path shapes; the 13 save records on
+grid0 (2026-10-13) show 382, and every one of those matches in type (empty
+arrays aside, which CloudSave stores as null and the import now does too).
+The other ~170, mostly Side Order (`Sdodr`/`Fsodr`), `MiniGame` and shop
+history fields, take their type from the MessagePack wire type: integers as
+`IntegerValue`, `float32` as `DoubleValue`. Settled by a record written by a
+console that has played those modes; the function to change is
+`convertValue`. Id keys at or above 2^31 are confirmed unsigned (records hold
+keys such as `2229243287`).
+
 ### Big Run `CoopSchedule` attributes (`internal/toyohr/coop_schedule.go`)
 
 Decompiling Splatoon 3 v11.3.0 (`main` build

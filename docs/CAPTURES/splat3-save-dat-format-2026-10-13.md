@@ -51,3 +51,28 @@ strings (NPC names such as `Bukichi`, `Hotaru`) are plain. **Keys are `murmur3_3
 key after the header) all hash to values present in a decrypted save. The
 CloudSave records GRID0+ already stores carry every server-side key by
 name, so hashing those names gives the reverse map for TODO.md §1.6.
+
+## Structure and key spelling
+
+After the 8-byte header (`MS`, version 4, then the game version, e.g.
+`00 0b 03 00` for 11.3.0) come two MessagePack maps back to back, ending
+exactly at the end of the file:
+
+1. the local half (13 keys: `Common`, `LobbyVersus`, `Coop`, `Fest`, ...),
+   which never leaves the console;
+2. the server half (87 keys in an 11.3.0 save: `Money`, `PlayerRank`,
+   `UserName`, `HaveWeaponMap`, ...), which is the CloudSave record.
+
+How a map's keys become record keys, checked against all 13 records on
+grid0:
+
+- the value of a field whose name ends in `Map` is keyed by ids, spelled as
+  unsigned decimal strings, even where an id is itself a hash of a name
+  (`CloudRandomSet.Map` keys hash to `Lot`, `Vendor`);
+- any other map is a struct when every key is a known name hash, and an id
+  map when none is (`Shop.IsReadWeaponExp`, `FestRecord`);
+- values keep their wire type; `float32` (`MaxWeaponPower`) is a
+  `DoubleValue` in the record; an empty array is stored as null.
+
+`internal/splat3save` implements this; its `names.txt` lists the field
+names.

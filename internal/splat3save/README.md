@@ -38,9 +38,11 @@ Decided per map, from what a stored record does:
 
 Values keep their MessagePack type: integers as `IntegerValue` (unsigned
 `0xce` values stay positive, as the record has them), `float32` as
-`DoubleValue`, strings, booleans, maps and arrays. Checked against a real
-save: every path in a stored record is present in the decoded save with the
-same type.
+`DoubleValue`, strings, booleans, maps and arrays; an empty array becomes
+null, as CloudSave stores a console's own. Checked against the 13 records on
+grid0: every path shape they hold is in a decoded save with the same type.
+About 170 shapes no record holds yet take their type from the wire
+(`TODO(capture-needed)` in `convertValue`).
 
 The local half of the save (the first map, 13 keys such as `Coop`,
 `LobbyVersus`) is never sent to the server and is skipped.
