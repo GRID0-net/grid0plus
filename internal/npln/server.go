@@ -421,6 +421,7 @@ func (s *Server) unaryInterceptor(
 	ctx context.Context, req any,
 	info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 ) (any, error) {
+	started := time.Now()
 	ctx, err := s.enter(ctx, info.FullMethod)
 	if err != nil {
 		return nil, err
@@ -445,7 +446,7 @@ func (s *Server) unaryInterceptor(
 	// misdiagnosis -- noteFirstSeen's dedup hid the retry loop entirely) is
 	// exactly the kind of thing worth seeing without another deploy-and-retry
 	// cycle. Cheap at this deployment's traffic; revisit if it ever isn't.
-	s.log.Info("npln: call", "method", info.FullMethod, "code", status.Code(err))
+	s.log.Info("npln: call", "method", info.FullMethod, "code", status.Code(err), "duration_us", time.Since(started).Microseconds())
 	return resp, err
 }
 
