@@ -1,5 +1,10 @@
 # Captures
 
+Public lobby startup group fix and the three Big Run timelines:
+[splat3-public-startup-group-2026-10-14.md](splat3-public-startup-group-2026-10-14.md).
+The inferred Big Run `__us` readiness behavior still needs a console test in
+both host directions; the fixed barrier now waits for the actual matched group.
+
 Where to put packet captures from your own consoles, and what GRID0+ still
 needs one for.
 

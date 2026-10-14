@@ -358,17 +358,17 @@ func (s *Server) matchedPlayerDocuments(caller *session, collection string) []*s
 	if d == nil || d.SessionID == "" || len(d.PlayerSessions) == 0 {
 		return nil
 	}
-	// A Tricolor host starts the battle as soon as its user-session list
+	// A public host can start the battle as soon as its user-session list
 	// (__us) shows every player, without waiting for them to connect: on
 	// 2026-10-11 it started 0.4 s after joining, before the third console
 	// had joined, and the two others loaded in ten seconds later to a host
-	// that had already dropped. There, only the host election list (__pus)
-	// names players ahead of time, so a single host is still chosen.
-	// TODO(capture-needed): which list the Tricolor start reads is inferred
-	// from that one timeline; a three-console test settles it.
-	if collection == "docs/__us" && strings.Contains(d.Mode, "tricolor") {
-		return nil
-	}
+	// that had already dropped. Big Run showed the same premature host start
+	// on 2026-10-14. Only the host election list (__pus) names players ahead
+	// of time, so a single host is still chosen.
+	// Keep __pus complete for host election, but do not advertise a matched
+	// console as connected in __us until its authenticated session exists.
+	// TODO(capture-needed): verify Big Run's __us early-close behavior with
+	// both host directions; see splat3-public-startup-group-2026-10-14.md.
 	var out []*syncpb.Document
 	for _, userID := range d.Players {
 		usid := d.PlayerSessions[userID]
@@ -380,6 +380,9 @@ func (s *Server) matchedPlayerDocuments(caller *session, collection string) []*s
 			if doc, ok := s.watchDocument(caller, name); ok {
 				out = append(out, doc)
 			}
+			continue
+		}
+		if collection == "docs/__us" && !isPrivateBattle(d) {
 			continue
 		}
 		details := *d

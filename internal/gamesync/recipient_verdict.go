@@ -34,7 +34,8 @@ func recipientVerdict(doc *syncpb.Document, userID string) *syncpb.Document {
 // where status 0 is accepted (v11.3.0: 0x14fe4b0 and 0x14ff540). Sending 0
 // immediately skips the early handshake and leaves the 900-update fallback.
 // Project readiness per user session so an earlier peer cannot skip this phase
-// for a late watcher. The shared document remains at -1 until final reporting.
+// for a late watcher. Public matches also require every frozen group member's
+// profile. The shared document remains at -1 until final reporting.
 func (s *Server) startupVerdict(doc *syncpb.Document, scope, userSession string) *syncpb.Document {
 	if !strings.HasPrefix(doc.GetName(), refereeResultPrefix) || doc.GetFields().GetFields()["status"] == nil ||
 		doc.GetFields().GetFields()["status"].GetIntegerValue() != -1 || scope == "" || userSession == "" {
@@ -45,10 +46,27 @@ func (s *Server) startupVerdict(doc *syncpb.Document, scope, userSession string)
 		return doc
 	}
 	profile := refereeProfilePrefix + battle + "/User/" + sessionID(userSession)
-	if !s.docs.in(scope).has(profile) {
+	st := s.docs.in(scope)
+	if !st.kickoffReady(battle, profile) {
 		return doc
 	}
 	ready := proto.Clone(doc).(*syncpb.Document)
 	ready.Fields.Fields["status"] = integer(0)
 	return ready
+}
+
+// Read all profile presences under one lock. Disconnects and refreshes must
+// never shrink a kickoff's roster and turn an incomplete group into a solo job.
+func (st *store) kickoffReady(battle, ownProfile string) bool {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	if st.docs[ownProfile] == nil {
+		return false
+	}
+	for _, usid := range st.kickoffPeers[battle] {
+		if st.docs[refereeProfilePrefix+battle+"/User/"+usid] == nil {
+			return false
+		}
+	}
+	return true
 }

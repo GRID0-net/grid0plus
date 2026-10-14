@@ -32,6 +32,8 @@ type store struct {
 	docs    map[string]*syncpb.Document
 	globals map[string]*commonpb.Value
 	nextSeq int64
+	// Frozen authenticated user-session roster for each public kickoff.
+	kickoffPeers map[string][]string
 }
 
 // storeSet holds one store per game session.

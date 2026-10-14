@@ -53,12 +53,18 @@ func ownedReportWrites(caller *session, ops []*syncpb.WriteOperation) ([]*syncpb
 		case *syncpb.WriteOperation_TransformDocument:
 			name = v.TransformDocument.GetName()
 		}
-		if !strings.HasPrefix(name, refereeReportPrefix) {
+		prefix := refereeReportPrefix
+		if strings.HasPrefix(name, refereeProfilePrefix) {
+			prefix = refereeProfilePrefix
+		} else if !strings.HasPrefix(name, refereeReportPrefix) {
 			continue
 		}
-		pieces := strings.Split(strings.TrimPrefix(name, refereeReportPrefix), "/")
+		pieces := strings.Split(strings.TrimPrefix(name, prefix), "/")
 		if len(pieces) != 3 || pieces[1] != "User" || pieces[2] != sessionID(caller.userSession) || scopeOf(caller) == "" || !strings.HasSuffix(pieces[0], "_"+scopeOf(caller)) {
 			return nil, status.Error(codes.PermissionDenied, "report is outside the authenticated user session")
+		}
+		if prefix == refereeProfilePrefix {
+			continue
 		}
 		if personal := document.GetFields().GetFields()["personal_result"]; personal != nil {
 			verified, err := reporterResult(caller, personal)

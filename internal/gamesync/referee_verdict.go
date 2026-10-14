@@ -85,7 +85,9 @@ func (s *Server) resendKickoffVerdictAfterProfile(caller *session, ops []*syncpb
 		}
 		sent[battleID] = true
 		verdict, ok := s.docsFor(caller).snapshot(refereeResultPrefix + battleID)
-		s.log.Info("gamesync: referee profile", "battle", battleID, "user", caller.userID, "verdict_ready", ok)
+		ready, expected := s.docsFor(caller).kickoffProgress(battleID)
+		s.log.Info("gamesync: referee profile", "battle", battleID, "user", caller.userID, "verdict_ready", ok,
+			"profiles_ready", ready, "players_expected", expected)
 		if !ok {
 			continue
 		}
@@ -197,6 +199,7 @@ func (s *Server) publishRefereeVerdict(ctx context.Context, caller *session, sco
 		fields["request_id"] = verdictString(battleID)
 		fields["trace_id"] = verdictString(refereeTraceID(battleID))
 		fields["status"] = verdictInt(-1)
+		s.freezeKickoffPeers(caller, battleID)
 		if fields["shift_id"] == nil { // The captured VS verdict carries this empty field; Coop does not.
 			fields["tournament_id"] = verdictString("")
 		}
@@ -245,6 +248,56 @@ func (s *Server) publishRefereeVerdict(ctx context.Context, caller *session, sco
 	}
 	s.watch.publish(scope, commit.changes)
 	return nil
+}
+
+// Initial public matches wait for the actual ticket roster, not maxu (8) or
+// bfmin (1). For Again!, only authenticated players still watching at kickoff
+// are retained; freeze them so a later dropped stream cannot release the host.
+// Private rooms keep their existing per-recipient handshake: their joinable
+// room roster is not an immutable match roster.
+func (s *Server) freezeKickoffPeers(caller *session, battle string) {
+	d := caller.details
+	if d == nil || isPrivateBattle(d) || len(d.PlayerSessions) == 0 {
+		return
+	}
+	st := s.docsFor(caller)
+	rematch := false
+	for _, result := range st.list("docs/@@RefereeResult") {
+		if result.GetFields().GetFields()["status"].GetIntegerValue() == 1 {
+			rematch = true
+			break
+		}
+	}
+	active := s.watch.userSessionsIn(scopeOf(caller))
+	peers := []string{}
+	for _, uid := range d.Players {
+		usid := d.PlayerSessions[uid]
+		if !rematch || active[usid] || uid == caller.userID {
+			peers = append(peers, usid)
+		}
+	}
+	st.mu.Lock()
+	if st.kickoffPeers == nil {
+		st.kickoffPeers = map[string][]string{}
+	}
+	if _, exists := st.kickoffPeers[battle]; !exists {
+		st.kickoffPeers[battle] = peers
+	}
+	count := len(st.kickoffPeers[battle])
+	st.mu.Unlock()
+	s.log.Info("gamesync: startup group frozen", "battle", battle, "players", count, "rematch", rematch)
+}
+
+func (st *store) kickoffProgress(battle string) (ready, expected int) {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+	peers := st.kickoffPeers[battle]
+	for _, usid := range peers {
+		if st.docs[refereeProfilePrefix+battle+"/User/"+usid] != nil {
+			ready++
+		}
+	}
+	return ready, len(peers)
 }
 
 func mergePersonalResults(previous, incoming *commonpb.Value) *commonpb.Value {

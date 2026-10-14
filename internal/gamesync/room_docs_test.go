@@ -367,27 +367,39 @@ func TestTheFirstPlayerSnapshotListsAPlayerWhoHasNotConnectedYet(t *testing.T) {
 // A Tricolor host starts once its __us list looks complete, so a player who
 // has not connected stays out of it there; __pus still names them, so the
 // host election sees everyone and only one console hosts.
-func TestATricolorLobbyListsOnlyConnectedPlayersAsReady(t *testing.T) {
-	h := newHarness(t)
-	fast, err := h.srv.newSession("bob", "userSessions/us-bob")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fast.details = &SessionDetails{
-		UserID: "bob", SessionID: "m", Mode: "fest_match_tricolor_oneshot_config", Players: []string{"alice", "bob"},
-		PlayerSessions: map[string]string{"alice": "us-alice", "bob": "us-bob"},
-	}
-	names := func(collection string) map[string]bool {
-		out := map[string]bool{}
-		for _, d := range h.srv.collectionSnapshot(fast, collection) {
-			out[d.GetName()] = true
-		}
-		return out
-	}
-	if names("docs/__us")["docs/__us/us-alice"] {
-		t.Error("alice is in the Tricolor __us list before she connects")
-	}
-	if !names("docs/__pgn/All/__pus")["docs/__pgn/All/__pus/us-alice"] {
-		t.Error("alice is missing from __pus, so a second console could host")
+func TestAPublicLobbyListsOnlyConnectedPlayersAsReady(t *testing.T) {
+	for _, mode := range []string{"fest_match_tricolor_oneshot_config", "coop_bigrun_config", "regular_match_config"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newHarness(t)
+			fast, err := h.srv.newSession("bob", "userSessions/us-bob")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fast.details = &SessionDetails{
+				UserID: "bob", SessionID: "m", Mode: mode, Players: []string{"alice", "bob"},
+				PlayerSessions: map[string]string{"alice": "us-alice", "bob": "us-bob"},
+			}
+			names := func(collection string) map[string]bool {
+				out := map[string]bool{}
+				for _, d := range h.srv.collectionSnapshot(fast, collection) {
+					out[d.GetName()] = true
+				}
+				return out
+			}
+			if names("docs/__us")["docs/__us/us-alice"] {
+				t.Error("alice is in the Tricolor __us list before she connects")
+			}
+			if !names("docs/__pgn/All/__pus")["docs/__pgn/All/__pus/us-alice"] {
+				t.Error("alice is missing from __pus, so a second console could host")
+			}
+			late, err := h.srv.newSession("alice", "userSessions/us-alice")
+			if err != nil {
+				t.Fatal(err)
+			}
+			late.details = fast.details
+			if !names("docs/__us")["docs/__us/us-alice"] {
+				t.Fatal("connected player never entered readiness roster")
+			}
+		})
 	}
 }

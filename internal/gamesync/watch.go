@@ -105,6 +105,16 @@ func (w *watchers) playersIn(scope string) int {
 	return len(seen)
 }
 
+func (w *watchers) userSessionsIn(scope string) map[string]bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := map[string]bool{}
+	for sub := range w.subs[scope] {
+		out[sessionID(sub.userSession)] = true
+	}
+	return out
+}
+
 // publish delivers changes to every subscriber watching the documents they
 // affect.
 //
