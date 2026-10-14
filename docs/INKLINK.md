@@ -104,11 +104,19 @@ Grid0 password, set one through the existing bot command. OAuth does not silentl
 reset an existing player's password or disconnect consoles. A future account
 selector can expose secondary linked accounts; currently the primary is used.
 
-### Finish setup when you return
+### Discord OAuth redirects
+
+The production callback is
+`https://89.168.58.206:9443/auth/discord/callback`. Keep it registered in the
+existing bot application. The localhost callback
+`http://127.0.0.1:8091/auth/discord/callback` is only needed when testing through
+the private SSH tunnel described below.
+
+To set up or change OAuth credentials:
 
 1. Open the existing bot application in the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Under **OAuth2**, add this redirect **exactly**, leaving existing redirects
-   intact: `http://127.0.0.1:8091/auth/discord/callback`.
+2. Under **OAuth2**, register the exact production callback above. Keep the
+   localhost callback only if you still use the private tunnel.
 3. Copy the **Client ID** and the existing **OAuth2 Client Secret**. The secret
    is not the bot token. If Discord only offers **Reset Secret**, avoid doing so
    until you know whether another integration uses the existing secret.
