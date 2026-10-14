@@ -112,3 +112,34 @@ correlate committed and sent peer packets without logging their contents.
 Outgoing referee documents also log their recipient and status, allowing a
 future trace to distinguish missing status delivery from missing guest
 profiles. No additional console test was available during this investigation.
+
+## Decrypted kickoff comparison
+
+Re-read the preserved `nextendo-ryujinx-match-20260930` Gamesync flows and
+their `gamesync-streams/*.grpc-body` sidecars without modifying the originals.
+The reference sends `@@RefereeRequest` at 15:32:38.790854 UTC and its own
+`@@Profile` at 15:32:53.806565. The intervening watched referee responses
+have status 0, consistent with the previously documented 15-second fallback.
+There is no separately named Battle Time RPC in that captured interval.
+This does not reveal the contents of any UDP gameplay/start message.
+
+The current failed and successful Grid0 journal windows contain identical
+host `__gs/m` writes: cp=false, ebf=false, ip=false. The failed hosts submit
+their referee requests about 1.75 seconds afterward; doodlylizz submits at
+4.44 seconds. This supports investigating premature readiness, but cannot
+establish it: the guests' internal state and packet acceptance are not logged.
+The Toolbox's current WaitFullmember trampoline already checks connected
+stations against a cached session-player count; that count's correctness for
+these three-player attempts is not available from the journal.
+
+The decrypted reference also writes `docs/__mt/nat_traversal`, with `a` an
+array of maps containing lu, ru, p2p, rc and re. The observed entries carry
+rc=1 and re=false. Grid0 previously stored this request without logging it.
+Opt-in lobby diagnostics now log these raw per-peer fields under the
+authenticated reporter's user/session. Their semantics remain unconfirmed;
+neither a false re nor rc=1 is treated as proof of a working connection.
+
+Decoder caveat: protojson rejects the captured FieldMask path `*`. Binary
+protobuf decoding succeeds; JSON export must omit masks on a temporary copy
+(explicitly labelled) or use reflection/prototext, otherwise most writes,
+including the profile, disappear from the decoded analysis. Keep raw bytes.
