@@ -30,3 +30,7 @@ body{margin:0;background:#15151d;color:#f6f5f2;font-family:"DM Sans",sans-serif}
 }
 
 #inklink .il-grizzco-random{color:#e8b93f;text-shadow:0 1px 8px #e8b93f33}
+/* Random slots occupy the same box as a weapon icon in each context. */
+#inklink .il-weapons .il-random{display:inline-flex;align-items:center;justify-content:center;height:44px;line-height:1}
+#inklink .il-jobhead .il-weapons .il-random{width:32px;height:26px;font-size:26px}
+@media(max-width:760px){#inklink .il-weapons .il-random{height:30px}#inklink .il-jobhead .il-weapons .il-random{width:24px;height:25px;font-size:24px}}
