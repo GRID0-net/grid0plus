@@ -165,8 +165,8 @@ func (s *Server) publishRefereeVerdicts(ctx context.Context, ops []*syncpb.Write
 
 func (s *Server) publishRefereeVerdict(ctx context.Context, caller *session, scope, battleID, sourceName string, final bool) error {
 	docs := s.docs.in(scope)
-	s.refereeMu.Lock()
-	defer s.refereeMu.Unlock()
+	docs.refereeMu.Lock()
+	defer docs.refereeMu.Unlock()
 
 	source, ok := docs.snapshot(sourceName)
 	if !ok {

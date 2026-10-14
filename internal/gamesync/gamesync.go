@@ -145,12 +145,6 @@ type Server struct {
 	// again holds public sessions' "Again!" grace windows.
 	again   againQueue
 	mailbox peerMailbox
-	// A report from any player may update the same battle verdict. Serialize
-	// read/merge/write so simultaneous reports cannot discard one another.
-	refereeMu sync.Mutex
-	// Serialize durable snapshots and callbacks so an older partial result
-	// cannot overwrite a newer accumulated history after a slow DB write.
-	reportMu sync.Mutex
 
 	// cleanups holds deferments and open watch streams per user-session
 	// name, not per token: see userSessionCleanup.
@@ -286,14 +280,15 @@ func (s *Server) unaryInterceptor(
 	ctx context.Context, req any,
 	info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 ) (any, error) {
+	started := time.Now()
 	_ = grpc.SetHeader(ctx, metadata.Pairs("npln-grpc-type", "Unary"))
 	ctx, err := s.enter(ctx, info.FullMethod)
 	if err != nil {
-		s.log.Info("gamesync: call", "method", info.FullMethod, "code", status.Code(err))
+		s.log.Info("gamesync: call", "method", info.FullMethod, "code", status.Code(err), "duration_us", time.Since(started).Microseconds())
 		return nil, err
 	}
 	resp, err := handler(ctx, req)
-	s.log.Info("gamesync: call", "method", info.FullMethod, "code", status.Code(err))
+	s.log.Info("gamesync: call", "method", info.FullMethod, "code", status.Code(err), "duration_us", time.Since(started).Microseconds())
 	return resp, err
 }
 

@@ -1,6 +1,7 @@
 package gamesync
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,12 +17,16 @@ import (
 
 // store is the document tree.
 //
-// One lock over the whole tree, held across a whole batch. Finer locking would
+// One lock over each room tree, held across a whole batch. Finer locking would
 // be faster and wrong: WriteDocuments is atomic, and a per-document lock means
 // a reader can observe half a batch — which is exactly the state a client has no
 // way to interpret.
 type store struct {
 	now func() time.Time
+
+	// Referee merging and durable callbacks serialize within a room, never across rooms.
+	refereeMu sync.Mutex
+	reportMu  sync.Mutex
 
 	mu      sync.RWMutex
 	docs    map[string]*syncpb.Document
@@ -62,6 +67,7 @@ func newStore(now func() time.Time) *store {
 	return &store{now: now, docs: map[string]*syncpb.Document{}, globals: map[string]*commonpb.Value{}}
 }
 
+// get returns an immutable committed version; callers must clone before editing.
 func (s *store) get(name string) (*syncpb.Document, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -70,6 +76,25 @@ func (s *store) get(name string) (*syncpb.Document, bool) {
 		return nil, false
 	}
 	return doc, true
+}
+
+// has checks readiness without cloning a potentially large profile.
+func (s *store) has(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.docs[name]
+	return ok
+}
+
+// writableVersion copies the mutable document shell and field index. Stored
+// values are immutable: writes clone incoming values and transforms replace
+// them. Readers may keep an old committed version after releasing the lock.
+func writableVersion(doc *syncpb.Document) *syncpb.Document {
+	fields := make(map[string]*commonpb.Value, len(doc.GetFields().GetFields()))
+	for k, v := range doc.GetFields().GetFields() {
+		fields[k] = v
+	}
+	return &syncpb.Document{Name: doc.Name, Fields: &commonpb.MapValue{Fields: fields}, CreateTime: doc.CreateTime, UpdateTime: doc.UpdateTime}
 }
 
 // seed stores doc unless a document by that name already exists.
@@ -105,7 +130,7 @@ func (s *store) list(parent string) []*syncpb.Document {
 
 	prefix := strings.TrimSuffix(parent, "/") + "/"
 	var out []*syncpb.Document
-	for _, name := range sortedNames(s.docs) {
+	for name := range s.docs {
 		if parent != "" && !strings.HasPrefix(name, prefix) {
 			continue
 		}
@@ -115,6 +140,9 @@ func (s *store) list(parent string) []*syncpb.Document {
 		}
 		out = append(out, s.docs[name])
 	}
+	// Sort only the requested collection; old battle history need not be sorted
+	// on every roster refresh.
+	sort.Slice(out, func(i, j int) bool { return out[i].GetName() < out[j].GetName() })
 	return out
 }
 
@@ -293,8 +321,10 @@ func (s *store) writeDocument(doc *syncpb.Document, mask []string, now time.Time
 			Fields:     emptyMap(),
 			CreateTime: timestamppb.New(now),
 		}
-		s.docs[name] = stored
+	} else {
+		stored = writableVersion(stored)
 	}
+	s.docs[name] = stored
 	if stored.Fields == nil {
 		stored.Fields = emptyMap()
 	}
@@ -341,8 +371,10 @@ func (s *store) transform(
 			Fields:     emptyMap(),
 			CreateTime: timestamppb.New(now),
 		}
-		s.docs[name] = stored
+	} else {
+		stored = writableVersion(stored)
 	}
+	s.docs[name] = stored
 	if stored.Fields == nil {
 		stored.Fields = emptyMap()
 	}

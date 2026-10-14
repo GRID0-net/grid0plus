@@ -21,8 +21,20 @@ func (s *Server) observeRefereeReports(ctx context.Context, ops []*syncpb.WriteO
 	if !ok || caller.details == nil {
 		return
 	}
-	s.reportMu.Lock()
-	defer s.reportMu.Unlock()
+	// Ordinary lobby and Pia writes never wait for durable history work.
+	hasReport := false
+	for _, op := range ops {
+		if strings.HasPrefix(op.GetUpdateDocument().GetDocument().GetName(), refereeReportPrefix) || strings.HasPrefix(op.GetMergeDocument().GetDocument().GetName(), refereeReportPrefix) {
+			hasReport = true
+			break
+		}
+	}
+	if !hasReport {
+		return
+	}
+	st := s.docsFor(caller)
+	st.reportMu.Lock()
+	defer st.reportMu.Unlock()
 	for _, op := range ops {
 		var doc *syncpb.Document
 		if update := op.GetUpdateDocument(); update != nil {
