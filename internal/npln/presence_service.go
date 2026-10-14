@@ -108,6 +108,27 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 // preserves that exchange while bounding the feedback loop.
 const presenceKeepAliveAckMinInterval = 50 * time.Millisecond
 
+// Persist liveness at most every ten seconds, bounded by a quarter of the
+// configured TTL. A 20Hz ping stream must not turn eight players into 160
+// PostgreSQL updates per second. Only successful writes advance the gate;
+// every ping is still acknowledged and identity checks remain per RPC.
+func (p *presenceService) touchHeartbeat(ctx context.Context, user string, last *time.Time, at time.Time) {
+	interval := 10 * time.Second
+	if ttl := p.s.presence.ConsoleTTL; ttl > 0 && ttl/4 < interval {
+		interval = ttl / 4
+	}
+	if !last.IsZero() && at.Sub(*last) < interval {
+		return
+	}
+	if err := p.s.store.TouchPresence(ctx, user, p.s.now()); err != nil {
+		if !callerGone(err) {
+			p.s.log.Warn("npln: touch presence", "user", user, "error", err)
+		}
+		return
+	}
+	*last = at
+}
+
 func (p *presenceService) KeepAlive(
 	stream grpc.BidiStreamingServer[friendspb.KeepAliveRequest, friendspb.KeepAliveResponse],
 ) error {
@@ -149,6 +170,7 @@ func (p *presenceService) KeepAlive(
 	sendErr := make(chan error, 1)
 	recvErr := make(chan error, 1)
 	go func() {
+		var lastTouch time.Time
 		for {
 			req, err := stream.Recv()
 			if err != nil {
@@ -164,14 +186,7 @@ func (p *presenceService) KeepAlive(
 						"session_id", attrs["SessionId"].GetStringValue())
 				}
 			}
-			if err := p.s.store.TouchPresence(ctx, caller.UserID, p.s.now()); err != nil {
-				// Liveness is a nicety, same as internal/baas's own
-				// TouchPresence call: failing the stream over it would turn a
-				// cosmetic problem into a dropped connection.
-				if !callerGone(err) {
-					p.s.log.Warn("npln: touch presence", "user", caller.UserID, "error", err)
-				}
-			}
+			p.touchHeartbeat(ctx, caller.UserID, &lastTouch, time.Now())
 			if err := send(); err != nil {
 				sendErr <- err
 				return
