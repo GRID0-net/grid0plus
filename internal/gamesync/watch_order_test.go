@@ -171,3 +171,46 @@ func (s *orderedTestStream) Send(msg *syncpb.KeepUserSessionResponse) error {
 	}
 	return nil
 }
+
+// A refresh can race a committed packet whose post-commit publication is still
+// queued. Its replay must retain the packet's commit time, not refresh time.
+func TestPeerRefreshCannotHideANewerQueuedPacket(t *testing.T) {
+	h := newHarness(t)
+	recipient, err := h.srv.newSession("bob", "userSessions/us-bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipient.details = &SessionDetails{SessionID: "room"}
+	sender, err := h.srv.newSession("alice", "userSessions/us-alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender.details = &SessionDetails{SessionID: "room"}
+	old := doc(peerInboxPrefix+"us-bob", map[string]*commonpb.Value{
+		"suid": stringValue("alice"), "susid": stringValue("us-alice"),
+		"pl": {ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{1}}},
+	})
+	old.UpdateTime = timestamppb.New(h.now)
+	h.srv.rememberPeerStates(sender, []*syncpb.DocumentChange{{Document: old}})
+	sub := h.srv.watch.subscribe("bob", recipient.userSession, "room")
+	defer h.srv.watch.unsubscribe(sub)
+	h.srv.watch.addTarget(sub, &syncpb.Target{Name: "targets/5", TargetType: &syncpb.Target_Documents{Documents: &syncpb.DocumentsTarget{Documents: []string{old.Name}}}})
+	h.srv.now = func() time.Time { return h.now.Add(3 * time.Second) }
+	refresh := h.srv.refreshSessionDocuments(recipient, sub, map[string]*commonpb.MapValue{})
+	if len(refresh) != 2 {
+		t.Fatalf("refresh messages = %d, want packet and boundary", len(refresh))
+	}
+	delivery := newWatchDelivery(func(*syncpb.KeepUserSessionResponse) error { return nil })
+	if err := delivery.send(refresh[0]); err != nil {
+		t.Fatal(err)
+	}
+	newer := proto.Clone(old).(*syncpb.Document)
+	newer.UpdateTime = timestamppb.New(h.now.Add(time.Second))
+	newer.Fields.Fields["pl"] = &commonpb.Value{ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{2}}}
+	if delivery.stale(&syncpb.DocumentChange{TargetId: "5", DocumentChangeType: syncpb.DocumentChange_UPDATED, Document: newer}) {
+		t.Fatal("refresh timestamp made a newer committed Pia packet look stale")
+	}
+	if !proto.Equal(refresh[0].GetDocumentChange().GetDocument(), old) {
+		t.Fatal("peer refresh changed committed packet contents or version")
+	}
+}

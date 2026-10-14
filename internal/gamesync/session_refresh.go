@@ -74,7 +74,13 @@ func (s *Server) refreshSessionDocuments(caller *session, sub *subscriber, last 
 			}
 			last[key] = proto.Clone(doc.GetFields()).(*commonpb.MapValue)
 			fresh := proto.Clone(doc).(*syncpb.Document)
-			fresh.UpdateTime = timestamppb.New(s.now())
+			// Pia refreshes replay a committed packet. Giving it a newer
+			// timestamp can suppress an actual newer packet whose publication
+			// is queued behind this snapshot. Synthetic roster/verdict state
+			// still gets a refresh time because it is recomputed here.
+			if !strings.HasPrefix(name, peerInboxPrefix) {
+				fresh.UpdateTime = timestamppb.New(s.now())
+			}
 			kind := syncpb.DocumentChange_UPDATED
 			if target.collection == "docs/__pgn/All/__pus" {
 				kind = syncpb.DocumentChange_EXIST

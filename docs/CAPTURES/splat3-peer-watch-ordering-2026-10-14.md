@@ -61,3 +61,54 @@ user so delivery can be correlated in both host directions.
 Repeat Big Run with Jade hosting, then doodlylizz hosting. Confirm both profiles
 reach 2/2 and both clients enter the same round. If still stuck at 1/2, compare
 the two directed peer exchanges rather than adding a larger matchmaking timer.
+
+## Three-player versus follow-up (2026-10-15 Brussels time)
+
+Production journal comparison on `f6a983d`, without another hardware test:
+
+| Session prefix | Host account | Referee kickoff UTC (Oct 14) | Profiles observed | Guest departure |
+| --- | --- | --- | --- | --- |
+| `ad3bbaa1` | emulator2 | 23:11:59.910 | host only, 1/3 | 23:12:16.524 and 23:12:17.056 |
+| `7295dcf0` | doodlylizz | 23:15:40.194 | 3/3 by 23:15:40.412 | streams remain past startup |
+| `e5e37d79` | Doughston | 23:19:28.484 | host only, 1/3 | 23:19:45.813 and 23:19:46.484 |
+
+All three players attached Gamesync watches in each attempt. The failed
+attempts contain committed and sent peer payloads in both host/guest
+directions, including 251-byte host payloads and 9/78-byte guest payloads.
+These sizes also occur in the working startup. No warning or failed RPC was
+logged during these startup windows. Counts differ across commits and sends
+because snapshots replay the latest sender state; counts alone cannot identify
+which exact payload was dropped or accepted.
+
+The group barrier holds the host at 1/3 after the guests fail to submit their
+profiles. Removing it would hide the incomplete startup rather than explain
+the guests' failure. An account named emulator2 also hosted a failed attempt;
+account names do not establish the physical device used, so this evidence does
+not establish a Switch-only cause.
+
+The unresolved boundary is between receiving peer/referee signalling and
+submitting the guest's `@@Profile`. Existing logs record peer payload sizes
+and field types, but not payload identity, client acknowledgments, UDP
+connectivity, or the exact referee status sent to each recipient. No recent
+packet capture was found in the VM's temporary paths or the local capture
+tree for these attempts, and the TURN log predates them. Distinguishing peer
+connection failure from referee-status delivery therefore remains open.
+
+## Reproduced peer-refresh packet loss
+
+`TestPeerRefreshCannotHideANewerQueuedPacket` reproduces another server
+ordering defect: a periodic refresh replays an older peer packet but replaces
+its update time with the current clock. A genuinely newer committed packet
+queued for delivery can then fall below that artificial watermark and be
+discarded as stale. The test fails before the correction and passes after it.
+
+Peer refreshes now preserve their committed update times. Recomputed synthetic
+roster and referee responses retain their existing refresh-time behavior.
+This repairs a demonstrated loss path; the historical journal cannot establish
+that this race caused the three-player failures above.
+
+Opt-in diagnostics now include a truncated SHA-256 payload fingerprint to
+correlate committed and sent peer packets without logging their contents.
+Outgoing referee documents also log their recipient and status, allowing a
+future trace to distinguish missing status delivery from missing guest
+profiles. No additional console test was available during this investigation.
