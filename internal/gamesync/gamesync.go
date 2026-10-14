@@ -798,28 +798,41 @@ func (s *Server) KeepUserSession(
 	defer refresh.Stop()
 	refreshLogged := false
 	s.beginSessionStream(caller)
+	s.log.Info("gamesync: watch stream attached", "user", caller.userID, "session", sessionID, "user_session", caller.userSession)
 	defer func() {
 		s.watch.unsubscribe(sub)
 		s.endSessionStream(caller)
+		s.log.Info("gamesync: watch stream detached", "user", caller.userID, "session", sessionID, "user_session", caller.userSession)
 	}()
 
-	// Writes go out from one goroutine only. gRPC allows one concurrent Send
-	// per stream, and the reader loop below sends echoes while changes arrive
-	// from the store -- two senders would be a data race the transport does not
-	// protect against.
-	out := make(chan *syncpb.KeepUserSessionResponse, 16)
-	done := make(chan struct{})
+	// Receive requests separately, but register targets, snapshot and send on
+	// this one writer loop. An initial snapshot is an indivisible wire batch:
+	// live writes and refreshes cannot split its documents from LISTED.
+	requests := make(chan *syncpb.KeepUserSessionRequest, 16)
+	delivery := newWatchDelivery(func(msg *syncpb.KeepUserSessionResponse) error {
+		if err := stream.Send(msg); err != nil {
+			return err
+		}
+		if change := msg.GetDocumentChange(); change != nil {
+			s.logPeerDocument(caller, change.GetDocument(), "sent", change.GetTargetId())
+		}
+		return nil
+	})
 
 	go func() {
+		defer close(requests)
 		for {
 			req, err := stream.Recv()
 			if err != nil {
 				// Either io.EOF -- the console closing its half -- or a
 				// cancelled context. Neither is a failure; both mean stop.
-				close(done)
 				return
 			}
-			s.handleWatchRequest(ctx, caller, sub, req, out)
+			select {
+			case requests <- req:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -829,11 +842,21 @@ func (s *Server) KeepUserSession(
 			return nil
 		case <-sub.overflow:
 			return status.Error(codes.ResourceExhausted, "watch fell behind; reconnect for a fresh snapshot")
-		case <-done:
-			// The console stopped sending. It may still be reading, but there
-			// is nothing left to tell it about: its targets went with the
-			// stream.
-			return nil
+		case req, open := <-requests:
+			if !open {
+				// A closed receive side ends this watch and its targets.
+				return nil
+			}
+			if update := req.GetUpdateTarget(); update != nil {
+				delivery.reset(wireTargetID(update.GetTarget().GetName()))
+			} else if remove := req.GetDeleteTarget(); remove != nil {
+				delivery.reset(wireTargetID(remove.GetName()))
+			}
+			for _, msg := range s.watchRequestResponses(caller, sub, req) {
+				if err := delivery.send(msg); err != nil {
+					return err
+				}
+			}
 		case <-refresh.C:
 			messages := s.refreshSessionDocuments(caller, sub, lastRefresh)
 			if len(messages) > 0 && !refreshLogged {
@@ -842,16 +865,17 @@ func (s *Server) KeepUserSession(
 				refreshLogged = true
 			}
 			for _, msg := range messages {
-				if err := stream.Send(msg); err != nil {
+				if err := delivery.send(msg); err != nil {
 					return err
 				}
 			}
-		case msg := <-out:
-			if err := stream.Send(msg); err != nil {
-				return err
-			}
 		case change := <-sub.changes:
-			if err := stream.Send(&syncpb.KeepUserSessionResponse{
+			// A target may have been deleted or replaced while this change
+			// waited in the queue. A snapshot may also have overtaken it.
+			if !sub.watches(change.GetTargetId(), change.GetDocument().GetName()) || delivery.stale(change) {
+				continue
+			}
+			if err := delivery.send(&syncpb.KeepUserSessionResponse{
 				ResponseType: &syncpb.KeepUserSessionResponse_DocumentChange{
 					DocumentChange: change,
 				},
@@ -861,7 +885,7 @@ func (s *Server) KeepUserSession(
 			// Splatoon buffers live document changes until a target boundary.
 			// The initial snapshot has LISTED, but later writes need their own
 			// boundary or the room never observes its session documents.
-			if err := stream.Send(&syncpb.KeepUserSessionResponse{
+			if err := delivery.send(&syncpb.KeepUserSessionResponse{
 				ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
 					TargetChange: &syncpb.TargetChange{
 						TargetId: change.GetTargetId(), TargetChangeType: syncpb.TargetChange_UPDATED,
@@ -874,29 +898,29 @@ func (s *Server) KeepUserSession(
 	}
 }
 
-func (s *Server) handleWatchRequest(
-	ctx context.Context, caller *session, sub *subscriber, req *syncpb.KeepUserSessionRequest,
-	out chan<- *syncpb.KeepUserSessionResponse,
-) {
+func (s *Server) watchRequestResponses(caller *session, sub *subscriber, req *syncpb.KeepUserSessionRequest) []*syncpb.KeepUserSessionResponse {
+	var out []*syncpb.KeepUserSessionResponse
+	appendResponse := func(msg *syncpb.KeepUserSessionResponse) { out = append(out, msg) }
 	switch r := req.GetRequestType().(type) {
 	case *syncpb.KeepUserSessionRequest_Echo:
 		// Echoed back verbatim. It is the client's own liveness check, so
 		// changing the payload would defeat the only thing it is for.
-		send(ctx, out, &syncpb.KeepUserSessionResponse{
+		appendResponse(&syncpb.KeepUserSessionResponse{
 			ResponseType: &syncpb.KeepUserSessionResponse_Echo{Echo: r.Echo},
 		})
 
 	case *syncpb.KeepUserSessionRequest_UpdateTarget:
 		target := r.UpdateTarget.GetTarget()
 		if target == nil || target.GetName() == "" {
-			return
+			return nil
 		}
 		s.log.Info("gamesync: watch target", "name", target.GetName(),
-			"documents", target.GetDocuments().GetDocuments(), "collection", target.GetCollection().GetCollection())
+			"documents", target.GetDocuments().GetDocuments(), "collection", target.GetCollection().GetCollection(),
+			"user", caller.userID, "session", scopeOf(caller))
 		s.watch.addTarget(sub, target)
 		id := wireTargetID(target.GetName())
 		targetChange := func(kind syncpb.TargetChange_TargetChangeType) {
-			send(ctx, out, &syncpb.KeepUserSessionResponse{
+			appendResponse(&syncpb.KeepUserSessionResponse{
 				ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
 					TargetChange: &syncpb.TargetChange{TargetId: id, TargetChangeType: kind},
 				},
@@ -913,7 +937,7 @@ func (s *Server) handleWatchRequest(
 			docs = s.collectionSnapshot(caller, coll.GetCollection())
 		}
 		for _, doc := range docs {
-			send(ctx, out, &syncpb.KeepUserSessionResponse{
+			appendResponse(&syncpb.KeepUserSessionResponse{
 				ResponseType: &syncpb.KeepUserSessionResponse_DocumentChange{
 					DocumentChange: &syncpb.DocumentChange{
 						TargetId: id, DocumentChangeType: syncpb.DocumentChange_EXIST, Document: doc,
@@ -921,13 +945,14 @@ func (s *Server) handleWatchRequest(
 				},
 			})
 		}
-		s.log.Info("gamesync: initial watch snapshot", "target", target.GetName(), "documents", len(docs))
+		s.log.Info("gamesync: initial watch snapshot", "target", target.GetName(), "documents", len(docs),
+			"user", caller.userID, "session", scopeOf(caller))
 		targetChange(syncpb.TargetChange_LISTED)
 
 	case *syncpb.KeepUserSessionRequest_DeleteTarget:
 		name := r.DeleteTarget.GetName()
 		s.watch.removeTarget(sub, name)
-		send(ctx, out, &syncpb.KeepUserSessionResponse{
+		appendResponse(&syncpb.KeepUserSessionResponse{
 			ResponseType: &syncpb.KeepUserSessionResponse_TargetChange{
 				TargetChange: &syncpb.TargetChange{
 					TargetId:         wireTargetID(name),
@@ -936,15 +961,7 @@ func (s *Server) handleWatchRequest(
 			},
 		})
 	}
-}
-
-// Backpressure preserves the snapshot boundary and every document preceding it.
-// Cancellation releases the receiver even if the stream's writer has failed.
-func send(ctx context.Context, out chan<- *syncpb.KeepUserSessionResponse, msg *syncpb.KeepUserSessionResponse) {
-	select {
-	case out <- msg:
-	case <-ctx.Done():
-	}
+	return out
 }
 
 // CreateRound echoes back the round the client sent.

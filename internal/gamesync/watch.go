@@ -206,3 +206,12 @@ func (s *subscriber) targetIDsFor(name string) []string {
 	sort.Strings(ids)
 	return ids
 }
+
+func (s *subscriber) watches(targetID, name string) bool {
+	for _, id := range s.targetIDsFor(name) {
+		if id == targetID {
+			return true
+		}
+	}
+	return false
+}

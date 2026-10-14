@@ -1,5 +1,10 @@
 # Captures
 
+Switch/Citrosis host-direction comparison and a reproduced watch ordering fix:
+[splat3-peer-watch-ordering-2026-10-14.md](splat3-peer-watch-ordering-2026-10-14.md).
+The ordering regression is locally verified; the host-direction fix still
+needs a console test.
+
 Public lobby startup group fix and the three Big Run timelines:
 [splat3-public-startup-group-2026-10-14.md](splat3-public-startup-group-2026-10-14.md).
 The inferred Big Run `__us` readiness behavior still needs a console test in
