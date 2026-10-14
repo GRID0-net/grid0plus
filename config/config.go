@@ -39,6 +39,7 @@ type Config struct {
 	NEX       NEX       `yaml:"nex"`
 	BCAT      BCAT      `yaml:"bcat"`
 	Dashboard Dashboard `yaml:"dashboard"`
+	Inklink   Inklink   `yaml:"inklink"`
 	Toolbox   Toolbox   `yaml:"toolbox"`
 	NATCheck  NATCheck  `yaml:"natcheck"`
 
@@ -649,6 +650,22 @@ type Stubs struct {
 	BCATRecordDir string `yaml:"bcat_record_dir"`
 }
 
+// Inklink is the player companion, separate from the operator dashboard.
+type DiscordOAuth struct {
+	ClientID string `yaml:"client_id"`
+	// The secret is environment-only or read from a private file, never YAML.
+	ClientSecret     string `yaml:"-" json:"-"`
+	ClientSecretFile string `yaml:"client_secret_file"`
+	RedirectURI      string `yaml:"redirect_uri"`
+}
+
+type Inklink struct {
+	Discord DiscordOAuth `yaml:"discord"`
+	Listen  string       `yaml:"listen"`
+	// Disable only for local HTTP development. Public deployments use HTTPS.
+	SecureCookies bool `yaml:"secure_cookies"`
+}
+
 // Toolbox configures the public API the GRID0+ Toolbox homebrew app
 // (GRID0-net/GRID0plus-cfw, toolbox/) talks to. See internal/toolbox's
 // package comment for why this exists as its own service rather than a
@@ -807,6 +824,7 @@ func Default() Config {
 		Stubs: Stubs{
 			Listen: "127.0.0.1:8084",
 		},
+		Inklink: Inklink{Listen: "127.0.0.1:8091", SecureCookies: true},
 		Dashboard: Dashboard{
 			Listen: ":8087",
 		},
@@ -953,6 +971,12 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_BCAT_SEED_DIR", &c.BCAT.SeedDir)
 	envInt("SWITCHNET_BCAT_CONVERTER_TIMEOUT", &c.BCAT.ConverterTimeout)
 
+	envStr("SWITCHNET_INKLINK_LISTEN", &c.Inklink.Listen)
+	envStr("SWITCHNET_INKLINK_DISCORD_CLIENT_ID", &c.Inklink.Discord.ClientID)
+	envStr("SWITCHNET_INKLINK_DISCORD_CLIENT_SECRET", &c.Inklink.Discord.ClientSecret)
+	envStr("SWITCHNET_INKLINK_DISCORD_CLIENT_SECRET_FILE", &c.Inklink.Discord.ClientSecretFile)
+	envStr("SWITCHNET_INKLINK_DISCORD_REDIRECT_URI", &c.Inklink.Discord.RedirectURI)
+	envBool("SWITCHNET_INKLINK_SECURE_COOKIES", &c.Inklink.SecureCookies)
 	envStr("SWITCHNET_DASHBOARD_LISTEN", &c.Dashboard.Listen)
 	envStr("SWITCHNET_DASHBOARD_TOKEN", &c.Dashboard.Token)
 	envStr("SWITCHNET_DASHBOARD_NPLN_ADMIN_URL", &c.Dashboard.NPLNAdminURL)
@@ -1003,6 +1027,14 @@ func applyEnv(c *Config) {
 // would otherwise fail much later, on a console, with an unhelpful error.
 func (c Config) Validate() error {
 	var errs []error
+	if err := c.Inklink.Discord.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+	if _, port, err := net.SplitHostPort(c.Inklink.Listen); err != nil || port == "" {
+		errs = append(errs, fmt.Errorf("inklink.listen must be a host:port address"))
+	} else if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		errs = append(errs, fmt.Errorf("inklink.listen must use a numeric port from 1 to 65535"))
+	}
 
 	if c.Network.PublicIP != "" && net.ParseIP(c.Network.PublicIP) == nil {
 		errs = append(errs, fmt.Errorf("network.public_ip: %q is not an IP address", c.Network.PublicIP))
@@ -1239,4 +1271,30 @@ func envInt64(key string, dst *int64) {
 	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 		*dst = n
 	}
+}
+
+// Validate keeps partially configured OAuth and unsafe callbacks from appearing
+// as a working sign-in option. Loopback HTTP is only for local development.
+func (c DiscordOAuth) Validate() error {
+	if c.ClientID == "" && c.ClientSecret == "" && c.ClientSecretFile == "" && c.RedirectURI == "" {
+		return nil
+	}
+	if c.ClientID == "" || (c.ClientSecret == "" && c.ClientSecretFile == "") || c.RedirectURI == "" {
+		return errors.New("inklink.discord requires client_id, a secret or secret file, and redirect_uri")
+	}
+	for _, r := range c.ClientID {
+		if r < '0' || r > '9' {
+			return errors.New("inklink.discord.client_id must be numeric")
+		}
+	}
+	u, err := url.Parse(c.RedirectURI)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/auth/discord/callback" {
+		return errors.New("inklink.discord.redirect_uri must be an absolute /auth/discord/callback URL without query or fragment")
+	}
+	ip := net.ParseIP(u.Hostname())
+	local := u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())
+	if u.Scheme != "https" && !(u.Scheme == "http" && local) {
+		return errors.New("inklink.discord.redirect_uri requires HTTPS except on loopback")
+	}
+	return nil
 }

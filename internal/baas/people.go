@@ -3,6 +3,7 @@ package baas
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/n-popescu/grid0plus/internal/db"
 	"golang.org/x/crypto/bcrypt"
@@ -10,8 +11,8 @@ import (
 
 // A person's account, independent of any console: one persistent GRID0+
 // identity per person, which they link onto a local user profile through the
-// Nintendo Account link stub (nalink.go). The Discord bot is the only way to
-// create one (botapi.go); the self-registration web page it replaced is gone.
+// Nintendo Account link stub (nalink.go). The Discord bot and INKLINK
+// verified Discord OAuth share creation; the old self-registration page is gone.
 
 // createLoginUser makes a person's account: login credentials, a friend code,
 // and no device account until they link a console, owned by the Discord
@@ -21,6 +22,12 @@ import (
 // db.ErrConflict if the username is taken, or if that Discord account already
 // has a main account.
 func (s *Server) createLoginUser(ctx context.Context, username, nickname, password, discordUserID string, primary bool) (db.User, error) {
+	return CreateLoginUser(ctx, s.store, s.now(), s.cfg.FriendCodeCooldown, username, nickname, password, discordUserID, primary)
+}
+
+// CreateLoginUser shares account defaults and friend-code assignment between
+// the Discord bot and the companion's verified Discord OAuth registration.
+func CreateLoginUser(ctx context.Context, store db.Store, now time.Time, cooldown time.Duration, username, nickname, password, discordUserID string, primary bool) (db.User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return db.User{}, err
@@ -30,7 +37,6 @@ func (s *Server) createLoginUser(ctx context.Context, username, nickname, passwo
 		return db.User{}, err
 	}
 
-	now := s.now()
 	user := db.User{
 		ID:                  userID,
 		Nickname:            nickname,
@@ -46,10 +52,10 @@ func (s *Server) createLoginUser(ctx context.Context, username, nickname, passwo
 		LoginPasswordHash:   string(hash),
 		DiscordUserID:       discordUserID,
 	}
-	if err := s.store.CreateUserWithLogin(ctx, user, primary); err != nil {
+	if err := store.CreateUserWithLogin(ctx, user, primary); err != nil {
 		return db.User{}, err
 	}
-	if _, err := assignFriendCode(ctx, s.store, now, userID, s.cfg.FriendCodeCooldown); err != nil {
+	if _, err := assignFriendCode(ctx, store, now, userID, cooldown); err != nil {
 		return db.User{}, err
 	}
 	return user, nil
