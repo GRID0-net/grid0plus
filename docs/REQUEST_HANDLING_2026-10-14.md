@@ -60,7 +60,7 @@ retry regressions also pass.
 - Eight simultaneous result reports retain all eight personal results.
   Existing ownership, transaction scope, kickoff readiness, replay and
   explicit overflow checks remain in the suite.
-- Full local ordinary tests passed except six unchanged NAT-check tests:
+- Full local ordinary and race suites passed except six unchanged NAT-check tests:
   macOS cannot bind the unconfigured `127.0.0.2` loopback address. The
   original source fails those tests identically. No tests used production
   PostgreSQL/Redis; integration checks needing those stores are skipped.
