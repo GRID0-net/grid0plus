@@ -29,13 +29,18 @@ import (
 // TODO(capture-needed): mmr_before/mmr_after/rate, which the same reader
 // looks for in some modes, and any value Nintendo computes that the report
 // does not carry. Change historyFields.
-func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID string,
+func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID, mode string,
 	players []string, report, verdict *commonpb.MapValue, profiles map[string]*commonpb.Value,
 	festTeams map[string]string, now time.Time) error {
 	if battleID == "" || strings.Contains(battleID, "/") || report == nil {
 		return nil
 	}
 	top := historyFields(report, verdict)
+	// The verified session supplies the readable matchmaking config even
+	// when the client reports only Nintendo's numeric game_mode.
+	if top["mode"] == nil && mode != "" {
+		top["mode"] = &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: mode}}
+	}
 	if top["started_at"] == nil {
 		// The battle id starts with the match's own UTC start, YYYYMMDDTHHMMSS.
 		if ts, _, ok := strings.Cut(battleID, "_"); ok {
@@ -103,17 +108,30 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID strin
 // report.
 func withProfile(p *commonpb.Value, profiles map[string]*commonpb.Value) *commonpb.Value {
 	f := p.GetMapValue().GetFields()
-	info := profiles[f["npln_user_id"].GetStringValue()]
-	if f == nil || info == nil || f["profile"] != nil {
+	if f == nil {
 		return p
 	}
+	info := profiles[f["npln_user_id"].GetStringValue()]
+	if info == nil {
+		return p
+	}
+	profileFields := map[string]*commonpb.Value{}
+	// A partial profile must not suppress the battle's captured weapon and
+	// gear; preserve its other fields while filling the missing player_info.
+	if profile := f["profile"].GetMapValue(); profile != nil {
+		for k, v := range profile.GetFields() {
+			profileFields[k] = v
+		}
+	}
+	if profileFields["player_info"] != nil {
+		return p
+	}
+	profileFields["player_info"] = info
 	out := make(map[string]*commonpb.Value, len(f)+1)
 	for k, v := range f {
 		out[k] = v
 	}
-	out["profile"] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{
-		Fields: map[string]*commonpb.Value{"player_info": info},
-	}}}
+	out["profile"] = &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: profileFields}}}
 	return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: out}}}
 }
 

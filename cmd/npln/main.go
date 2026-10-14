@@ -210,7 +210,7 @@ func main() {
 					return err
 				}
 				if err := ugcstore.RecordVsResults(ctx, store, cfg.NPLN.Tenant, report.BattleID,
-					report.Players, report.Fields, report.Verdict, report.Profiles, festTeams, now); err != nil {
+					report.Mode, report.Players, report.Fields, report.Verdict, report.Profiles, festTeams, now); err != nil {
 					return err
 				}
 			}

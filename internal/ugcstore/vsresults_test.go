@@ -33,7 +33,7 @@ func TestAFinishedBattleAppearsInEachPlayersHistory(t *testing.T) {
 	}}
 	ctx := context.Background()
 	for _, battle := range []string{"20261003T135000_old", "20261003T140000_new"} {
-		if err := RecordVsResults(ctx, store, "dce9377b", battle, []string{"alice", "bob"}, report, nil, nil, nil, now); err != nil {
+		if err := RecordVsResults(ctx, store, "dce9377b", battle, "regular_match_config", []string{"alice", "bob"}, report, nil, nil, nil, now); err != nil {
 			t.Fatalf("RecordVsResults: %v", err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestTheHistoryFieldsSitAtTheTopOfTheBattleDocument(t *testing.T) {
 	verdict := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 		"stage": integer(14), "game_rule": integer(0), "game_mode": integer(1),
 	}}
-	if err := RecordVsResults(ctx, store, "dce9377b", "20261003T215000_m", []string{"alice"}, report, verdict, nil, nil, now); err != nil {
+	if err := RecordVsResults(ctx, store, "dce9377b", "20261003T215000_m", "regular_match_config", []string{"alice"}, report, verdict, nil, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	d, err := store.GetUGCDocument(ctx, "tenants/dce9377b/documents/services/GameRecord/users/alice/VsResults/20261003T215000_m")
@@ -106,6 +106,9 @@ func TestTheHistoryFieldsSitAtTheTopOfTheBattleDocument(t *testing.T) {
 		if got := top[k].GetIntegerValue(); got != want || top[k] == nil {
 			t.Errorf("%s = %v, want %d at the top level", k, top[k], want)
 		}
+	}
+	if got := top["mode"].GetStringValue(); got != "regular_match_config" {
+		t.Errorf("mode = %q, want session's matchmaking config", got)
 	}
 }
 
@@ -129,7 +132,7 @@ func TestEachHistoryRowCarriesThePlayersProfile(t *testing.T) {
 		}),
 	}}
 	info := mapOf(map[string]*commonpb.Value{"name": str("Alice")})
-	if err := RecordVsResults(ctx, store, "dce9377b", "20261006T180000_m", []string{"alice"}, report, nil,
+	if err := RecordVsResults(ctx, store, "dce9377b", "20261006T180000_m", "regular_match_config", []string{"alice"}, report, nil,
 		map[string]*commonpb.Value{"alice": info}, nil, now); err != nil {
 		t.Fatalf("RecordVsResults: %v", err)
 	}
@@ -145,6 +148,45 @@ func TestEachHistoryRowCarriesThePlayersProfile(t *testing.T) {
 	name := row["profile"].GetMapValue().GetFields()["player_info"].GetMapValue().GetFields()["name"].GetStringValue()
 	if name != "Alice" {
 		t.Errorf("profile.player_info.name = %q, want Alice", name)
+	}
+}
+
+func TestEachHistoryRowMergesCapturedPlayerInfoIntoAnExistingProfile(t *testing.T) {
+	store := db.NewMemory()
+	ctx := context.Background()
+	now := time.Date(2026, 10, 6, 18, 0, 0, 0, time.UTC)
+	str := func(v string) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: v}}
+	}
+	mapOf := func(f map[string]*commonpb.Value) *commonpb.Value {
+		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: f}}}
+	}
+	entry := mapOf(map[string]*commonpb.Value{
+		"team":         {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 1}},
+		"npln_user_id": str("alice"),
+		"profile":      mapOf(map[string]*commonpb.Value{"existing": str("preserved")}),
+	})
+	info := mapOf(map[string]*commonpb.Value{"weapon_id": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 1010}}})
+	report := &commonpb.MapValue{Fields: map[string]*commonpb.Value{"personal_result": mapOf(map[string]*commonpb.Value{"alice": entry})}}
+	if err := RecordVsResults(ctx, store, "dce9377b", "20261006T180000_m", "regular_match_config", []string{"alice"}, report, nil,
+		map[string]*commonpb.Value{"alice": info}, nil, now); err != nil {
+		t.Fatalf("RecordVsResults: %v", err)
+	}
+	doc, err := store.GetUGCDocument(ctx, "tenants/dce9377b/documents/services/GameRecord/users/alice/VsResults/20261006T180000_m")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	fields, err := decodeFields(doc.Fields)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	row := fields.GetFields()["personal_data_team1"].GetArrayValue().GetValues()[0].GetMapValue().GetFields()
+	profile := row["profile"].GetMapValue().GetFields()
+	if got := profile["player_info"].GetMapValue().GetFields()["weapon_id"].GetIntegerValue(); got != 1010 {
+		t.Errorf("profile.player_info.weapon_id = %d, want captured weapon ID 1010", got)
+	}
+	if got := profile["existing"].GetStringValue(); got != "preserved" {
+		t.Errorf("profile.existing = %q, want existing profile field preserved", got)
 	}
 }
 
