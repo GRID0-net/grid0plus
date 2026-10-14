@@ -23,7 +23,7 @@ const notice=text=>`<div class="il-callout">${esc(text)}</div>`;
 const stats=()=>data.records.VsResults.map(r=>battle(r,data.profile.id));
 const jobs=()=>data.records.CoopResults.map(r=>job(r,data.profile.id));
 const stage=(id,coop=false)=>{const a=asset(coop?'coop':'vs',id);return`<figure class="il-stage">${art(a)}<figcaption>${esc(a.name)}</figcaption></figure>`};
-const weapons=ids=>`<div class="il-weapons">${list(ids).map(id=>id<0?`<span class="il-random" title="Random weapon">?</span>`:weapon(id)).join('')}</div>`;
+const weapons=ids=>`<div class="il-weapons">${list(ids).map(id=>id<0?`<span class="il-random ${id===-2?'il-grizzco-random':''}" title="${id===-2?'Random Grizzco weapon':'Random weapon'}" aria-label="${id===-2?'Random Grizzco weapon':'Random weapon'}">?</span>`:weapon(id)).join('')}</div>`;
 const points=n=>n==null?'—':`${fmt(n)}p`;
 function toast(text){$('#toast').textContent=text;$('#toast').hidden=false;setTimeout(()=>$('#toast').hidden=true,4000)}
 function icons(){globalThis.lucide?.createIcons()}
@@ -66,4 +66,4 @@ window.addEventListener('hashchange',()=>{stageSearch='';if(data)render();main.f
 setInterval(()=>{if(data&&!document.hidden)load()},60000);
 try{authInfo=await api('/api/auth');const r=await fetch('/assets/catalog.json');if(!r.ok)throw Error('Artwork catalog is unavailable.');catalog=await r.json();await load();if(data)await readAlbum()}catch(e){main.innerHTML=empty('Could not start INKLINK',e.message,'wifi-off')}
 // A missing external asset must not collapse its label or leave a broken-image glyph.
-document.addEventListener('error',e=>{const img=e.target;if(!(img instanceof HTMLImageElement))return;if(img.closest('.il-avatar')){img.parentElement.textContent=(img.alt||'?').slice(0,1)}else{const text=document.createElement('span');text.className='il-art-fallback';text.textContent=img.alt||'Image unavailable';img.replaceWith(text)}},true);
+document.addEventListener('error',e=>{const img=e.target;if(!(img instanceof HTMLImageElement))return;if(catalog&&img.src.startsWith(catalog.base)&&!img.dataset.archiveRetry){img.dataset.archiveRetry='1';img.src='https://raw.githubusercontent.com/Leanny/splat3/'+catalog.revision+'/images/'+img.src.slice(catalog.base.length);return}if(img.closest('.il-avatar')){img.parentElement.textContent=(img.alt||'?').slice(0,1)}else{const text=document.createElement('span');text.className='il-art-fallback';text.textContent=img.alt||'Image unavailable';img.replaceWith(text)}},true);
