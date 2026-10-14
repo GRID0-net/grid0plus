@@ -78,7 +78,8 @@ func TestAFinishedSalmonRunJobFillsTheBonusMeterOnce(t *testing.T) {
 // TestABigRunJobGoesOnTheBigRunCardWithTheTeamsHighScore: the game reads a
 // Big Run card only when it holds best_golden_ikura_num (the server's) and
 // trophy (the console's own write), and compares the first with the
-// shift's reward borders.
+// shift's reward borders. The bonus meter still comes from the regular card
+// for the same shift, so the job is credited there too.
 func TestABigRunJobGoesOnTheBigRunCardWithTheTeamsHighScore(t *testing.T) {
 	store := db.NewMemory()
 	ctx := context.Background()
@@ -95,8 +96,16 @@ func TestABigRunJobGoesOnTheBigRunCardWithTheTeamsHighScore(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := "tenants/dce9377b/documents/services/GameRecord/users/alice/"
-	if _, err := store.GetUGCDocument(ctx, prefix+"PointCardRegular/20261004000000"); err == nil {
-		t.Error("a Big Run job was filed on the regular card")
+	regular, err := store.GetUGCDocument(ctx, prefix+"PointCardRegular/20261004000000")
+	if err != nil {
+		t.Fatalf("no regular card for the Big Run shift, so the bonus meter cannot move: %v", err)
+	}
+	r, _ := decodeFields(regular.Fields)
+	if got := r.GetFields()["kuma_point"].GetIntegerValue(); got != 224 {
+		t.Errorf("regular card kuma_point = %d, want 224", got)
+	}
+	if got := r.GetFields()["best_golden_ikura_num"].GetIntegerValue(); got != 30 {
+		t.Errorf("regular card best_golden_ikura_num = %d, want alice's own 30", got)
 	}
 	d, err := store.GetUGCDocument(ctx, prefix+"PointCardBigRun/20261004000000")
 	if err != nil {

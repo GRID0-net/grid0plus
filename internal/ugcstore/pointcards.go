@@ -179,7 +179,23 @@ func creditPointCards(ctx context.Context, store db.Store, prefix, uid string, j
 	if j.shiftID == "" {
 		return nil
 	}
-	name := prefix + j.card + "/" + j.shiftID
+	if err := creditShiftCard(ctx, store, prefix, uid, j.card, j, now); err != nil {
+		return err
+	}
+	// The bonus meter is read from PointCardRegular/<shift> even during a Big
+	// Run: FUN_7103284090 builds only the Regular or the Limited name, and the
+	// console asks for PointCardRegular/<big run shift> after every Big Run
+	// job. Without it the meter, and the catalog experience that follows it,
+	// do not move.
+	if j.card == "PointCardBigRun" {
+		return creditShiftCard(ctx, store, prefix, uid, "PointCardRegular", j, now)
+	}
+	return nil
+}
+
+func creditShiftCard(ctx context.Context, store db.Store, prefix, uid, card string, j job, now time.Time) error {
+	add := func(m map[string]*commonpb.Value, k string, n int64) { m[k] = integer(m[k].GetIntegerValue() + n) }
+	name := prefix + card + "/" + j.shiftID
 	shift, err := loadCard(ctx, store, name)
 	if err != nil {
 		return err
@@ -199,7 +215,7 @@ func creditPointCards(ctx context.Context, store db.Store, prefix, uid string, j
 		shift["best_grade_point"] = integer(0)
 	}
 	best := j.golden
-	if j.card != "PointCardRegular" {
+	if card != "PointCardRegular" {
 		// A Big Run or Eggstra Work high score is the team's golden eggs in
 		// one job; the game compares it with the shift's reward borders.
 		best = j.teamGolden
