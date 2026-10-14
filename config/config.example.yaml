@@ -690,7 +690,7 @@ log:
 
 # Player-facing companion. Keep separate from the operator dashboard/token.
 inklink:
-  listen: "127.0.0.1:8091"
+  listen: "127.0.0.1:8097"
   secure_cookies: true # false only for local HTTP development
   # Optional Discord sign-in/registration; leave absent until configured.
   # discord:
