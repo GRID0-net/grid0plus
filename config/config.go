@@ -824,7 +824,7 @@ func Default() Config {
 		Stubs: Stubs{
 			Listen: "127.0.0.1:8084",
 		},
-		Inklink: Inklink{Listen: "127.0.0.1:8091", SecureCookies: true},
+		Inklink: Inklink{Listen: "127.0.0.1:8097", SecureCookies: true},
 		Dashboard: Dashboard{
 			Listen: ":8087",
 		},

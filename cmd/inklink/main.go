@@ -36,6 +36,7 @@ func main() {
 		}
 		key, err = rsa.GenerateKey(rand.Reader, 2048)
 		cfg.Inklink.SecureCookies = false
+		cfg.Inklink.Listen = "127.0.0.1:8091"
 		cfg.NPLN.Rotation = config.Rotation{RegularStages: []string{"19", "26", "2", "10", "6", "14", "9", "12"}, BankaraRules: []string{"1", "2", "3", "4"}, BankaraStages: []string{"1", "2", "3", "4", "5", "6"}, StagesPerSlot: 2}
 		log.Info("inklink: isolated demo", "username", "demo", "password", "inklink-demo")
 	} else {

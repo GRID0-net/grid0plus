@@ -23,7 +23,7 @@ Add or use these supported settings in the existing configuration:
 
 ```yaml
 inklink:
-  listen: "127.0.0.1:8091"
+  listen: "127.0.0.1:8097"
   secure_cookies: true
 ```
 
@@ -144,3 +144,22 @@ Browser sessions expire on password reset; Discord sessions also stop working
 when their Discord ownership link changes. Local motion respects the device's
 reduced-motion preference. Schedule boss labels use Cohozuna, Horrorboros and
 Megalodontia rather than protocol codenames.
+
+## Private VM access before choosing a hostname
+
+The installed VM companion listens on `127.0.0.1:8097`; port 8091 on that host
+already belongs to cloud saves. The isolated local demo intentionally stays on
+8091. To access the real VM companion from this PC, stop any local demo and run:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 127.0.0.1:8091:127.0.0.1:8097 grid0
+```
+
+Keep that terminal open and visit `http://127.0.0.1:8091`. The browser callback
+remains `http://127.0.0.1:8091/auth/discord/callback`, so the existing Discord
+redirect works through the tunnel. The VM-only service environment is
+`/etc/switchnet/inklink.env`; its private secret file lives under
+`/opt/switchnet/data/inklink/`. The service is `switchnet-inklink` and starts on
+boot. No public port or hostname is needed. `GET /api/auth` reports `demo:false`
+for the real service, and browser sessions require a fresh Discord login when
+switching from the isolated demo.
