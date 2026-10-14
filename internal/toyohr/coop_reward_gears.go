@@ -117,3 +117,9 @@ func coopRewardForShift(selected int32, start time.Time) CoopRewardGear {
 	rng := rand.New(rand.NewPCG(uint64(slot), 0x636f6f70726577)) // "cooprew"
 	return CoopRewardGears[rng.IntN(len(CoopRewardGears))]
 }
+
+// CoopRewardForShift exposes the same selected reward to the player companion
+// that the schedule serializer advertises to consoles.
+func CoopRewardForShift(selected int32, start time.Time) CoopRewardGear {
+	return coopRewardForShift(selected, start)
+}

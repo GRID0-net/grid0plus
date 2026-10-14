@@ -566,3 +566,9 @@ explains what was done differently.
 ## Licence
 
 [AGPL-3.0](LICENSE), matching Prelude-Nro.
+
+## INKLINK player companion
+
+The optional Afterhours player website uses existing Grid0 accounts, histories,
+friends and rotations, separately from the operator dashboard.
+See [setup, demo, and current data limits](docs/INKLINK.md).

@@ -687,3 +687,15 @@ log:
   level: "info"
   # text or json
   format: "text"
+
+# Player-facing companion. Keep separate from the operator dashboard/token.
+inklink:
+  listen: "127.0.0.1:8091"
+  secure_cookies: true # false only for local HTTP development
+  # Optional Discord sign-in/registration; leave absent until configured.
+  # discord:
+  #   client_id: "123456789012345678"
+  #   client_secret_file: "/private/path/inklink-discord.secret" # chmod 600
+  #   redirect_uri: "http://127.0.0.1:8091/auth/discord/callback"
+  # Or set SWITCHNET_INKLINK_DISCORD_CLIENT_SECRET in the service environment.
+  # Never use the bot token as an OAuth client secret.

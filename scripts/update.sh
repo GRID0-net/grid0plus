@@ -85,6 +85,11 @@ fi
 # Every service that runs as a systemd unit. switchnetctl is a CLI, not a
 # service, so it is deliberately not here -- 'make build' always rebuilds it.
 SERVICES="dauth aauth baas scsi stubs natcheck npln nex dashboard toolbox"
+# The companion is optional: follow its dependency graph only on hosts where
+# an operator installed it, without enabling it on every game-server deploy.
+if systemctl cat switchnet-inklink.service >/dev/null 2>&1; then
+    SERVICES="$SERVICES inklink"
+fi
 
 CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
 
