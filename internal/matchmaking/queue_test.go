@@ -1239,3 +1239,36 @@ func TestSalmonRunNeverStartsWithOnePlayer(t *testing.T) {
 		t.Fatal("force-start began a Salmon Run job for one player")
 	}
 }
+
+// TestADuplicateTicketRightAfterAMatchJoinsThatMatch: a console that sends
+// its ticket twice must not be placed in a second match of its own, which
+// leaves the first match's host waiting for a player who is elsewhere.
+func TestADuplicateTicketRightAfterAMatchJoinsThatMatch(t *testing.T) {
+	q, clock := testQueue(t, 2)
+	if _, _, err := q.Enqueue("alice", "coop"); err != nil {
+		t.Fatal(err)
+	}
+	first, sessions, err := q.Enqueue("bob", "coop")
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("no match formed: %v %v", sessions, err)
+	}
+	if _, _, err := q.Enqueue("carol", "coop"); err != nil {
+		t.Fatal(err)
+	}
+	again, sessions, err := q.Enqueue("bob", "coop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 || again.ID != first.ID || again.SessionID != first.SessionID {
+		t.Fatalf("bob's repeat ticket formed %v as %+v, want his first ticket %+v", sessions, again, first)
+	}
+
+	*clock = clock.Add(duplicateTicketWindow)
+	later, sessions, err := q.Enqueue("bob", "coop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if later.ID == first.ID || len(sessions) != 1 {
+		t.Fatalf("bob re-queueing after the window got %+v and %v, want a new match with carol", later, sessions)
+	}
+}

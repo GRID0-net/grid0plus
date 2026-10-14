@@ -94,6 +94,8 @@ type Ticket struct {
 
 	// SessionID is set once the ticket succeeds.
 	SessionID string
+	// MatchedAt is when the ticket succeeded.
+	MatchedAt time.Time
 }
 
 // Session is a formed match.
@@ -339,6 +341,9 @@ func (q *Queue) EnqueueSquadTeams(userID string, members []string, mode, team st
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	if t := q.justMatchedLocked(userID, mode); t != nil {
+		return *t, nil, nil
+	}
 	q.cancelUserTicketsLocked(userID)
 	for _, m := range members {
 		q.cancelUserTicketsLocked(m)
@@ -366,6 +371,26 @@ func (q *Queue) EnqueueSquadTeams(userID string, members []string, mode, team st
 
 	sessions := q.formMatchesLocked()
 	return *q.tickets[t.ID], sessions, nil
+}
+
+// duplicateTicketWindow is how soon after a ticket is matched a second ticket
+// from the same player, for the same mode, is taken as a repeat of the first.
+// A console sent CreateMatchmakingTicket twice 6 ms apart (grid0, 2026-10-14):
+// the first completed a four-player match on arrival, the second was queued as
+// a new player and given a match of its own, and the four-player job started
+// with its host alone.
+const duplicateTicketWindow = 5 * time.Second
+
+// justMatchedLocked returns userID's ticket for mode that was matched within
+// duplicateTicketWindow, if there is one.
+func (q *Queue) justMatchedLocked(userID, mode string) *Ticket {
+	for _, t := range q.tickets {
+		if t.UserID == userID && t.Mode == mode && t.State == StateSucceeded && t.Party == "" &&
+			q.now().Sub(t.MatchedAt) < duplicateTicketWindow {
+			return t
+		}
+	}
+	return nil
 }
 
 func memberTeam(teams map[string]string, user, fallback string) string {
@@ -1396,6 +1421,7 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 	for _, id := range chosen {
 		t := q.tickets[id]
 		t.SessionID = s.ID
+		t.MatchedAt = q.now()
 		q.setStateLocked(t, StateSucceeded)
 		q.removeFromWaitingLocked(t)
 	}
