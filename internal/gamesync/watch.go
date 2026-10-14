@@ -11,7 +11,7 @@ import (
 // watchers routes document changes to the consoles watching for them.
 type watchers struct {
 	mu      sync.Mutex
-	subs    map[*subscriber]struct{}
+	subs    map[string]map[*subscriber]struct{}
 	startup func(*syncpb.Document, string, string) *syncpb.Document
 }
 
@@ -36,7 +36,7 @@ type subscriber struct {
 }
 
 func newWatchers() *watchers {
-	return &watchers{subs: map[*subscriber]struct{}{}}
+	return &watchers{subs: map[string]map[*subscriber]struct{}{}}
 }
 
 func (w *watchers) subscribe(userID, userSession, sessionID string) *subscriber {
@@ -51,14 +51,20 @@ func (w *watchers) subscribe(userID, userSession, sessionID string) *subscriber 
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.subs[sub] = struct{}{}
+	if w.subs[sessionID] == nil {
+		w.subs[sessionID] = map[*subscriber]struct{}{}
+	}
+	w.subs[sessionID][sub] = struct{}{}
 	return sub
 }
 
 func (w *watchers) unsubscribe(sub *subscriber) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	delete(w.subs, sub)
+	delete(w.subs[sub.sessionID], sub)
+	if len(w.subs[sub.sessionID]) == 0 {
+		delete(w.subs, sub.sessionID)
+	}
 }
 
 // addTarget starts watching a target.
@@ -93,10 +99,8 @@ func (w *watchers) playersIn(scope string) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	seen := map[string]bool{}
-	for sub := range w.subs {
-		if sub.sessionID == scope {
-			seen[sub.userID] = true
-		}
+	for sub := range w.subs[scope] {
+		seen[sub.userID] = true
 	}
 	return len(seen)
 }
@@ -115,22 +119,23 @@ func (w *watchers) publish(scope string, changes []*syncpb.DocumentChange) {
 	}
 
 	w.mu.Lock()
-	subs := make([]*subscriber, 0, len(w.subs))
-	for sub := range w.subs {
-		if sub.sessionID != scope {
-			continue
-		}
+	subs := make([]*subscriber, 0, len(w.subs[scope]))
+	for sub := range w.subs[scope] {
 		subs = append(subs, sub)
 	}
 	w.mu.Unlock()
 
 	for _, sub := range subs {
 		for _, change := range changes {
+			ids := sub.targetIDsFor(change.GetDocument().GetName())
+			if len(ids) == 0 {
+				continue
+			}
 			visible := change.GetDocument()
 			if w.startup != nil {
 				visible = w.startup(visible, scope, sub.userSession)
 			}
-			for _, targetID := range sub.targetIDsFor(change.GetDocument().GetName()) {
+			for _, targetID := range ids {
 				// The same collection may be watched under two targets. Each
 				// target must get its own boundary for the client to apply it.
 				out := &syncpb.DocumentChange{

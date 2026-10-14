@@ -45,7 +45,7 @@ func (s *Server) startupVerdict(doc *syncpb.Document, scope, userSession string)
 		return doc
 	}
 	profile := refereeProfilePrefix + battle + "/User/" + sessionID(userSession)
-	if _, ok := s.docs.in(scope).snapshot(profile); !ok {
+	if !s.docs.in(scope).has(profile) {
 		return doc
 	}
 	ready := proto.Clone(doc).(*syncpb.Document)
