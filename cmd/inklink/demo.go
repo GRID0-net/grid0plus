@@ -105,7 +105,7 @@ func demoStore(ctx context.Context) (db.Store, error) {
 		if result == 0 {
 			before = after - 20
 		}
-		f := map[string]any{"started_at": at, "shift_id": shift, "scenario": map[string]any{"stage": 6}, "result": result, "final_wave": 2, "personal_data": []any{map[string]any{"npln_user_id": uid, "grade_before": 8, "grade_after": 8, "grade_point_before": before, "grade_point_after": after, "kuma_point": 172, "personal_wave_result": []any{map[string]any{"wave": 0, "weapon_id": 1010, "golden_ikura_num": 49, "ikura_num": 1895}}}}}
+		f := map[string]any{"started_at": at, "shift_id": shift, "scenario": map[string]any{"stage": 6, "job_type_string": "Normal"}, "result": result, "final_wave": 2, "personal_data": []any{map[string]any{"npln_user_id": uid, "grade_before": 8, "grade_after": 8, "grade_point_before": before, "grade_point_after": after, "kuma_point": 172, "personal_wave_result": []any{map[string]any{"wave": 0, "weapon_id": 1010, "golden_ikura_num": 49, "ikura_num": 1895}}}}}
 		if err = put(prefix+fmt.Sprintf("CoopResults/demo-job-%02d", i), f, at); err != nil {
 			return nil, err
 		}

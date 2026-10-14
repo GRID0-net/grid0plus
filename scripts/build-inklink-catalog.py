@@ -29,13 +29,15 @@ for row in rows('CoopSceneInfo'):
  if not (source/'images/stageBanner'/file).is_file():file='Vss_'+stem+'.png'
  if (source/'images/stageBanner'/file).is_file():coop[str(row['Id'])]={'id':row['Id'],'name':lang['CommonMsg/Coop/CoopStageName'].get(stem,stem),'image':base+'stageBanner/'+file}
 weapons=catalog('WeaponInfoMain','weapon_flat',lang['CommonMsg/Weapon/WeaponName_Main'],'Path_Wst_')
-# Coop-only IDs use their own row IDs; use the shared model when its flat icon
-# is archived under the ordinary weapon's row name.
+# Coop-only IDs use distinct row IDs. Grizzco icons omit _Coop entirely;
+# ordinary Salmon Run weapons share the regular weapon's _00 icon.
 for row in rows('WeaponInfoMain'):
  key=str(row['Id']);code=row['__RowId']
  if key in weapons or not code.endswith('_Coop'):continue
- ordinary=code.removesuffix('_Coop')+'_00';file='Path_Wst_'+ordinary+'.png'
- if (source/'images/weapon_flat'/file).is_file():weapons[key]={'id':row['Id'],'name':lang['CommonMsg/Weapon/WeaponName_Main'].get(code,ordinary),'image':base+'weapon_flat/'+file,'code':code}
+ stem=code.removesuffix('_Coop')
+ candidates=['Path_Wst_'+stem+'.png','Path_Wst_'+stem+'_00.png']
+ file=next((f for f in candidates if (source/'images/weapon_flat'/f).is_file()),None)
+ if file:weapons[key]={'id':row['Id'],'name':lang['CommonMsg/Weapon/WeaponName_Main'].get(code,stem),'image':base+'weapon_flat/'+file,'code':code}
 gears={}
 for kind,table,suffix in [('head','GearInfoHead','Head'),('clothes','GearInfoClothes','Clothes'),('shoes','GearInfoShoes','Shoes')]:
  gears[kind]=catalog(table,'gear',lang['CommonMsg/Gear/GearName_'+suffix])
