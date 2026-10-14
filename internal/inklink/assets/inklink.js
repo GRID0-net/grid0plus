@@ -23,7 +23,7 @@ const notice=text=>`<div class="il-callout">${esc(text)}</div>`;
 const stats=()=>data.records.VsResults.map(r=>battle(r,data.profile.id));
 const jobs=()=>data.records.CoopResults.map(r=>job(r,data.profile.id));
 const stage=(id,coop=false)=>{const a=asset(coop?'coop':'vs',id);return`<figure class="il-stage">${art(a)}<figcaption>${esc(a.name)}</figcaption></figure>`};
-const weapons=ids=>`<div class="il-weapons">${list(ids).map(id=>id<0?`<span class="il-random" title="Random weapon">?</span>`:weapon(id)).join('')}</div>`;
+const weapons=ids=>`<div class="il-weapons">${list(ids).map(id=>id<0?`<span class="il-random ${id===-2?'il-grizzco-random':''}" title="${id===-2?'Random Grizzco weapon':'Random weapon'}" aria-label="${id===-2?'Random Grizzco weapon':'Random weapon'}">?</span>`:weapon(id)).join('')}</div>`;
 const points=n=>n==null?'—':`${fmt(n)}p`;
 function toast(text){$('#toast').textContent=text;$('#toast').hidden=false;setTimeout(()=>$('#toast').hidden=true,4000)}
 function icons(){globalThis.lucide?.createIcons()}

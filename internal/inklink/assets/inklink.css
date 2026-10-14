@@ -28,3 +28,5 @@ body{margin:0;background:#15151d;color:#f6f5f2;font-family:"DM Sans",sans-serif}
  @keyframes il-arrive{from{opacity:0;translate:0 5px}to{opacity:1;translate:0 0}}
  @keyframes il-toast{from{opacity:0;translate:0 5px}to{opacity:1;translate:0 0}}
 }
+
+#inklink .il-grizzco-random{color:#e8b93f;text-shadow:0 1px 8px #e8b93f33}
