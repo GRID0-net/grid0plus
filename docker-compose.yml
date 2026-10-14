@@ -74,8 +74,11 @@ services:
       - ./deploy/nginx.params.conf:/etc/nginx/conf.d/00_params.conf:ro
       - ./deploy/nginx.generated.conf:/etc/nginx/conf.d/switchnet.conf:ro
       - ./deploy/nginx.toolbox.conf:/etc/nginx/conf.d/switchnet-toolbox.conf:ro
+      - ./deploy/nginx.inklink.public.conf:/etc/nginx/conf.d/inklink.conf:ro
       - ./certs/edge.crt:/etc/switchnet/certs/edge.crt:ro
       - ./certs/edge.key:/etc/switchnet/certs/edge.key:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/letsencrypt:/var/www/letsencrypt:ro
 
 volumes:
   postgres:

@@ -1,0 +1,6 @@
+[Unit]
+Description=Renew the short-lived INKLINK IP certificate
+
+[Service]
+Type=oneshot
+ExecStart=/opt/certbot/bin/certbot renew --deploy-hook /usr/local/sbin/grid0-inklink-cert-reload

@@ -50,20 +50,28 @@ invalidate console credentials.
 
 ## Public deployment
 
-Choose a public hostname and valid browser-trusted TLS certificate first. This
-is not a Nintendo redirect host and must not be added to the console hosts list.
-Do not reuse the operator dashboard's shared token or the Nintendo hostname
+The current public endpoint is `https://89.168.58.206:9443`. Its HTTPS
+certificate is issued for the IP address and renews automatically. This is not
+a Nintendo redirect host and must not be added to the console hosts list. Do
+not reuse the operator dashboard's shared token or the Nintendo hostname
 certificate setup for public browser authentication.
 
 1. Build `bin/inklink` on the host architecture (the Oracle VM is ARM64).
 2. Install `deploy/systemd/switchnet-inklink.service` as an **optional separate
    service**. It is not automatically added to the existing game-services target.
-3. Adapt `deploy/nginx.inklink.conf.example` to your chosen hostname/certificate
-   and include it in the public TLS proxy. Keep the backend on loopback. Preserve
-   Host and overwrite X-Real-IP with the proxy's client address.
+3. The deployed nginx edge loads `deploy/nginx.inklink.public.conf` on port
+   9443. Its backend remains on loopback; the HTTP listener serves only ACME
+   challenges. The IP certificate lives under `/etc/letsencrypt` and is mounted
+   read-only in nginx.
 4. Start/enable the optional unit and check `/healthz` locally. Verify real login,
    your own friends/history, an unrelated-account isolation check, and mobile use.
 5. Keep `inklink.pem` stable across deployments and rebuild after frontend edits.
+
+The current IP-address certificate uses Let's Encrypt's `shortlived` profile
+and lasts six days. Certbot checks twice daily; on renewal the deploy hook
+reloads only nginx. The VM's Oracle subnet security list and host firewall must
+allow TCP 9443. If the IP changes or a domain is assigned later, change the
+nginx `server_name`, certificate request, and the Discord callback together.
 
 The service is included in `make build`; installing or updating its optional
 unit and public proxy is a separate deployment step. No live VM route or DNS
@@ -128,9 +136,8 @@ selector can expose secondary linked accounts; currently the primary is used.
    Testing this confirms the Discord round trip, not connection to production.
 
 For live account access, run without `-demo` using the real shared Grid0 database
-configuration (see above), plus local HTTP `secure_cookies: false` when appropriate.
-Do not copy production credentials into committed configuration. Public hosting
-remains a separate decision and requires an HTTPS callback and secure cookies.
+configuration (see above). Public hosting uses HTTPS and secure cookies. Do not
+copy production credentials into committed configuration.
 
 The corresponding YAML block is `inklink.discord` with `client_id`,
 `client_secret_file`, and `redirect_uri`. All three have
