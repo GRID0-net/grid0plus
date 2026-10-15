@@ -447,12 +447,29 @@ TLS early data or changing device-certificate policy. The nginx edge must
 be regenerated and reloaded for this setting to apply. Check actual reuse:
 
 ```sh
-openssl s_client -connect 127.0.0.1:443 \
-  -servername t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net \
-  -tls1_2 -no_ticket -reconnect </dev/null 2>/dev/null | grep -E '^(New|Reused),'
+sudo python3 - <<'PYPROBE'
+import socket, ssl
+context = ssl.create_default_context(cafile="/opt/switchnet/certs/edge.crt")
+context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_2
+session = None
+for attempt in range(3):
+    with socket.create_connection(("127.0.0.1", 443), timeout=5) as sock:
+        with context.wrap_socket(sock,
+                server_hostname="t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net",
+                session=session) as tls:
+            print(attempt, "reused:", tls.session_reused)
+            session = tls.session
+            try:
+                tls.unwrap().close()
+            except ssl.SSLError:
+                pass  # nginx may close without replying to close_notify
+PYPROBE
 ```
 
-The first connection should be New and subsequent ones Reused. This improves
+The first connection should report False and subsequent ones True. A graceful
+TLS shutdown matters: an abruptly closed probe can invalidate cached sessions
+and misleadingly report full handshakes on every reconnect. This improves
 reconnection/setup overhead; gameplay RTT still depends on the peers' routes
 and any TURN relay. gRPC's automatic flow-control adaptation and existing
 unbuffered streams remain enabled; arbitrary fixed windows and shorter
