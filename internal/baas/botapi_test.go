@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -506,4 +507,31 @@ func TestLinkCanAddAnAccountBesideTheFirst(t *testing.T) {
 		map[string]string{"username": "relic"}); resp.StatusCode != http.StatusOK || body["username"] != "relic" {
 		t.Errorf("reset the linked account: %d %v", resp.StatusCode, body)
 	}
+}
+
+func TestBotPresenceCountIncludesIdleAndPlayingButExpiresAndRespectsPrivacy(t *testing.T) {
+	b := newBotHarness(t)
+	idle := b.newAccount()
+	playing := b.newAccount()
+	requireStatus(t, b.reportPresence(playing, db.StatePlaying, splatoon3TitleID, ""), 200)
+	check := func(online, games int) {
+		t.Helper()
+		resp, body := b.call("GET", "/bot/v1/presence-count", "", nil)
+		if resp.StatusCode != 200 || body["online"] != float64(online) || body["playing"] != float64(games) || body["total"] != float64(online+games) {
+			t.Fatalf("count = %v, status %d", body, resp.StatusCode)
+		}
+		if len(body) != 3 {
+			t.Fatalf("count endpoint exposed additional fields: %v", body)
+		}
+	}
+	check(1, 1)
+	u, _ := b.store.GetUser(t.Context(), idle.UserID)
+	permissions := u.Permissions
+	permissions.Presence = "SELF"
+	if _, err := b.store.UpdateUser(t.Context(), idle.UserID, db.UserPatch{Permissions: &permissions}); err != nil {
+		t.Fatal(err)
+	}
+	check(0, 1)
+	b.advance(testPresenceTTL + testConsoleAliveTTL + time.Minute)
+	check(0, 0)
 }

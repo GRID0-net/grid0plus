@@ -82,6 +82,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux.HandleFunc("POST /bot/v1/friend-requests/{id}/{action}", b.withUser(b.settleFriendRequest))
 	mux.HandleFunc("GET /bot/v1/users/by-discord/{discordId}", b.lookupDiscordUser)
 	mux.HandleFunc("GET /bot/v1/online", b.online)
+	mux.HandleFunc("GET /bot/v1/presence-count", b.presenceCount)
 	mux.HandleFunc("GET /bot/v1/status", b.status)
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/wipe", b.withDiscordID(b.wipeSplatoon3Save))
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/import", b.withDiscordID(b.importSplatoon3Save))
@@ -765,6 +766,38 @@ func (b *botAPI) onlineUsers(ctx context.Context) ([]botUser, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Nickname) < strings.ToLower(out[j].Nickname) })
 	return out, nil
+}
+
+// The status activity needs only counts: avoid per-player friend-code lookups,
+// health probes and profile serialization on every bot refresh. Two bulk reads
+// use the same TTL resolver and visibility policy as /online, without its cap.
+func (b *botAPI) presenceCount(w http.ResponseWriter, r *http.Request) {
+	users, err := b.s.store.ListUsers(r.Context(), 0)
+	if err != nil {
+		b.internal(w, "count network presence", err)
+		return
+	}
+	ids := make([]string, 0, len(users))
+	for _, u := range users {
+		if !u.Deleted && u.Permissions.Presence != "SELF" {
+			ids = append(ids, u.ID)
+		}
+	}
+	presences, err := b.s.effectivePresences(r.Context(), ids)
+	if err != nil {
+		b.internal(w, "resolve network presence", err)
+		return
+	}
+	online, playing := 0, 0
+	for _, p := range presences {
+		switch p.State {
+		case db.StateOnline:
+			online++
+		case db.StatePlaying:
+			playing++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"online": online, "playing": playing, "total": online + playing})
 }
 
 func (b *botAPI) status(w http.ResponseWriter, r *http.Request) {

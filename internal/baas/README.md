@@ -120,3 +120,9 @@ Priority order and capture instructions are in
 [`docs/CAPTURES/README.md`](../../docs/CAPTURES/README.md). The friend list
 response shape is first, because getting it wrong leaves the applet empty with
 nothing in the log.
+
+The bot's authenticated `GET /bot/v1/presence-count` returns idle `online`,
+`playing`, and their `total`, using the shared TTL resolver and `/online`'s
+SELF exclusion. It counts accounts once, not device connections. Two bulk
+reads avoid health probes and per-user friend-code lookups during activity
+refreshes; expired reports and deleted users do not inflate the result.
