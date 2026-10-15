@@ -174,3 +174,21 @@ read-only with `-noanalysis`; original ELF is
 No temporary project clone is necessary. Do not run concurrent sessions on the
 same project. Static xrefs miss some direct calls and ADR-built tables: validate
 with raw ARM64 disassembly/branch scanning before concluding no callers exist.
+
+### Release completion process
+
+A one-shot local finalizer `/tmp/grid0-finish-citron-release.py` is running
+while Linux job 38813894582 builds. It polls that job, downloads the Linux
+artifact only after success, verifies the tested IPS inside all three actual
+executables (extracting the Linux AppImage), then creates release v1.4.1 from
+commit aa9d0851a with all three assets. It refuses to overwrite an existing
+release. It is not a recurring automation and does not restart any games.
+
+Check `/tmp/grid0-citron-1.4.1-release/publication-status.json` before doing
+manual publication or starting another finalizer. `published` includes the
+verified URL/asset names; `failed` includes the blocking error. If the process
+or `/tmp` files are gone, reconstruct from the run IDs above. Do not assume
+release completion merely because this process was started.
+
+This handoff and the full evidence log/probes were committed in grid0plus
+commit 27cf618 and pushed to main. Private captures were not staged.
