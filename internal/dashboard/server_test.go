@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -928,5 +929,25 @@ func TestThePlayerDetailReadsThePlayLog(t *testing.T) {
 	}
 	if bad := playLogFrom(db.ExtrasByScope{db.ScopeEveryone: {"playLog": "{"}}); len(bad) != 0 {
 		t.Errorf("an unreadable log gave %+v", bad)
+	}
+}
+
+func TestConsolePlaceholdersCannotAppearInOrCrowdOutThePlayersView(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	addUser(t, store, "real-player", "Real Player")
+	for i := 0; i < 501; i++ {
+		id := fmt.Sprintf("placeholder-%04d", i)
+		if err := store.CreateUser(t.Context(), db.User{ID: id, Provisional: true, CreatedAt: now}, db.DeviceAccount{ID: "da-" + id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var players []Player
+	getJSON(t, srv, "/api/players", &players)
+	if len(players) != 1 || players[0].ID != "real-player" {
+		t.Fatalf("players = %+v, want only the real player", players)
+	}
+	if _, err := store.GetDeviceAccount(t.Context(), "da-placeholder-0000"); err != nil {
+		t.Fatal("hiding a placeholder deleted its cached device credential", err)
 	}
 }

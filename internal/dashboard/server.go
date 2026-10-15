@@ -409,9 +409,22 @@ type Player struct {
 }
 
 func (s *Server) players(ctx context.Context) ([]Player, error) {
-	users, err := s.store.ListUsers(ctx, 500)
+	users, err := s.store.ListUsers(ctx, 0)
 	if err != nil {
 		return nil, err
+	}
+	// Console placeholders own cached credentials, not player profiles. Keep
+	// them out before presence lookup and pagination so abandoned placeholders
+	// cannot consume the dashboard's player slots.
+	players := users[:0]
+	for _, u := range users {
+		if !u.Provisional && !u.Deleted {
+			players = append(players, u)
+		}
+	}
+	users = players
+	if len(users) > 500 {
+		users = users[:500]
 	}
 	ids := make([]string, 0, len(users))
 	for _, u := range users {
