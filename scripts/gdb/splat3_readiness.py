@@ -113,6 +113,15 @@ class ReadyProbe(gdb.Breakpoint):
                     fields['source_roster'] = source_snapshot()
                 except Exception as exc:
                     fields['source_roster'] = dict(status='read_error', error=str(exc))
+                try:
+                    fields['assigned_roster'] = assigned_snapshot()
+                except Exception as exc:
+                    fields['assigned_roster'] = dict(status='read_error', error=str(exc))
+                fields['peer_groups'] = peer_group_snapshot()
+                try:
+                    fields['owned_peer_group'] = owned_peer_group_snapshot()
+                except Exception as exc:
+                    fields['owned_peer_group'] = dict(status='read_error', error=str(exc))
             else:
                 fields['caller'] = hex(reg('x30') - base)
             emit(self.event, **fields)
@@ -140,12 +149,70 @@ class RosterWatch(gdb.Breakpoint):
         return False
 
 
+class PeerGroupProbe(gdb.Breakpoint):
+    def __init__(self):
+        super().__init__('*' + hex(base + 0x424AE0), internal=True)
+        self.hits = 0
+
+    def stop(self):
+        self.hits += 1
+        if self.hits >= 64:
+            self.enabled = False
+        try:
+            previous = set(peer_group_objects)
+            observe_peer_group()
+            if set(peer_group_objects) != previous:
+                emit('peer_group_observed', groups=peer_group_snapshot())
+        except Exception as exc:
+            emit('probe_read_error', probe='peer_group', error=str(exc))
+        return False
+
+
+class MinusProbe(gdb.Breakpoint):
+    """Observe requests separately from actual widget visibility changes."""
+    def __init__(self, rva, widget=False):
+        super().__init__('*' + hex(base + rva), internal=True)
+        self.widget = widget
+        self.hits = 0
+
+    def stop(self):
+        self.hits += 1
+        if self.hits >= 64:
+            self.enabled = False
+        try:
+            visible = reg('w1' if self.widget else 'w0') & 1
+            fields = dict(visible=visible, caller=hex(reg('x30') - base))
+            if self.widget:
+                obj = reg('x0')
+                previous = read(obj + 0x28D, 1)[0]
+                if previous == visible:
+                    return False
+                fields.update(object=hex(obj), previous=previous)
+            for name, snapshot in [('source_roster', source_snapshot),
+                                   ('owned_peer_group', owned_peer_group_snapshot)]:
+                try:
+                    fields[name] = snapshot()
+                except Exception as exc:
+                    fields[name] = dict(status='read_error', error=str(exc))
+            emit('minus_widget_change' if self.widget else 'minus_visibility_request', **fields)
+        except Exception as exc:
+            emit('probe_read_error', probe='minus', error=str(exc))
+        return False
+
+
 try:
     obj, expected = roster()
     emit('initial_roster', roster_object=hex(obj), legacy_expected=expected)
+    try:
+        emit('initial_owned_peer_group', group=owned_peer_group_snapshot())
+    except Exception as exc:
+        emit('initial_owned_peer_group', status='read_error', error=str(exc))
     ReadyProbe(0x38A420C, 'readiness_entry', first_only=True)
     ReadyProbe(0x38A4228, 'readiness_passed')
     ReadyProbe(0x14F44CC, 'network_error')
+    PeerGroupProbe()
+    MinusProbe(0x38EA888)
+    MinusProbe(0x41C1650, widget=True)
     if kind == 'switch' and obj:
         RosterWatch(obj)
     gdb.execute('continue')

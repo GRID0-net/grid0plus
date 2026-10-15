@@ -332,3 +332,426 @@ Next test after the operator returns:
 
 Targeted decompilations are preserved privately in the ignored capture
 folder's `analysis-private/`; never commit them or the operator game ELF.
+
+### Validated occupied-slot baseline and local candidate
+
+Attempt 8 native Switch and Ryujinx logs both show a ready property with
+capacity=10, head=0, count=10, but only three non-marker member identifiers.
+Seven IDs match the empty marker. All three real IDs have station state 2,
+flag 0; computed connected=3 agrees with w0=3 on both clients. The old
+manager field is still zero. The operator confirms all three entered the
+game. Raw ring count 10 is therefore not the expected-player count; the
+candidate must count non-marker IDs independently of station readiness.
+
+The local-only `scripts/research/splat3_roster_gate_candidate.py` prototype
+reuses the original helper loop. It initializes saved w28, increments it only
+on the existing non-marker path, and returns that occupied count in volatile
+w1 alongside unchanged w0. The caller requires positive connected count and
+equality to occupied count before its original stability counter. Four
+existing verified padding blocks replace the old lobby-count trampoline.
+No candidate IPS has been installed, released, or synchronized to emulators.
+
+`test_splat3_roster_gate.py` executes the operator's actual original and
+patched ARM64 helper with only the roster-property copy call mocked. 135
+cases cover 1..10 real members, all connected subsets, wrapped rings, missing
+stations, state-3/flagged exclusions, empty/property-unavailable cases, and
+callee-saved register/SP/refcount preservation. The original connected return
+matches the candidate for every subset. With three occupied IDs but only one
+matching station, the old gate proceeds and the candidate waits. These are
+execution checks, not hardware proof that all IDs arrive before connection.
+The follow-up delayed-peer attempt below falsified this candidate as an
+expected-player source; do not use it as a release candidate.
+
+The follow-up run used `scripts/gdb/capture-delayed-peer.sh`, which temporarily
+blocked direct UDP to/from Switch 192.168.1.41 for 90 seconds while capturing
+local UDP. Treat the communication errors during this deliberate disruption as
+expected and not as a reproduction of the ordinary cross-network failure.
+
+Attempt 9 falsified the candidate roster assumption. At 13:15:27.245 UTC, the
+Switch entered `FUN_71038a4104` with `w0=1`; the property ring contained one
+non-marker ID and nine marker IDs, so both live-connected and occupied counts
+were one. It passed the 61-update check at 13:15:28.547 with the same count.
+The previous attempt's candidate would therefore also have passed early.
+
+The server had formed a three-player session at 13:15:21.297 UTC. By
+13:15:24.641, all three GameSync clients each received an initial
+`docs/__us` collection snapshot reporting three documents. Each also received
+the `docs/__gs` collection with six documents. Their local P2P helper still
+reported one connected member at the Switch's readiness check. Thus the server
+session roster and the local transport-connected roster are distinct sources;
+counting non-marker IDs in the latter cannot gate on the former.
+
+Ryujinx hit two generic error-reporting paths at 13:15:26.429 and .443 UTC,
+before the Switch's readiness check. These breakpoints identify calls into a
+shared error handler, not a decoded network error code. The interruption test
+cannot establish the natural failure's cause. The server later froze its
+startup group at three players (13:15:30.387 UTC), so the capture also does not
+show that the server released the kickoff early.
+
+Next investigation should compare the unblocked failed cross-network capture
+with the unblocked successful same-Wi-Fi capture, focusing on the time from
+GameSync's three-user snapshot through peer transport, referee `@@Profile`
+writes, and the host's readiness entry. Any game patch needs a count sourced
+from the admitted match group, or a server-controlled kickoff condition; the
+Pia connected-member helper is insufficient. Do not install the local
+`scripts/research/splat3_roster_gate_candidate.py` prototype.
+
+### Kickoff roster mismatch and an independent count source
+
+Decoded the unblocked plaintext HTTP/2 DATA in the original VM captures,
+reassembled gRPC frames per TCP connection/direction/stream, and parsed
+`WriteDocumentsRequest` directly (without protojson's FieldMask limitation).
+Both failed starts have only one entry in the kickoff request's `users`
+array despite the server assigning three: session `c251e54f` at
+10:23:37.455 UTC and cross-network session `9014b587` at 10:39:24.068 UTC.
+The successful same-Wi-Fi session `df147454` has three entries in each of
+the three consoles' requests at 10:36:17.127/.187/.190 UTC. This is an
+observable request-content difference, consistent with the patched host
+advancing while its local peer group contains only itself. It does not
+establish whether the premature request prevents later peer completion.
+
+The actual referee watcher has its vtable at RVA `0x5c378f8`, reached via
+GOT `0x5f22d38` plus 0x10. Its update method is `0x14fe060`, and document
+parser `0x14fe4b0` reads `request_id` and `status`: -1 advances states 0/1
+to 2, 0 advances state 3 to 4, and 1 advances state 5 to 6. In state 2 it
+stores the `users` array length at watcher+0xa38. That count inherits the
+already-incomplete kickoff request, so it cannot fix this startup gate.
+The object at global `0x605c780`+0x160 is broader session state, distinct
+from this watcher (stored at the lobby manager+0xe20); its virtual getters
+must not be labelled referee-status getters without tracing their source.
+
+Raw ELF segment search finds `__us` at RVA `0x4fcee4f` (the previous search
+of defined Ghidra strings missed it). Getter `0x43294c` has real callers.
+`0x14f9760(manager, group, include_all)` walks the received Gamesync document
+tree and counts documents in this collection. With include_all=0 it filters
+through another local-ID map; include_all=1 counts all `__us` documents.
+This is a promising assigned-roster source independent of Pia's connected
+property, but its timing/group selection needs live validation before use
+in an IPS gate.
+
+The read-only `assigned_snapshot()` probe in `splat3_roster_source.py`
+follows global RVA `0x61e18a0` -> +0x80 -> group array +0x12b0. Each
+0x150-byte group entry's +0x140 points to its document watcher. Ready state
+is watcher+0x124 == 2, selected buffer is +0x1a4 (0/1), and the tree root
+is +0x138 + buffer*0x20. Tree children are +8/+0x10; node+0x28 points to
+a document whose first pointer addresses its libc++ collection-name string.
+The probe counts only `__us`, traverses at most 256 nodes, logs both groups,
+and never calls inferior code or writes game memory. Synthetic-memory checks
+passed for three user documents plus an unrelated document, an empty group,
+and cycle rejection. `splat3_readiness.py` now records this alongside the
+existing connected-property snapshot at readiness entry/pass.
+
+Next required measurement: confirm the secondary group's assigned count is
+three at the readiness entry, including while connected count is still one
+or two. Keep the original IPS for that measurement. Only then replace the
+old zero/+0x490 bypass with the verified assigned count and validate both
+direct and relayed startup. No replacement IPS or deployment was made during
+this analysis. Private decodes and the reproducible request-count decoder
+are preserved in the raw capture folder's `analysis-private/`.
+
+### Assigned-document gate prepared, not installed
+
+`scripts/research/splat3_assigned_roster_gate.py` prepares a second, distinct
+candidate. At the original WaitFullmember hook, it saves connected x0 and LR
+on an aligned stack frame, calls the game's native
+`0x14f9760(lobby_manager, 1, 1)`, restores both, and advances only when the
+assigned count equals a positive connected count. It leaves the original
+60-update stability counter and all unrelated patch records intact. A missing
+count (-1) waits. This source does not use the rejected occupied-Pia-slot
+experiment or the zero manager+0x490 fallback.
+
+The five existing WaitFullmember padding blocks are reused, plus alignment
+RVA 0x3885214 (12 zero bytes, preceded by RET and followed by a function
+prologue). The analyzed project has no references to its three instruction
+addresses. Independent Capstone disassembly confirms the call arguments,
+destinations and stack instructions. Unicorn execution covers 132 combinations
+of connected=0..10 and assigned=-1..10; all passed. The count call is mocked
+only in this execution test, deliberately clobbering caller-saved registers.
+The test also verifies the original bytes at every patch site, original
+connected return, LR, SP, and callee-saved registers. These checks do not prove
+the native count's timing or its group semantics on hardware.
+
+Native count has additional availability conditions: secondary active flag at
+lobby+0x40, watcher state 2, and a special-mode shortcut at lobby+0x1881 that
+returns one. The read-only probe now logs these flags and an estimated native
+secondary count alongside both raw collection counts, so a three-document
+snapshot is not mistaken for a usable native return. A live original-patch
+run must validate this before the candidate is installed. The standalone IPS
+is staged privately under `assigned-roster-candidate/` in the ignored raw
+folder; Toolbox, emulator embedded patches, SD contents and deployed server
+were not changed.
+
+### Attempt 10 rejects the secondary-group candidate
+
+Original IPS, Switch-hosted three-player forced match at 16:50:31.718 UTC,
+session `5a202b28`. Operator reports Switch Battle Time, Citron freezing,
+and communication error. The freeze prevents treating the match outcome as
+a clean comparison, but the source measurements are usable.
+
+Switch readiness entry at 16:50:37.662: connected=1; primary group ready,
+one __us document; secondary watcher state=1, zero documents;
+secondary_active=0, special=0. Pass at 16:50:39.158 had the same values.
+Ryujinx entry at 16:50:56.499: connected=1 while its ready primary group
+had three __us documents; secondary remained inactive. Pass at 16:50:57.628
+was unchanged. Native secondary-count estimate is -1 on both. Therefore
+the staged secondary-group candidate would block this flow indefinitely;
+it is rejected and was never installed. Merely changing the argument to
+primary is insufficient: the host's primary count initially contains one.
+
+Server logs independently explain that count: host attached at 16:50:35.015
+and its initial docs/__us snapshot at .074 contained one document. Guest
+streams attached at 16:50:40.082 and 16:50:46.696; the first guest's later
+snapshot contained two, and Ryujinx subsequently saw three. Host kickoff
+was already submitted at 16:50:41.006, with only its profile at .073 (1/3).
+The initial Gamesync document roster is an attachment roster, not a fixed
+assigned matchmaking roster. The next patch needs the assigned ticket/session
+roster or an explicit server admission barrier, rather than either of these
+locally growing collections. Both GDB probes were detached and the bounded
+VM capture stopped; attempt10-server.pcap/journal and both JSONL files are
+preserved privately.
+
+### Complete __pus membership map located for next probe
+
+The complete group is already delivered independently of live __us membership:
+attempt 10 host target 7 watches docs/__pgn/All/__pus and received three
+documents at 16:50:35.935 UTC, before its readiness entry at 16:50:37.662.
+`matchedPlayerDocuments` deliberately includes unattached assigned players
+in __pus, while omitting them from public __us. This makes __pus a stronger
+candidate than either rejected count source; client acceptance/timing still
+needs measurement.
+
+Raw ELF search located the pooled string /__pus at RVA 0x4f05ddb (searching
+the suffix __pus alone missed the reference). Path builder 0x4267b4 builds
+__pgn/<group>/__pus. Its caller 0x41bf20 installs collection callbacks whose
+function objects use table 0x5b19860 (update) and 0x5b198b8 (completion).
+Update entry 0x424ae0 obtains the base peer-group object from lambda+0x10.
+Group name is its libc++ string at +0x1a8. Accepted member updates insert
+into its map at +0xa0. Map insertion 0x4252c0 increments map+0x18, yielding
+the member count at group+0xb8; removal decrements the same map. Own member
+acceptance marks group+0x1fa. Completion callback 0x4255fc marks +0x1fb.
+
+The readiness probe now observes bounded update callbacks, remembers only
+groups named All, and reads their counts and completion flags at readiness
+entry/pass. It performs no inferior calls or writes and observes at most
+64 callbacks per attachment. Synthetic-memory checks passed for the lambda
+pointer, live count changes, completion flags and oversized-count rejection.
+This does not prove a stable singleton path suitable for an IPS: the next
+measurement must show the relevant All object has all three members before
+connected peers catch up, then resolve that object's owning session handle.
+The source decompilations are preserved privately as pus-*.c. No new patch
+was installed or deployed.
+
+### Attempt 11: complete peer-group roster confirmed (2026-10-15)
+
+The user reported Battle Time, but an emulator froze and the match did not
+start. This is not a successful hardware validation. The read-only probes did
+confirm an independent complete roster before the original readiness gate:
+
+- Switch at 17:08:09.246 UTC: `All` peer group has 3 members, own-member-seen
+  and initial-snapshot-done both 1; Pia connected count is only 1.
+- Switch at 17:08:11.160 UTC: readiness passes after 61 updates despite Pia
+  still reporting 1; complete peer group still reports 3.
+- Ryujinx at 17:08:14.882 UTC: complete peer group also reports 3 with both
+  flags set, while Pia property is unready (`w0=0xffffffff`). It passes at
+  17:08:15.880 with that property still unready.
+
+This confirms the `__pus` group supplies an assigned roster independently of
+Pia connectivity. It also demonstrates that the existing bypass allows an
+unready Pia property through. Next: locate a stable owning-session path to the
+peer-group object and require a completed snapshot plus a valid connected count
+matching the assigned roster. A callback-derived pointer alone is not yet a
+safe IPS implementation. No new patch was installed in this attempt.
+
+Private evidence: `raw/grid0-three-player-20261015/attempt11-*-peer-group.jsonl`,
+`attempt11-server.pcap`, and `attempt11-server.journal`.
+
+### Current-session owner path traced after attempt 11
+
+Raw direct-branch scanning found the native API-to-group accessor used at
+0x44e5450 and 0x44e54a0 (inside the true function entry 0x44e52f0).
+This path selects manager+0x12b8, falling back to index zero if out of range:
+
+```
+root = *(main + 0x61e18a0)
+manager = *(root + 0x80)
+entry = *(manager + 0x12b0) + selected * 0x150
+box = *(entry + 8)                  // only if entry's leading word is nonzero
+api_weak_handle = *box
+api = *api_weak_handle
+impl = *(api + 0x10)
+group = *(impl + 0x30)
+```
+
+The native code takes manager+0x2d0's mutex while acquiring the session owner,
+then FUN_71004026d0 locks the API weak owner at handle+8. FUN_71004054c0
+calls FUN_71004028dc, which locks the group weak owner at impl+0x38 and
+returns impl+0x30. Therefore simply caching the group callback pointer is
+insufficient for a shipping patch: native shared/weak ownership must be
+respected, especially when disconnecting or replacing a session.
+
+The read-only GDB probe now follows this path independently and reports
+`owned_peer_group` alongside the callback-derived group. It rejects missing
+sessions and expired weak owners (64-bit strong count -1), bounds array and
+member counts, and reports whether both paths agree. All six synthetic-memory
+tests passed, including an inactive selected session and expired owners.
+This establishes probe behavior, not a validated live pointer chain or a safe
+concurrent IPS. Next hardware measurement must compare the independently
+resolved object with the callback's `All` object at readiness entry/pass.
+
+### Attempt 12: successful startup validates current-session ownership
+
+Operator confirms all three entered the battle, with the original IPS unchanged.
+Switch readiness entry at 17:16:03.910 UTC and pass at 17:16:06.106 both
+report connected=3. Ryujinx entry at 17:16:04.230 and pass at 17:16:05.215
+also report connected=3. Both have complete All groups with three members,
+own-member-seen=1 and initial-snapshot-done=1. The independent session-owner
+path selects index zero and resolves exactly the callback-observed group on
+both devices (`matches_callback=true`). Before matchmaking, both instead
+selected index one and reported no API handle, demonstrating why stale
+callback pointers must not be reused between sessions.
+
+This is a working reference, not evidence a fix was installed: original patch
+and server remained unchanged. Compared with attempt 11, the concrete startup
+difference is valid connected=3 instead of Switch=1 / Ryujinx=unready, despite
+both attempts already having complete three-member peer groups. The owner path
+is now live-confirmed; a replacement gate must preserve native owner lifetime
+and wait for valid connectivity matching the completed assigned roster.
+Private evidence: attempt12-*-owner.jsonl and attempt12-server.pcap/journal.
+
+### Peer-group readiness candidate installed for hardware validation
+
+Candidate generator `scripts/research/splat3_peer_group_gate.py` replaces only
+legacy readiness trampoline records; other small-match fixes are retained.
+It uses 48 RET/alignment padding spans verified against the operator's image,
+excluding legacy sites, direct branch destinations and ELF pointer references.
+It locks the session-manager mutex, acquires API and group ownership using the
+native weak-lock/accessor routines, releases the mutex, checks completed `All`
+membership against valid connected count, then releases both owners. The
+original connected return, LR, SP and callee-saved registers are restored.
+The existing 61-update stability check remains unchanged.
+
+284 Unicorn execution cases passed across full sizes 4 and 8, missing/expired
+owners, incomplete snapshots, incorrect group names and invalid counts. Tests
+also simulate the session dropping its baseline references after the mutex is
+released: both last-owner destructors and weak releases execute correctly.
+Native routines are simulated in these tests; hardware validation is pending.
+
+Both SD small-match IPS filenames were replaced with candidate SHA256
+`a855cfec093a8c8f0cb441ceb46da44f8afbb07d293fba102f14ee2415310fa6`.
+Original SHA256 `11fc9aaa3b4703daf5c22285fad3f1b9ef4b6cb470843ba9f460f612e347bcb5`
+is backed up in the private raw directory under `sd-before-peer-group-*`.
+Existing SD `s3_bypass_member` and `s3tricolor_pair_test` overlap only identical
+retained instructions; no differing overlap was found. Toolbox distribution,
+emulator patches and deployed server were not changed. Restart the game to
+load this candidate, then measure Switch-hosted cross-network startup before
+considering it validated or publishing it.
+
+### Attempt 13: candidate succeeds with Switch host on hotspot
+
+Operator moved Switch to hotspot (no debugger attached), then force-started a
+three-player battle with Ryujinx/Citron on the PC. Reports Battle Time for all
+three: cancel indicator disappeared first on Switch, then emulators, and the
+match began afterward. This is the first cross-network hardware success with
+the candidate, consistent with the gate waiting for all assigned connections.
+
+Server session `436effe0-1795-473e-9ac9-cbe83ef77057`: three watch streams
+attached at 17:33:54.230/.276/.298 UTC. Referee profiles progressed 1/3,
+2/3, 3/3 at 17:34:10.327/.332/.338 UTC for the same battle. Contrast previous
+failed startups with only one referee user/profile. This run validates a
+successful tested configuration, not every mode or repeated reliability.
+No GDB timing perturbation was present. Capture stopped and saved privately as
+attempt13-server.pcap and attempt13-server.journal. Candidate remains installed
+only on the operator Switch; distribution/emulator patches remain unchanged.
+
+### Distribution and cancel-control timing follow-up
+
+Tested IPS bundled and pushed to Toolbox commit 3709200, Ryujinx 1b0d77055,
+and Citron 8194d1295. Toolbox 0.8.10 published; downloaded NRO contains two
+exact copies of the candidate IPS. Emulator release workflows dispatched for
+Ryujinx 1.4.9 (run 38779593267) and Citron 1.4.1 (run 38779597892); completion
+must be checked before claiming those binaries published. All three source
+copies use SHA256 a855cfec093a8c8f0cb441ceb46da44f8afbb07d293fba102f14ee2415310fa6.
+Toolbox now carries readable assembly, fixed cave allocation, checked-in
+readiness records and the 284-case execution test. Regeneration reproduces
+49 readiness records exactly; existing 16 rematch cases also pass.
+
+Attempt 13 timing: watch streams attached at 17:33:54.230-.298 UTC; TURN
+Allocate requests reached VM at 17:34:00.697/.724/.920, and server replies
+followed in under 1 ms. First captured Send Indication was 17:34:01.755;
+referee profiles arrived 17:34:10.327-.338. Thus a slow TURN Allocate response
+at the VM does not explain the entire startup delay. These timestamps do not
+establish when the UI minus controls disappeared or which client-side timer
+was active; no new timing patch is justified from them alone.
+
+Static UI landmarks: L_HoldCancelBtn_00 is bound to object+0x330 in
+FUN_710413f6e0; sibling controls are +0x338/+0x340/+0x348. Helper 0x41483e0
+updates six controls from visibility/enabled byte pairs and their animation
+state, rather than directly waiting on a network timer. The enclosing state
+machine registers Matching at callbacks 0x41435b0 (entry), 0x4143c5c (update)
+and 0x4143c60 (exit). These are UI landmarks, not yet proof this is the exact
+minus prompt used in the tested Versus scene. A live visibility/state probe
+is needed to tie the control to the operator's observed disappearance before
+altering it. Decompilations preserved privately as minus-*.c.
+
+### Exact hold-minus control and state setter located
+
+`L_HoldCancel_00` in FUN_71041c17d0 binds the control at object+0x258,
+with animations `MeterUp_Minus` and `MeterDecide_Minus`. This is distinct
+from the earlier generic L_HoldCancelBtn_00..04 family. FUN_71041c1650
+changes visibility from argument w1 bit zero, remembers it at object+0x28d,
+and returns immediately for an unchanged value. The caller wrapper
+FUN_71038ea888 receives the visibility value in w0, selects the lobby UI
+widget, locks its UI mutex, and invokes the actual setter at 0x38ea974.
+
+Controller callback 0x38f4aac shows it on state entry; callbacks 0x38f5114,
+0x38f57d8 and 0x38f6cd8 hide it on state entry. The callback table is assembled
+at true entry 0x38f3c9c using ADR (not ADRP+ADD), with corresponding update
+callbacks 0x38f4b70, 0x38f5180 and 0x38f59c0. The 0x38f57d8 update can later
+advance its network controller (param_1+0xcc8) to state 0x17, distinct from
+the UI's earlier hide request. Static analysis thus separates UI state entry
+from eventual network readiness; it does not measure their runtime delay.
+
+The read-only GDB probe now logs both wrapper requests and actual widget
+visibility transitions, bounded to 64 hits each, alongside Pia connectivity
+and current owned peer-group state. Actual setter suppresses unchanged values.
+No inferior calls or new game patch are used. Syntax and existing synthetic
+roster tests pass. Next run should correlate the emulator's hide caller and
+roster state with its Gamesync/TURN capture. This is needed before claiming
+which phase caused the operator's observed inter-client delay.
+
+Analysis hygiene: an exploratory decompile at interior address 0x41c1c00
+was discarded as invalid; it is not used as evidence or preserved as a
+standalone function. Verified constructor entry is 0x41c17d0.
+
+Ryujinx 1.4.9 release completed successfully with all platform assets.
+Citron 1.4.1 Windows/macOS jobs passed; Linux failed on an upstream TLS
+connection reset downloading xcb-util-renderutil. Failed jobs alone were
+retried, keeping the successful builds. No speculative timing change shipped.
+
+### Published artifact verification and serialization note
+
+Citron's successful Windows/macOS packages from run 38779597892 were downloaded
+and their executable IPS arrays parsed. Both contain the exact hardware-tested
+1035-byte IPS, SHA256 a855cfec093a8c8f0cb441ceb46da44f8afbb07d293fba102f14ee2415310fa6,
+including all 48 new cave blocks. The regenerated Toolbox IPS has SHA256
+80c0c81cabf0109dc1a0253518d252431a4e55873d7960dc2c0b2d803f305be2:
+it emits the same 61 records in a different order (readiness before retained
+rematch blocks). Parsed address-to-byte writes compare equal, with no differing
+records. Earlier wording that every distribution's whole-file hash is identical
+was too strong; the memory writes are identical. The downloaded Toolbox NRO
+contains two exact copies of its regenerated IPS. This is serialization order,
+not a missing readiness patch or a compiler transformation.
+
+Citron commit aa9d0851a adds a SHA256-pinned Debian mirror for the identical
+xcb-util-renderutil 0.3.10 upstream tarball, after xcb.freedesktop.org TLS resets
+on CI and local timeouts. Download checksum matches Debian's .dsc source
+manifest and the original archive MD5. A lightweight CMake configuration probe
+verified mirror priority, hash/timeout forwarding and no leakage to other
+components. Linux-only build run 38813894582 has publication disabled so its
+artifact can be combined with the successful Windows/macOS packages before
+publishing. Previous run was canceled to avoid competing publication. Pending:
+verify Linux build, gather all three artifacts and publish Citron 1.4.1.
+
+Minus probe synthetic checks passed for wrapper w0 vs widget w1 ABI, actual
+visibility changes, unchanged-value suppression and 64-hit bounds. Operator
+can test later; no debugger or capture is running for this next measurement.
