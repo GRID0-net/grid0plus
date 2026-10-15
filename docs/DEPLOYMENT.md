@@ -437,3 +437,23 @@ to reach them.
 **`config/config.yaml`, `certs/` and `switch/hosts.txt` are gitignored.** They
 contain your addresses and your keys. Check `git status` before committing if you
 have edited anything under those paths.
+
+### Repeated connections from distant players
+
+Generated console-facing HTTP and gRPC TLS blocks use bounded shared session
+caches (1 MiB per backend/client-certificate policy, ten-minute expiry).
+Stateful TLS resumption reduces repeat-handshake overhead without enabling
+TLS early data or changing device-certificate policy. The nginx edge must
+be regenerated and reloaded for this setting to apply. Check actual reuse:
+
+```sh
+openssl s_client -connect 127.0.0.1:443 \
+  -servername t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net \
+  -tls1_2 -no_ticket -reconnect </dev/null 2>/dev/null | grep -E '^(New|Reused),'
+```
+
+The first connection should be New and subsequent ones Reused. This improves
+reconnection/setup overhead; gameplay RTT still depends on the peers' routes
+and any TURN relay. gRPC's automatic flow-control adaptation and existing
+unbuffered streams remain enabled; arbitrary fixed windows and shorter
+startup deadlines are not substitutes for a nearer relay.

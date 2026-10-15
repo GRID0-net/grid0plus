@@ -242,3 +242,14 @@ func TestEveryProxiedHostReachesTheGeneratedNginxConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSResumptionCachesSeparateClientCertificatePolicies(t *testing.T) {
+	cfg := testConfig()
+	withCert := httpServerBlock(cfg, []string{"a.example"}, "baas", true, true, "1m")
+	withoutCert := httpServerBlock(cfg, []string{"b.example"}, "baas", false, true, "1m")
+	for _, tc := range []struct{ body, zone string }{{withCert, "GRID0_http_baas_true"}, {withoutCert, "GRID0_http_baas_false"}, {grpcServerBlock(cfg, "npln", 443, []string{"c.example"}), "GRID0_grpc_npln_false"}} {
+		if !strings.Contains(tc.body, "ssl_session_cache shared:"+tc.zone+":1m;") || !strings.Contains(tc.body, "ssl_session_timeout 10m;") {
+			t.Fatalf("missing bounded TLS session cache: %s", tc.body)
+		}
+	}
+}

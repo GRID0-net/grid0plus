@@ -666,6 +666,13 @@ func maxBodySizeFor(svc nintendo.Service) string {
 	return "4m"
 }
 
+// Stateful TLS resumption avoids repeated full handshakes on distant clients.
+// Separate caches keep client-certificate policies and backend contexts apart;
+// each bounded 1 MiB zone holds roughly 4,000 sessions across nginx workers.
+func edgeSessionCache(upstream string, clientCert bool) string {
+	return fmt.Sprintf("    ssl_session_cache shared:GRID0_%s_%t:1m;\n    ssl_session_timeout 10m;", upstream, clientCert)
+}
+
 func httpServerBlock(cfg config.Config, serverNames []string, upstream string, verifyClient, http2 bool, maxBodySize string) string {
 	var verifyClientDirective, clientCertHeader string
 	if verifyClient {
@@ -716,6 +723,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
     ssl_certificate     /etc/switchnet/certs/edge.crt;
     ssl_certificate_key /etc/switchnet/certs/edge.key;
 %s
+%s
     client_max_body_size %s;
 
     location / {
@@ -727,7 +735,7 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
         proxy_set_header X-Forwarded-Proto $scheme;%s
     }
 }
-`, cfg.Network.EdgeTLSPort, http2Directive, strings.Join(serverNames, "\n                "), verifyClientDirective, maxBodySize, upstream, clientCertHeader)
+`, cfg.Network.EdgeTLSPort, http2Directive, strings.Join(serverNames, "\n                "), edgeSessionCache("http_"+upstream, verifyClient), verifyClientDirective, maxBodySize, upstream, clientCertHeader)
 	return b.String()
 }
 
@@ -754,6 +762,7 @@ func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames [
 
     ssl_certificate     /etc/switchnet/certs/edge.crt;
     ssl_certificate_key /etc/switchnet/certs/edge.key;
+%s
 
     # Splatoon 3 holds gRPC streams open that can stay quiet for minutes
     # (PresenceService/KeepAlive, LobbyMessaging/RecvMessage, ticket tracking,
@@ -770,7 +779,7 @@ func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames [
         grpc_pass grpc://switchnet_%s;
     }
 }
-`, port, strings.Join(serverNames, "\n                "), gamesync, upstream)
+`, port, strings.Join(serverNames, "\n                "), edgeSessionCache("grpc_"+upstream, false), gamesync, upstream)
 }
 
 // listenPort returns the port a service's hosts are reached on.
