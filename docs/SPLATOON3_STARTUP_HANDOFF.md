@@ -11,10 +11,10 @@ Switch. The server and emulator binaries were unchanged during that test.
 This validates that configuration once; repeated reliability, Salmon Run and
 private-room behavior with this new gate still require hardware testing.
 
-The user next wants to shorten the delay between the Switch's cancel/minus
+The user wanted to shorten the delay between the Switch's cancel/minus
 prompt disappearing and the emulators' prompts disappearing. No additional
-timing patch has been justified or installed. The operator can test later.
-No debugger or capture is currently running for that next test.
+timing patch has been justified or installed; see the static and capture
+conclusion below. The operator chose not to pursue it for now.
 
 ## Confirmed defect and correction
 
@@ -121,6 +121,33 @@ network controller at object+0xcc8 into state 0x17. Thus UI disappearance
 and network readiness are distinct events. Exact active callback/state during
 the operator's observed gap still needs measurement; do not invent its meaning.
 
+### Static and capture conclusion (2026-10-16, no new test)
+
+The lobby leaves the minus-shown state when `FUN_71038fc10c` returns 2.
+That function reads `+0xeac` on the `Cmn_VersusMatch_01` layout object,
+not a network state. The layout's `+0xeac` values are written by
+animation/part-finished callbacks (`0x437120c`: the part at `+0xe18`
+finishing sets 2; `FUN_7104370e3c` sets 1/3/7/8/12/13). So the hide is
+paced by UI animations, which start only after that device's own
+readiness gate has passed. That gate needs 61 stable updates.
+
+Attempt 13's server capture rules out a late emulator link:
+
+- TURN allocations for all three players at 17:34:00.64–00.92 UTC.
+- Switch↔emulator relay permissions, channels and the first data at
+  17:34:01.75–01.86, both directions, within about 110 ms.
+- Emulator↔emulator traffic never used the relay (same PC, direct).
+- All three referee profiles arrived at 17:34:10.33–10.34, within 11 ms.
+
+Every link was up about 8 s before a synchronised battle start, so the
+prompt gap is not network. The remaining explanation is frame-paced UI
+and the 61-update gate running at the emulators' lower or uneven frame
+rate. This is inferred, not measured on the emulators. It is cosmetic,
+because the battle starts together on all devices. The operator chose
+not to patch it: shortening the 61-update counter weakens the readiness
+fix, and skipping the layout animations means patching unverified UI
+code. Revisit only with a probe measurement showing otherwise.
+
 Read-only probe `scripts/gdb/splat3_readiness.py` now observes wrapper requests
 and actual changed visibility, their callers, Pia count and owned-group state.
 Both new hooks are bounded to 64 hits and auto-continue. Synthetic checks
@@ -183,6 +210,17 @@ artifact only after success, verifies the tested IPS inside all three actual
 executables (extracting the Linux AppImage), then creates release v1.4.1 from
 commit aa9d0851a with all three assets. It refuses to overwrite an existing
 release. It is not a recurring automation and does not restart any games.
+
+Outcome: run 38813894582 failed on 2026-10-15 at 22:16 UTC. That run did not
+fail on renderutil: it failed fetching `xcb-util-keysyms` from
+`xcb.freedesktop.org`, which was not answering at all. The finalizer exited
+with `failed` and published nothing. The operator chose to wait for the host to
+return and re-run, rather than mirror every xcb package. If it stays down,
+`xorg.freedesktop.org/archive/individual/xcb/` carries libxcb 1.16,
+xcb-util-image 0.4.1 and xcb-util-keysyms 0.4.1, and Debian's keysyms
+orig.tar.xz is byte-identical to it
+(`7c260a5294412aed429df1da2f8afd3bd07b7cba3fec772fba15a613a6d5c638`).
+After a successful re-run, update the run ID in the finalizer and run it again.
 
 Check `/tmp/grid0-citron-1.4.1-release/publication-status.json` before doing
 manual publication or starting another finalizer. `published` includes the
