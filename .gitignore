@@ -71,3 +71,7 @@ docs/scratchpad backups/
 /natcheck
 /npln
 /switchnetctl
+
+# Local dev keys and SD-card drops never belong in git.
+dev/keys/
+dev/sd-drop-*
