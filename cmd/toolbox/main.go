@@ -43,6 +43,9 @@ func main() {
 		Unprobed: map[string]string{
 			"natcheck": "UDP, not HTTP: no /healthz to ask",
 		},
+		PatchesRepo:    cfg.Toolbox.PatchesRepo,
+		PatchesDir:     cfg.Toolbox.PatchesDir,
+		PatchesRefresh: time.Duration(cfg.Toolbox.PatchesRefreshSeconds) * time.Second,
 	}, log)
 
 	ctx, cancel := service.SignalContext()
@@ -53,6 +56,8 @@ func main() {
 	// a 502 when it fails -- a second, duplicate signal on /healthz would
 	// tell the operator nothing /updates/latest does not.
 	healthz := health.New("toolbox")
+
+	go handler.RunPatchMirror(ctx)
 
 	if err := service.ServeHTTPWithHealth(ctx, log, cfg.Toolbox.Listen, handler.Handler(), healthz); err != nil {
 		service.Fatal(log, "serve", err)

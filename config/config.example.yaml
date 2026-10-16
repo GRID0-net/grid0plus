@@ -650,6 +650,17 @@ toolbox:
   # per console.
   release_cache_ttl_seconds: 120
 
+  # The patch mirror. The Toolbox installs IPS patches from the newest
+  # patches-<serial> release of this public repository, and asks this service
+  # for the same manifest.json and patches.zip (at /grid0plus/patches/) when
+  # GitHub cannot be reached. A set is only served once every file in it
+  # matches the manifest's SHA-256; the last good one is kept in patches_dir
+  # so a restart during a GitHub outage still has one. Empty patches_repo
+  # turns the mirror off.
+  patches_repo: "GRID0-net/GRID0plus-cfw"
+  patches_dir: "data/toolbox-patches"
+  patches_refresh_seconds: 600
+
 # ---------------------------------------------------------------------------
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------

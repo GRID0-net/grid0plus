@@ -126,3 +126,26 @@ per console.
   deployment sees, holding a second copy of the binary on disk (and keeping
   it in sync with whatever GitHub currently has tagged latest) is
   complexity this does not need yet.
+
+## The patch mirror
+
+`GET /grid0plus/patches/manifest.json` and `GET /grid0plus/patches/patches.zip`
+answer the newest `patches-<serial>` release of `toolbox.patches_repo`
+(`GRID0-net/GRID0plus-cfw`), the same two files the Toolbox otherwise
+downloads from GitHub. The Toolbox asks here only when GitHub cannot be
+reached; see the cfw repo's `patches/README.md` for the release format.
+
+`RunPatchMirror` asks GitHub every `toolbox.patches_refresh_seconds` (600)
+for a newer release. The repository is public, so no token is sent: the
+mirror does not depend on `github_token`. A new set replaces the served one
+only after every file its manifest lists is found in `patches.zip` with the
+listed SHA-256; a release that fails keeps the previous set in service, and
+the failure is logged. The last good set is written to `toolbox.patches_dir`
+(`data/toolbox-patches/<tag>/`, with `current` naming it) and loaded again at
+startup, so a restart during a GitHub outage, the one case the mirror is for,
+still has something to serve. Until a first set exists the endpoints answer
+503.
+
+Integrity is end to end: the Toolbox checks every file against the
+manifest's SHA-256 itself, so this copy is a convenience, not something the
+console has to trust.

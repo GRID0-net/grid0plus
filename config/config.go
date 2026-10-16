@@ -715,6 +715,16 @@ type Toolbox struct {
 	// no caching -- fine at this traffic level, but every check then costs a
 	// real GitHub API call.
 	ReleaseCacheTTLSeconds int `yaml:"release_cache_ttl_seconds"`
+
+	// PatchesRepo is the public "owner/name" repository whose
+	// patches-<serial> releases this service mirrors at /grid0plus/patches/,
+	// for Toolboxes that cannot reach GitHub. Empty turns the mirror off.
+	PatchesRepo string `yaml:"patches_repo"`
+	// PatchesDir keeps the last verified patch set, so the mirror still
+	// answers after a restart while GitHub is unreachable.
+	PatchesDir string `yaml:"patches_dir"`
+	// PatchesRefreshSeconds is how often GitHub is asked for a newer set.
+	PatchesRefreshSeconds int `yaml:"patches_refresh_seconds"`
 }
 
 // NATCheck configures the UDP NAT-check responder.
@@ -874,6 +884,9 @@ func Default() Config {
 		Toolbox: Toolbox{
 			Listen:                 "127.0.0.1:8090",
 			ReleaseCacheTTLSeconds: 120,
+			PatchesRepo:            "GRID0-net/GRID0plus-cfw",
+			PatchesDir:             "data/toolbox-patches",
+			PatchesRefreshSeconds:  600,
 		},
 		NATCheck: NATCheck{
 			PrimaryListen:   ":10025",

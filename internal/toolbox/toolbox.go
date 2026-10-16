@@ -84,6 +84,15 @@ type Config struct {
 	// guess: a status that says "unknown, and here is why" is worth more to
 	// whoever is reading it than a green light this package never earned.
 	Unprobed map[string]string
+
+	// PatchesRepo is the public "owner/name" repository whose patches-<serial>
+	// releases are mirrored at /grid0plus/patches/ (see patches.go). Empty
+	// turns the mirror off.
+	PatchesRepo string
+	// PatchesDir keeps the last verified set across restarts.
+	PatchesDir string
+	// PatchesRefresh is how often GitHub is asked for a newer set.
+	PatchesRefresh time.Duration
 }
 
 // ServiceStatus is one service's status, as /status reports it.
@@ -107,6 +116,10 @@ type Handler struct {
 	// at an httptest server so no real GitHub call is ever needed to verify
 	// this package's own logic.
 	githubAPIBase string
+	// githubDownloadBase is "https://github.com", where release assets live.
+	githubDownloadBase string
+
+	patches *patchMirror
 
 	mu     sync.Mutex
 	cached *cachedRelease
@@ -119,12 +132,27 @@ type cachedRelease struct {
 
 // New returns a toolbox handler.
 func New(cfg Config, log *slog.Logger) *Handler {
-	return &Handler{
-		cfg:           cfg,
-		log:           log,
-		client:        &http.Client{Timeout: githubTimeout},
-		githubAPIBase: "https://api.github.com",
+	h := &Handler{
+		cfg:                cfg,
+		log:                log,
+		client:             &http.Client{Timeout: githubTimeout},
+		githubAPIBase:      "https://api.github.com",
+		githubDownloadBase: "https://github.com",
 	}
+	if cfg.PatchesRepo != "" {
+		every := cfg.PatchesRefresh
+		if every <= 0 {
+			every = 10 * time.Minute
+		}
+		h.patches = &patchMirror{
+			repo:   cfg.PatchesRepo,
+			dir:    cfg.PatchesDir,
+			every:  every,
+			client: &http.Client{Timeout: 60 * time.Second},
+			api:    h.githubAPIBase,
+		}
+	}
+	return h
 }
 
 // Handler returns the routed handler.
@@ -134,6 +162,9 @@ func (h *Handler) Handler() http.Handler {
 	mux.HandleFunc("GET /updates/latest", h.handleUpdatesLatest)
 	mux.HandleFunc("GET /updates/latest/download", h.handleUpdatesLatestDownload)
 	mux.HandleFunc("GET /updates/download", h.handleUpdatesDownload)
+	if h.patches != nil {
+		mux.HandleFunc("GET "+patchesPath, h.patches.serve)
+	}
 	return mux
 }
 
