@@ -222,6 +222,13 @@ orig.tar.xz is byte-identical to it
 (`7c260a5294412aed429df1da2f8afd3bd07b7cba3fec772fba15a613a6d5c638`).
 After a successful re-run, update the run ID in the finalizer and run it again.
 
+Done 2026-10-16: xcb.freedesktop.org returned, the failed Linux job of
+38813894582 was re-run and succeeded. The finalizer was gone from `/tmp`, so
+its steps were done by hand: all six private-server IPS files were found
+byte-for-byte inside the Linux, Windows and macOS executables, and
+[v1.4.1](https://github.com/GRID0-net/GRID0-citron/releases/tag/v1.4.1) was
+published from aa9d0851a with the three assets.
+
 Check `/tmp/grid0-citron-1.4.1-release/publication-status.json` before doing
 manual publication or starting another finalizer. `published` includes the
 verified URL/asset names; `failed` includes the blocking error. If the process
