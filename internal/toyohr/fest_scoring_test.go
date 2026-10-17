@@ -73,6 +73,14 @@ func TestCompletedFestRanksRealMatchModesAndFreezesTheMidpoint(t *testing.T) {
 	if len(final.GetOverall().GetWeights().GetFields()) != 15 {
 		t.Fatal("final result lost captured points weights")
 	}
+	// The screen gives each listed place its weight, so a place held by a
+	// team at 0% must be worth 0 there too: no Tricolor game means no 180
+	// for whoever is listed first.
+	w := final.GetOverall().GetWeights().GetFields()
+	if w["TricolorWinPoint"].GetIntegerValue() != 0 || w["RegularWinPoint"].GetIntegerValue() != 120 ||
+		w["RegularSecondPoint"].GetIntegerValue() != 0 || w["PlayerCountSecondPoint"].GetIntegerValue() != 35 {
+		t.Errorf("shown weights = %v", w)
+	}
 	key, err := svc.GetFestDecryptionKey(context.Background(), &toyohrpb.GetFestDecryptionKeyRequest{Name: fest.ID})
 	if err != nil || key.GetWinningTeam() != points[0].GetFestTeam() {
 		t.Fatalf("result-pack winner %q does not match awarded points %v (error %v)", key.GetWinningTeam(), points, err)

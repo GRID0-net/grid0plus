@@ -163,11 +163,22 @@ func anyShare(ranked []*toyohrpb.FestTeamRatio) bool {
 	return false
 }
 
-func capturedWeights() *commonpb.MapValue {
+// shownWeights is the points-per-place map sent with a result, from the
+// captured weights. The game draws its results screen from each category's
+// ranking and this map, giving each listed place its weight: with no Open
+// games all three teams sit at 0%, and the screen gave the first-listed team
+// Open's 120 points the server never counted (seen on hardware 2026-10-17).
+// So a place held by a team at 0% is sent as worth 0, as festPoints scores it.
+func shownWeights(rankings map[string][]*toyohrpb.FestTeamRatio) *commonpb.MapValue {
 	fields := map[string]*commonpb.Value{}
 	for category, values := range festWeights {
+		ranked := rankings[category]
 		for i, suffix := range []string{"WinPoint", "SecondPoint", "ThirdPoint"} {
-			fields[category+suffix] = &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: values[i]}}
+			v := values[i]
+			if i >= len(ranked) || ranked[i].GetRatio() <= 0 {
+				v = 0
+			}
+			fields[category+suffix] = &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: v}}
 		}
 	}
 	return &commonpb.MapValue{Fields: fields}
@@ -219,5 +230,8 @@ func finalFestResult(entries []db.FestEntry, battles []db.FestBattle, baseline m
 		}
 		return points[i].FestTeam < points[j].FestTeam
 	})
-	return midpoint, final, &toyohrpb.OverallResult{IsValid: true, Points: points, Weights: capturedWeights()}
+	return midpoint, final, &toyohrpb.OverallResult{IsValid: true, Points: points, Weights: shownWeights(map[string][]*toyohrpb.FestTeamRatio{
+		"Yobisai": rankedShares(baseline), "PlayerCount": popular,
+		"Regular": regular, "Challenge": challenge, "Tricolor": tricolor,
+	})}
 }
