@@ -143,6 +143,10 @@ GRID0 over its ZeroTier relay, count in the same fests as GRID0+'s online ones.
   Charlie, each with a name, an emoji and a Discord role.
 - **The first pick is final**, from the vote post as from the game
   (`Store.CreateFestEntry`, see `internal/toyohr/README.md`).
+- **The game takes its team from the save, not the entry.** A Discord vote
+  reaches the game because toyohr writes the entry's team into the save's
+  `Fest.VoteTeam` whenever the save is read or written for that fest
+  (`syncFestTeam`); the player sees it after restarting the game.
 - **A LAN game counts like an online win** once a mod accepts it: a battle
   `lan-<submission>` in mode `lan_regular`, `lan_challenge` or `lan_tricolor`
   (the submission's `kind`: open, pro or tricolor), which toyohr's Open, Pro

@@ -1729,14 +1729,17 @@ and replace `TestVsRuleNameNeverGuessesAName`.
 
 ### Splatfest team picked on Discord before the console's save picked one
 
-`internal/toyohr/entries.go`, `CreateFestEntry` and `GetFestEntry`. The
-Discord bot's vote post writes the same fest entry a console's vote does
-(team only, no region), and the first pick is final. A console whose own save
-has not voted yet then reads an existing entry from `GetFestEntry`, and if it
-votes anyway, `CreateFestEntry` answers with the Discord team rather than the
-one it sent. Not known: whether the game adopts the server's team in that
-case, or keeps what its save says and shows the other team's colours. A
-console test settles it: vote on Discord, open the fest hall, see which team
-the game shows and which team a fest battle puts the player on. If the game
-does not follow the server, the vote post should refuse players whose
-account is linked to a console and tell them to vote in game.
+**Settled on hardware, 2026-10-17** (JUEA-90004, one console). The game
+takes its team from the save, never from the entry: after a Discord vote,
+the save's `Fest.VoteTeam` was still -1 and the game asked the player to
+pick. Picking made it call `GetFestEntry`, which answered with the Discord
+entry, and the game froze without calling `CreateFestEntry`. With
+`Fest.VoteTeam` set in the stored record (0 Alpha, 1 Bravo, 2 Charlie, read
+off grid0's 13 records), the next boot's `GetSaveRecord` put the player on
+that team. `internal/toyohr/save_fest_team.go`, `syncFestTeam`, now writes the
+entry's team into every save read and written for that fest.
+
+Still open: a save whose `Fest.FestId` is still the previous fest (the game
+has not run its `InitFest` write for the new one) is left alone, so a player
+who votes on Discord before opening the game during the announcement may see
+the pick screen once more; restarting again should fix it. Not yet tried.

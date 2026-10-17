@@ -115,6 +115,7 @@ func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 		return status.Error(codes.Internal, "internal error")
 	}
 	if rec != nil {
+		s.syncFestTeam(ctx, uid, rec.SaveData)
 		s.log.Info("toyohr: GetSaveRecord answered with the stored record",
 			"user", uid, "keys", len(rec.GetSaveData().GetFields()))
 		return stream.SendMsg(rec)
@@ -172,6 +173,7 @@ func (s *Service) GetSaveRecord(
 	if rec, err := s.loadSave(ctx, uid); err != nil {
 		return nil, status.Error(codes.Internal, "internal error")
 	} else if rec != nil {
+		s.syncFestTeam(ctx, uid, rec.SaveData)
 		return rec, nil
 	}
 	now := timestamppb.New(s.now())
@@ -231,6 +233,7 @@ func (s *Service) WriteSaveRecord(
 	}
 	mergeSaveDelta(rec.SaveData, req.GetSaveRecord().GetSaveData())
 	clearOnlinePlayPenalty(rec.SaveData)
+	s.syncFestTeam(ctx, uid, rec.SaveData)
 	rec.UpdateTime = nextSaveVersion(s.now(), rec.GetUpdateTime())
 	if err := s.putSave(ctx, uid, rec); err != nil {
 		s.log.Error("toyohr: store cloud save", "user", uid, "error", err)
@@ -263,6 +266,7 @@ func (s *Service) CreateSaveRecord(
 		SaveData: &common.MapValue{Fields: map[string]*common.Value{}},
 	}
 	mergeSaveDelta(rec.SaveData, req.GetSaveRecord().GetSaveData())
+	s.syncFestTeam(ctx, uid, rec.SaveData)
 	prev, err := s.loadSave(ctx, uid)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "internal error")
