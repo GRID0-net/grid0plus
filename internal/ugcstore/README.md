@@ -52,6 +52,8 @@ The server also writes two kinds of `services/GameRecord` documents the console 
 
 `ApplyCoopGrades` updates `CoopUserAttribute/Data` before the final referee verdict is published. A clear adds 20; failures in waves one, two and three deduct 20, 10 and zero. A real reported teammate disconnect halves a survivor's deduction; deliberately empty player slots do not. Each player's before/after grade is retained in the verdict, history and shift card. Attribute changes and the private `grid0/coopGradeCredits` retry marker commit atomically, so retries and late peer reports cannot credit the same job twice. Private jobs and Eggstra Work do not use this ordinary grade rule.
 
+`coopranks.go` moves the same grade outside online jobs. `CreditLANCoopGrade` applies a LAN job a mod accepted through the Discord bot, once per job (the same retry marker), without touching the Salmometer. `RollCoopRotation` is the rotation reset: the title is kept and its points go back to 40, or at Eggsecutive VP to 200/300/400 with the stage's bronze/silver/gold badge. It changes nothing when the stored `shift_id` is already the new one, because the game sends `coop_shift` several times per rotation. Every Eggsecutive VP result also raises that shift's best in the private `grid0/coopBest/<uid>` document; together with the point cards' `best_grade_point`, that is what a stage's badge is read from.
+
 **Attachments** (`attachments.go`): the bytes behind a document (a drawing, a
 locker photo, a replay) never travel over gRPC. `IssueUploadUri` hands out a
 signed URL on `gw.hac.lp1.vermillion.srv.nintendo.net` under `/grid0/ugc/`,

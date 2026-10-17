@@ -72,7 +72,7 @@ func ApplyCoopGrades(ctx context.Context, store db.Store, tenant, battleID, mode
 		if entry["is_supporter"].GetBooleanValue() && delta > 0 {
 			delta = 0
 		}
-		grades, err := creditCoopGrade(ctx, store, tenant, battleID, uid, delta, encounter, now)
+		grades, err := creditCoopGrade(ctx, store, tenant, battleID, uid, delta, &encounter, now)
 		if err != nil {
 			return err
 		}
@@ -121,7 +121,12 @@ func kingSalmonidEncountered(team *commonpb.Value) bool {
 		firstNamed(team, "did_defeat_boss") != 0
 }
 
-func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid string, delta int64, encounter bool, now time.Time) (*commonpb.MapValue, error) {
+// creditCoopGrade moves one player's grade once per job: the marker, written
+// in the same transaction, makes a retried report a no-op. A nil encounter
+// leaves the Salmometer alone -- a LAN job is not played against GRID0+'s
+// copy of it. Every Eggsecutive VP result also raises the shift's best, which
+// is what the stage's badge is read from (CoopBadgeReset).
+func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid string, delta int64, encounter *bool, now time.Time) (*commonpb.MapValue, error) {
 	root := "tenants/" + tenant + documentsSegment
 	marker := root + "grid0/coopGradeCredits/" + battle + "_" + uid
 	name := root + "services/GameRecord/users/" + uid + "/CoopUserAttribute/Data"
@@ -150,16 +155,18 @@ func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid st
 			return nil, fmt.Errorf("invalid stored Coop grade coordinate")
 		}
 		after := nextCoopGrade(before, delta)
-		smellBefore := attrs.Fields["smell"].GetIntegerValue()
-		smellAfter := nextSmell(smellBefore, encounter)
 		grades := &commonpb.MapValue{Fields: map[string]*commonpb.Value{
 			"grade_point_before": integer(before), "grade_point_after": integer(after),
 			"grade_before": integer(min(before/100, 8)), "grade_after": integer(min(after/100, 8)),
-			"smell_before": integer(smellBefore), "smell_after": integer(smellAfter),
 		}}
+		if encounter != nil {
+			smellBefore := attrs.Fields["smell"].GetIntegerValue()
+			smellAfter := nextSmell(smellBefore, *encounter)
+			grades.Fields["smell_before"], grades.Fields["smell_after"] = integer(smellBefore), integer(smellAfter)
+			attrs.Fields["smell"] = integer(smellAfter)
+		}
 		attrs.Fields["total_grade_point"] = integer(after)
 		attrs.Fields["grade"] = integer(min(after/100, 8))
-		attrs.Fields["smell"] = integer(smellAfter)
 		d.Fields, err = encodeFields(attrs)
 		if err != nil {
 			return nil, err
@@ -169,10 +176,20 @@ func creditCoopGrade(ctx context.Context, store db.Store, tenant, battle, uid st
 		if err != nil {
 			return nil, err
 		}
-		err = store.CompareAndPutUGCDocuments(ctx, []db.UGCDocumentCAS{
+		changes := []db.UGCDocumentCAS{
 			{Document: d, PreviousUpdateTime: previous},
 			{Document: db.UGCDocument{Name: marker, Owner: uid, Fields: encoded, CreateTime: now, UpdateTime: now}},
-		})
+		}
+		if shift := attrs.Fields["shift_id"].GetStringValue(); after >= evpBase && shift != "" {
+			best, err := raiseCoopBest(ctx, store, root, uid, shift, after-evpBase, now)
+			if err != nil {
+				return nil, err
+			}
+			if best != nil {
+				changes = append(changes, *best)
+			}
+		}
+		err = store.CompareAndPutUGCDocuments(ctx, changes)
 		if errors.Is(err, db.ErrConflict) {
 			continue
 		}

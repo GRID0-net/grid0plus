@@ -78,6 +78,17 @@ console that has played those modes; the function to change is
 `convertValue`. Id keys at or above 2^31 are confirmed unsigned (records hold
 keys such as `2229243287`).
 
+### Salmon Run rotation reset (`internal/ugcstore/coopranks.go`)
+
+When a new rotation opens, the game keeps the title and resets its points
+(40, or 200/300/400 at Eggsecutive VP with the stage's badge). The console
+never sends a grade: grid0's logs from 2026-09-20 to 10-17 hold only
+`InitializeAttributes` `coop_shift` requests, never `coop_grade`. So the
+server applies the reset there, on the first `coop_shift` naming a new
+shift. A capture of a console's first job in a new rotation, against
+Nintendo, would show whether that is where Nintendo's server applies it.
+Change `RollCoopRotation`.
+
 ### Big Run `CoopSchedule` attributes (`internal/toyohr/coop_schedule.go`)
 
 Decompiling Splatoon 3 v11.3.0 (`main` build

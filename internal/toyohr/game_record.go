@@ -59,6 +59,23 @@ func (s gameRecordService) InitializeAttributes(
 		record = "CoopUserAttribute"
 		if id := req.GetCoopShift().GetShiftId(); id != "" {
 			attrs.Fields["shift_id"] = stringValue(id)
+			// coop_shift is the game opening a rotation; the reset has to
+			// happen before Put records the new shift_id, which is what
+			// tells a repeat of the same shift apart from a new one.
+			shift, ok, err := coopShiftByID(ctx, s.store, id)
+			if err != nil {
+				return nil, status.Error(codes.Internal, "internal error")
+			}
+			if ok {
+				reset, err := RollCoopRotation(ctx, s.store, s.tenant, uid, shift, s.now().UTC())
+				if err != nil {
+					s.log.Error("toyohr: Salmon Run rotation reset", "user", uid, "error", err)
+					return nil, status.Error(codes.Internal, "internal error")
+				}
+				if reset {
+					s.log.Info("toyohr: Salmon Run points reset for a new rotation", "user", uid, "shift", id)
+				}
+			}
 		}
 		if g := req.GetCoopGrade(); g != nil {
 			attrs.Fields["total_grade_point"] = intValue(int64(g.GetTotalGradePoint()))
