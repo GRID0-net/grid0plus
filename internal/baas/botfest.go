@@ -235,15 +235,17 @@ func (b *botAPI) createBotFest(w http.ResponseWriter, r *http.Request, creator s
 		writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
 		return
 	}
-	body.Title = strings.TrimSpace(body.Title)
-	if body.Title == "" || len(body.Title) > 200 || len(body.Description) > 3500 {
-		writeBotError(w, http.StatusBadRequest, "bad_title", "a title is required (200 characters at most, 3500 for the text)")
+	body.Title, body.Description = strings.TrimSpace(body.Title), strings.TrimSpace(body.Description)
+	if body.Title == "" || len(body.Title) > 200 || body.Description == "" || len(body.Description) > 3500 {
+		writeBotError(w, http.StatusBadRequest, "bad_title",
+			"a fest needs a title (200 characters at most) and its announcement text (3500 at most)")
 		return
 	}
 	linked := strings.TrimSpace(body.FestID) != ""
-	if len(body.Teams) < 2 || len(body.Teams) > 3 || (linked && len(body.Teams) != 3) {
-		writeBotError(w, http.StatusBadRequest, "bad_teams",
-			"a fest has two or three teams, and an in-game one always three")
+	// Three, always: Alpha, Bravo and Charlie, as every Splatoon 3 fest has,
+	// whether or not it is played in game.
+	if len(body.Teams) != len(protocolTeams) {
+		writeBotError(w, http.StatusBadRequest, "bad_teams", "a fest has three teams: Alpha, Bravo and Charlie")
 		return
 	}
 	seen := map[string]bool{}

@@ -22,6 +22,7 @@ const (
 var testTeams = []map[string]string{
 	{"name": "Cookies", "emoji": "🍪", "roleId": "200000000000000001"},
 	{"name": "Snowmen", "emoji": "⛄", "roleId": "200000000000000002"},
+	{"name": "Ornaments", "emoji": "🎄", "roleId": "200000000000000003"},
 }
 
 // newFest creates a Discord-only fest whose play opened an hour ago.
@@ -60,30 +61,37 @@ func TestADiscordOnlyFestIsADisabledFestTheGameNeverSees(t *testing.T) {
 	}
 	_, got := b.call("GET", "/bot/v1/fests/"+id, "", nil)
 	teams, _ := got["teams"].([]any)
-	if got["phase"] != "first_half" || got["discordOnly"] != true || len(teams) != 2 ||
-		teams[0].(map[string]any)["team"] != "Alpha" || teams[1].(map[string]any)["team"] != "Bravo" {
+	if got["phase"] != "first_half" || got["discordOnly"] != true || len(teams) != 3 ||
+		teams[0].(map[string]any)["team"] != "Alpha" || teams[2].(map[string]any)["team"] != "Charlie" {
 		t.Errorf("fest = %v", got)
 	}
 }
 
-func TestAFestPostLinkedToAnInGameFestNeedsThatFestAndItsThreeTeams(t *testing.T) {
+func TestAFestPostLinkedToAnInGameFestNeedsThatFest(t *testing.T) {
 	b := newBotHarness(t)
 	resp, body := b.call("POST", "/bot/v1/fests", modDiscord, map[string]any{
-		"festId": "JUEA-00001", "title": "x", "teams": append(testTeams,
-			map[string]string{"name": "Ornaments", "emoji": "🎄", "roleId": "200000000000000003"}),
+		"festId": "JUEA-00001", "title": "x", "description": "y", "teams": testTeams,
 	})
 	if resp.StatusCode != http.StatusNotFound || body["code"] != "no_such_fest" {
 		t.Errorf("link to a missing fest: %d %v", resp.StatusCode, body)
 	}
-	if err := b.store.UpsertFest(t.Context(), db.Fest{ID: "JUEA-00001", Resource: "juea-test",
-		StartAt: b.clock().Add(48 * time.Hour), Enabled: true}); err != nil {
-		t.Fatal(err)
+}
+
+// Every fest has its announcement text and all three teams, as in game.
+func TestAFestNeedsItsTextAndThreeTeams(t *testing.T) {
+	b := newBotHarness(t)
+	start := b.clock().Add(time.Hour)
+	resp, body := b.call("POST", "/bot/v1/fests", modDiscord, map[string]any{
+		"title": "x", "startAt": start, "teams": testTeams,
+	})
+	if resp.StatusCode != http.StatusBadRequest || body["code"] != "bad_title" {
+		t.Errorf("a fest with no text: %d %v", resp.StatusCode, body)
 	}
 	resp, body = b.call("POST", "/bot/v1/fests", modDiscord, map[string]any{
-		"festId": "JUEA-00001", "title": "x", "teams": testTeams,
+		"title": "x", "description": "y", "startAt": start, "teams": testTeams[:2],
 	})
 	if resp.StatusCode != http.StatusBadRequest || body["code"] != "bad_teams" {
-		t.Errorf("an in-game fest with two teams: %d %v", resp.StatusCode, body)
+		t.Errorf("a fest with two teams: %d %v", resp.StatusCode, body)
 	}
 }
 
@@ -102,7 +110,7 @@ func TestAVoteFromThePostIsFinalAndNeedsAnAccount(t *testing.T) {
 	if code, body := b.vote(id, aliceDiscord, "Bravo"); code != http.StatusOK || body["created"] != false || body["team"] != "Alpha" {
 		t.Errorf("second vote replaced the first: %d %v", code, body)
 	}
-	if code, body := b.vote(id, aliceDiscord, "Charlie"); code != http.StatusBadRequest || body["code"] != "bad_team" {
+	if code, body := b.vote(id, aliceDiscord, "Delta"); code != http.StatusBadRequest || body["code"] != "bad_team" {
 		t.Errorf("vote for a team this fest does not have: %d %v", code, body)
 	}
 	_, got := b.call("GET", "/bot/v1/fests/"+id+"/entries", "", nil)

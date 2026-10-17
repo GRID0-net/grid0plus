@@ -139,6 +139,8 @@ GRID0 over its ZeroTier relay, count in the same fests as GRID0+'s online ones.
   cannot disagree. A Discord-only fest (`LANF-` id) is a row with no pack that
   is never enabled; every console-facing path skips disabled fests, and the
   dashboard refuses to enable one.
+- **Every fest has its announcement text and three teams**, Alpha, Bravo and
+  Charlie, each with a name, an emoji and a Discord role.
 - **The first pick is final**, from the vote post as from the game
   (`Store.CreateFestEntry`, see `internal/toyohr/README.md`).
 - **A LAN game counts like an online win** once a mod accepts it: a battle
