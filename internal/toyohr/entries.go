@@ -199,9 +199,14 @@ func (s *Service) GetFestResult(
 		// The vote, which is measured. Valid as soon as anybody has entered:
 		// an empty tally is a fest nobody joined, and reporting that as invalid
 		// would be indistinguishable from the vote not being implemented.
+		// The game shows Yobisai as the Conch Shells share (seen on hardware
+		// 2026-10-17: a lone voter read 99% of the shells). GRID0+ counts no
+		// shells -- GRID0 LAN players can never earn any it sees -- so every
+		// team is at 0, in the canonical order, rather than the vote standing
+		// in for shells. The vote itself is PlayerCount in the final result.
 		Yobisai: &toyohrpb.YobisaiResult{
 			IsValid:    len(entries) > 0,
-			TeamRatios: ratios,
+			TeamRatios: noShells(ratios),
 		},
 	}
 
@@ -241,6 +246,15 @@ func (s *Service) GetFestResult(
 // when a side has no votes. These are protocol-side identifiers rather than
 // the localized team names in the BCAT pack. Keep any noncanonical side a
 // client submitted too, so its measured votes are not silently discarded.
+// noShells is the Yobisai (Conch Shells) list: every team, no shells.
+func noShells(ratios []*toyohrpb.FestTeamRatio) []*toyohrpb.FestTeamRatio {
+	out := make([]*toyohrpb.FestTeamRatio, 0, len(ratios))
+	for _, r := range ratios {
+		out = append(out, &toyohrpb.FestTeamRatio{FestTeam: r.GetFestTeam()})
+	}
+	return out
+}
+
 func voteRatios(entries []db.FestEntry) []*toyohrpb.FestTeamRatio {
 	if len(entries) == 0 {
 		return nil

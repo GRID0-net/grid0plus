@@ -213,9 +213,13 @@ the `name` field for a real violation if this server ever supports one.
 
 `GetFestResult` fills four sections, and they are not equally real.
 
-**Yobisai — the pre-fest vote — is measured.** Every `CreateFestEntry` is a
-player who picked a side, and the ratio of entries per team is a number this
-server actually has.
+**Yobisai is the Conch Shells share, and is sent as 0 for every team.** It
+used to carry the vote, but the game shows it as the Conch Shells share (on
+hardware, 2026-10-17, a lone voter read 99% of the shells), and GRID0+ counts
+no shells: GRID0 LAN players never reach it. **The vote is measured**: every
+`CreateFestEntry` is a player who picked a side, and the ratio of entries
+per team is what PlayerCount (Votes) ranks and what an empty midpoint falls
+back to.
 
 **Completed gamesync referee reports are now recorded once per battle.** The
 verified session supplies the match and player identities; each player's team

@@ -270,25 +270,21 @@ func TestTheVoteIsMeasuredAndTheBattleRatiosAreReportedAsNotAvailable(t *testing
 		t.Fatalf("get result: %v", err)
 	}
 
-	// The vote is real data, so it is valid and it is right.
+	// Yobisai is the Conch Shells share on screen, and GRID0+ counts no
+	// shells: valid (somebody entered), every team listed, all at 0 -- not
+	// the vote, which a lone voter read as 99% of the shells on hardware.
 	yobisai := result.GetYobisai()
 	if !yobisai.GetIsValid() {
-		t.Error("the vote is reported as not available, but it is the one thing measured")
+		t.Error("Yobisai is reported as not available once somebody has entered")
 	}
 	ratios := yobisai.GetTeamRatios()
 	if len(ratios) != 3 {
 		t.Fatalf("got %d team ratios, want all 3 protocol teams", len(ratios))
 	}
-	if ratios[0].GetFestTeam() != "Alpha" || ratios[0].GetRatio() != 0.75 {
-		t.Errorf("first ratio = %s %.2f, want Alpha 0.75",
-			ratios[0].GetFestTeam(), ratios[0].GetRatio())
-	}
-	if ratios[1].GetFestTeam() != "Bravo" || ratios[1].GetRatio() != 0.25 {
-		t.Errorf("second ratio = %s %.2f, want Bravo 0.25",
-			ratios[1].GetFestTeam(), ratios[1].GetRatio())
-	}
-	if ratios[2].GetFestTeam() != "Charlie" || ratios[2].GetRatio() != 0 {
-		t.Errorf("third ratio = %s %.2f, want Charlie 0", ratios[2].GetFestTeam(), ratios[2].GetRatio())
+	for i, want := range []string{"Alpha", "Bravo", "Charlie"} {
+		if ratios[i].GetFestTeam() != want || ratios[i].GetRatio() != 0 {
+			t.Errorf("ratio %d = %s %.2f, want %s 0", i, ratios[i].GetFestTeam(), ratios[i].GetRatio(), want)
+		}
 	}
 
 	// Battle ratios need battle records, and nothing writes those yet. Reported
