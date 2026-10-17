@@ -438,8 +438,10 @@ func TestTheVerdictIsPublishedOnlyOncePlayIsOver(t *testing.T) {
 	if len(points) != 3 {
 		t.Fatalf("got %d team points, want 3", len(points))
 	}
-	if points[0].GetFestTeam() != "Alpha" || points[0].GetPoints() != 580 {
-		t.Errorf("winner = %s with %d, want Alpha with 580",
+	// No battle was played, so only the vote scores: no category stands in
+	// for games nobody played, and Conch Shells score nothing.
+	if points[0].GetFestTeam() != "Alpha" || points[0].GetPoints() != 70 {
+		t.Errorf("winner = %s with %d, want Alpha with 70",
 			points[0].GetFestTeam(), points[0].GetPoints())
 	}
 }

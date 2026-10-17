@@ -13,10 +13,16 @@ import (
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
 
-// Captured final-result weights, in points by rank. The game receives both the
-// totals and this map; the server, rather than the client, decides the winner.
+// Final-result weights, in points by rank. The game receives both the totals
+// and this map; the server, rather than the client, decides the winner.
+//
+// The captured map gives Yobisai (Conch Shells) 90/45/0. GRID0+ gives it
+// nothing, on the operator's call: GRID0 LAN players never reach GRID0+, so
+// their shells could never be counted, and a category only some players can
+// score in would decide fests between the two networks. The other weights are
+// the captured ones.
 var festWeights = map[string][3]int64{
-	"Yobisai": {90, 45, 0}, "PlayerCount": {70, 35, 0},
+	"Yobisai": {0, 0, 0}, "PlayerCount": {70, 35, 0},
 	"Regular": {120, 60, 0}, "Challenge": {120, 60, 0},
 	"Tricolor": {180, 90, 0},
 }
@@ -110,6 +116,15 @@ func categoryShares(battles []db.FestBattle, category string, baseline map[strin
 			counts[b.WinningTeam]++
 		}
 	}
+	if len(counts) == 0 {
+		// Nobody played this kind of battle: every team has none of it,
+		// rather than the vote's shares standing in for games never played.
+		none := make(map[string]float64, len(baseline))
+		for team := range baseline {
+			none[team] = 0
+		}
+		return none
+	}
 	return sharesFromTotals(counts, baseline)
 }
 
@@ -132,6 +147,15 @@ func festPoints(ranked []*toyohrpb.FestTeamRatio, weights [3]int64, total map[st
 		}
 		i = end + 1
 	}
+}
+
+func anyShare(ranked []*toyohrpb.FestTeamRatio) bool {
+	for _, r := range ranked {
+		if r.GetRatio() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func capturedWeights() *commonpb.MapValue {
@@ -170,9 +194,16 @@ func finalFestResult(entries []db.FestEntry, battles []db.FestBattle, baseline m
 	total := map[string]int64{}
 	festPoints(rankedShares(baseline), festWeights["Yobisai"], total)
 	festPoints(popular, festWeights["PlayerCount"], total)
-	festPoints(regular, festWeights["Regular"], total)
-	festPoints(challenge, festWeights["Challenge"], total)
-	festPoints(tricolor, festWeights["Tricolor"], total)
+	// A battle category nobody played gives nobody points: all teams tie at
+	// zero, and a tie for first would otherwise hand every team first place.
+	for _, c := range []struct {
+		ranked []*toyohrpb.FestTeamRatio
+		name   string
+	}{{regular, "Regular"}, {challenge, "Challenge"}, {tricolor, "Tricolor"}} {
+		if anyShare(c.ranked) {
+			festPoints(c.ranked, festWeights[c.name], total)
+		}
+	}
 	points := make([]*toyohrpb.FestTeamPoint, 0, len(total))
 	for team, n := range total {
 		points = append(points, &toyohrpb.FestTeamPoint{FestTeam: team, Points: n})

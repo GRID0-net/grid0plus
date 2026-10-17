@@ -223,11 +223,15 @@ comes from their stored fest entry. GRID0+ counts wins by mode and sums reported
 paint points by team. The midpoint freezes at its scheduled time and uses
 pre-midpoint paint points, then wins, then the vote if no reports exist.
 
-At results time, the five captured ranking weights are 90/45/0 for the vote,
-70/35/0 for popularity, 120/60/0 each for open and challenge battles, and
-180/90/0 for tricolor. A battle category with no recorded wins uses the vote
-ranking; this is explicitly an editorial fallback, not a measured battle
-result or a claim to reproduce Nintendo's undisclosed clout formula. Tied
+At results time, the captured ranking weights are 70/35/0 for popularity
+(the vote), 120/60/0 each for open and challenge battles, and 180/90/0 for
+tricolor. The captured 90/45/0 for Yobisai (Conch Shells) is sent as 0/0/0:
+GRID0 LAN players never reach this server, so their shells can never be
+counted, and the operator chose that no one scores them rather than only
+GRID0+ players. A battle category with no recorded wins gives nobody points
+and shows every team at 0%; it used to copy the vote ranking, which handed
+the vote winner up to 420 points for games nobody played. Wins, not
+Nintendo's undisclosed clout formula, rank each battle category. Tied
 teams share the best rank of their tie group, so a tie for second gives
 both teams second place.
 
