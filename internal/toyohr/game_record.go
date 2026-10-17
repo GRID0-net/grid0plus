@@ -62,19 +62,20 @@ func (s gameRecordService) InitializeAttributes(
 			// coop_shift is the game opening a rotation; the reset has to
 			// happen before Put records the new shift_id, which is what
 			// tells a repeat of the same shift apart from a new one.
+			// A failed reset must not fail the RPC: an error here reaches the
+			// lobby as an error code. Leaving shift_id unrecorded makes the
+			// game's next coop_shift try the reset again.
 			shift, ok, err := coopShiftByID(ctx, s.store, id)
-			if err != nil {
-				return nil, status.Error(codes.Internal, "internal error")
-			}
-			if ok {
-				reset, err := RollCoopRotation(ctx, s.store, s.tenant, uid, shift, s.now().UTC())
-				if err != nil {
-					s.log.Error("toyohr: Salmon Run rotation reset", "user", uid, "error", err)
-					return nil, status.Error(codes.Internal, "internal error")
-				}
+			if err == nil && ok {
+				var reset bool
+				reset, err = RollCoopRotation(ctx, s.store, s.tenant, uid, shift, s.now().UTC())
 				if reset {
 					s.log.Info("toyohr: Salmon Run points reset for a new rotation", "user", uid, "shift", id)
 				}
+			}
+			if err != nil {
+				s.log.Error("toyohr: Salmon Run rotation reset", "user", uid, "error", err)
+				delete(attrs.Fields, "shift_id")
 			}
 		}
 		if g := req.GetCoopGrade(); g != nil {

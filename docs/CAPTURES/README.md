@@ -85,9 +85,9 @@ When a new rotation opens, the game keeps the title and resets its points
 never sends a grade: grid0's logs from 2026-09-20 to 10-17 hold only
 `InitializeAttributes` `coop_shift` requests, never `coop_grade`. So the
 server applies the reset there, on the first `coop_shift` naming a new
-shift. A capture of a console's first job in a new rotation, against
-Nintendo, would show whether that is where Nintendo's server applies it.
-Change `RollCoopRotation`.
+shift. RE of how the game handles `coop_shift` and shows the grade at a
+rotation change would settle it, or hardware: after a reset the game shows
+title+40 and never sends `coop_grade`. Change `RollCoopRotation`.
 
 The hazard level for two or three players over LAN uses the average of the
 players present. Inkipedia only gives the four-player formula. Change
