@@ -215,8 +215,17 @@ func TestAFullAgainLobbyLocksAtOnceAndReportsBothEnds(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("a full Again! lobby was not locked")
 	}
-	m, _ = s.docsFor(caller).snapshot("docs/__gs/m")
-	if f := m.GetFields().GetFields(); f["cp"].GetBooleanValue() || f["ebf"].GetBooleanValue() {
-		t.Errorf("__gs/m after filling = %v, want cp and ebf false", f)
+	// The seats close first and the lock is written right after.
+	deadline := time.Now().Add(time.Second)
+	for {
+		m, _ = s.docsFor(caller).snapshot("docs/__gs/m")
+		f := m.GetFields().GetFields()
+		if !f["cp"].GetBooleanValue() && !f["ebf"].GetBooleanValue() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("__gs/m after filling = %v, want cp and ebf false", f)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

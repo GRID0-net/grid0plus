@@ -2,6 +2,7 @@ package gamesync
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
@@ -270,11 +271,28 @@ func (s *Server) freezeKickoffPeers(caller *session, battle string) {
 	}
 	active := s.watch.userSessionsIn(scopeOf(caller))
 	peers := []string{}
+	listed := map[string]bool{}
 	for _, uid := range d.Players {
 		usid := d.PlayerSessions[uid]
 		if !rematch || active[usid] || uid == caller.userID {
 			peers = append(peers, usid)
+			listed[usid] = true
 		}
+	}
+	// A rematch can also hold players the host's roster has never seen: a
+	// Salmon Run "Again!" lobby is filled from the queue after the host got
+	// its token (internal/matchmaking's OpenBackfill). Only members can hold
+	// a stream here, so everyone streaming belongs in the group; leaving a
+	// newcomer out would publish the kickoff verdict before their @@Profile.
+	if rematch {
+		var late []string
+		for usid := range active {
+			if !listed[usid] {
+				late = append(late, usid)
+			}
+		}
+		sort.Strings(late)
+		peers = append(peers, late...)
 	}
 	st.mu.Lock()
 	if st.kickoffPeers == nil {

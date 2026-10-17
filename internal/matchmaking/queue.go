@@ -1473,6 +1473,11 @@ func (q *Queue) TakeBackfills() []Backfill {
 	return out
 }
 
+// TODO(capture-needed): no console has yet been seen accepting a ticket
+// into a session that already played a job; a grid0 log of the newcomer's
+// IssueToken and @@Profile after "npln: players joined an Again! lobby"
+// settles it (docs/CAPTURES/README.md). Change only this function if not.
+//
 // backfillCoopLocked moves waiting tickets of a mode into its reopened
 // sessions, oldest session first, whole squads in queue order. Before a new
 // match is formed from the same tickets: players who are searching while a

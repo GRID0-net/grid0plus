@@ -166,3 +166,29 @@ func TestAClientCannotSubmitAnotherMatchedPlayersReadyProfile(t *testing.T) {
 		}
 	}
 }
+
+// TestAPlayerWhoJoinedTheAgainLobbyLateIsInTheStartupGroup: a Salmon Run
+// "Again!" lobby is filled from the queue after the host got its token, so
+// the host's roster does not name the newcomer. Leaving them out would send
+// the kickoff verdict before their @@Profile.
+func TestAPlayerWhoJoinedTheAgainLobbyLateIsInTheStartupGroup(t *testing.T) {
+	h := newHarness(t)
+	host, _ := h.srv.newSession("alice", "userSessions/us-alice")
+	host.details = &SessionDetails{SessionID: "job", Mode: "coop_regular_config", Players: []string{"alice", "bob"}, PlayerSessions: map[string]string{"alice": "us-alice", "bob": "us-bob"}}
+	for _, who := range []string{"alice", "bob", "dana"} {
+		sub := h.srv.watch.subscribe(who, "userSessions/us-"+who, "job")
+		defer h.srv.watch.unsubscribe(sub)
+	}
+	h.srv.docsFor(host).seed(doc(refereeResultPrefix+"old_job", map[string]*commonpb.Value{"status": intValue(1)}))
+	h.srv.freezeKickoffPeers(host, "again_job")
+	for _, usid := range []string{"us-alice", "us-bob"} {
+		h.srv.docsFor(host).seed(doc(refereeProfilePrefix+"again_job/User/"+usid, map[string]*commonpb.Value{}))
+	}
+	if h.srv.docsFor(host).kickoffReady("again_job", refereeProfilePrefix+"again_job/User/us-alice") {
+		t.Fatal("the kickoff went ahead without the player who joined the lobby late")
+	}
+	h.srv.docsFor(host).seed(doc(refereeProfilePrefix+"again_job/User/us-dana", map[string]*commonpb.Value{}))
+	if !h.srv.docsFor(host).kickoffReady("again_job", refereeProfilePrefix+"again_job/User/us-alice") {
+		t.Fatal("every player's profile is in and the kickoff still waits")
+	}
+}

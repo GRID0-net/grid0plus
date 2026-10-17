@@ -185,18 +185,19 @@ func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 		}
 	}
 
+	// Seats close before the lock is written: a ticket matched in between
+	// would land in a job that is already starting.
+	s.closeAgain(scope)
 	s.writeSessionMeta(caller, map[string]*commonpb.Value{
 		"cp": boolean(false), "ebf": boolean(false), "bfmin": integer(1),
 	}, "gamesync: Again! grace window over; session locked")
-	s.closeAgain(scope)
 }
 
-// closeAgain tells npln a window has ended. On its own goroutine because the
-// caller holds the again lock, and npln's answer can lead back to
-// AgainJoined.
+// closeAgain tells npln a window has ended. Safe under the again lock: npln
+// only closes the session's seats in its queue and never calls back.
 func (s *Server) closeAgain(scope string) {
 	if s.againLocked != nil {
-		go s.againLocked(scope)
+		s.againLocked(scope)
 	}
 }
 
