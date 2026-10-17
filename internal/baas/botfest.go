@@ -247,6 +247,19 @@ func (b *botAPI) createBotFest(w http.ResponseWriter, r *http.Request, creator s
 		writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
 		return
 	}
+	// One fest at a time on Discord: a fest stays until a mod deletes it,
+	// results included, and two at once would split the votes, roles and
+	// announcements between two posts.
+	existing, err := b.s.store.ListBotFests(r.Context())
+	if err != nil {
+		b.internal(w, "list fests", err)
+		return
+	}
+	if len(existing) > 0 {
+		writeBotError(w, http.StatusConflict, "fest_exists",
+			"fest "+existing[0].FestID+" ("+existing[0].Title+") is still up; delete it with /fest cancel first")
+		return
+	}
 	body.Title, body.Description = strings.TrimSpace(body.Title), strings.TrimSpace(body.Description)
 	if body.Title == "" || len(body.Title) > 200 || body.Description == "" || len(body.Description) > 3500 {
 		writeBotError(w, http.StatusBadRequest, "bad_title",

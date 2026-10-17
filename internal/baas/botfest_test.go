@@ -390,3 +390,20 @@ func TestALANProGameCountsInPro(t *testing.T) {
 		t.Errorf("an unknown kind: %d %v", resp.StatusCode, body)
 	}
 }
+
+// One fest at a time: another can only be created once the first is deleted,
+// even after its results are out.
+func TestASecondFestWaitsUntilTheFirstIsDeleted(t *testing.T) {
+	b := newBotHarness(t)
+	id := b.newFest()
+	b.advance(100 * time.Hour)
+	resp, body := b.call("POST", "/bot/v1/fests", modDiscord, map[string]any{
+		"title": "Again", "description": "x", "startAt": b.clock().Add(time.Hour), "teams": testTeams})
+	if resp.StatusCode != http.StatusConflict || body["code"] != "fest_exists" {
+		t.Fatalf("a second fest while the first is up: %d %v", resp.StatusCode, body)
+	}
+	if resp, _ := b.call("DELETE", "/bot/v1/fests/"+id, modDiscord, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete: %d", resp.StatusCode)
+	}
+	b.newFest()
+}

@@ -141,6 +141,8 @@ GRID0 over its ZeroTier relay, count in the same fests as GRID0+'s online ones.
   dashboard refuses to enable one.
 - **Every fest has its announcement text and three teams**, Alpha, Bravo and
   Charlie, each with a name, an emoji and a Discord role.
+- **One fest at a time.** `POST /bot/v1/fests` answers `fest_exists` while any
+  fest post is still up, results included, until a mod deletes it.
 - **The first pick is final**, from the vote post as from the game
   (`Store.CreateFestEntry`, see `internal/toyohr/README.md`).
 - **The game takes its team from the save, not the entry.** A Discord vote
