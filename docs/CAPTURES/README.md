@@ -1676,6 +1676,19 @@ GRID0+ has never received a ticket with it set and queues one as a new
 ticket (`npln: backfill ticket queued as a new ticket`). A logged one would
 show whether the session should be filled instead.
 
+### Strangers placed into a Salmon Run "Again!" lobby (2026-10-17)
+
+`matchmaking.Queue.OpenBackfill` (8ad530d) answers a searching player's
+ticket with SUCCEEDED and the session id of a crew's reopened job, and the
+crew's gamesync window restarts for them. That is the most defensible reading
+of `cp`/`ebf`. The game opens them on "Again!", and its ready check
+(0x71038aab34) never re-queues a Salmon Run lobby. But nobody has seen a
+console accept a ticket into a session that has already played a job. A
+grid0 log of one such join, with "npln: players joined an Again! lobby"
+followed by the newcomer's IssueToken, @@Profile and a three-or-four-player
+"startup group frozen", settles it. If the newcomer's console refuses, change
+`backfillCoopLocked` only.
+
 ### UserService/QueryUserExternalIds (2026-10-11)
 
 Answered by `QueryUserExternalIds` in `internal/npln/user_service.go`: on
