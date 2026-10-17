@@ -66,23 +66,44 @@ func TestAPlayerPicksATeamAndCanReadItBack(t *testing.T) {
 	}
 }
 
-func TestChangingTeamBeforePlayOpensReplacesTheChoiceRatherThanVotingTwice(t *testing.T) {
+func TestTheFirstPickIsFinalEvenBeforePlayOpens(t *testing.T) {
 	announced := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	svc, store, f := liveFest(t, announced)
+	var told []db.FestEntry
+	svc.onEntry = func(_ context.Context, e db.FestEntry) { told = append(told, e) }
 
 	entryFor(t, svc, f.ID, "alpha")
-	entryFor(t, svc, f.ID, "bravo")
+	// Splatoon 3 never lets a player change team once picked; the vote post
+	// on Discord follows the same rule, so the server must too.
+	again := entryFor(t, svc, f.ID, "bravo")
+	if again.GetFestTeam() != "alpha" {
+		t.Errorf("answered %q, want alpha — the first pick", again.GetFestTeam())
+	}
 
 	entries, err := store.ListFestEntries(context.Background(), f.ID)
 	if err != nil {
 		t.Fatalf("list entries: %v", err)
 	}
 	// Two rows for one player would count them twice in the vote.
-	if len(entries) != 1 {
-		t.Fatalf("the player has %d entries, want 1", len(entries))
+	if len(entries) != 1 || entries[0].Team != "alpha" {
+		t.Fatalf("entries = %+v, want one alpha", entries)
 	}
-	if entries[0].Team != "bravo" {
-		t.Errorf("team = %q, want bravo — the later choice", entries[0].Team)
+	// The bot hears about the new entry once, not about the refused change.
+	if len(told) != 1 || told[0].Team != "alpha" {
+		t.Errorf("OnEntry calls = %+v, want one for alpha", told)
+	}
+}
+
+func TestAConsoleConfirmingABotPickedTeamFillsInItsRegion(t *testing.T) {
+	announced := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	svc, store, f := liveFest(t, announced)
+	if _, _, err := store.CreateFestEntry(context.Background(),
+		db.FestEntry{FestID: f.ID, UserID: testCaller, Team: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	entry := entryFor(t, svc, f.ID, "alpha")
+	if entry.GetFestRegion() != "EU" {
+		t.Errorf("region = %q, want EU from the console", entry.GetFestRegion())
 	}
 }
 

@@ -20,12 +20,13 @@ import (
 // client fills in, and taking the player from it would let any console vote as
 // anybody — the shape of the bug this repository is built around.
 //
-// Team choice locks when play opens. Before that, calling this again changes
-// the team, which is what a player who changes their mind in the lobby does;
-// after it, the fest is under way and letting somebody switch sides mid-fest
-// would move a vote that has already been counted into a published ratio.
-// A player with no entry can still pick one while play is open, as the game
-// expects; only after play ends is a new entry refused.
+// The first pick is final, as it is in Splatoon 3 itself: once a team is
+// chosen -- from this console, another one on the same account, or the
+// Discord bot's vote post -- a later choice gets that entry back rather than
+// replacing it. Back, not refused: a refusal is a communication error, and a
+// console re-sending its choice on reconnect is normal. A player with no
+// entry can still pick one while play is open, as the game expects; only
+// after play ends is a new entry refused.
 func (s *Service) CreateFestEntry(
 	ctx context.Context, req *toyohrpb.CreateFestEntryRequest,
 ) (*toyohrpb.FestEntry, error) {
@@ -50,53 +51,60 @@ func (s *Service) CreateFestEntry(
 		return nil, err
 	}
 
+	region := strings.ToUpper(strings.TrimSpace(req.GetFestEntry().GetFestRegion()))
 	phase := fest.PhaseAt(s.now())
 	switch phase {
 	case PhaseNone:
 		// The fest has not been announced. Nobody should be able to see it, let
 		// alone vote in it.
 		return nil, status.Error(codes.NotFound, "no such fest")
-	case PhaseAnnounced:
+	case PhaseAnnounced, PhaseFirstHalf, PhaseSecondHalf:
+		// Splatoon 3 lets a player who skipped the announcement pick a team
+		// when they first open the game during the fest, and Nextendo's server
+		// accepts entries through both halves; a refusal here is a
+		// communication error that locks them out of the whole fest. The late
+		// vote does move the vote ratio, which is the lesser harm.
 	default:
 		existing, err := s.store.GetFestEntry(ctx, festID, userID)
 		if err == nil {
-			// Already voted, and play has started: the entry stands. Answering
-			// with it rather than refusing, because a console re-sending its
-			// choice on reconnect is normal and an error there reads as the
-			// fest being broken.
 			return s.festEntryProto(existing), nil
 		}
 		if !errors.Is(err, db.ErrNotFound) {
 			s.log.Error("toyohr: load fest entry", "fest", festID, "error", err)
 			return nil, status.Error(codes.Internal, "")
 		}
-		if phase != PhaseFirstHalf && phase != PhaseSecondHalf {
-			s.log.Info("toyohr: refused a fest entry after play ended",
-				"fest", festID, "user", userID, "phase", phase)
-			return nil, status.Error(codes.FailedPrecondition, "the fest is over")
-		}
-		// No entry, and play is open. Splatoon 3 lets a player who skipped the
-		// announcement pick a team when they first open the game during the
-		// fest, and Nextendo's server accepts entries through both halves; a
-		// refusal here is a communication error that locks them out of the
-		// whole fest. The late vote does move the vote ratio, which is the
-		// lesser harm.
+		s.log.Info("toyohr: refused a fest entry after play ended",
+			"fest", festID, "user", userID, "phase", phase)
+		return nil, status.Error(codes.FailedPrecondition, "the fest is over")
 	}
 
-	region := strings.ToUpper(strings.TrimSpace(req.GetFestEntry().GetFestRegion()))
-	entry := db.FestEntry{
-		FestID: festID,
-		UserID: userID,
-		Team:   team,
-		Region: region,
-	}
-	if err := s.store.UpsertFestEntry(ctx, entry); err != nil {
+	entry, created, err := s.store.CreateFestEntry(ctx, db.FestEntry{
+		FestID: festID, UserID: userID, Team: team, Region: region,
+	})
+	if err != nil {
 		s.log.Error("toyohr: save fest entry", "fest", festID, "error", err)
 		return nil, status.Error(codes.Internal, "")
 	}
+	if !created {
+		if entry.Team != team {
+			s.log.Info("toyohr: kept a player's first team", "fest", festID, "user", userID,
+				"team", entry.Team, "asked", team)
+		} else if entry.Region == "" && region != "" {
+			// Picked from the Discord bot, which knows no region; the console
+			// confirming the same team is where the region comes from.
+			entry.Region = region
+			if err := s.store.UpsertFestEntry(ctx, entry); err != nil {
+				s.log.Error("toyohr: save fest entry region", "fest", festID, "error", err)
+				return nil, status.Error(codes.Internal, "")
+			}
+		}
+		return s.festEntryProto(entry), nil
+	}
 	s.log.Info("toyohr: fest entry", "fest", festID, "user", userID,
 		"team", team, "region", region)
-
+	if s.onEntry != nil {
+		s.onEntry(ctx, entry)
+	}
 	return s.festEntryProto(entry), nil
 }
 

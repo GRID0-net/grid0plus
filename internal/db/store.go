@@ -776,6 +776,11 @@ type Store interface {
 	// RecordFestBattlePlayer is idempotent per player: a console may report
 	// the same match more than once, and each report must count once.
 	RecordFestBattlePlayer(ctx context.Context, p FestBattlePlayer) error
+	// CreateFestEntry records a player's team only if they have none yet, and
+	// returns the entry that stands either way: the first pick is final, and
+	// a console and the Discord bot voting at the same moment must not both
+	// win. created reports whether e was the one stored.
+	CreateFestEntry(ctx context.Context, e FestEntry) (stored FestEntry, created bool, err error)
 
 	// ---- push notifications (Penne) ----
 

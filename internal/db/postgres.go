@@ -1545,6 +1545,27 @@ func (p *Postgres) ListFestBattles(ctx context.Context, festID string) ([]FestBa
 	return out, mapErr(rows.Err())
 }
 
+func (p *Postgres) CreateFestEntry(ctx context.Context, e FestEntry) (FestEntry, bool, error) {
+	stored, err := scanFestEntry(p.pool.QueryRow(ctx,
+		`INSERT INTO npln_fest_entries (fest_id, user_id, team, region)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (fest_id, user_id) DO NOTHING
+		 RETURNING `+festEntryColumns,
+		e.FestID, e.UserID, e.Team, e.Region))
+	if err == nil {
+		return stored, true, nil
+	}
+	// Identity, not errors.Is: a missing fest or user is a foreign-key
+	// violation, which mapErr wraps around ErrNotFound; only the bare one
+	// means DO NOTHING fired.
+	if err != ErrNotFound { //nolint:errorlint
+		return FestEntry{}, false, err
+	}
+	// No row came back: somebody already has an entry, and it stands.
+	stored, err = p.GetFestEntry(ctx, e.FestID, e.UserID)
+	return stored, false, err
+}
+
 func scanFestEntry(row interface{ Scan(...any) error }) (FestEntry, error) {
 	var e FestEntry
 	err := row.Scan(&e.FestID, &e.UserID, &e.Team, &e.Region, &e.CreatedAt, &e.UpdatedAt)

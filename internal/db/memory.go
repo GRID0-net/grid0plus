@@ -1538,8 +1538,8 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 // ---- fest entries -----------------------------------------------------------
 
 // UpsertFestEntry records or changes a player's team choice. An upsert, not
-// an insert: internal/toyohr allows changing team up until the fest opens,
-// which is a second call with the same fest/user pair.
+// an insert: the dashboard corrects a player's team, and a console fills in
+// the region of an entry the Discord bot made, both on an existing row.
 func (m *Memory) UpsertFestEntry(_ context.Context, e FestEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1641,6 +1641,26 @@ func (m *Memory) ListFestBattles(_ context.Context, festID string) ([]FestBattle
 		return out[i].FinishedAt.Before(out[j].FinishedAt)
 	})
 	return out, nil
+}
+
+func (m *Memory) CreateFestEntry(_ context.Context, e FestEntry) (FestEntry, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.fests[e.FestID]; !ok {
+		return FestEntry{}, false, ErrNotFound
+	}
+	byUser := m.festEntries[e.FestID]
+	if byUser == nil {
+		byUser = map[string]FestEntry{}
+		m.festEntries[e.FestID] = byUser
+	}
+	if existing, ok := byUser[e.UserID]; ok {
+		return existing, false, nil
+	}
+	now := time.Now().UTC()
+	e.CreatedAt, e.UpdatedAt = now, now
+	byUser[e.UserID] = e
+	return e, true, nil
 }
 
 func cloneInk(in map[string]int64) map[string]int64 {

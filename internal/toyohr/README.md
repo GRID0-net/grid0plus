@@ -238,18 +238,31 @@ game displays. The result key and winner are withheld until results open.
 The verdict is withheld until play is over. Publishing one mid-fest would have
 the game announce a winner while the fest is still open.
 
-## Team choice locks when play opens
+## The first pick is final
 
-Before a fest starts, calling `CreateFestEntry` again changes the team — that is
-a player changing their mind in the lobby. Once play opens:
+Splatoon 3 never lets a player change team once they have picked one, and
+neither does GRID0+. The first entry stands whoever made it: this console,
+another console on the same account, or the Discord bot's vote post (which
+writes the same `npln_fest_entries` row). `Store.CreateFestEntry` inserts only
+when there is no entry, so a console and the bot voting in the same instant
+cannot both win.
 
-- **a player who already picked gets their existing entry back**, not an error.
-  A console re-sending its choice on reconnect is normal traffic, and an error
-  there reads to the player as the fest being broken.
+- **a player who already picked gets their existing entry back**, not an error,
+  in every phase. A console re-sending its choice on reconnect is normal
+  traffic, and an error there reads to the player as the fest being broken.
+- **a console confirming a bot-picked team fills in the region**, which the
+  bot cannot know.
 - **a player who never picked can still pick until play ends.** Splatoon 3
   asks a player with no entry to choose when they open the game mid-fest, and
   refusing it is a communication error (1869763). The late vote does move the
   vote ratio. After play ends a new entry is refused.
+- **each new entry is handed to `Options.OnEntry`**, which `internal/npln`
+  publishes for the Discord bot, so a player who picks in game gets the team's
+  role on the server at once.
+
+What a console shows when the server's entry was made on Discord before its
+own save picked anything is not known yet — see
+[`docs/CAPTURES/README.md`](../../docs/CAPTURES/README.md).
 
 A fest that is disabled, or not yet announced, does not exist to a console at
 all — `NotFound`, not a more specific refusal.

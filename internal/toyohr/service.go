@@ -74,6 +74,9 @@ type Service struct {
 	// a lobby message is worth nothing to a player who was not connected.
 	messages *messageHub
 
+	// onEntry is told about each new fest entry. See Options.OnEntry.
+	onEntry func(context.Context, db.FestEntry)
+
 	// noRotation remembers which schedule kinds have already been reported as
 	// unconfigured, so a console asking on a timer does not fill the log.
 	noRotation sync.Map
@@ -98,6 +101,11 @@ type Options struct {
 	Documents  *ugcstore.Service
 	Diagnostic *splatdiag.Bundle
 
+	// OnEntry is called once for every new fest entry a console makes, after
+	// it is stored: the Discord bot gives the player the team's role from it.
+	// Optional. It must not block; it runs on the console's request.
+	OnEntry func(context.Context, db.FestEntry)
+
 	Now func() time.Time
 }
 
@@ -116,6 +124,7 @@ func NewService(opts Options) *Service {
 		docs:       opts.Documents,
 		diagnostic: opts.Diagnostic,
 		messages:   newMessageHub(),
+		onEntry:    opts.OnEntry,
 	}
 }
 

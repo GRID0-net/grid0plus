@@ -78,6 +78,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"fests":                     testFests,
 		"festEntries":               testFestEntries,
 		"festBattles":               testFestBattles,
+		"firstFestEntryStands":      testFirstFestEntryStands,
 		"penne":                     testPenne,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
@@ -2590,5 +2591,27 @@ func testUGCBlobs(t *testing.T, s Store) {
 	}
 	if _, err := s.GetUGCDocumentBlob(ctx, doc); !errors.Is(err, ErrNotFound) {
 		t.Errorf("detached document still has a blob: %v", err)
+	}
+}
+
+// testFirstFestEntryStands holds the rule the bot and a console race on: the
+// first pick is the one that stays, whoever makes it.
+func testFirstFestEntryStands(t *testing.T, s Store) {
+	ctx := t.Context()
+	fest := Fest{ID: "NXTD-00060", StartAt: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)}
+	if err := s.UpsertFest(ctx, fest); err != nil {
+		t.Fatal(err)
+	}
+	alice := makeUser(t, s, "alice")
+	first, created, err := s.CreateFestEntry(ctx, FestEntry{FestID: fest.ID, UserID: alice.ID, Team: "Alpha"})
+	if err != nil || !created || first.Team != "Alpha" {
+		t.Fatalf("first pick: %+v created=%v err=%v", first, created, err)
+	}
+	second, created, err := s.CreateFestEntry(ctx, FestEntry{FestID: fest.ID, UserID: alice.ID, Team: "Bravo"})
+	if err != nil || created || second.Team != "Alpha" {
+		t.Fatalf("second pick replaced the first: %+v created=%v err=%v", second, created, err)
+	}
+	if _, _, err := s.CreateFestEntry(ctx, FestEntry{FestID: "NXTD-99999", UserID: alice.ID, Team: "Alpha"}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an entry in a missing fest returned %v, want ErrNotFound", err)
 	}
 }
