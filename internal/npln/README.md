@@ -283,6 +283,10 @@ exactly as a room is joined. A room everybody has left is closed; a host
 leaving a room others are still in is only removed, since what the game does
 with such a room has not been seen.
 
+`again_backfill.go` connects the two for a Salmon Run "Again!": gamesync's
+window opens the job to `matchmaking.OpenBackfill`, every sweep and ticket
+reports who joined it (`applyBackfills`), and the lock closes it.
+
 `SyncGameSession` is a real RPC -- it is defined in the same upstream proto
 set as the rest of `GameSessionService` -- but its path string does not
 appear anywhere in Splatoon 3's binary, unlike all four RPCs this server does

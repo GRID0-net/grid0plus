@@ -171,3 +171,52 @@ func TestSalmonRunAgainNeverLocksWithOnePlayerLeft(t *testing.T) {
 		t.Fatal("a Salmon Run lobby with one player left was locked and would start")
 	}
 }
+
+// TestAFullAgainLobbyLocksAtOnceAndReportsBothEnds: npln fills a reopened
+// Salmon Run session between the window opening and its lock; once it is
+// full there is nobody left to wait for.
+func TestAFullAgainLobbyLocksAtOnceAndReportsBothEnds(t *testing.T) {
+	old := againGrace
+	againGrace = time.Hour
+	t.Cleanup(func() { againGrace = old })
+
+	opened, locked := make(chan string, 2), make(chan string, 2)
+	s := &Server{docs: newStoreSet(time.Now), watch: newWatchers(), log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		againOpen: func(id string) { opened <- id }, againLocked: func(id string) { locked <- id }}
+	caller := &session{userID: "alice", details: &SessionDetails{SessionID: "job", Mode: "coop_regular_config", CreatedAt: time.Unix(1000, 0)}, userSession: "userSessions/us-alice"}
+	twoPlayersConnected(s, caller)
+	ops := []*syncpb.WriteOperation{merge(doc("docs/__gs/m", map[string]*commonpb.Value{"cp": boolean(true), "ebf": boolean(true)}))}
+	s.seedRoomDocuments(caller, ops)
+	if _, _, err := s.docsFor(caller).apply(ops); err != nil {
+		t.Fatal(err)
+	}
+	s.noteAgain(caller, ops)
+	s.noteAgain(caller, ops)
+	if got := <-opened; got != "job" {
+		t.Fatalf("opened %q", got)
+	}
+	select {
+	case again := <-opened:
+		t.Fatalf("a repeated press opened the window again: %q", again)
+	default:
+	}
+
+	s.AgainJoined("job", false)
+	m, _ := s.docsFor(caller).snapshot("docs/__gs/m")
+	if !m.GetFields().GetFields()["ebf"].GetBooleanValue() {
+		t.Fatal("a player joining a lobby with seats left locked it")
+	}
+	s.AgainJoined("job", true)
+	select {
+	case got := <-locked:
+		if got != "job" {
+			t.Errorf("locked %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a full Again! lobby was not locked")
+	}
+	m, _ = s.docsFor(caller).snapshot("docs/__gs/m")
+	if f := m.GetFields().GetFields(); f["cp"].GetBooleanValue() || f["ebf"].GetBooleanValue() {
+		t.Errorf("__gs/m after filling = %v, want cp and ebf false", f)
+	}
+}

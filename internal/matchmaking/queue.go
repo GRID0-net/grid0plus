@@ -149,6 +149,18 @@ type Session struct {
 	Seats map[string]int
 }
 
+// seat gives a player joining the session the next seat, or back their own.
+func (s *Session) seat(userID string) {
+	if s.Seats[userID] != 0 {
+		return
+	}
+	next := 0
+	for _, seat := range s.Seats {
+		next = max(next, seat)
+	}
+	s.Seats[userID] = next + 1
+}
+
 // Seat is a player's place in the session, or 0 for someone never in it.
 func (s Session) Seat(userID string) int {
 	return s.Seats[userID]
@@ -268,6 +280,12 @@ type Queue struct {
 	// formVersusLocked/formCoopLocked. Absent from the map means no countdown
 	// is running for that mode.
 	grace map[string]*graceState
+
+	// backfill are the matched Salmon Run sessions an "Again!" reopened, by
+	// id: see OpenBackfill. backfilled collects what filling them did, for
+	// TakeBackfills.
+	backfill   map[string]bool
+	backfilled []Backfill
 }
 
 // graceState is one mode's pending countdown.
@@ -311,6 +329,7 @@ func New(cfg Config, now func() time.Time) *Queue {
 		sessions:  map[string]*Session{},
 		watchers:  map[string][]chan Ticket{},
 		grace:     map[string]*graceState{},
+		backfill:  map[string]bool{},
 	}
 }
 
@@ -503,13 +522,7 @@ func (q *Queue) Join(sessionID, userID string) (Session, error) {
 		return Session{}, ErrSessionFull
 	}
 	s.Players = append(s.Players, userID)
-	if s.Seats[userID] == 0 {
-		next := 0
-		for _, seat := range s.Seats {
-			next = max(next, seat)
-		}
-		s.Seats[userID] = next + 1
-	}
+	s.seat(userID)
 	return s.clone(), nil
 }
 
@@ -1357,6 +1370,7 @@ func (q *Queue) selectFestPlayersLocked(ids []string, size int) []string {
 // started before they got there. Reaching the mode's size forms immediately:
 // a full room has nobody left to wait for.
 func (q *Queue) formCoopLocked(mode string) []Session {
+	q.backfillCoopLocked(mode)
 	size := q.playersForLocked(mode)
 
 	ids := q.liveWaitingLocked(mode)
@@ -1403,6 +1417,108 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 	}
 	delete(q.grace, mode)
 	return []Session{q.formSessionLocked(mode, ids)}
+}
+
+// Backfill is players added to a session reopened by OpenBackfill.
+type Backfill struct {
+	Session Session
+	Added   []string
+}
+
+// OpenBackfill lets the queue add waiting Salmon Run players to a matched
+// session whose crew pressed "Again!", up to the mode's size, until
+// CloseBackfill. It reports the session and whether it took the request.
+//
+// Pressing "Again!" sends no ticket. Every console reopens the session it
+// just played in -- docs/__gs/m with cp and ebf true -- and Splatoon 3's
+// lobby then waits for players to arrive in that session (see
+// internal/gamesync's again_queue.go). For Salmon Run the game never goes
+// back to matchmaking by itself: its ready check (0x71038aab34) sends only
+// Anarchy and Splatfest lobbies short of their size to State::ActivateBackFill,
+// and lets Salmon Run start with whoever is there. Filling the open seats is
+// the server's job, so a crew of fewer than four that presses "Again!" gathers
+// players the way it did when it first queued.
+//
+// Only matched Salmon Run sessions: a room is filled by its friends, and a
+// Versus rematch has two teams this does not know how to balance.
+func (q *Queue) OpenBackfill(sessionID string) (Session, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s, ok := q.sessions[sessionID]
+	if !ok || s.Room || !q.cfg.CoopModes[s.Mode] {
+		return Session{}, false
+	}
+	// A match's capacity is the size it formed at (see formSessionLocked),
+	// so a crew of two would otherwise stay full at two.
+	s.MaxPlayers = max(s.MaxPlayers, q.playersForLocked(s.Mode))
+	q.backfill[sessionID] = true
+	q.backfillCoopLocked(s.Mode)
+	return s.clone(), true
+}
+
+// CloseBackfill stops adding players to a session, once its lobby locked.
+func (q *Queue) CloseBackfill(sessionID string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	delete(q.backfill, sessionID)
+}
+
+// TakeBackfills returns, and forgets, the players added to reopened sessions
+// since the last call.
+func (q *Queue) TakeBackfills() []Backfill {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	out := q.backfilled
+	q.backfilled = nil
+	return out
+}
+
+// backfillCoopLocked moves waiting tickets of a mode into its reopened
+// sessions, oldest session first, whole squads in queue order. Before a new
+// match is formed from the same tickets: players who are searching while a
+// crew holds open seats join that crew, which is what the crew is waiting
+// for.
+func (q *Queue) backfillCoopLocked(mode string) {
+	var open []*Session
+	for id := range q.backfill {
+		s, ok := q.sessions[id]
+		if !ok {
+			delete(q.backfill, id)
+			continue
+		}
+		if s.Mode == mode {
+			open = append(open, s)
+		}
+	}
+	sort.Slice(open, func(i, j int) bool {
+		if !open[i].CreatedAt.Equal(open[j].CreatedAt) {
+			return open[i].CreatedAt.Before(open[j].CreatedAt)
+		}
+		return open[i].ID < open[j].ID
+	})
+	for _, s := range open {
+		free := s.MaxPlayers - len(s.Players)
+		if free <= 0 {
+			continue
+		}
+		chosen := slices.Clone(q.wholeSquadsLocked(q.liveWaitingLocked(mode), free))
+		if len(chosen) == 0 {
+			continue
+		}
+		added := make([]string, 0, len(chosen))
+		for _, id := range chosen {
+			t := q.tickets[id]
+			s.Players = append(s.Players, t.UserID)
+			s.seat(t.UserID)
+			added = append(added, t.UserID)
+			t.SessionID = s.ID
+			t.MatchedAt = q.now()
+			q.setStateLocked(t, StateSucceeded)
+			q.removeFromWaitingLocked(t)
+		}
+		s.ActiveAt = q.now()
+		q.backfilled = append(q.backfilled, Backfill{Session: s.clone(), Added: added})
+	}
 }
 
 // cancelGraceLocked clears a mode's pending countdown, if any, and puts its

@@ -43,6 +43,9 @@ type againQueue struct {
 type againWindow struct {
 	timer *time.Timer
 	users map[string]bool
+	// caller is the press that opened the window, whose session the lock
+	// is written as.
+	caller *session
 }
 
 // noteAgain restarts a session's grace window when a write reopens it.
@@ -72,6 +75,17 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 	if !reopened && !closed {
 		return
 	}
+	// The hooks run after the lock is released: npln answers an opening by
+	// filling seats, which comes back here through AgainJoined.
+	var opened, locked bool
+	defer func() {
+		if opened && s.againOpen != nil {
+			s.againOpen(scope)
+		}
+		if locked && s.againLocked != nil {
+			s.againLocked(scope)
+		}
+	}()
 	s.again.mu.Lock()
 	defer s.again.mu.Unlock()
 	if s.again.timers == nil {
@@ -81,6 +95,7 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 		if t := s.again.timers[scope]; t != nil {
 			t.timer.Stop()
 			delete(s.again.timers, scope)
+			locked = true
 		}
 		return
 	}
@@ -98,12 +113,37 @@ func (s *Server) noteAgain(caller *session, ops []*syncpb.WriteOperation) {
 		t.timer.Stop()
 	}
 	s.log.Info("gamesync: Again! pressed; the grace window restarts", "session", scope, "user", caller.userID)
-	window := &againWindow{users: map[string]bool{caller.userID: true}}
+	window := &againWindow{users: map[string]bool{caller.userID: true}, caller: caller}
 	if previous := s.again.timers[scope]; previous != nil {
 		window.users = previous.users
+		window.caller = previous.caller
+	} else {
+		opened = strings.Contains(caller.details.Mode, "coop")
 	}
 	s.again.timers[scope] = window
-	window.timer = time.AfterFunc(againGrace, func() { s.lockAfterAgain(caller, window) })
+	window.timer = time.AfterFunc(againGrace, func() { s.lockAfterAgain(window.caller, window) })
+}
+
+// AgainJoined is told that players were added to a Salmon Run session whose
+// "Again!" window is open (internal/matchmaking's OpenBackfill).
+//
+// Each arrival restarts the window, as each new player does in the queue's
+// own Salmon Run grace period, so a crew that is filling keeps waiting for
+// the next. A full session locks at once: there is nobody left to wait for.
+func (s *Server) AgainJoined(sessionID string, full bool) {
+	s.again.mu.Lock()
+	defer s.again.mu.Unlock()
+	window := s.again.timers[sessionID]
+	if window == nil {
+		return
+	}
+	window.timer.Stop()
+	wait := againGrace
+	if full {
+		wait = 0
+	}
+	s.log.Info("gamesync: players joined the Again! lobby", "session", sessionID, "full", full)
+	window.timer = time.AfterFunc(wait, func() { s.lockAfterAgain(window.caller, window) })
 }
 
 func publicRematchMode(mode string) bool {
@@ -140,6 +180,7 @@ func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 		if n := s.watch.playersIn(scope); n < 2 {
 			s.log.Info("gamesync: Again! lobby left unlocked; one player cannot start Salmon Run alone",
 				"session", scope, "players", n)
+			s.closeAgain(scope)
 			return
 		}
 	}
@@ -147,6 +188,16 @@ func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 	s.writeSessionMeta(caller, map[string]*commonpb.Value{
 		"cp": boolean(false), "ebf": boolean(false), "bfmin": integer(1),
 	}, "gamesync: Again! grace window over; session locked")
+	s.closeAgain(scope)
+}
+
+// closeAgain tells npln a window has ended. On its own goroutine because the
+// caller holds the again lock, and npln's answer can lead back to
+// AgainJoined.
+func (s *Server) closeAgain(scope string) {
+	if s.againLocked != nil {
+		go s.againLocked(scope)
+	}
 }
 
 // writeSessionMeta applies a server-side masked update to docs/__gs/m and

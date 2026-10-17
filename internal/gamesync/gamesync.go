@@ -78,6 +78,11 @@ type Options struct {
 	// session closed and none reopened within memberGoneGrace: see
 	// departures.go. Nil leaves membership to the matchmaking queue alone.
 	OnMemberGone func(sessionID, userID string)
+	// OnAgainOpen and OnAgainLocked bracket a Salmon Run "Again!" window:
+	// the first press that reopens a session, and its lock (by GRID0+ or by
+	// the host). npln fills the session's free seats in between; see
+	// again_queue.go.
+	OnAgainOpen, OnAgainLocked func(sessionID string)
 	// IssueAccessToken is an optional diagnostic signer for the gamesync
 	// access token. The normal opaque token remains the default until hardware
 	// confirms whether the client parses this field as a JWT.
@@ -138,6 +143,8 @@ type Server struct {
 	resolveSession     func(string) (SessionDetails, error)
 	liveParticipants   func(sessionID, userID string) (int, bool)
 	memberGone         func(sessionID, userID string)
+	againOpen          func(sessionID string)
+	againLocked        func(sessionID string)
 	issueAccessToken   func(userID, userSession string, expiresAt time.Time) (string, error)
 	onRefereeReport    func(context.Context, RefereeReport) error
 	prepareCoopVerdict func(context.Context, RefereeReport) error
@@ -206,6 +213,8 @@ func New(opts Options) (*Server, error) {
 		resolveSession:     opts.ResolveSession,
 		liveParticipants:   opts.LiveParticipants,
 		memberGone:         opts.OnMemberGone,
+		againOpen:          opts.OnAgainOpen,
+		againLocked:        opts.OnAgainLocked,
 		issueAccessToken:   opts.IssueAccessToken,
 		onRefereeReport:    opts.OnRefereeReport,
 		prepareCoopVerdict: opts.PrepareCoopVerdict,

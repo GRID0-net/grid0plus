@@ -158,3 +158,13 @@ player has gone; `Leave` only records it. Each player keeps a **seat**
 back with them if they rejoin: gamesync ranks players by it, Pia elects the
 lowest rank as host, and renumbering would give a newcomer the rank a
 connected console already holds.
+
+`OpenBackfill` handles a Salmon Run crew that presses "Again!". The game sends
+no ticket for it: it reopens the session it just played in and waits there.
+Its lobby ready check (`0x71038aab34`) only sends Anarchy and Splatfest
+lobbies that are short of players back to matchmaking (`State::ActivateBackFill`).
+Salmon Run starts with whoever is in the session, so the open seats are the
+server's to fill. While the window is open, the session's capacity is raised to
+the mode's size, and waiting tickets in that mode join it before any new job forms
+from them, whole squads only and in queue order. `TakeBackfills` reports who
+went where; `CloseBackfill` ends it when the lobby locks.

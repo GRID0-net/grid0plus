@@ -147,6 +147,7 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		m.s.log.Error("npln: enqueue", "user", caller.UserID, "error", err)
 		return nil, errMalformed(m.s.env)
 	}
+	m.s.applyBackfills()
 	if len(members) > 0 {
 		m.s.log.Info("npln: squad queued", "ticket", ticket.ID, "leader", caller.UserID, "members", members,
 			"team", team, "member_teams", memberTeams)

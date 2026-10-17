@@ -186,6 +186,8 @@ func main() {
 		ResolveSession:   srv.ResolveGamesyncSession,
 		LiveParticipants: srv.GamesyncRoomParticipants,
 		OnMemberGone:     srv.GamesyncMemberGone,
+		OnAgainOpen:      srv.GamesyncAgainOpen,
+		OnAgainLocked:    srv.GamesyncAgainLocked,
 		IssueAccessToken: gamesyncProbeSigner,
 		LobbyLogFlag:     lobbyLogFlag(),
 		PrepareCoopVerdict: func(ctx context.Context, report gamesync.RefereeReport) error {
@@ -222,6 +224,7 @@ func main() {
 		service.Fatal(log, "build gamesync", err)
 	}
 	srv.SetSessionPhaseReader(sync.SessionPhase)
+	srv.SetAgainJoined(sync.AgainJoined)
 	go reloadOnHangup(ctx, log, *configPath, srv)
 
 	lis, err := net.Listen("tcp", cfg.NPLN.Listen)

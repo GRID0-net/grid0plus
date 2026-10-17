@@ -143,6 +143,12 @@ within `memberGoneGrace` (10 s), `OnMemberGone` tells internal/npln, which
 takes the player out of the session; see `departures.go` for the grid0 logs
 that set the number.
 
+A Salmon Run "Again!" window (`again_queue.go`) is bracketed by
+`OnAgainOpen` and `OnAgainLocked`, so internal/npln can fill the reopened
+session from the queue in between. `AgainJoined` restarts the window for each
+arrival, the way each new player restarts the queue's own grace period, and
+locks the session at once when it is full.
+
 - **all sends go from one goroutine.** gRPC allows one concurrent `Send` per
   stream; the reader loop sends echoes while document changes arrive from the
   store, and two senders would be a race the transport does not protect against.

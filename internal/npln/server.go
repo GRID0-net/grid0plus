@@ -114,6 +114,9 @@ type Server struct {
 	// Reads committed Gamesync events; queue membership alone cannot tell a
 	// post-match lobby from an active match in the same game session.
 	sessionPhase func(string, int) string
+	// againJoined is Gamesync's AgainJoined: see again_backfill.go.
+	// Atomic because the sweep loop already runs when cmd/npln sets it.
+	againJoined atomic.Pointer[func(sessionID string, full bool)]
 
 	// messages is every user's mailbox for the Messaging service. In memory,
 	// like queue above -- see internal/messaging's package doc for why.
@@ -306,6 +309,7 @@ func (s *Server) sweepTickets() {
 			return
 		case <-ticker.C:
 			expired, formed := s.queue.Sweep()
+			s.applyBackfills()
 			for _, t := range expired {
 				// Logged because a ticket that timed out is the visible half of
 				// "nobody else was queuing", and an operator reading this
