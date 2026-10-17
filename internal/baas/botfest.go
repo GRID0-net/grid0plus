@@ -1065,6 +1065,15 @@ func (b *botAPI) festEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	controller := http.NewResponseController(w)
+	// The listener's ReadTimeout would cancel this request's context thirty
+	// seconds in, whatever the writes do: net/http's background read of the
+	// connection times out and ends the request. A stream that dies every
+	// thirty seconds is a reconnect, and a catch-up read, every thirty
+	// seconds -- the polling this stream exists to avoid.
+	if err := controller.SetReadDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		b.internal(w, "keep the fest stream open", err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
