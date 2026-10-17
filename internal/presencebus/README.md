@@ -7,6 +7,7 @@ than polling the database.
 | --- | --- |
 | Publishers | `internal/baas`, on every presence report |
 | Consumers | phase 2: the dashboard's live "online now", the NPLN presence service |
+| Fest entries | `<channel>.fest`: npln publishes each new Splatfest entry (`PublishFestEntry`), the bot API streams it to the Discord bot |
 
 ## Two implementations
 

@@ -76,6 +76,7 @@ func (s *Server) register() {
 		// The identity comes from this package's interceptor. toyohr cannot
 		// import it back without a cycle, so it is handed in.
 		CallerID: callerID,
+		OnEntry:  s.onFestEntry,
 	}).Register(s.grpc)
 }
 

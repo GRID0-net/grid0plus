@@ -83,7 +83,7 @@ func main() {
 	// and the dashboard's matchmaking gauge honestly reports no data rather
 	// than a zero that reads as "nobody is queuing". Same tradeoff
 	// internal/dashboard makes for the same reason -- see cmd/dashboard/main.go.
-	var bus, notifyBus presencebus.Bus
+	var bus, notifyBus, festBus presencebus.Bus
 	if cfg.Redis.URL != "" {
 		r, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel, log)
 		if err != nil {
@@ -97,6 +97,12 @@ func main() {
 		}
 		defer nb.Close()
 		notifyBus = nb
+		fb, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel+presencebus.FestChannelSuffix, log)
+		if err != nil {
+			service.Fatal(log, "connect redis fest entries", err)
+		}
+		defer fb.Close()
+		festBus = fb
 	} else {
 		log.Warn("npln: redis.url is not set, so Friends and PresenceService only refresh " +
 			"on their own keep-alive timer rather than the moment a friend's presence changes, " +
@@ -114,6 +120,13 @@ func main() {
 		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,
 		Bus:                bus,
 		PublicIP:           cfg.Network.PublicIP,
+		// The Discord bot gives a player the team's role from this the moment
+		// they pick in game.
+		OnFestEntry: func(_ context.Context, e db.FestEntry) {
+			presencebus.PublishFestEntry(festBus, "npln", e.FestID, e.UserID, e.Team, func(err error) {
+				log.Warn("npln: could not announce a fest entry to the bot", "fest", e.FestID, "error", err)
+			})
+		},
 	})
 	if err != nil {
 		service.Fatal(log, "build server", err)

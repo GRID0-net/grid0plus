@@ -134,6 +134,8 @@ type Server struct {
 	// reason: this process is not the one BAAS's HTTP handlers run in, so the
 	// in-process bus variant delivers nothing across the boundary).
 	bus presencebus.Bus
+	// onFestEntry is Options.OnFestEntry.
+	onFestEntry func(context.Context, db.FestEntry)
 	// attrs is what each player's game publishes over PresenceService.KeepAlive
 	// -- see presenceAttributes.
 	attrs *presenceAttributes
@@ -199,6 +201,10 @@ type Options struct {
 
 	// PublicIP is network.public_ip -- see Server.publicIP.
 	PublicIP string
+
+	// OnFestEntry is told about each new Splatfest entry, for the Discord
+	// bot. Optional; see toyohr.Options.OnEntry.
+	OnFestEntry func(context.Context, db.FestEntry)
 }
 
 // New builds the gateway.
@@ -261,13 +267,14 @@ func New(opts Options) (*Server, error) {
 			ReportTTL:  opts.PresenceTTL,
 			ConsoleTTL: opts.ConsolePresenceTTL,
 		},
-		bus:        opts.Bus,
-		attrs:      newPresenceAttributes(),
-		rooms:      newRooms(),
-		rotation:   rotation,
-		diagnostic: diagnostic,
-		now:        opts.Now,
-		stop:       make(chan struct{}),
+		bus:         opts.Bus,
+		onFestEntry: opts.OnFestEntry,
+		attrs:       newPresenceAttributes(),
+		rooms:       newRooms(),
+		rotation:    rotation,
+		diagnostic:  diagnostic,
+		now:         opts.Now,
+		stop:        make(chan struct{}),
 	}
 
 	s.grpc = grpc.NewServer(
