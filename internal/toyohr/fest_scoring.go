@@ -142,6 +142,11 @@ func festPoints(ranked []*toyohrpb.FestTeamRatio, weights [3]int64, total map[st
 		if i < len(weights) {
 			weight = weights[i]
 		}
+		// A team with nothing in the category places nowhere: two teams at
+		// 0% would otherwise tie for second and take its points for nothing.
+		if ranked[i].GetRatio() <= 0 {
+			weight = 0
+		}
 		for j := i; j <= end; j++ {
 			total[ranked[j].GetFestTeam()] += weight
 		}

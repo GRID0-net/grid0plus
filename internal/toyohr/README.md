@@ -237,7 +237,8 @@ and shows every team at 0%; it used to copy the vote ranking, which handed
 the vote winner up to 420 points for games nobody played. Wins, not
 Nintendo's undisclosed clout formula, rank each battle category. Tied
 teams share the best rank of their tie group, so a tie for second gives
-both teams second place.
+both teams second place, except at 0%: a team with nothing in a category
+scores nothing there, rather than two empty teams tying for second.
 
 `GetFestResult` and the result-pack winner in `GetFestDecryptionKey` read the
 same scoring function, so the announced winning team matches the points the
