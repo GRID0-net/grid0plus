@@ -425,7 +425,14 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 	// Checked once the request is otherwise well-formed, so a malformed
 	// request does not burn budget on a real attempt; before the store lookup
 	// and password compare, so a throttled caller costs neither.
-	if !s.loginLimiter.Allow(service.ClientIP(r), s.now()) {
+	//
+	// Keyed by address AND device account. A console signs in every user
+	// profile it holds at boot, and a profile never linked to GRID0+ is
+	// refused each time; keyed by address alone, a household's unlinked
+	// profiles used up the window and the linked one's game then got 429
+	// (seen on hardware as 2124-7001). Guessing one account's password is
+	// still capped per address; an unknown id has no password to guess.
+	if !s.loginLimiter.Allow(service.ClientIP(r)+"/"+deviceAccountID, s.now()) {
 		s.log.Warn("baas: login rate limit exceeded", "client", service.ClientIP(r))
 		writeRateLimited(w, s.cfg.LoginWindow)
 		return

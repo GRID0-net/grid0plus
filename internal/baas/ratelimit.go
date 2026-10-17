@@ -6,7 +6,8 @@ import (
 )
 
 // loginLimiter is a sliding-window rate limiter over login attempts, keyed by
-// client address.
+// whatever the caller passes: client address plus device account for
+// /1.0.0/login (see completeLogin), client address for a username login.
 //
 // completeLogin's password check is the one place a wrong guess costs the
 // caller almost nothing — a device account's password is generated,
