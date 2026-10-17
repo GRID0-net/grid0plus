@@ -34,18 +34,29 @@ const (
 	// lanBattlePrefix marks a battle that came from an accepted LAN
 	// submission, so averages and personal records can tell them apart.
 	lanBattlePrefix = "lan-"
-	// lanBattleMode is a LAN game's mode. It contains "regular" on purpose:
-	// toyohr's Regular (Open) category counts it, the same as an online win.
-	lanBattleMode = "lan_regular"
+)
 
+// lanBattleModes is each LAN game kind's battle mode. Each contains the word
+// toyohr's category for it matches -- "regular" (Open), "challenge" (Pro),
+// "tricolor" -- so an accepted LAN game counts the same as an online one.
+var lanBattleModes = map[string]string{
+	db.SubmissionOpen:     "lan_regular",
+	db.SubmissionPro:      "lan_challenge",
+	db.SubmissionTricolor: "lan_tricolor",
+}
+
+const (
 	// Used for a LAN player's paint when nobody gave it, no online battle has
 	// been played to average, and the mod set no default of their own.
 	fallbackWinPaint  = 2000
 	fallbackLossPaint = 900
 
-	maxPaint        = 9999
-	maxTeamSize     = 4
-	duplicateWindow = 30 * time.Minute
+	maxPaint    = 9999
+	maxTeamSize = 4
+	// In a Tricolor battle the halftime leader defends with four players
+	// against two from each other team.
+	tricolorAttackers = 2
+	duplicateWindow   = 30 * time.Minute
 )
 
 func (b *botAPI) festRoutes(mux *http.ServeMux) {
@@ -113,8 +124,9 @@ type submissionView struct {
 	ID              string                    `json:"id"`
 	FestID          string                    `json:"festId"`
 	SubmittedBy     string                    `json:"submittedBy"`
+	Kind            string                    `json:"kind"`
 	WinningTeam     string                    `json:"winningTeam"`
-	LosingTeam      string                    `json:"losingTeam"`
+	LosingTeam      string                    `json:"losingTeam,omitempty"`
 	Players         []db.FestSubmissionPlayer `json:"players"`
 	ScreenshotURL   string                    `json:"screenshotUrl,omitempty"`
 	Status          string                    `json:"status"`
@@ -133,7 +145,7 @@ type submissionView struct {
 func viewSubmission(s db.FestSubmission) submissionView {
 	v := submissionView{
 		ID: s.ID, FestID: s.FestID, SubmittedBy: s.SubmittedBy,
-		WinningTeam: s.WinningTeam, LosingTeam: s.LosingTeam, Players: s.Players,
+		Kind: s.Kind, WinningTeam: s.WinningTeam, LosingTeam: s.LosingTeam, Players: s.Players,
 		ScreenshotURL: s.ScreenshotURL, Status: s.Status, Reason: s.Reason, ReviewedBy: s.ReviewedBy,
 		Flags: s.Flags, ReviewChannelID: s.ReviewChannelID, ReviewMessageID: s.ReviewMessageID,
 		CreatedAt: s.CreatedAt,
@@ -660,6 +672,8 @@ func (b *botAPI) festRecord(w http.ResponseWriter, r *http.Request, user db.User
 // ---- LAN games ----------------------------------------------------------------
 
 type submitRequest struct {
+	// Kind is "open" (the default), "pro" or "tricolor".
+	Kind          string           `json:"kind"`
 	Winners       []string         `json:"winners"`
 	Losers        []string         `json:"losers"`
 	Paint         map[string]int64 `json:"paint"`
@@ -684,8 +698,26 @@ func (b *botAPI) submitLANGame(w http.ResponseWriter, r *http.Request, submitter
 		writeBotError(w, http.StatusConflict, "not_in_play", "games can only be submitted while play is open")
 		return
 	}
+	if body.Kind == "" {
+		body.Kind = db.SubmissionOpen
+	}
+	if _, ok := lanBattleModes[body.Kind]; !ok {
+		writeBotError(w, http.StatusBadRequest, "bad_kind", "a game is open, pro or tricolor")
+		return
+	}
+	tricolor := body.Kind == db.SubmissionTricolor
+	// Tricolor battles only exist in the second half, as in game: the
+	// halftime ranking picks who defends.
+	if tricolor && festPhase(row, b.s.now()) != toyohr.PhaseSecondHalf {
+		writeBotError(w, http.StatusConflict, "no_tricolor_yet", "Tricolor battles start in the second half")
+		return
+	}
+	maxLosers := maxTeamSize
+	if tricolor {
+		maxLosers = maxTeamSize + tricolorAttackers
+	}
 	if len(body.Winners) == 0 || len(body.Losers) == 0 ||
-		len(body.Winners) > maxTeamSize || len(body.Losers) > maxTeamSize {
+		len(body.Winners) > maxTeamSize || len(body.Losers) > maxLosers {
 		writeBotError(w, http.StatusBadRequest, "bad_players", "each side has one to four players")
 		return
 	}
@@ -759,15 +791,29 @@ func (b *botAPI) submitLANGame(w http.ResponseWriter, r *http.Request, submitter
 		return team, wrong
 	}
 	winning, wrongW := sideTeam(body.Winners)
-	losing, wrongL := sideTeam(body.Losers)
-	if len(wrongW) > 0 || len(wrongL) > 0 || winning == losing {
-		ids := append(wrongW, wrongL...)
-		if len(ids) == 0 {
-			ids = all
+	var losing string
+	if tricolor {
+		bad, err := b.tricolorLineup(ctx, f, row, winning, wrongW, body.Losers, teamOf)
+		if err != nil {
+			b.internal(w, "tricolor lineup", err)
+			return
 		}
-		writeJSON(w, http.StatusConflict, playersError{Code: "team_mismatch",
-			Message: "each side must be one team, and the two sides different teams", DiscordUserIDs: ids})
-		return
+		if bad != nil {
+			writeJSON(w, http.StatusConflict, *bad)
+			return
+		}
+	} else {
+		var wrongL []string
+		losing, wrongL = sideTeam(body.Losers)
+		if len(wrongW) > 0 || len(wrongL) > 0 || winning == losing {
+			ids := append(wrongW, wrongL...)
+			if len(ids) == 0 {
+				ids = all
+			}
+			writeJSON(w, http.StatusConflict, playersError{Code: "team_mismatch",
+				Message: "each side must be one team, and the two sides different teams", DiscordUserIDs: ids})
+			return
+		}
 	}
 
 	id, err := newSubmissionID()
@@ -776,7 +822,7 @@ func (b *botAPI) submitLANGame(w http.ResponseWriter, r *http.Request, submitter
 		return
 	}
 	sub := db.FestSubmission{
-		ID: id, FestID: f.FestID, SubmittedBy: submitter,
+		ID: id, FestID: f.FestID, SubmittedBy: submitter, Kind: body.Kind,
 		WinningTeam: winning, LosingTeam: losing, Players: players,
 		ScreenshotURL: body.ScreenshotURL, Status: db.SubmissionPending, CreatedAt: b.s.now().UTC(),
 	}
@@ -795,9 +841,63 @@ func (b *botAPI) submitLANGame(w http.ResponseWriter, r *http.Request, submitter
 			view.PossibleDuplicateOf = append(view.PossibleDuplicateOf, e.ID)
 		}
 	}
-	b.s.log.Info("botapi: LAN game submitted", "fest", f.FestID, "submission", id,
+	b.s.log.Info("botapi: LAN game submitted", "fest", f.FestID, "submission", id, "kind", body.Kind,
 		"winning", winning, "losing", losing, "players", len(players))
 	writeJSON(w, http.StatusCreated, view)
+}
+
+// tricolorLineup checks a Tricolor game's sides the way the game sets them:
+// the halftime leader defends with up to four players, each other team
+// attacks with up to two, and every team is there. Any one team can win. A
+// non-nil error response says what is wrong.
+func (b *botAPI) tricolorLineup(ctx context.Context, f db.BotFest, row db.Fest, winning string, wrongW, losers []string, teamOf map[string]string) (*playersError, error) {
+	if len(wrongW) > 0 {
+		return &playersError{Code: "team_mismatch", Message: "the winners must all be on one team", DiscordUserIDs: wrongW}, nil
+	}
+	st, err := toyohr.FestStandings(ctx, b.s.store, row, b.s.now())
+	if err != nil {
+		return nil, err
+	}
+	if len(st.Midterm) == 0 {
+		return &playersError{Code: "no_tricolor_yet", Message: "there is no halftime ranking yet to pick the defenders"}, nil
+	}
+	defender := st.Midterm[0].Team
+	count := map[string]int{}
+	var wrong []string
+	for _, id := range losers {
+		if teamOf[id] == winning {
+			wrong = append(wrong, id)
+		}
+		count[teamOf[id]]++
+	}
+	if len(wrong) > 0 {
+		return &playersError{Code: "team_mismatch", Message: "a loser is on the winning team", DiscordUserIDs: wrong}, nil
+	}
+	count[winning] += len(teamOfSide(winning, teamOf))
+	for _, t := range f.Teams {
+		n := count[t.Team]
+		limit := tricolorAttackers
+		if t.Team == defender {
+			limit = maxTeamSize
+		}
+		if n == 0 || n > limit {
+			return &playersError{Code: "bad_tricolor",
+				Message: fmt.Sprintf("a Tricolor battle has all three teams: %s (the halftime leader) defends with up to %d players, the others attack with up to %d each",
+					defender, maxTeamSize, tricolorAttackers)}, nil
+		}
+	}
+	return nil, nil
+}
+
+// teamOfSide lists the players of one team.
+func teamOfSide(team string, teamOf map[string]string) []string {
+	var out []string
+	for id, t := range teamOf {
+		if t == team {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func samePlayers(a, b db.FestSubmission) bool {
@@ -969,7 +1069,7 @@ func (b *botAPI) acceptSubmission(w http.ResponseWriter, r *http.Request, review
 		return
 	}
 	battle := db.FestBattle{
-		FestID: s.FestID, BattleID: lanBattlePrefix + s.ID, Mode: lanBattleMode,
+		FestID: s.FestID, BattleID: lanBattlePrefix + s.ID, Mode: lanBattleModes[s.Kind],
 		WinningTeam: s.WinningTeam, Ink: map[string]int64{}, FinishedAt: s.CreatedAt,
 	}
 	players := make([]db.FestBattlePlayer, 0, len(s.Players))

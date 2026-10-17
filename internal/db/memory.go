@@ -1795,6 +1795,9 @@ func (m *Memory) CreateFestSubmission(_ context.Context, s FestSubmission) error
 	if s.Status == "" {
 		s.Status = SubmissionPending
 	}
+	if s.Kind == "" {
+		s.Kind = SubmissionOpen
+	}
 	if s.CreatedAt.IsZero() {
 		s.CreatedAt = time.Now().UTC()
 	}

@@ -2712,6 +2712,7 @@ func testFestSubmissions(t *testing.T, s Store) {
 	}
 	sub2 := sub
 	sub2.ID, sub2.CreatedAt = "sub-2", sub.CreatedAt.Add(time.Minute)
+	sub2.Kind, sub2.LosingTeam = SubmissionTricolor, ""
 	if err := s.CreateFestSubmission(ctx, sub2); err != nil {
 		t.Fatal(err)
 	}
@@ -2719,7 +2720,10 @@ func testFestSubmissions(t *testing.T, s Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != SubmissionPending || len(got.Players) != 2 || got.Players[0].Paint == nil ||
+	if got2, err := s.GetFestSubmission(ctx, "sub-2"); err != nil || got2.Kind != SubmissionTricolor {
+		t.Errorf("a Tricolor submission's kind: %q %v", got2.Kind, err)
+	}
+	if got.Kind != SubmissionOpen || got.Status != SubmissionPending || len(got.Players) != 2 || got.Players[0].Paint == nil ||
 		*got.Players[0].Paint != 1234 || got.Players[1].Paint != nil {
 		t.Fatalf("submission round trip: %+v", got)
 	}

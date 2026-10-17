@@ -144,8 +144,11 @@ GRID0 over its ZeroTier relay, count in the same fests as GRID0+'s online ones.
 - **The first pick is final**, from the vote post as from the game
   (`Store.CreateFestEntry`, see `internal/toyohr/README.md`).
 - **A LAN game counts like an online win** once a mod accepts it: a battle
-  `lan-<submission>` in mode `lan_regular`, which the Regular (Open) category
-  counts. Every player must have an account and a team; a player's missing
+  `lan-<submission>` in mode `lan_regular`, `lan_challenge` or `lan_tricolor`
+  (the submission's `kind`: open, pro or tricolor), which toyohr's Open, Pro
+  and Tricolor categories count. A Tricolor game is refused before the second
+  half, and must have the game's lineup: the halftime leader defends with up
+  to four players, each other team attacks with up to two. Every player must have an account and a team; a player's missing
   paint is this fest's online average for their side, or the fest's own
   default before anyone played online. Accepting and recording the battle is
   one transaction, and a submission can be settled once.

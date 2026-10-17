@@ -1680,14 +1680,14 @@ func (p *Postgres) ClaimBotFestPost(ctx context.Context, festID, kind string, at
 	return false, nil
 }
 
-const festSubmissionColumns = `id, fest_id, submitted_by, winning_team, losing_team, players, screenshot_url,
+const festSubmissionColumns = `id, fest_id, submitted_by, kind, winning_team, losing_team, players, screenshot_url,
 	status, reason, reviewed_by, reviewed_at, flags, review_channel_id, review_message_id, created_at`
 
 func scanFestSubmission(row interface{ Scan(...any) error }) (FestSubmission, error) {
 	var s FestSubmission
 	var players, flags []byte
 	var reviewedAt *time.Time
-	err := row.Scan(&s.ID, &s.FestID, &s.SubmittedBy, &s.WinningTeam, &s.LosingTeam, &players, &s.ScreenshotURL,
+	err := row.Scan(&s.ID, &s.FestID, &s.SubmittedBy, &s.Kind, &s.WinningTeam, &s.LosingTeam, &players, &s.ScreenshotURL,
 		&s.Status, &s.Reason, &s.ReviewedBy, &reviewedAt, &flags, &s.ReviewChannelID, &s.ReviewMessageID, &s.CreatedAt)
 	if err != nil {
 		return FestSubmission{}, mapErr(err)
@@ -1715,10 +1715,13 @@ func (p *Postgres) CreateFestSubmission(ctx context.Context, s FestSubmission) e
 	if s.CreatedAt.IsZero() {
 		s.CreatedAt = time.Now().UTC()
 	}
+	if s.Kind == "" {
+		s.Kind = SubmissionOpen
+	}
 	_, err = p.pool.Exec(ctx, `INSERT INTO bot_fest_submissions
-		(id, fest_id, submitted_by, winning_team, losing_team, players, screenshot_url, status, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		s.ID, s.FestID, s.SubmittedBy, s.WinningTeam, s.LosingTeam, players, s.ScreenshotURL, s.Status, s.CreatedAt)
+		(id, fest_id, submitted_by, kind, winning_team, losing_team, players, screenshot_url, status, created_at)
+		VALUES ($1, $2, $3, $10, $4, $5, $6, $7, $8, $9)`,
+		s.ID, s.FestID, s.SubmittedBy, s.WinningTeam, s.LosingTeam, players, s.ScreenshotURL, s.Status, s.CreatedAt, s.Kind)
 	return mapErr(err)
 }
 

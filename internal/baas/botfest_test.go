@@ -318,3 +318,75 @@ func TestTheFestStreamSaysSoWithoutRedis(t *testing.T) {
 		t.Errorf("stream without a bus: %d %v", resp.StatusCode, body)
 	}
 }
+
+// A LAN Tricolor battle exists only from the second half, with the halftime
+// leader defending against the other two teams, and counts in Tricolor.
+func TestALANTricolorGameNeedsTheSecondHalfAndTheGamesLineup(t *testing.T) {
+	b := newBotHarness(t)
+	id := b.newFest()
+	b.fourPlayers(id)
+	const ann, cid, cyd = "100000000000000081", "100000000000000082", "100000000000000083"
+	for _, p := range []struct{ discord, name, team string }{
+		{ann, "ann", "Alpha"}, {cid, "cid", "Charlie"}, {cyd, "cyd", "Charlie"},
+	} {
+		b.registerDiscord(p.discord, p.name)
+		if code, body := b.vote(id, p.discord, p.team); code != http.StatusOK {
+			t.Fatalf("vote %s: %d %v", p.name, code, body)
+		}
+	}
+	path := "/bot/v1/fests/" + id + "/submissions"
+	// Alpha leads the vote (3 of 7), so Alpha defends.
+	game := map[string]any{"kind": "tricolor",
+		"winners": []string{bobDiscord, daveDiscord},
+		"losers":  []string{aliceDiscord, carolDiscord, ann, cid, cyd}}
+
+	resp, body := b.call("POST", path, bobDiscord, game)
+	if resp.StatusCode != http.StatusConflict || body["code"] != "no_tricolor_yet" {
+		t.Errorf("Tricolor in the first half: %d %v", resp.StatusCode, body)
+	}
+	b.advance(30 * time.Hour)
+
+	resp, body = b.call("POST", path, bobDiscord, map[string]any{"kind": "tricolor",
+		"winners": []string{aliceDiscord, carolDiscord}, "losers": []string{bobDiscord, daveDiscord}})
+	if resp.StatusCode != http.StatusConflict || body["code"] != "bad_tricolor" {
+		t.Errorf("Tricolor with two teams: %d %v", resp.StatusCode, body)
+	}
+	resp, body = b.call("POST", path, bobDiscord, map[string]any{"kind": "tricolor",
+		"winners": []string{cid, cyd}, "losers": []string{aliceDiscord, carolDiscord, ann, bobDiscord, daveDiscord}})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("a Charlie win (attackers): %d %v", resp.StatusCode, body)
+	}
+	resp, sub := b.call("POST", path, bobDiscord, game)
+	if resp.StatusCode != http.StatusCreated || sub["kind"] != "tricolor" || sub["winningTeam"] != "Bravo" {
+		t.Fatalf("submit: %d %v", resp.StatusCode, sub)
+	}
+	if resp, body := b.call("POST", "/bot/v1/submissions/"+sub["id"].(string)+"/accept", modDiscord, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("accept: %d %v", resp.StatusCode, body)
+	}
+	battles, _ := b.store.ListFestBattles(t.Context(), id)
+	if len(battles) != 1 || battles[0].Mode != "lan_tricolor" || battles[0].WinningTeam != "Bravo" {
+		t.Errorf("battles = %+v, want one LAN Tricolor win for Bravo", battles)
+	}
+}
+
+// A Pro LAN game counts in Pro, not Open.
+func TestALANProGameCountsInPro(t *testing.T) {
+	b := newBotHarness(t)
+	id := b.newFest()
+	b.fourPlayers(id)
+	resp, sub := b.call("POST", "/bot/v1/fests/"+id+"/submissions", aliceDiscord, map[string]any{"kind": "pro",
+		"winners": []string{aliceDiscord, carolDiscord}, "losers": []string{bobDiscord, daveDiscord}})
+	if resp.StatusCode != http.StatusCreated || sub["kind"] != "pro" {
+		t.Fatalf("submit: %d %v", resp.StatusCode, sub)
+	}
+	b.call("POST", "/bot/v1/submissions/"+sub["id"].(string)+"/accept", modDiscord, nil)
+	battles, _ := b.store.ListFestBattles(t.Context(), id)
+	if len(battles) != 1 || battles[0].Mode != "lan_challenge" {
+		t.Errorf("battles = %+v, want one LAN Pro battle", battles)
+	}
+	resp, body := b.call("POST", "/bot/v1/fests/"+id+"/submissions", aliceDiscord, map[string]any{"kind": "turf",
+		"winners": []string{aliceDiscord}, "losers": []string{bobDiscord}})
+	if resp.StatusCode != http.StatusBadRequest || body["code"] != "bad_kind" {
+		t.Errorf("an unknown kind: %d %v", resp.StatusCode, body)
+	}
+}

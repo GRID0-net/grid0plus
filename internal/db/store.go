@@ -506,13 +506,24 @@ const (
 
 // FestSubmission is a LAN game a player reported, waiting for or past a mod's
 // review. Only an accepted one becomes a FestBattle.
+// The kinds of LAN game, each counted in its fest category.
+const (
+	SubmissionOpen     = "open"
+	SubmissionPro      = "pro"
+	SubmissionTricolor = "tricolor"
+)
+
 type FestSubmission struct {
 	ID          string
 	FestID      string
 	SubmittedBy string // Discord user id
+	// Kind is SubmissionOpen, SubmissionPro or SubmissionTricolor.
+	Kind        string
 	WinningTeam string
-	LosingTeam  string
-	Players     []FestSubmissionPlayer
+	// LosingTeam is the other side's team. Empty for a Tricolor game, whose
+	// losers are two teams; each player carries their own.
+	LosingTeam string
+	Players    []FestSubmissionPlayer
 	// ScreenshotURL is the results screen, when one was attached.
 	ScreenshotURL string
 
