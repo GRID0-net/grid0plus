@@ -81,6 +81,7 @@ func (s *Server) beginSessionStream(caller *session) {
 	s.cleanupMu.Lock()
 	defer s.cleanupMu.Unlock()
 	s.cleanupFor(caller.userSession).streams++
+	s.cancelDeparture(caller)
 }
 
 func (s *Server) endSessionStream(caller *session) {
@@ -97,6 +98,7 @@ func (s *Server) endSessionStream(caller *session) {
 	}
 	deferred := c.deferments
 	delete(s.cleanups, caller.userSession)
+	s.awaitDeparture(caller)
 	s.cleanupMu.Unlock()
 
 	names := make([]string, 0, len(deferred))

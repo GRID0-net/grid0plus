@@ -137,6 +137,12 @@ stated here rather than looking like an oversight.
 console holds it — the same rule `SubscribeMaintenanceSchedules` and
 `internal/nplnrest`'s frontline connection follow.
 
+Its closing is, however, the only sign a console gives that it has left a
+game session. When a user session's last stream closes and none reopens
+within `memberGoneGrace` (10 s), `OnMemberGone` tells internal/npln, which
+takes the player out of the session; see `departures.go` for the grid0 logs
+that set the number.
+
 - **all sends go from one goroutine.** gRPC allows one concurrent `Send` per
   stream; the reader loop sends echoes while document changes arrive from the
   store, and two senders would be a race the transport does not protect against.

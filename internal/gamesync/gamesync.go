@@ -74,6 +74,10 @@ type Options struct {
 	// LiveParticipants reads the current room roster for an authenticated
 	// member. Room occupancy changes after IssueToken, while its details do not.
 	LiveParticipants func(sessionID, userID string) (int, bool)
+	// OnMemberGone is told when a player's last watch stream on a game
+	// session closed and none reopened within memberGoneGrace: see
+	// departures.go. Nil leaves membership to the matchmaking queue alone.
+	OnMemberGone func(sessionID, userID string)
 	// IssueAccessToken is an optional diagnostic signer for the gamesync
 	// access token. The normal opaque token remains the default until hardware
 	// confirms whether the client parses this field as a JWT.
@@ -133,6 +137,7 @@ type Server struct {
 	verify             TokenVerifier
 	resolveSession     func(string) (SessionDetails, error)
 	liveParticipants   func(sessionID, userID string) (int, bool)
+	memberGone         func(sessionID, userID string)
 	issueAccessToken   func(userID, userSession string, expiresAt time.Time) (string, error)
 	onRefereeReport    func(context.Context, RefereeReport) error
 	prepareCoopVerdict func(context.Context, RefereeReport) error
@@ -150,6 +155,9 @@ type Server struct {
 	// name, not per token: see userSessionCleanup.
 	cleanupMu sync.Mutex
 	cleanups  map[string]*userSessionCleanup
+	// departures are the pending memberGone calls, by user-session name,
+	// guarded by cleanupMu like the streams they count down from.
+	departures map[string]*time.Timer
 
 	mu       sync.Mutex
 	sessions map[string]*session
@@ -197,6 +205,7 @@ func New(opts Options) (*Server, error) {
 		verify:             opts.VerifyIDToken,
 		resolveSession:     opts.ResolveSession,
 		liveParticipants:   opts.LiveParticipants,
+		memberGone:         opts.OnMemberGone,
 		issueAccessToken:   opts.IssueAccessToken,
 		onRefereeReport:    opts.OnRefereeReport,
 		prepareCoopVerdict: opts.PrepareCoopVerdict,
@@ -208,6 +217,7 @@ func New(opts Options) (*Server, error) {
 		watch:              newWatchers(),
 		sessions:           map[string]*session{},
 		cleanups:           map[string]*userSessionCleanup{},
+		departures:         map[string]*time.Timer{},
 		txns:               map[string]*transaction{},
 	}
 	s.watch.startup = s.startupVerdict

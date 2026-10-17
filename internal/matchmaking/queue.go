@@ -12,6 +12,7 @@ package matchmaking
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -138,6 +139,19 @@ type Session struct {
 	// everyone in it. Matches ignore it -- gameplay is peer-to-peer once one
 	// starts, so nothing here would ever refresh it.
 	ActiveAt time.Time
+
+	// Seats is each player's 1-based place in the session, the rank Gamesync
+	// hands Pia as their upcsid. Kept apart from the order of Players because
+	// a player can leave (see Leave): renumbering the rest would give a
+	// newcomer the rank a connected console already holds, and Pia elects its
+	// host by the lowest one. A seat is never reused, and a player who comes
+	// back gets their old one.
+	Seats map[string]int
+}
+
+// Seat is a player's place in the session, or 0 for someone never in it.
+func (s Session) Seat(userID string) int {
+	return s.Seats[userID]
 }
 
 // Config tunes the queue.
@@ -489,7 +503,43 @@ func (q *Queue) Join(sessionID, userID string) (Session, error) {
 		return Session{}, ErrSessionFull
 	}
 	s.Players = append(s.Players, userID)
+	if s.Seats[userID] == 0 {
+		next := 0
+		for _, seat := range s.Seats {
+			next = max(next, seat)
+		}
+		s.Seats[userID] = next + 1
+	}
 	return s.clone(), nil
+}
+
+// Leave removes a player from a session, reporting the session as it now is
+// and whether the player was in it.
+//
+// Splatoon 3 has no "leave" call: a console that quits a room, or drops off
+// the network, simply stops talking. Without this its id stays in Players
+// forever, and every console that joins afterwards is handed it as a peer to
+// connect to -- a connection that can only fail, which the joiner reports as
+// 2318-1201. Internal/gamesync decides when a player has gone; this only
+// records it.
+//
+// The session itself is left in place even when it empties: a room is closed
+// by its owner (npln), a matched session by Sweep.
+func (q *Queue) Leave(sessionID, userID string) (Session, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	s, ok := q.sessions[sessionID]
+	if !ok {
+		return Session{}, false
+	}
+	for i, p := range s.Players {
+		if p == userID {
+			s.Players = append(s.Players[:i], s.Players[i+1:]...)
+			return s.clone(), true
+		}
+	}
+	return s.clone(), false
 }
 
 // OpenRoom creates a private room with its host as the only player.
@@ -564,6 +614,7 @@ func (q *Queue) SessionsFor(userID string) []Session {
 func (s *Session) clone() Session {
 	out := *s
 	out.Players = append([]string(nil), s.Players...)
+	out.Seats = maps.Clone(s.Seats)
 	return out
 }
 
@@ -590,7 +641,7 @@ func (q *Queue) SetHostPort(sessionID string, port int32) (Session, bool) {
 		return Session{}, false
 	}
 	s.HostPort = port
-	return *s, true
+	return s.clone(), true
 }
 
 // IsPlayer reports whether a user was matched into a session.
@@ -806,7 +857,7 @@ func (q *Queue) Snapshot() Snapshot {
 	}
 
 	for _, s := range q.sessions {
-		out.Sessions = append(out.Sessions, *s)
+		out.Sessions = append(out.Sessions, s.clone())
 	}
 	// Newest first: the match that just formed is the one being looked for.
 	sort.Slice(out.Sessions, func(i, j int) bool {
@@ -1440,6 +1491,10 @@ func (q *Queue) newSessionLocked(mode string, maxPlayers int, players []string, 
 		Room:       room,
 		CreatedAt:  now,
 		ActiveAt:   now,
+		Seats:      make(map[string]int, len(players)),
+	}
+	for i, p := range players {
+		s.Seats[p] = i + 1
 	}
 	// The first player hosts: for a match the longest-waiting one, for a room
 	// the one who opened it. Arbitrary for a match but not random: it is
@@ -1448,7 +1503,7 @@ func (q *Queue) newSessionLocked(mode string, maxPlayers int, players []string, 
 	// be first in a map.
 	s.Host = s.Players[0]
 	q.sessions[s.ID] = &s
-	return s
+	return s.clone()
 }
 
 // playersForLocked is how many tickets make a match in a mode.

@@ -25,6 +25,9 @@ func wireTargetID(name string) string { return sessionID(name) }
 // players appear to have the same connection sequence in Gamesync documents.
 func participantRank(caller *session) int64 {
 	if caller.details != nil {
+		if seat := caller.details.Seats[caller.userID]; seat > 0 {
+			return int64(seat)
+		}
 		for i, userID := range caller.details.Players {
 			if userID == caller.userID {
 				return int64(i + 1)

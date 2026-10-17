@@ -149,3 +149,12 @@ the console, with a generic error. Room is checked against `MaxPlayers`, the
 size the match was formed at, not against whatever `ModeSizes` says right now
 -- an operator changing a mode's size after formation must not retroactively
 shrink or grow a match that already has its players.
+
+`Leave` takes a player out of `Players`, because the game never says it is
+leaving and a session that kept a gone console handed it to every later
+joiner as a peer to connect to (2318-1201). Internal/gamesync decides when a
+player has gone; `Leave` only records it. Each player keeps a **seat**
+(`Session.Seats`) that does not move when somebody else leaves and comes
+back with them if they rejoin: gamesync ranks players by it, Pia elects the
+lowest rank as host, and renumbering would give a newcomer the rank a
+connected console already holds.

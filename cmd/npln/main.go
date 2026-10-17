@@ -185,6 +185,7 @@ func main() {
 		VerifyIDToken:    srv.VerifyMatchmakingIDToken,
 		ResolveSession:   srv.ResolveGamesyncSession,
 		LiveParticipants: srv.GamesyncRoomParticipants,
+		OnMemberGone:     srv.GamesyncMemberGone,
 		IssueAccessToken: gamesyncProbeSigner,
 		LobbyLogFlag:     lobbyLogFlag(),
 		PrepareCoopVerdict: func(ctx context.Context, report gamesync.RefereeReport) error {

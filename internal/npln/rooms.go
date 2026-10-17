@@ -360,6 +360,31 @@ func (g *gameSessionService) CancelGameSessionCreationTicket(
 	return &emptypb.Empty{}, nil
 }
 
+// GamesyncMemberGone takes a player out of a game session once gamesync has
+// seen them go: see internal/gamesync/departures.go for when that is.
+//
+// Every session, not only rooms. A matched session outlives its first match
+// whenever the group presses "Again!", and the consoles backfilling it are
+// handed its players exactly as a room's joiners are.
+//
+// A room that empties is closed, as its host cancelling it would. A host
+// leaving a room others are still in is only removed like anyone else:
+// whether the game moves the room to another console or ends it is not
+// something GRID0+ has seen, and closing it under the players still there
+// would be a guess with a worse failure than the one being fixed.
+func (s *Server) GamesyncMemberGone(sessionID, userID string) {
+	sess, ok := s.queue.Leave(sessionID, userID)
+	if !ok {
+		return
+	}
+	s.log.Info("npln: player left the session", "session", sessionID, "user", userID,
+		"room", sess.Room, "host", sess.Host == userID, "players", len(sess.Players))
+	if sess.Room && len(sess.Players) == 0 && s.queue.CloseRoom(sessionID) {
+		s.rooms.forget(sessionID)
+		s.log.Info("npln: room closed; everyone left", "session", sessionID)
+	}
+}
+
 // roomMetaFor returns a copy of a room's metadata.
 func (s *Server) roomMetaFor(sessionID string) (roomMeta, bool) {
 	s.rooms.mu.Lock()

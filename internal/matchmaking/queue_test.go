@@ -1272,3 +1272,60 @@ func TestADuplicateTicketRightAfterAMatchJoinsThatMatch(t *testing.T) {
 		t.Fatalf("bob re-queueing after the window got %+v and %v, want a new match with carol", later, sessions)
 	}
 }
+
+// TestAPlayerWhoLeftARoomIsNotHandedToTheNextJoiner: a console that quit a
+// room stayed in its Players, so a friend joining later was told to connect to
+// it and failed with 2318-1201. The freed seat must also be usable again.
+func TestAPlayerWhoLeftARoomIsNotHandedToTheNextJoiner(t *testing.T) {
+	q := New(Config{PlayersPerMatch: 2}, nil)
+	room, _ := q.OpenRoom("host", "join_room_4_no_referee_config", 2)
+	if _, err := q.Join(room.ID, "gone"); err != nil {
+		t.Fatal(err)
+	}
+	after, ok := q.Leave(room.ID, "gone")
+	if !ok {
+		t.Fatal("Leave did not find a player who was in the room")
+	}
+	if q.IsPlayer(room.ID, "gone") || len(after.Players) != 1 {
+		t.Errorf("players after leaving = %v, want only the host", after.Players)
+	}
+	joined, err := q.Join(room.ID, "next")
+	if err != nil {
+		t.Fatalf("the seat a leaver freed is still taken: %v", err)
+	}
+	if len(joined.Players) != 2 || joined.Players[0] != "host" || joined.Players[1] != "next" {
+		t.Errorf("players = %v, want [host next]", joined.Players)
+	}
+	if _, ok := q.Leave(room.ID, "gone"); ok {
+		t.Error("leaving twice reported the player as still present")
+	}
+}
+
+// TestSeatsDoNotMoveWhenSomebodyLeaves: Gamesync ranks players by seat and Pia
+// elects the lowest as host. Renumbering after a leave handed a newcomer the
+// rank a connected console already held.
+func TestSeatsDoNotMoveWhenSomebodyLeaves(t *testing.T) {
+	q := New(Config{PlayersPerMatch: 2}, nil)
+	room, _ := q.OpenRoom("host", "join_room_4_no_referee_config", 4)
+	for _, who := range []string{"a", "b"} {
+		if _, err := q.Join(room.ID, who); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q.Leave(room.ID, "a")
+	s, err := q.Join(room.ID, "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := [3]int{s.Seat("host"), s.Seat("b"), s.Seat("c")}; got != [3]int{1, 3, 4} {
+		t.Errorf("seats host, b, c = %v, want [1 3 4]", got)
+	}
+	q.Leave(room.ID, "b")
+	back, err := q.Join(room.ID, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Seat("b") != 3 {
+		t.Errorf("a returning player got seat %d, want their old 3", back.Seat("b"))
+	}
+}

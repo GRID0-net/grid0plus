@@ -27,6 +27,11 @@ type SessionDetails struct {
 	// id they will join it with. Known as soon as the match forms, before
 	// the players connect: see matchedPlayerDocuments.
 	PlayerSessions map[string]string
+	// Seats is each player's rank in the game session (matchmaking's
+	// Session.Seats). Not the index into Players: a player who left is
+	// gone from Players, but the ranks the remaining consoles already hold
+	// must not move. Nil falls back to the index.
+	Seats map[string]int
 }
 
 const privateBattleConfig = "private_match_config"

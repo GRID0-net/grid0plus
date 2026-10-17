@@ -402,3 +402,42 @@ func TestARoomTakesTheSizeItsConfigNameCarries(t *testing.T) {
 		}
 	}
 }
+
+// TestAFriendWhoLeftIsNotShownToTheNextJoiner: Splatoon 3 never says it is
+// leaving a room, so a friend who quit stayed listed, and the next one to join
+// was sent to connect to a console that was gone (2318-1201).
+func TestAFriendWhoLeftIsNotShownToTheNextJoiner(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("host0000000000009", "device-host-9")
+	h.createUser("gone0000000000009", "device-gone-9")
+	h.createUser("next0000000000009", "device-next-9")
+	host := h.ctx(h.sessionFor(t, "host0000000000009", "device-host-9"), "")
+	gone := h.ctx(h.sessionFor(t, "gone0000000000009", "device-gone-9"), "")
+	next := h.ctx(h.sessionFor(t, "next0000000000009", "device-next-9"), "")
+	client := mmpb.NewGameSessionServiceClient(h.conn)
+
+	room := openRoom(t, h, host, "join_room_4_no_referee_config", nil, "").GetGameSession()
+	if _, err := client.JoinGameSession(gone, &mmpb.JoinGameSessionRequest{Name: room.GetName()}); err != nil {
+		t.Fatalf("JoinGameSession: %v", err)
+	}
+	h.srv.GamesyncMemberGone(lastSegment(room.GetName()), "gone0000000000009")
+
+	seen, err := client.GetGameSession(next, &mmpb.GetGameSessionRequest{Name: room.GetName()})
+	if err != nil {
+		t.Fatalf("GetGameSession: %v", err)
+	}
+	if got := seen.GetCurrentParticipantCount(); got != 1 {
+		t.Errorf("the room counts %d players after one left, want the host alone", got)
+	}
+	for _, us := range seen.GetUserSessions() {
+		if strings.HasSuffix(us.GetUser(), "/gone0000000000009") {
+			t.Errorf("the player who left is still listed: %v", us.GetUser())
+		}
+	}
+
+	// Everyone gone closes the room, as the host cancelling it would.
+	h.srv.GamesyncMemberGone(lastSegment(room.GetName()), "host0000000000009")
+	if _, err := client.GetGameSession(next, &mmpb.GetGameSessionRequest{Name: room.GetName()}); status.Code(err) != codes.NotFound {
+		t.Errorf("an empty room is still readable: %v", err)
+	}
+}

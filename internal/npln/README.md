@@ -275,6 +275,14 @@ like a matched session once it exists; the differences (anyone holding its
 name may read and join it, capacity is the mode's rather than the player
 count, it expires from its last activity) are documented where they apply.
 
+Nothing in the protocol removes a player. `GamesyncMemberGone` does, when
+gamesync reports that a player's last watch stream on the session closed and
+stayed closed (see `internal/gamesync/departures.go`) -- for every session,
+since a matched session reopened by "Again!" is backfilled from its players
+exactly as a room is joined. A room everybody has left is closed; a host
+leaving a room others are still in is only removed, since what the game does
+with such a room has not been seen.
+
 `SyncGameSession` is a real RPC -- it is defined in the same upstream proto
 set as the rest of `GameSessionService` -- but its path string does not
 appear anywhere in Splatoon 3's binary, unlike all four RPCs this server does

@@ -602,6 +602,7 @@ func (s *Server) ResolveGamesyncSession(idToken string) (gamesync.SessionDetails
 		Capacity: sess.MaxPlayers, ParticipantCount: len(sess.Players), CreatedAt: sess.CreatedAt,
 		Room:           sess.Room,
 		PlayerSessions: map[string]string{},
+		Seats:          sess.Seats,
 	}
 	for _, p := range sess.Players {
 		d.PlayerSessions[p] = userSessionID(sess.ID, p)
