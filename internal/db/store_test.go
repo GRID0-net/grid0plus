@@ -49,7 +49,7 @@ func truncateAll(t *testing.T, pool *pgxpool.Pool) {
 	// users is the root of every foreign key, so CASCADE clears the rest.
 	_, err := pool.Exec(t.Context(),
 		`TRUNCATE users, devices, images, npln_fests, npln_coop_shifts, npln_matches,
-		          scsi_save_data_archives, ugc_blobs RESTART IDENTITY CASCADE`)
+		          scsi_save_data_archives, ugc_blobs, salmon_jobs RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -81,6 +81,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"firstFestEntryStands":      testFirstFestEntryStands,
 		"botFests":                  testBotFests,
 		"festSubmissions":           testFestSubmissions,
+		"salmonJobs":                testSalmonJobs,
 		"penne":                     testPenne,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
@@ -2785,5 +2786,41 @@ func testFestSubmissions(t *testing.T, s Store) {
 	}
 	if _, err := s.GetFestSubmission(ctx, "sub-1"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("a submission outlived its fest: %v", err)
+	}
+}
+
+func testSalmonJobs(t *testing.T, s Store) {
+	ctx := context.Background()
+	j := SalmonJob{ID: "job1", RequestedBy: "111", ShiftID: "20261017080000", StageID: 4,
+		Hazard: 215, Played: 200, HalfWin: true, Status: SalmonRequested,
+		Players: []SalmonPlayer{{UserID: "u1", DiscordUserID: "111", GradeBefore: 1150}}}
+	if err := s.CreateSalmonJob(ctx, j); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSalmonJob(ctx, j); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate create = %v, want ErrConflict", err)
+	}
+	if _, err := s.GetSalmonJob(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing job = %v, want ErrNotFound", err)
+	}
+	j.Status = SalmonReported
+	j.Result = &SalmonResult{ReportedBy: "111", Wave: 2, Disconnect: true}
+	if err := s.UpdateSalmonJob(ctx, j, SalmonRequested); err != nil {
+		t.Fatal(err)
+	}
+	// A second report, or a second Accept, finds the status moved on.
+	if err := s.UpdateSalmonJob(ctx, j, SalmonRequested); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale update = %v, want ErrConflict", err)
+	}
+	if err := s.UpdateSalmonJob(ctx, SalmonJob{ID: "nope"}, SalmonRequested); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("update of a missing job = %v, want ErrNotFound", err)
+	}
+	got, err := s.GetSalmonJob(ctx, "job1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != SalmonReported || got.Result == nil || got.Result.Wave != 2 || !got.HalfWin ||
+		len(got.Players) != 1 || got.Players[0].GradeBefore != 1150 || got.StageID != 4 {
+		t.Fatalf("round trip = %+v", got)
 	}
 }

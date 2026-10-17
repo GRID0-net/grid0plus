@@ -554,6 +554,68 @@ type FestSubmissionFlag struct {
 	At            time.Time `json:"at"`
 }
 
+// The states of a Salmon Run LAN job, in order: requested, then its result
+// reported by a player, then a mod's decision.
+const (
+	SalmonRequested = "requested"
+	SalmonReported  = "reported"
+	SalmonAccepted  = "accepted"
+	SalmonRefused   = "refused"
+)
+
+// SalmonJob is a LAN Salmon Run job the Discord bot set up: the hazard level
+// it told the players to play at, then the result one of them reported. Only
+// an accepted one moves the players' rank (ugcstore.CreditLANCoopGrade).
+type SalmonJob struct {
+	ID          string `json:"id"`
+	RequestedBy string `json:"requestedBy"` // Discord user id
+	// ShiftID is the online rotation the job counts in; StageID its stage.
+	ShiftID string `json:"shiftId"`
+	StageID int32  `json:"stageId"`
+	// Hazard is what the players' rank asks for, in percent; Played is what
+	// the host can set, lower when the host cannot go above 200%. HalfWin
+	// says a clear is worth half because of it.
+	Hazard  int64           `json:"hazard"`
+	Played  int64           `json:"played"`
+	Modded  bool            `json:"modded"`
+	HalfWin bool            `json:"halfWin"`
+	Players []SalmonPlayer  `json:"players"`
+	Status  string          `json:"status"`
+	Result  *SalmonResult   `json:"result,omitempty"`
+	Review  *SalmonDecision `json:"review,omitempty"`
+
+	ReviewChannelID string `json:"reviewChannelId,omitempty"`
+	ReviewMessageID string `json:"reviewMessageId,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// SalmonPlayer is one player of a job, with their grade coordinate when it
+// was requested and, once accepted, after.
+type SalmonPlayer struct {
+	UserID        string `json:"userId"`
+	DiscordUserID string `json:"discordUserId"`
+	GradeBefore   int64  `json:"gradeBefore"`
+	GradeAfter    *int64 `json:"gradeAfter,omitempty"`
+}
+
+// SalmonResult is a job's outcome as a player reported it. Wave is the wave
+// lost in (1..3), 0 for a clear.
+type SalmonResult struct {
+	ReportedBy string    `json:"reportedBy"`
+	Cleared    bool      `json:"cleared"`
+	Wave       int64     `json:"wave"`
+	Disconnect bool      `json:"disconnect"`
+	At         time.Time `json:"at"`
+}
+
+// SalmonDecision is a mod accepting or refusing a reported job.
+type SalmonDecision struct {
+	By     string    `json:"by"`
+	Reason string    `json:"reason,omitempty"`
+	At     time.Time `json:"at"`
+}
+
 // PenneToken is a notification token npns obtained from Penne for one local
 // account on one console; PushChannel is that token as BAAS learnt it for a
 // signed-in user. Together they say where a push to a user goes.
@@ -908,6 +970,14 @@ type Store interface {
 	// is always counted and a counted game is always an accepted one.
 	// ErrConflict when it is no longer pending.
 	AcceptFestSubmission(ctx context.Context, id, reviewer string, at time.Time, b FestBattle, players []FestBattlePlayer) (FestSubmission, error)
+
+	// CreateSalmonJob stores a new job. ErrConflict for a duplicate id.
+	CreateSalmonJob(ctx context.Context, j SalmonJob) error
+	// GetSalmonJob returns a job by id, or ErrNotFound.
+	GetSalmonJob(ctx context.Context, id string) (SalmonJob, error)
+	// UpdateSalmonJob replaces a job only while its stored status is still
+	// from, ErrConflict otherwise: two mods pressing Accept settle it once.
+	UpdateSalmonJob(ctx context.Context, j SalmonJob, from string) error
 
 	// ---- push notifications (Penne) ----
 

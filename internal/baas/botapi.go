@@ -66,13 +66,16 @@ type BotAPIOptions struct {
 	// FestBus carries new fest entries from the game server to the bot's
 	// event stream. Nil leaves the stream answering that it is unavailable.
 	FestBus presencebus.Bus
+	// NPLNTenant is the NPLN tenant whose GameRecord documents hold the
+	// Salmon Run rank LAN jobs move.
+	NPLNTenant string
 }
 
 // BotHandler serves the bot API.
 func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	b := &botAPI{s: s, token: opts.Token, health: opts.Health,
 		saveRecordPrefix: opts.SaveRecordPrefix, saveBackupDir: opts.SaveBackupDir, saveTable: opts.SaveTable,
-		festBus: opts.FestBus}
+		festBus: opts.FestBus, tenant: opts.NPLNTenant}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bot/v1/register", b.register)
 	mux.HandleFunc("POST /bot/v1/link", b.link)
@@ -92,6 +95,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/wipe", b.withDiscordID(b.wipeSplatoon3Save))
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/import", b.withDiscordID(b.importSplatoon3Save))
 	b.festRoutes(mux)
+	b.salmonRoutes(mux)
 	return b.authenticate(mux)
 }
 
@@ -104,6 +108,7 @@ type botAPI struct {
 	saveBackupDir    string
 	saveTable        *splat3save.Table
 	festBus          presencebus.Bus
+	tenant           string
 }
 
 // botError is the API's one error shape. Code is stable for the bot to switch

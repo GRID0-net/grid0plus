@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -41,6 +42,7 @@ type Memory struct {
 	festBattlePlayers map[string]map[string]FestBattlePlayer
 	botFests          map[string]BotFest
 	festSubmissions   map[string]FestSubmission
+	salmonJobs        map[string][]byte
 
 	penneTokens  map[string]PenneToken
 	pushChannels map[string]PushChannel // user/device account
@@ -78,6 +80,7 @@ func NewMemory() *Memory {
 		festBattlePlayers: map[string]map[string]FestBattlePlayer{},
 		botFests:          map[string]BotFest{},
 		festSubmissions:   map[string]FestSubmission{},
+		salmonJobs:        map[string][]byte{},
 		penneTokens:       map[string]PenneToken{},
 		pushChannels:      map[string]PushChannel{},
 		penneTickets:      map[string]penneTicket{},
@@ -2209,5 +2212,56 @@ func (m *Memory) PurgeUnattachedUGCBlobs(_ context.Context, before time.Time) er
 			delete(m.ugcBlobs, id)
 		}
 	}
+	return nil
+}
+
+// Salmon jobs are kept encoded, so a caller can never alias a stored one.
+func (m *Memory) CreateSalmonJob(_ context.Context, j SalmonJob) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.salmonJobs[j.ID]; ok {
+		return ErrConflict
+	}
+	if j.CreatedAt.IsZero() {
+		j.CreatedAt = time.Now().UTC()
+	}
+	b, err := json.Marshal(j)
+	if err != nil {
+		return err
+	}
+	m.salmonJobs[j.ID] = b
+	return nil
+}
+
+func (m *Memory) GetSalmonJob(_ context.Context, id string) (SalmonJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.salmonJobs[id]
+	if !ok {
+		return SalmonJob{}, ErrNotFound
+	}
+	var j SalmonJob
+	return j, json.Unmarshal(b, &j)
+}
+
+func (m *Memory) UpdateSalmonJob(_ context.Context, j SalmonJob, from string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.salmonJobs[j.ID]
+	if !ok {
+		return ErrNotFound
+	}
+	var stored SalmonJob
+	if err := json.Unmarshal(b, &stored); err != nil {
+		return err
+	}
+	if stored.Status != from {
+		return ErrConflict
+	}
+	nb, err := json.Marshal(j)
+	if err != nil {
+		return err
+	}
+	m.salmonJobs[j.ID] = nb
 	return nil
 }

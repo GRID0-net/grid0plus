@@ -89,6 +89,10 @@ shift. A capture of a console's first job in a new rotation, against
 Nintendo, would show whether that is where Nintendo's server applies it.
 Change `RollCoopRotation`.
 
+The hazard level for two or three players over LAN uses the average of the
+players present. Inkipedia only gives the four-player formula. Change
+`salmonHazard` in `internal/baas/botsalmon.go`.
+
 ### Big Run `CoopSchedule` attributes (`internal/toyohr/coop_schedule.go`)
 
 Decompiling Splatoon 3 v11.3.0 (`main` build

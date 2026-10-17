@@ -167,3 +167,28 @@ GRID0 over its ZeroTier relay, count in the same fests as GRID0+'s online ones.
   the bot reads `GET /bot/v1/fests/{id}/entries` once per reconnect. Without
   `redis.url` the stream answers 503. Roles follow a Discord account's main
   account only, so one person with two accounts cannot hold two team roles.
+
+## The Discord bot's Salmon Run jobs
+
+`botsalmon.go`. LAN players earn the same Salmon Run rank as online, so
+whatever they reach over LAN is what the game shows when they play online.
+
+- **One rank.** A LAN job moves `CoopUserAttribute.total_grade_point`, the
+  document online jobs move (`internal/ugcstore/coopranks.go`). Its total is
+  title x 100 + points below Eggsecutive VP, and 800 + points from there.
+- **A job is set up by the server.** `POST /bot/v1/salmon/jobs` with two to
+  four players answers the current regular rotation's stage and the hazard
+  level: the players' average total (capped at 1665) x 0.2%, rounded to the
+  nearest 5%, at most 333%. Above 200% a stock game cannot follow; unless the
+  request says the host is `modded`, the job is played at 200% and a clear is
+  worth +10 instead of +20.
+- **Every player must have an account**, or the whole request is refused.
+- **A mod decides.** A player reports a clear, or the wave lost in, and
+  whether a teammate disconnected (which halves a loss, as in game). Nothing
+  moves until a mod accepts. The credit is once per job and player, so two
+  Accepts move a rank once.
+- **A job belongs to its rotation.** Reporting or accepting after that
+  rotation ended is refused: the reset has moved everyone's points since.
+- **Rotation reset and badges** are toyohr's (`coop_rank.go`), applied when
+  the game opens a rotation and before a LAN job reads a rank.
+

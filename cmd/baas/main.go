@@ -176,6 +176,7 @@ func main() {
 			SaveBackupDir: "data/splat3-save-backups",
 			SaveTable:     saveTable,
 			FestBus:       festBus,
+			NPLNTenant:    cfg.NPLN.Tenant,
 			Health: func(ctx context.Context) []baas.ServiceStatus {
 				probed := dashboard.ProbeServices(ctx, cfg)
 				out := make([]baas.ServiceStatus, 0, len(probed))

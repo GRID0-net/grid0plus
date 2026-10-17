@@ -2371,3 +2371,44 @@ func (p *Postgres) PurgeUnattachedUGCBlobs(ctx context.Context, before time.Time
 	_, err := p.pool.Exec(ctx, `DELETE FROM ugc_blobs WHERE document IS NULL AND create_time < $1`, before)
 	return err
 }
+
+func (p *Postgres) CreateSalmonJob(ctx context.Context, j SalmonJob) error {
+	if j.CreatedAt.IsZero() {
+		j.CreatedAt = time.Now().UTC()
+	}
+	b, err := json.Marshal(j)
+	if err != nil {
+		return err
+	}
+	_, err = p.pool.Exec(ctx, `INSERT INTO salmon_jobs (id, status, job, created_at) VALUES ($1, $2, $3, $4)`,
+		j.ID, j.Status, b, j.CreatedAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetSalmonJob(ctx context.Context, id string) (SalmonJob, error) {
+	var b []byte
+	if err := p.pool.QueryRow(ctx, `SELECT job FROM salmon_jobs WHERE id = $1`, id).Scan(&b); err != nil {
+		return SalmonJob{}, mapErr(err)
+	}
+	var j SalmonJob
+	return j, json.Unmarshal(b, &j)
+}
+
+func (p *Postgres) UpdateSalmonJob(ctx context.Context, j SalmonJob, from string) error {
+	b, err := json.Marshal(j)
+	if err != nil {
+		return err
+	}
+	tag, err := p.pool.Exec(ctx, `UPDATE salmon_jobs SET status = $2, job = $3 WHERE id = $1 AND status = $4`,
+		j.ID, j.Status, b, from)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := p.GetSalmonJob(ctx, j.ID); err != nil {
+			return err
+		}
+		return ErrConflict
+	}
+	return nil
+}
