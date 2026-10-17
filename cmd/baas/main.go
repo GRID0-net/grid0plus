@@ -62,6 +62,19 @@ func main() {
 		notifyBus = nb
 	}
 
+	// New fest entries from npln, streamed to the Discord bot so a player who
+	// picks a team in game gets its role at once. Only over Redis, for the
+	// same reason as notifyBus.
+	var festBus presencebus.Bus
+	if cfg.Redis.URL != "" {
+		fb, err := presencebus.NewRedis(ctx, cfg.Redis.URL, cfg.Redis.Channel+presencebus.FestChannelSuffix, log)
+		if err != nil {
+			service.Fatal(log, "open fest entry bus", err)
+		}
+		defer func() { _ = fb.Close() }()
+		festBus = fb
+	}
+
 	keys := sjwt.NewKeyring(cfg.Keys.Dir, cfg.Keys.GenerateIfMissing)
 
 	// Five keys, one per issuer. The BAAS keys are published at JWK set URLs
@@ -162,6 +175,7 @@ func main() {
 			// Its own folder: scsi.storage_dir holds OLSC console saves.
 			SaveBackupDir: "data/splat3-save-backups",
 			SaveTable:     saveTable,
+			FestBus:       festBus,
 			Health: func(ctx context.Context) []baas.ServiceStatus {
 				probed := dashboard.ProbeServices(ctx, cfg)
 				out := make([]baas.ServiceStatus, 0, len(probed))

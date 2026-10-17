@@ -1726,3 +1726,17 @@ game's stage layers follow the same order (Pnt, Var, Vlf, Vgl, Vcl). That is
 very likely the wire mapping. To settle it, schedule one Anarchy slot with a
 single rule id and read the rule the console shows; then rename `VsRuleName`
 and replace `TestVsRuleNameNeverGuessesAName`.
+
+### Splatfest team picked on Discord before the console's save picked one
+
+`internal/toyohr/entries.go`, `CreateFestEntry` and `GetFestEntry`. The
+Discord bot's vote post writes the same fest entry a console's vote does
+(team only, no region), and the first pick is final. A console whose own save
+has not voted yet then reads an existing entry from `GetFestEntry`, and if it
+votes anyway, `CreateFestEntry` answers with the Discord team rather than the
+one it sent. Not known: whether the game adopts the server's team in that
+case, or keeps what its save says and shows the other team's colours. A
+console test settles it: vote on Discord, open the fest hall, see which team
+the game shows and which team a fest battle puts the player on. If the game
+does not follow the server, the vote post should refuse players whose
+account is linked to a console and tell them to vote in game.

@@ -897,6 +897,12 @@ func (s *Server) handleSetFestEnabled(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "load fest", err)
 		return
 	}
+	if body.Enabled && row.Resource == "" {
+		// A Discord-only fest from the bot's vote post: it has no BCAT pack,
+		// and announcing it would give every console a fest it cannot load.
+		http.Error(w, "this is a Discord-only fest with no BCAT pack, so it cannot be enabled in game", http.StatusConflict)
+		return
+	}
 	row.Enabled = body.Enabled
 	if err := s.store.UpsertFest(r.Context(), row); err != nil {
 		s.fail(w, "save fest", err)

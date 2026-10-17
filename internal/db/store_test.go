@@ -79,6 +79,8 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"festEntries":               testFestEntries,
 		"festBattles":               testFestBattles,
 		"firstFestEntryStands":      testFirstFestEntryStands,
+		"botFests":                  testBotFests,
+		"festSubmissions":           testFestSubmissions,
 		"penne":                     testPenne,
 		"coopShifts":                testCoopShifts,
 		"matches":                   testMatches,
@@ -2613,5 +2615,171 @@ func testFirstFestEntryStands(t *testing.T, s Store) {
 	}
 	if _, _, err := s.CreateFestEntry(ctx, FestEntry{FestID: "NXTD-99999", UserID: alice.ID, Team: "Alpha"}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("an entry in a missing fest returned %v, want ErrNotFound", err)
+	}
+}
+
+func testBotFests(t *testing.T, s Store) {
+	ctx := t.Context()
+	if err := s.UpsertBotFest(ctx, BotFest{FestID: "LANF-00001", Title: "nope", CreatedBy: "1"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a bot fest without its fest row returned %v, want ErrNotFound", err)
+	}
+	if err := s.UpsertFest(ctx, Fest{ID: "LANF-00001", StartAt: time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatal(err)
+	}
+	f := BotFest{
+		FestID: "LANF-00001", DiscordOnly: true, Title: "Frostyfest", Description: "Cookies?",
+		Teams: []BotFestTeam{
+			{Team: "Alpha", Name: "Cookies", Emoji: "🍪", RoleID: "111111111111111111"},
+			{Team: "Bravo", Name: "Snowmen", Emoji: "⛄", RoleID: "222222222222222222"},
+		},
+		DefaultWinPaint: 1800, DefaultLossPaint: 700, CreatedBy: "333333333333333333",
+	}
+	if err := s.UpsertBotFest(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := s.ClaimBotFestPost(ctx, f.FestID, "announced", time.Date(2026, 12, 10, 0, 0, 0, 0, time.UTC))
+	if err != nil || !ok {
+		t.Fatalf("first claim: %v %v", ok, err)
+	}
+	if ok, err := s.ClaimBotFestPost(ctx, f.FestID, "announced", time.Now()); err != nil || ok {
+		t.Fatalf("a second claim of the same post succeeded: %v %v", ok, err)
+	}
+	if _, err := s.ClaimBotFestPost(ctx, "LANF-99999", "announced", time.Now()); !errors.Is(err, ErrNotFound) {
+		t.Errorf("claiming on a missing fest returned %v, want ErrNotFound", err)
+	}
+	// Recording the vote post must not forget what was already announced.
+	f.ChannelID, f.MessageID = "444444444444444444", "555555555555555555"
+	if err := s.UpsertBotFest(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetBotFest(ctx, f.FestID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MessageID != f.MessageID || len(got.Teams) != 2 || got.Teams[1].Emoji != "⛄" || !got.DiscordOnly ||
+		got.DefaultWinPaint != 1800 || got.Posted["announced"].IsZero() {
+		t.Fatalf("bot fest round trip: %+v", got)
+	}
+	got.Teams[0].Name = "changed"
+	if again, _ := s.GetBotFest(ctx, f.FestID); again.Teams[0].Name != "Cookies" {
+		t.Error("mutating a read bot fest changed the stored one")
+	}
+	list, err := s.ListBotFests(ctx)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %v %v", list, err)
+	}
+	if err := s.DeleteBotFest(ctx, f.FestID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetBotFest(ctx, f.FestID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted bot fest returned %v", err)
+	}
+	if _, err := s.GetFest(ctx, f.FestID); err != nil {
+		t.Errorf("deleting the bot fest took its fest row: %v", err)
+	}
+	if err := s.UpsertBotFest(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteFest(ctx, f.FestID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetBotFest(ctx, f.FestID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a bot fest outlived its fest: %v", err)
+	}
+}
+
+func testFestSubmissions(t *testing.T, s Store) {
+	ctx := t.Context()
+	fest := Fest{ID: "LANF-00002", StartAt: time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC)}
+	if err := s.UpsertFest(ctx, fest); err != nil {
+		t.Fatal(err)
+	}
+	paint := int64(1234)
+	sub := FestSubmission{
+		ID: "sub-1", FestID: fest.ID, SubmittedBy: "111111111111111111",
+		WinningTeam: "Alpha", LosingTeam: "Bravo",
+		Players: []FestSubmissionPlayer{
+			{UserID: "u1", DiscordUserID: "111111111111111111", Team: "Alpha", Paint: &paint},
+			{UserID: "u2", DiscordUserID: "222222222222222222", Team: "Bravo"},
+		},
+		CreatedAt: time.Date(2026, 12, 15, 1, 0, 0, 0, time.UTC),
+	}
+	if err := s.CreateFestSubmission(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateFestSubmission(ctx, sub); !errors.Is(err, ErrConflict) {
+		t.Errorf("a duplicate submission id returned %v, want ErrConflict", err)
+	}
+	sub2 := sub
+	sub2.ID, sub2.CreatedAt = "sub-2", sub.CreatedAt.Add(time.Minute)
+	if err := s.CreateFestSubmission(ctx, sub2); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetFestSubmission(ctx, "sub-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != SubmissionPending || len(got.Players) != 2 || got.Players[0].Paint == nil ||
+		*got.Players[0].Paint != 1234 || got.Players[1].Paint != nil {
+		t.Fatalf("submission round trip: %+v", got)
+	}
+	if err := s.SetFestSubmissionMessage(ctx, "sub-1", "1", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetFestSubmissionMessage(ctx, "nope", "1", "2"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("message on a missing submission: %v", err)
+	}
+	flagged, err := s.FlagFestSubmission(ctx, "sub-1", FestSubmissionFlag{DiscordUserID: "222222222222222222", Reason: "we won", At: time.Now().UTC()})
+	if err != nil || len(flagged.Flags) != 1 || flagged.ReviewMessageID != "2" {
+		t.Fatalf("flag: %+v %v", flagged, err)
+	}
+
+	battle := FestBattle{FestID: fest.ID, BattleID: "lan-sub-1", Mode: "lan_regular", WinningTeam: "Alpha",
+		Ink: map[string]int64{}, FinishedAt: sub.CreatedAt}
+	players := []FestBattlePlayer{
+		{FestID: fest.ID, BattleID: "lan-sub-1", UserID: "u1", Team: "Alpha", Paint: 1234},
+		{FestID: fest.ID, BattleID: "lan-sub-1", UserID: "u2", Team: "Bravo", Paint: 700},
+	}
+	accepted, err := s.AcceptFestSubmission(ctx, "sub-1", "999999999999999999", sub.CreatedAt.Add(time.Hour), battle, players)
+	if err != nil || accepted.Status != SubmissionAccepted || accepted.ReviewedBy != "999999999999999999" {
+		t.Fatalf("accept: %+v %v", accepted, err)
+	}
+	if _, err := s.AcceptFestSubmission(ctx, "sub-1", "999999999999999999", time.Now(), battle, players); !errors.Is(err, ErrConflict) {
+		t.Errorf("accepting twice returned %v, want ErrConflict", err)
+	}
+	if _, err := s.RefuseFestSubmission(ctx, "sub-1", "9", "late", time.Now()); !errors.Is(err, ErrConflict) {
+		t.Errorf("refusing an accepted one returned %v, want ErrConflict", err)
+	}
+	if _, err := s.FlagFestSubmission(ctx, "sub-1", FestSubmissionFlag{}); !errors.Is(err, ErrConflict) {
+		t.Errorf("flagging a reviewed one returned %v, want ErrConflict", err)
+	}
+	if _, err := s.RefuseFestSubmission(ctx, "missing", "9", "x", time.Now()); !errors.Is(err, ErrNotFound) {
+		t.Errorf("refusing a missing one returned %v, want ErrNotFound", err)
+	}
+	battles, err := s.ListFestBattles(ctx, fest.ID)
+	if err != nil || len(battles) != 1 || battles[0].Ink["Alpha"] != 1234 || battles[0].Ink["Bravo"] != 700 {
+		t.Fatalf("accepted battle: %+v %v", battles, err)
+	}
+	recorded, err := s.ListFestBattlePlayers(ctx, fest.ID)
+	if err != nil || len(recorded) != 2 || recorded[0].UserID != "u1" {
+		t.Fatalf("battle players: %+v %v", recorded, err)
+	}
+
+	refused, err := s.RefuseFestSubmission(ctx, "sub-2", "999999999999999999", "no screenshot", sub.CreatedAt.Add(time.Hour))
+	if err != nil || refused.Status != SubmissionRefused || refused.Reason != "no screenshot" || refused.ReviewedAt.IsZero() {
+		t.Fatalf("refuse: %+v %v", refused, err)
+	}
+	if battles, _ := s.ListFestBattles(ctx, fest.ID); len(battles) != 1 {
+		t.Errorf("a refused submission was counted: %d battles", len(battles))
+	}
+	list, err := s.ListFestSubmissions(ctx, fest.ID)
+	if err != nil || len(list) != 2 || list[0].ID != "sub-1" {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+	if err := s.DeleteFest(ctx, fest.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetFestSubmission(ctx, "sub-1"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("a submission outlived its fest: %v", err)
 	}
 }

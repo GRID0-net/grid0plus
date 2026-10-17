@@ -1545,6 +1545,24 @@ func (p *Postgres) ListFestBattles(ctx context.Context, festID string) ([]FestBa
 	return out, mapErr(rows.Err())
 }
 
+func (p *Postgres) ListFestBattlePlayers(ctx context.Context, festID string) ([]FestBattlePlayer, error) {
+	rows, err := p.pool.Query(ctx, `SELECT fest_id, battle_id, user_id, team, paint
+		FROM npln_fest_battle_players WHERE fest_id = $1 ORDER BY battle_id, user_id`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []FestBattlePlayer
+	for rows.Next() {
+		var b FestBattlePlayer
+		if err := rows.Scan(&b.FestID, &b.BattleID, &b.UserID, &b.Team, &b.Paint); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, b)
+	}
+	return out, mapErr(rows.Err())
+}
+
 func (p *Postgres) CreateFestEntry(ctx context.Context, e FestEntry) (FestEntry, bool, error) {
 	stored, err := scanFestEntry(p.pool.QueryRow(ctx,
 		`INSERT INTO npln_fest_entries (fest_id, user_id, team, region)
@@ -1564,6 +1582,245 @@ func (p *Postgres) CreateFestEntry(ctx context.Context, e FestEntry) (FestEntry,
 	// No row came back: somebody already has an entry, and it stands.
 	stored, err = p.GetFestEntry(ctx, e.FestID, e.UserID)
 	return stored, false, err
+}
+
+// ---- the Discord bot's fests ---------------------------------------------
+
+const botFestColumns = `fest_id, discord_only, title, description, teams, channel_id, message_id,
+	default_win_paint, default_loss_paint, posted, created_by, created_at, updated_at`
+
+func scanBotFest(row interface{ Scan(...any) error }) (BotFest, error) {
+	var f BotFest
+	var teams, posted []byte
+	err := row.Scan(&f.FestID, &f.DiscordOnly, &f.Title, &f.Description, &teams, &f.ChannelID, &f.MessageID,
+		&f.DefaultWinPaint, &f.DefaultLossPaint, &posted, &f.CreatedBy, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return BotFest{}, mapErr(err)
+	}
+	if err := json.Unmarshal(teams, &f.Teams); err != nil {
+		return BotFest{}, err
+	}
+	f.Posted = map[string]time.Time{}
+	if err := json.Unmarshal(posted, &f.Posted); err != nil {
+		return BotFest{}, err
+	}
+	return f, nil
+}
+
+func (p *Postgres) UpsertBotFest(ctx context.Context, f BotFest) error {
+	teams, err := json.Marshal(f.Teams)
+	if err != nil {
+		return err
+	}
+	_, err = p.pool.Exec(ctx, `INSERT INTO bot_fests
+		(fest_id, discord_only, title, description, teams, channel_id, message_id,
+		 default_win_paint, default_loss_paint, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (fest_id) DO UPDATE SET
+		    discord_only       = EXCLUDED.discord_only,
+		    title              = EXCLUDED.title,
+		    description        = EXCLUDED.description,
+		    teams              = EXCLUDED.teams,
+		    channel_id         = EXCLUDED.channel_id,
+		    message_id         = EXCLUDED.message_id,
+		    default_win_paint  = EXCLUDED.default_win_paint,
+		    default_loss_paint = EXCLUDED.default_loss_paint,
+		    created_by         = EXCLUDED.created_by,
+		    updated_at         = now()`,
+		f.FestID, f.DiscordOnly, f.Title, f.Description, teams, f.ChannelID, f.MessageID,
+		f.DefaultWinPaint, f.DefaultLossPaint, f.CreatedBy)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetBotFest(ctx context.Context, festID string) (BotFest, error) {
+	return scanBotFest(p.pool.QueryRow(ctx,
+		`SELECT `+botFestColumns+` FROM bot_fests WHERE fest_id = $1`, festID))
+}
+
+func (p *Postgres) ListBotFests(ctx context.Context) ([]BotFest, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT `+botFestColumns+` FROM bot_fests ORDER BY created_at, fest_id`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []BotFest
+	for rows.Next() {
+		f, err := scanBotFest(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) DeleteBotFest(ctx context.Context, festID string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM bot_fests WHERE fest_id = $1`, festID)
+	return mapErr(err)
+}
+
+func (p *Postgres) ClaimBotFestPost(ctx context.Context, festID, kind string, at time.Time) (bool, error) {
+	stamp, err := json.Marshal(at.UTC())
+	if err != nil {
+		return false, err
+	}
+	tag, err := p.pool.Exec(ctx, `UPDATE bot_fests
+		SET posted = posted || jsonb_build_object($2::text, $3::jsonb)
+		WHERE fest_id = $1 AND posted -> $2::text IS NULL`, festID, kind, string(stamp))
+	if err != nil {
+		return false, mapErr(err)
+	}
+	if tag.RowsAffected() == 1 {
+		return true, nil
+	}
+	if _, err := p.GetBotFest(ctx, festID); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+const festSubmissionColumns = `id, fest_id, submitted_by, winning_team, losing_team, players, screenshot_url,
+	status, reason, reviewed_by, reviewed_at, flags, review_channel_id, review_message_id, created_at`
+
+func scanFestSubmission(row interface{ Scan(...any) error }) (FestSubmission, error) {
+	var s FestSubmission
+	var players, flags []byte
+	var reviewedAt *time.Time
+	err := row.Scan(&s.ID, &s.FestID, &s.SubmittedBy, &s.WinningTeam, &s.LosingTeam, &players, &s.ScreenshotURL,
+		&s.Status, &s.Reason, &s.ReviewedBy, &reviewedAt, &flags, &s.ReviewChannelID, &s.ReviewMessageID, &s.CreatedAt)
+	if err != nil {
+		return FestSubmission{}, mapErr(err)
+	}
+	if reviewedAt != nil {
+		s.ReviewedAt = *reviewedAt
+	}
+	if err := json.Unmarshal(players, &s.Players); err != nil {
+		return FestSubmission{}, err
+	}
+	if err := json.Unmarshal(flags, &s.Flags); err != nil {
+		return FestSubmission{}, err
+	}
+	return s, nil
+}
+
+func (p *Postgres) CreateFestSubmission(ctx context.Context, s FestSubmission) error {
+	players, err := json.Marshal(s.Players)
+	if err != nil {
+		return err
+	}
+	if s.Status == "" {
+		s.Status = SubmissionPending
+	}
+	if s.CreatedAt.IsZero() {
+		s.CreatedAt = time.Now().UTC()
+	}
+	_, err = p.pool.Exec(ctx, `INSERT INTO bot_fest_submissions
+		(id, fest_id, submitted_by, winning_team, losing_team, players, screenshot_url, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		s.ID, s.FestID, s.SubmittedBy, s.WinningTeam, s.LosingTeam, players, s.ScreenshotURL, s.Status, s.CreatedAt)
+	return mapErr(err)
+}
+
+func (p *Postgres) GetFestSubmission(ctx context.Context, id string) (FestSubmission, error) {
+	return scanFestSubmission(p.pool.QueryRow(ctx,
+		`SELECT `+festSubmissionColumns+` FROM bot_fest_submissions WHERE id = $1`, id))
+}
+
+func (p *Postgres) ListFestSubmissions(ctx context.Context, festID string) ([]FestSubmission, error) {
+	rows, err := p.pool.Query(ctx, `SELECT `+festSubmissionColumns+` FROM bot_fest_submissions
+		WHERE fest_id = $1 ORDER BY created_at, id`, festID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []FestSubmission
+	for rows.Next() {
+		s, err := scanFestSubmission(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, mapErr(rows.Err())
+}
+
+func (p *Postgres) SetFestSubmissionMessage(ctx context.Context, id, channelID, messageID string) error {
+	tag, err := p.pool.Exec(ctx, `UPDATE bot_fest_submissions
+		SET review_channel_id = $2, review_message_id = $3 WHERE id = $1`, id, channelID, messageID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// settleFestSubmission runs one conditional update on a pending submission,
+// telling a missing one (ErrNotFound) from a settled one (ErrConflict).
+func settleFestSubmission(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, id, set string, args ...any) (FestSubmission, error) {
+	all := append([]any{id}, args...)
+	s, err := scanFestSubmission(q.QueryRow(ctx, `UPDATE bot_fest_submissions SET `+set+`
+		WHERE id = $1 AND status = 'pending' RETURNING `+festSubmissionColumns, all...))
+	if errors.Is(err, ErrNotFound) {
+		if _, gerr := scanFestSubmission(q.QueryRow(ctx,
+			`SELECT `+festSubmissionColumns+` FROM bot_fest_submissions WHERE id = $1`, id)); gerr != nil {
+			return FestSubmission{}, gerr
+		}
+		return FestSubmission{}, ErrConflict
+	}
+	return s, err
+}
+
+func (p *Postgres) FlagFestSubmission(ctx context.Context, id string, f FestSubmissionFlag) (FestSubmission, error) {
+	flag, err := json.Marshal([]FestSubmissionFlag{f})
+	if err != nil {
+		return FestSubmission{}, err
+	}
+	return settleFestSubmission(ctx, p.pool, id, `flags = flags || $2::jsonb`, string(flag))
+}
+
+func (p *Postgres) RefuseFestSubmission(ctx context.Context, id, reviewer, reason string, at time.Time) (FestSubmission, error) {
+	return settleFestSubmission(ctx, p.pool, id,
+		`status = 'refused', reviewed_by = $2, reason = $3, reviewed_at = $4`, reviewer, reason, at)
+}
+
+func (p *Postgres) AcceptFestSubmission(ctx context.Context, id, reviewer string, at time.Time, b FestBattle, players []FestBattlePlayer) (FestSubmission, error) {
+	ink, err := json.Marshal(b.Ink)
+	if err != nil {
+		return FestSubmission{}, err
+	}
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return FestSubmission{}, mapErr(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	s, err := settleFestSubmission(ctx, tx, id,
+		`status = 'accepted', reviewed_by = $2, reviewed_at = $3`, reviewer, at)
+	if err != nil {
+		return FestSubmission{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO npln_fest_battles
+		(fest_id, battle_id, mode, winning_team, ink, finished_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (fest_id, battle_id) DO NOTHING`,
+		b.FestID, b.BattleID, b.Mode, b.WinningTeam, ink, b.FinishedAt); err != nil {
+		return FestSubmission{}, mapErr(err)
+	}
+	for _, pl := range players {
+		if _, err := tx.Exec(ctx, `INSERT INTO npln_fest_battle_players
+			(fest_id, battle_id, user_id, team, paint)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (fest_id, battle_id, user_id) DO NOTHING`,
+			b.FestID, b.BattleID, pl.UserID, pl.Team, pl.Paint); err != nil {
+			return FestSubmission{}, mapErr(err)
+		}
+	}
+	return s, mapErr(tx.Commit(ctx))
 }
 
 func scanFestEntry(row interface{ Scan(...any) error }) (FestEntry, error) {

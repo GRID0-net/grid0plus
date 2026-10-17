@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presencebus"
 	"github.com/n-popescu/grid0plus/internal/splat3save"
 )
 
@@ -62,12 +63,16 @@ type BotAPIOptions struct {
 	// SaveTable is the game's save key table, from the operator's file. Nil
 	// disables the save import.
 	SaveTable *splat3save.Table
+	// FestBus carries new fest entries from the game server to the bot's
+	// event stream. Nil leaves the stream answering that it is unavailable.
+	FestBus presencebus.Bus
 }
 
 // BotHandler serves the bot API.
 func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	b := &botAPI{s: s, token: opts.Token, health: opts.Health,
-		saveRecordPrefix: opts.SaveRecordPrefix, saveBackupDir: opts.SaveBackupDir, saveTable: opts.SaveTable}
+		saveRecordPrefix: opts.SaveRecordPrefix, saveBackupDir: opts.SaveBackupDir, saveTable: opts.SaveTable,
+		festBus: opts.FestBus}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /bot/v1/register", b.register)
 	mux.HandleFunc("POST /bot/v1/link", b.link)
@@ -86,6 +91,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux.HandleFunc("GET /bot/v1/status", b.status)
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/wipe", b.withDiscordID(b.wipeSplatoon3Save))
 	mux.HandleFunc("POST /bot/v1/splatoon3/save/import", b.withDiscordID(b.importSplatoon3Save))
+	b.festRoutes(mux)
 	return b.authenticate(mux)
 }
 
@@ -97,6 +103,7 @@ type botAPI struct {
 	saveRecordPrefix string
 	saveBackupDir    string
 	saveTable        *splat3save.Table
+	festBus          presencebus.Bus
 }
 
 // botError is the API's one error shape. Code is stable for the bot to switch

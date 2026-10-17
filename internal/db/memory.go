@@ -39,6 +39,8 @@ type Memory struct {
 	festBattles map[string]map[string]FestBattle
 	// festBattlePlayers is keyed by fest, then battle/user.
 	festBattlePlayers map[string]map[string]FestBattlePlayer
+	botFests          map[string]BotFest
+	festSubmissions   map[string]FestSubmission
 
 	penneTokens  map[string]PenneToken
 	pushChannels map[string]PushChannel // user/device account
@@ -74,6 +76,8 @@ func NewMemory() *Memory {
 		festEntries:       map[string]map[string]FestEntry{},
 		festBattles:       map[string]map[string]FestBattle{},
 		festBattlePlayers: map[string]map[string]FestBattlePlayer{},
+		botFests:          map[string]BotFest{},
+		festSubmissions:   map[string]FestSubmission{},
 		penneTokens:       map[string]PenneToken{},
 		pushChannels:      map[string]PushChannel{},
 		penneTickets:      map[string]penneTicket{},
@@ -1532,6 +1536,12 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	delete(m.festEntries, id)
 	delete(m.festBattles, id)
 	delete(m.festBattlePlayers, id)
+	delete(m.botFests, id)
+	for sid, sub := range m.festSubmissions {
+		if sub.FestID == id {
+			delete(m.festSubmissions, sid)
+		}
+	}
 	return nil
 }
 
@@ -1643,6 +1653,22 @@ func (m *Memory) ListFestBattles(_ context.Context, festID string) ([]FestBattle
 	return out, nil
 }
 
+func (m *Memory) ListFestBattlePlayers(_ context.Context, festID string) ([]FestBattlePlayer, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]FestBattlePlayer, 0, len(m.festBattlePlayers[festID]))
+	for _, p := range m.festBattlePlayers[festID] {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].BattleID != out[j].BattleID {
+			return out[i].BattleID < out[j].BattleID
+		}
+		return out[i].UserID < out[j].UserID
+	})
+	return out, nil
+}
+
 func (m *Memory) CreateFestEntry(_ context.Context, e FestEntry) (FestEntry, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1661,6 +1687,225 @@ func (m *Memory) CreateFestEntry(_ context.Context, e FestEntry) (FestEntry, boo
 	e.CreatedAt, e.UpdatedAt = now, now
 	byUser[e.UserID] = e
 	return e, true, nil
+}
+
+// ---- the Discord bot's fests ----------------------------------------------
+
+func cloneBotFest(f BotFest) BotFest {
+	f.Teams = append([]BotFestTeam(nil), f.Teams...)
+	posted := make(map[string]time.Time, len(f.Posted))
+	for k, v := range f.Posted {
+		posted[k] = v
+	}
+	f.Posted = posted
+	return f
+}
+
+func (m *Memory) UpsertBotFest(_ context.Context, f BotFest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.fests[f.FestID]; !ok {
+		return ErrNotFound
+	}
+	now := time.Now().UTC()
+	f = cloneBotFest(f)
+	if existing, ok := m.botFests[f.FestID]; ok {
+		f.CreatedAt, f.Posted = existing.CreatedAt, existing.Posted
+	} else {
+		f.CreatedAt, f.Posted = now, map[string]time.Time{}
+	}
+	f.UpdatedAt = now
+	m.botFests[f.FestID] = f
+	return nil
+}
+
+func (m *Memory) GetBotFest(_ context.Context, festID string) (BotFest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	f, ok := m.botFests[festID]
+	if !ok {
+		return BotFest{}, ErrNotFound
+	}
+	return cloneBotFest(f), nil
+}
+
+func (m *Memory) ListBotFests(_ context.Context) ([]BotFest, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]BotFest, 0, len(m.botFests))
+	for _, f := range m.botFests {
+		out = append(out, cloneBotFest(f))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].FestID < out[j].FestID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) DeleteBotFest(_ context.Context, festID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.botFests, festID)
+	return nil
+}
+
+func (m *Memory) ClaimBotFestPost(_ context.Context, festID, kind string, at time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f, ok := m.botFests[festID]
+	if !ok {
+		return false, ErrNotFound
+	}
+	if _, done := f.Posted[kind]; done {
+		return false, nil
+	}
+	f = cloneBotFest(f)
+	f.Posted[kind] = at
+	m.botFests[festID] = f
+	return true, nil
+}
+
+func cloneSubmission(s FestSubmission) FestSubmission {
+	players := make([]FestSubmissionPlayer, len(s.Players))
+	for i, p := range s.Players {
+		if p.Paint != nil {
+			paint := *p.Paint
+			p.Paint = &paint
+		}
+		players[i] = p
+	}
+	s.Players = players
+	s.Flags = append([]FestSubmissionFlag(nil), s.Flags...)
+	return s
+}
+
+func (m *Memory) CreateFestSubmission(_ context.Context, s FestSubmission) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.fests[s.FestID]; !ok {
+		return ErrNotFound
+	}
+	if _, exists := m.festSubmissions[s.ID]; exists {
+		return ErrConflict
+	}
+	s = cloneSubmission(s)
+	if s.Status == "" {
+		s.Status = SubmissionPending
+	}
+	if s.CreatedAt.IsZero() {
+		s.CreatedAt = time.Now().UTC()
+	}
+	m.festSubmissions[s.ID] = s
+	return nil
+}
+
+func (m *Memory) GetFestSubmission(_ context.Context, id string) (FestSubmission, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s, ok := m.festSubmissions[id]
+	if !ok {
+		return FestSubmission{}, ErrNotFound
+	}
+	return cloneSubmission(s), nil
+}
+
+func (m *Memory) ListFestSubmissions(_ context.Context, festID string) ([]FestSubmission, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []FestSubmission
+	for _, s := range m.festSubmissions {
+		if s.FestID == festID {
+			out = append(out, cloneSubmission(s))
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+func (m *Memory) SetFestSubmissionMessage(_ context.Context, id, channelID, messageID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.festSubmissions[id]
+	if !ok {
+		return ErrNotFound
+	}
+	s.ReviewChannelID, s.ReviewMessageID = channelID, messageID
+	m.festSubmissions[id] = s
+	return nil
+}
+
+func (m *Memory) FlagFestSubmission(_ context.Context, id string, f FestSubmissionFlag) (FestSubmission, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.festSubmissions[id]
+	if !ok {
+		return FestSubmission{}, ErrNotFound
+	}
+	if s.Status != SubmissionPending {
+		return FestSubmission{}, ErrConflict
+	}
+	s = cloneSubmission(s)
+	s.Flags = append(s.Flags, f)
+	m.festSubmissions[id] = s
+	return cloneSubmission(s), nil
+}
+
+func (m *Memory) RefuseFestSubmission(_ context.Context, id, reviewer, reason string, at time.Time) (FestSubmission, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.festSubmissions[id]
+	if !ok {
+		return FestSubmission{}, ErrNotFound
+	}
+	if s.Status != SubmissionPending {
+		return FestSubmission{}, ErrConflict
+	}
+	s.Status, s.ReviewedBy, s.Reason, s.ReviewedAt = SubmissionRefused, reviewer, reason, at
+	m.festSubmissions[id] = s
+	return cloneSubmission(s), nil
+}
+
+func (m *Memory) AcceptFestSubmission(_ context.Context, id, reviewer string, at time.Time, b FestBattle, players []FestBattlePlayer) (FestSubmission, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.festSubmissions[id]
+	if !ok {
+		return FestSubmission{}, ErrNotFound
+	}
+	if s.Status != SubmissionPending {
+		return FestSubmission{}, ErrConflict
+	}
+	if _, ok := m.fests[b.FestID]; !ok {
+		return FestSubmission{}, ErrNotFound
+	}
+	if m.festBattles[b.FestID] == nil {
+		m.festBattles[b.FestID] = map[string]FestBattle{}
+	}
+	if _, exists := m.festBattles[b.FestID][b.BattleID]; !exists {
+		b.Ink = cloneInk(b.Ink)
+		m.festBattles[b.FestID][b.BattleID] = b
+	}
+	if m.festBattlePlayers[b.FestID] == nil {
+		m.festBattlePlayers[b.FestID] = map[string]FestBattlePlayer{}
+	}
+	for _, p := range players {
+		p.FestID, p.BattleID = b.FestID, b.BattleID
+		key := p.BattleID + "/" + p.UserID
+		if _, exists := m.festBattlePlayers[b.FestID][key]; !exists {
+			m.festBattlePlayers[b.FestID][key] = p
+		}
+	}
+	s.Status, s.ReviewedBy, s.ReviewedAt = SubmissionAccepted, reviewer, at
+	m.festSubmissions[id] = s
+	return cloneSubmission(s), nil
 }
 
 func cloneInk(in map[string]int64) map[string]int64 {

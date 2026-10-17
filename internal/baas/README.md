@@ -30,6 +30,7 @@ to**, and the only place in GRID0+ where identity is decided.
 | `nalink.go` | the Nintendo Account link flow (`accounts.nintendo.com`) — GRID0+'s own login page, not a copy of anyone's real OAuth |
 | `people.go` | creating a person's account (login, password hash, friend code), independent of any console |
 | `botapi.go` | the Discord bot's account API (`baas.bot_api`): the only way to create a person's account, plus friends, avatars, who is online and status. Loopback only, shared token, caller named by Discord user id. One Discord account owns several GRID0+ accounts — the first is its main account, the rest are named by login, and a password reset reaches only the caller's own; see [`n-popescu/grid0plus-discord`](https://github.com/n-popescu/grid0plus-discord) |
+| `botfest.go` | the bot API's Splatfest side: the vote post (in-game or Discord-only fest), first-pick-final votes, LAN games players submit and a mod accepts or refuses, standings no earlier than the game shows them, and `GET /bot/v1/fest-events`, the stream that gives a player the team role the moment they pick in game. See [The Discord bot's fests](#the-discord-bots-fests) |
 | `provision.go` | device account id/password shape and validation, shared by registration and login |
 | `ratelimit.go` | the sliding-window limiter over login attempts |
 | `wire.go` | form/JSON body decoding shared by every handler |
@@ -126,3 +127,32 @@ The bot's authenticated `GET /bot/v1/presence-count` returns idle `online`,
 SELF exclusion. It counts accounts once, not device connections. Two bulk
 reads avoid health probes and per-user friend-code lookups during activity
 refreshes; expired reports and deleted users do not inflate the result.
+
+## The Discord bot's fests
+
+`botfest.go`. The Splatfest Discord server ran its fests over LAN, with a bot
+counting games; this lets those players, on consoles without CFW reaching
+GRID0 over its ZeroTier relay, count in the same fests as GRID0+'s online ones.
+
+- **Every bot fest is a fest row.** Votes, battles and results live in the
+  console's own tables and go through toyohr's scoring, so the bot and the game
+  cannot disagree. A Discord-only fest (`LANF-` id) is a row with no pack that
+  is never enabled; every console-facing path skips disabled fests, and the
+  dashboard refuses to enable one.
+- **The first pick is final**, from the vote post as from the game
+  (`Store.CreateFestEntry`, see `internal/toyohr/README.md`).
+- **A LAN game counts like an online win** once a mod accepts it: a battle
+  `lan-<submission>` in mode `lan_regular`, which the Regular (Open) category
+  counts. Every player must have an account and a team; a player's missing
+  paint is this fest's online average for their side, or the fest's own
+  default before anyone played online. Accepting and recording the battle is
+  one transaction, and a submission can be settled once.
+- **Standings are never earlier than the game's**: nothing during the first
+  half, the halftime ranking from the second half, the result once out
+  (`toyohr.FestStandings`).
+- **In-game votes reach the bot as they happen**, without polling: npln
+  publishes each new entry on the Redis channel `<redis.channel>.fest`, and the
+  bot holds `GET /bot/v1/fest-events` open. Pub/sub drops what nobody heard, so
+  the bot reads `GET /bot/v1/fests/{id}/entries` once per reconnect. Without
+  `redis.url` the stream answers 503. Roles follow a Discord account's main
+  account only, so one person with two accounts cannot hold two team roles.

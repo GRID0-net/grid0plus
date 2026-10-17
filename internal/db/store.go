@@ -465,6 +465,84 @@ type FestBattlePlayer struct {
 	Paint                          int64
 }
 
+// BotFest is a Splatfest as the Discord bot runs it: the vote post and the
+// announcements it has made. FestID always names a row in the fest table, so
+// votes and battles live where the console's do; a DiscordOnly fest is that
+// row kept disabled, which no console ever sees.
+type BotFest struct {
+	FestID      string
+	DiscordOnly bool
+	Title       string
+	Description string
+	Teams       []BotFestTeam
+	// ChannelID and MessageID locate the vote post, once the bot has made it.
+	ChannelID, MessageID string
+	// DefaultWinPaint and DefaultLossPaint stand in for a LAN player's paint
+	// when nobody gave it and no online battle has been played to average.
+	DefaultWinPaint, DefaultLossPaint int64
+	// Posted holds when each announcement kind was made.
+	Posted    map[string]time.Time
+	CreatedBy string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// BotFestTeam is one side of a bot fest. Team is the protocol's name for it
+// (Alpha, Bravo, Charlie), which is what entries and battles are stored under.
+type BotFestTeam struct {
+	Team   string `json:"team"`
+	Name   string `json:"name"`
+	Emoji  string `json:"emoji"`
+	RoleID string `json:"roleId"`
+}
+
+// Fest submission states.
+const (
+	SubmissionPending  = "pending"
+	SubmissionAccepted = "accepted"
+	SubmissionRefused  = "refused"
+)
+
+// FestSubmission is a LAN game a player reported, waiting for or past a mod's
+// review. Only an accepted one becomes a FestBattle.
+type FestSubmission struct {
+	ID          string
+	FestID      string
+	SubmittedBy string // Discord user id
+	WinningTeam string
+	LosingTeam  string
+	Players     []FestSubmissionPlayer
+	// ScreenshotURL is the results screen, when one was attached.
+	ScreenshotURL string
+
+	Status     string
+	Reason     string
+	ReviewedBy string // Discord user id
+	ReviewedAt time.Time
+	Flags      []FestSubmissionFlag
+
+	ReviewChannelID, ReviewMessageID string
+
+	CreatedAt time.Time
+}
+
+// FestSubmissionPlayer is one player of a submitted LAN game. Paint is nil when
+// nobody gave it.
+type FestSubmissionPlayer struct {
+	UserID        string `json:"userId"`
+	DiscordUserID string `json:"discordUserId"`
+	Team          string `json:"team"`
+	Paint         *int64 `json:"paint,omitempty"`
+}
+
+// FestSubmissionFlag is a player disputing a submission before review.
+type FestSubmissionFlag struct {
+	DiscordUserID string    `json:"discordUserId"`
+	Reason        string    `json:"reason"`
+	At            time.Time `json:"at"`
+}
+
 // PenneToken is a notification token npns obtained from Penne for one local
 // account on one console; PushChannel is that token as BAAS learnt it for a
 // signed-in user. Together they say where a push to a user goes.
@@ -776,11 +854,49 @@ type Store interface {
 	// RecordFestBattlePlayer is idempotent per player: a console may report
 	// the same match more than once, and each report must count once.
 	RecordFestBattlePlayer(ctx context.Context, p FestBattlePlayer) error
+	// ListFestBattlePlayers returns every recorded player of every battle of
+	// a fest, ordered by battle then user.
+	ListFestBattlePlayers(ctx context.Context, festID string) ([]FestBattlePlayer, error)
 	// CreateFestEntry records a player's team only if they have none yet, and
 	// returns the entry that stands either way: the first pick is final, and
 	// a console and the Discord bot voting at the same moment must not both
 	// win. created reports whether e was the one stored.
 	CreateFestEntry(ctx context.Context, e FestEntry) (stored FestEntry, created bool, err error)
+
+	// ---- the Discord bot's fests ----
+
+	// UpsertBotFest creates or replaces a bot fest. ErrNotFound when its fest
+	// row does not exist. Posted is left as stored: ClaimBotFestPost owns it.
+	UpsertBotFest(ctx context.Context, f BotFest) error
+	// GetBotFest returns a bot fest by fest id, or ErrNotFound.
+	GetBotFest(ctx context.Context, festID string) (BotFest, error)
+	// ListBotFests returns every bot fest, oldest first.
+	ListBotFests(ctx context.Context) ([]BotFest, error)
+	// DeleteBotFest removes a bot fest, not its fest row. Idempotent.
+	DeleteBotFest(ctx context.Context, festID string) error
+	// ClaimBotFestPost marks one announcement kind made, and reports false
+	// when it already was: two bot processes, or one restarting, must not
+	// both post it.
+	ClaimBotFestPost(ctx context.Context, festID, kind string, at time.Time) (bool, error)
+
+	// CreateFestSubmission stores a new pending submission.
+	CreateFestSubmission(ctx context.Context, s FestSubmission) error
+	// GetFestSubmission returns a submission by id, or ErrNotFound.
+	GetFestSubmission(ctx context.Context, id string) (FestSubmission, error)
+	// ListFestSubmissions returns a fest's submissions, oldest first.
+	ListFestSubmissions(ctx context.Context, festID string) ([]FestSubmission, error)
+	// SetFestSubmissionMessage records where the review post is.
+	SetFestSubmissionMessage(ctx context.Context, id, channelID, messageID string) error
+	// FlagFestSubmission adds a dispute. ErrConflict once it is reviewed.
+	FlagFestSubmission(ctx context.Context, id string, f FestSubmissionFlag) (FestSubmission, error)
+	// RefuseFestSubmission settles a pending submission as refused.
+	// ErrConflict when it is no longer pending.
+	RefuseFestSubmission(ctx context.Context, id, reviewer, reason string, at time.Time) (FestSubmission, error)
+	// AcceptFestSubmission settles a pending submission as accepted and
+	// records its battle and players in the same step, so an accepted game
+	// is always counted and a counted game is always an accepted one.
+	// ErrConflict when it is no longer pending.
+	AcceptFestSubmission(ctx context.Context, id, reviewer string, at time.Time, b FestBattle, players []FestBattlePlayer) (FestSubmission, error)
 
 	// ---- push notifications (Penne) ----
 

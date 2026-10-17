@@ -951,3 +951,22 @@ func TestConsolePlaceholdersCannotAppearInOrCrowdOutThePlayersView(t *testing.T)
 		t.Fatal("hiding a placeholder deleted its cached device credential", err)
 	}
 }
+
+// A Discord-only fest from the bot's vote post has no BCAT pack; announcing
+// it would give every console a fest it cannot load.
+func TestADiscordOnlyFestCannotBeEnabledInGame(t *testing.T) {
+	now := time.Now().UTC()
+	srv, store := newTestServer(t, "", now)
+	if err := store.UpsertFest(context.Background(), db.Fest{ID: "LANF-00001", StartAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/api/fests/LANF-00001/enabled",
+		strings.NewReader(`{"enabled":true}`)))
+	if rec.Code != http.StatusConflict {
+		t.Errorf("enabling a Discord-only fest: %d %s", rec.Code, rec.Body)
+	}
+	if row, _ := store.GetFest(context.Background(), "LANF-00001"); row.Enabled {
+		t.Error("the Discord-only fest was enabled")
+	}
+}
