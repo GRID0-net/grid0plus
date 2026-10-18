@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -83,6 +84,24 @@ func (b *botAPI) archiveSave(uid, why string, fields []byte) (string, error) {
 	return backup, os.WriteFile(backup, fields, 0o600)
 }
 
+// keepForReview stores an uploaded save whose fields were not all imported,
+// with the list of what was left out, under <backup dir>/../splat3-save-review/
+// <uid>/<time>/. Adding the names and importing the kept save.dat again
+// brings those fields back.
+func (b *botAPI) keepForReview(uid string, save []byte, info splat3save.Info) (string, error) {
+	dir := filepath.Join(filepath.Dir(b.saveBackupDir), "splat3-save-review", uid,
+		time.Now().UTC().Format("20060102T150405Z"))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "save.dat"), save, 0o600); err != nil {
+		return "", err
+	}
+	list := "game version " + info.GameVersion + "\nfields left out (path: name hash):\n" +
+		strings.Join(info.Unknown, "\n") + "\n"
+	return dir, os.WriteFile(filepath.Join(dir, "unknown.txt"), []byte(list), 0o600)
+}
+
 // maxSaveUpload bounds an uploaded save.dat, base64 in JSON. The game reads
 // its save into a 1 MiB buffer; real saves are about 80 KB.
 const maxSaveUpload = 2 << 20
@@ -127,6 +146,18 @@ func (b *botAPI) importSplatoon3Save(w http.ResponseWriter, r *http.Request, dis
 		writeBotError(w, http.StatusUnprocessableEntity, code, err.Error())
 		return
 	}
+	// Fields with unknown names are left out of the record; the save itself
+	// is kept so they can be added later, and nothing a player brought is
+	// lost.
+	review := ""
+	if len(info.Unknown) > 0 {
+		if review, err = b.keepForReview(user.ID, req.Save, info); err != nil {
+			b.internal(w, "keep save for review", err)
+			return
+		}
+		b.s.log.Warn("botapi: Splatoon 3 save has fields with unknown names; imported without them",
+			"user", user.ID, "unknown", len(info.Unknown), "review", review)
+	}
 	fields, err := proto.Marshal(rec)
 	if err != nil {
 		b.internal(w, "encode save record", err)
@@ -167,6 +198,9 @@ func (b *botAPI) importSplatoon3Save(w http.ResponseWriter, r *http.Request, dis
 	resp := map[string]any{"login": user.LoginUsername, "gameVersion": info.GameVersion, "bytes": len(fields)}
 	if backup != "" {
 		resp["backup"] = filepath.Base(backup)
+	}
+	if review != "" {
+		resp["setAside"] = len(info.Unknown)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

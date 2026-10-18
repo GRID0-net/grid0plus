@@ -192,6 +192,12 @@ func warn(cfg config.Config) {
 					"turned on.\n", err)
 		}
 	}
+	if p := cfg.BAAS.BotAPI.Splatoon3SaveNames; p != "" {
+		if _, err := os.Stat(p); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: baas.bot_api.splatoon3_save_names: %v. Only the built-in "+
+				"field names are used.\n", err)
+		}
+	}
 	if cfg.Network.PublicIP == "" {
 		fmt.Fprintln(os.Stderr,
 			"warning: network.public_ip is empty; 'switchnetctl hosts' cannot run")

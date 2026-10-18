@@ -208,6 +208,11 @@ baas:
     # game's 128-byte save key table (main 0x71050b6dec in 11.3.0), which is
     # never in this repository. Empty turns the import off.
     splatoon3_save_table: ""
+    # Optional: more save field names, one per line, e.g. every identifier
+    # in the game's main binary. Fields newer than the built-in list are then
+    # imported; ones still unknown are left out and the save is kept under
+    # data/splat3-save-review/<user>/ for review.
+    splatoon3_save_names: ""
 
   # How many login attempts (POST /1.0.0/login and federation) one client
   # address gets per login_window_seconds, before further attempts from it are

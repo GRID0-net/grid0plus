@@ -22,15 +22,29 @@ operator supplies it as a 128-byte file (`baas.bot_api.splatoon3_save_table`);
 without it the import is off. Tests use a made-up table.
 
 `names.txt` is only field names: the save stores `murmur3_32(name, 0)` and the
-record spells the name out. It holds every field seen in a decoded 11.3.0
-save and in a stored record. A save carrying a field the list does not know
-is refused rather than imported with that field lost.
+record spells the name out. It holds every field seen in decoded saves and in
+stored records. The operator can add more with `baas.bot_api.splatoon3_save_names`,
+one name per line. A list of every identifier in the game's main binary
+resolves fields newer than this list without a release. It is cut from a game
+dump, so it stays an operator file, like the key table.
+
+A field still unknown is left out of the record and reported (`Info.Unknown`),
+not refused. The import then keeps the uploaded save and the list under
+`data/splat3-save-review/<user>/<time>/`. To bring those fields back: find
+each hash's name (hash the game's strings), add it to `names.txt` or the
+operator list, and import the kept `save.dat` again.
+
+A map none of whose names is known would otherwise pass for an id map and be
+stored under numbers. So a map with a key of 2^24 or more is taken for a
+struct of unknown fields; game ids stay below that. The exception is a field
+named `...Map` or `...Map_<mode>` (`PaletteRewardAcceptFlagMap_Sdodr`), whose
+ids are themselves hashes.
 
 ## How a map's keys are spelled
 
 Decided per map, from what a stored record does:
 
-- the value of a field ending in `Map` is keyed by ids, written as unsigned
+- the value of a field ending in `Map`, or `Map_<mode>`, is keyed by ids, written as unsigned
   decimal strings — even when an id is itself a hash of a name
   (`CloudRandomSet.Map`);
 - any other map is a struct if every key is a known name, an id map if none

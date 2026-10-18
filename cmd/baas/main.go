@@ -161,6 +161,13 @@ func main() {
 	// validation has already refused a listen address without a real token.
 	if cfg.BAAS.BotAPI.Listen != "" {
 		var saveTable *splat3save.Table
+		if p := cfg.BAAS.BotAPI.Splatoon3SaveNames; p != "" {
+			if n, err := splat3save.LoadNames(p); err != nil {
+				log.Error("cannot load splatoon3_save_names; using the built-in field names", "error", err)
+			} else {
+				log.Info("loaded extra Splatoon 3 save field names", "added", n)
+			}
+		}
 		if p := cfg.BAAS.BotAPI.Splatoon3SaveTable; p != "" {
 			// Not fatal: an optional feature's bad path must not stop
 			// sign-in. switchnetctl check reports it too.

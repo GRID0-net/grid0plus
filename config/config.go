@@ -255,6 +255,11 @@ type BotAPI struct {
 	// which turns on the save import (internal/splat3save). It is game key
 	// material and stays an operator file. Empty turns the import off.
 	Splatoon3SaveTable string `yaml:"splatoon3_save_table"`
+	// Splatoon3SaveNames is an optional file of extra save field names, one
+	// per line, cut from the game's own strings. It resolves fields newer
+	// than the built-in list; anything still unknown is left out of an
+	// import and kept for review. Empty uses the built-in list only.
+	Splatoon3SaveNames string `yaml:"splatoon3_save_names"`
 }
 
 // SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
@@ -960,6 +965,7 @@ func applyEnv(c *Config) {
 	envStr("SWITCHNET_BAAS_BOT_API_LISTEN", &c.BAAS.BotAPI.Listen)
 	envStr("SWITCHNET_BAAS_BOT_API_TOKEN", &c.BAAS.BotAPI.Token)
 	envStr("SWITCHNET_BAAS_BOT_API_SPLATOON3_SAVE_TABLE", &c.BAAS.BotAPI.Splatoon3SaveTable)
+	envStr("SWITCHNET_BAAS_BOT_API_SPLATOON3_SAVE_NAMES", &c.BAAS.BotAPI.Splatoon3SaveNames)
 	envStr("SWITCHNET_BAAS_ISSUER", &c.BAAS.Issuer)
 	envStr("SWITCHNET_BAAS_AUDIENCE", &c.BAAS.Audience)
 	envStr("SWITCHNET_BAAS_IMAGE_DIR", &c.BAAS.ImageDir)

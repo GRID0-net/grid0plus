@@ -89,11 +89,49 @@ func TestASaveBecomesTheRecordWithNamesAndDecimalIds(t *testing.T) {
 	}
 }
 
-func TestAFieldWithAnUnknownNameRefusesTheImport(t *testing.T) {
+// An unknown field is left out and reported, not refused: the caller keeps
+// the save for it, and the player still gets everything else.
+func TestAnUnknownFieldIsLeftOutAndReported(t *testing.T) {
 	server := mp{}.mapN(2).key("Money").fix(1).key("NotAFieldTheListKnows").fix(2)
-	_, _, err := Decode(save(server), fakeTable())
-	if err == nil || !strings.Contains(err.Error(), "unknown names") {
-		t.Fatalf("err = %v, want a refusal naming the unknown field", err)
+	rec, info, err := Decode(save(server), fakeTable())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Fields["Money"].GetIntegerValue() != 1 || len(rec.Fields) != 1 {
+		t.Fatalf("record = %v, want Money only", rec.Fields)
+	}
+	if len(info.Unknown) != 1 || !strings.HasPrefix(info.Unknown[0], "the record: 0x") {
+		t.Fatalf("unknown = %v", info.Unknown)
+	}
+}
+
+// A struct none of whose names is known must not pass for an id map and be
+// stored under numbers.
+func TestAStructOfOnlyUnknownNamesIsNotAnIdMap(t *testing.T) {
+	inner := mp{}.mapN(1).key("NotAFieldTheListKnows").fix(3)
+	server := append(mp{}.mapN(1).key("Shop"), inner...)
+	rec, info, err := Decode(save(server), fakeTable())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(rec.Fields["Shop"].GetMapValue().GetFields()); n != 0 || len(info.Unknown) != 1 {
+		t.Fatalf("Shop = %v, unknown = %v", rec.Fields["Shop"], info.Unknown)
+	}
+}
+
+func TestOperatorNamesResolveFieldsTheListLacks(t *testing.T) {
+	path := t.TempDir() + "/names.txt"
+	if err := os.WriteFile(path, []byte("NotAFieldTheListKnows\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadNames(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { delete(byHash, murmur3([]byte("NotAFieldTheListKnows"), 0)) })
+	server := mp{}.mapN(1).key("NotAFieldTheListKnows").fix(2)
+	rec, info, err := Decode(save(server), fakeTable())
+	if err != nil || rec.Fields["NotAFieldTheListKnows"] == nil || len(info.Unknown) != 0 {
+		t.Fatalf("record = %v, unknown = %v, err = %v", rec, info.Unknown, err)
 	}
 }
 

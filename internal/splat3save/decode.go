@@ -10,6 +10,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,10 @@ type Info struct {
 	GameVersion string
 	// Fields is the number of top-level fields in the server record.
 	Fields int
+	// Unknown lists every field left out of the record because its name is
+	// not known, as "path: hash". The record is everything else; the caller
+	// keeps the original save for these.
+	Unknown []string
 }
 
 // names are the save's field names. The save stores murmur3_32(name, 0)
@@ -54,6 +59,34 @@ var byHash = func() map[uint32]string {
 	}
 	return m
 }()
+
+// LoadNames adds field names from an operator file, one per line: a list
+// taken from the game's own strings resolves fields newer than names.txt
+// without a release. Names are not key material, but a list cut from a game
+// dump stays with the operator, like the key table. Call it before decoding.
+func LoadNames(path string) (int, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	added := 0
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		n := strings.TrimSpace(sc.Text())
+		if n == "" {
+			continue
+		}
+		h := murmur3([]byte(n), 0)
+		if _, ok := byHash[h]; ok {
+			// names.txt wins: two strings can share a hash, and the
+			// embedded list is the one checked against stored records.
+			continue
+		}
+		byHash[h] = n
+		added++
+	}
+	return added, sc.Err()
+}
 
 // header is "MS", format version 4, which the game's loader checks first.
 var header = []byte{'M', 'S', 0, 4}
@@ -89,11 +122,12 @@ func Decode(file []byte, t *Table) (*common.MapValue, Info, error) {
 	if server.kind != kindMap {
 		return nil, info, errors.New("splat3save: server half is not a map")
 	}
-	m, err := convertMap(server, "", false)
+	d := &decoder{}
+	m, err := d.convertMap(server, "", false)
 	if err != nil {
 		return nil, info, err
 	}
-	info.Fields = len(m.Fields)
+	info.Fields, info.Unknown = len(m.Fields), d.unknown
 	return m, info, nil
 }
 
@@ -110,10 +144,10 @@ func Decode(file []byte, t *Table) (*common.MapValue, Info, error) {
 //   - a mix is refused. It means a field this list does not know, and the
 //     import replaces the whole record, so writing that field under a number
 //     would lose it silently.
-func convertMap(n node, path string, idMap bool) (*common.MapValue, error) {
+func (d *decoder) convertMap(n node, path string, idMap bool) (*common.MapValue, error) {
 	out := &common.MapValue{Fields: make(map[string]*common.Value, len(n.keys))}
 	keys := make([]string, len(n.keys))
-	named, unknown := 0, []string{}
+	named := 0
 	for i, k := range n.keys {
 		var id string
 		switch k.kind {
@@ -131,12 +165,39 @@ func convertMap(n node, path string, idMap bool) (*common.MapValue, error) {
 		if name, ok := byHash[uint32(k.u)]; ok {
 			keys[i] = name
 			named++
-		} else {
-			unknown = append(unknown, fmt.Sprintf("%#08x", k.u))
 		}
 	}
-	if !idMap && named > 0 && named < len(keys) {
-		return nil, fmt.Errorf("splat3save: %s has fields with unknown names %v", pathOr(path), unknown)
+	// A struct whose names are all unknown would otherwise pass for an id map
+	// and be stored under numbers: ids are small, a name's hash almost never
+	// is. Every key of such a map is an unknown field.
+	if !idMap && named == 0 && len(keys) > 0 && hashLike(n.keys) {
+		named = -1
+	}
+	if !idMap && (named < 0 || named > 0 && named < len(keys)) {
+		// Left out and reported rather than refused: the caller keeps the
+		// save itself, so nothing is lost, and the player still gets the
+		// rest of their save.
+		skip := map[int]bool{}
+		for i, k := range n.keys {
+			if k.kind != kindUint || k.u > 0xffffffff {
+				continue
+			}
+			if _, ok := byHash[uint32(k.u)]; !ok {
+				skip[i] = true
+				d.unknown = append(d.unknown, fmt.Sprintf("%s: %#08x", pathOr(path), k.u))
+			}
+		}
+		for i := range keys {
+			if skip[i] {
+				continue
+			}
+			v, err := d.convertValue(n.elems[i], path+"."+keys[i], idMapName(keys[i]))
+			if err != nil {
+				return nil, err
+			}
+			out.Fields[keys[i]] = v
+		}
+		return out, nil
 	}
 	if !idMap && named == 0 {
 		// An id map: put back the decimal spelling of every key.
@@ -150,7 +211,7 @@ func convertMap(n node, path string, idMap bool) (*common.MapValue, error) {
 		if _, dup := out.Fields[name]; dup {
 			return nil, fmt.Errorf("splat3save: %s.%s appears twice", path, name)
 		}
-		v, err := convertValue(n.elems[i], path+"."+name, named > 0 && strings.HasSuffix(name, "Map"))
+		v, err := d.convertValue(n.elems[i], path+"."+name, named > 0 && idMapName(name))
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +227,7 @@ func convertMap(n node, path string, idMap bool) (*common.MapValue, error) {
 // in none of the 13 records grid0 holds, so their record type is inferred
 // from the wire type rather than seen. A record written by a console that
 // has played those modes would settle it; a mismatch would be fixed here.
-func convertValue(n node, path string, idMap bool) (*common.Value, error) {
+func (d *decoder) convertValue(n node, path string, idMap bool) (*common.Value, error) {
 	switch n.kind {
 	case kindUint:
 		if n.u > 1<<63-1 {
@@ -183,7 +244,7 @@ func convertValue(n node, path string, idMap bool) (*common.Value, error) {
 	case kindBool:
 		return &common.Value{ValueType: &common.Value_BooleanValue{BooleanValue: n.b}}, nil
 	case kindMap:
-		m, err := convertMap(n, path, idMap)
+		m, err := d.convertMap(n, path, idMap)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +258,7 @@ func convertValue(n node, path string, idMap bool) (*common.Value, error) {
 		}
 		a := &common.ArrayValue{Values: make([]*common.Value, len(n.elems))}
 		for i, e := range n.elems {
-			v, err := convertValue(e, path+"[]", false)
+			v, err := d.convertValue(e, path+"[]", false)
 			if err != nil {
 				return nil, err
 			}
@@ -206,6 +267,27 @@ func convertValue(n node, path string, idMap bool) (*common.Value, error) {
 		return &common.Value{ValueType: &common.Value_ArrayValue{ArrayValue: a}}, nil
 	}
 	return nil, fmt.Errorf("splat3save: %s has an unsupported value", path)
+}
+
+// idMapName says a field holds an id map: "...Map", or a mode's own copy of
+// one, "...Map_<mode>" (PaletteRewardAcceptFlagMap_Sdodr, whose ids are
+// themselves hashes).
+func idMapName(name string) bool {
+	return strings.HasSuffix(name, "Map") || strings.Contains(name, "Map_")
+}
+
+// decoder collects what a decode leaves out.
+type decoder struct{ unknown []string }
+
+// hashLike says a map's keys look like name hashes rather than ids: game ids
+// (weapons, gear, badges) stay well under 2^24.
+func hashLike(keys []node) bool {
+	for _, k := range keys {
+		if k.kind == kindUint && k.u >= 1<<24 && k.u <= 0xffffffff {
+			return true
+		}
+	}
+	return false
 }
 
 func pathOr(p string) string {

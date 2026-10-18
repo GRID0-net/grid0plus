@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,5 +119,60 @@ func TestImportingASplatoon3SaveReplacesTheRecordAfterArchivingIt(t *testing.T) 
 	}
 	if !doc.UpdateTime.After(old) {
 		t.Errorf("update_time %v did not move past the old record's %v", doc.UpdateTime, old)
+	}
+}
+
+// A save with a field nobody has named yet still imports; the field is left
+// out and the save is kept, with what was left out, for review.
+func TestASaveWithAnUnknownFieldImportsTheRestAndIsKeptForReview(t *testing.T) {
+	b := newBotHarness(t)
+	root := t.TempDir()
+	backups := filepath.Join(root, "splat3-save-backups")
+	const prefix = "tenants/t-test/saveRecords/"
+	var table splat3save.Table
+	for i := range table {
+		table[i] = uint32(i) * 7919
+	}
+	bot := httptest.NewServer(b.srv.BotHandler(BotAPIOptions{
+		Token: testBotToken, SaveRecordPrefix: prefix, SaveBackupDir: backups, SaveTable: &table,
+	}))
+	t.Cleanup(bot.Close)
+	b.bot = bot
+	b.registerDiscord(aliceDiscord, "alice")
+	alice, err := b.store.GetUserByDiscordID(t.Context(), aliceDiscord)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// {UserName: "A", <an unknown hash>: 1}
+	plain := []byte{'M', 'S', 0, 4, 0, 11, 3, 0, 0x80, 0x82, 0xce}
+	plain = binary.BigEndian.AppendUint32(plain, 0x4540508d)
+	plain = append(plain, 0xa1, 'A', 0xce)
+	plain = binary.BigEndian.AppendUint32(plain, 0x9e3779b9)
+	plain = append(plain, 0x01)
+	file := splat3save.Encrypt(plain, 42, &table)
+
+	resp, body := b.call("POST", "/bot/v1/splatoon3/save/import", aliceDiscord, map[string]any{"save": file})
+	if resp.StatusCode != http.StatusOK || body["setAside"] != 1.0 {
+		t.Fatalf("import: status %d, body %v", resp.StatusCode, body)
+	}
+	doc, err := b.store.GetUGCDocument(t.Context(), prefix+alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec common.MapValue
+	if err := proto.Unmarshal(doc.Fields, &rec); err != nil || len(rec.GetFields()) != 1 {
+		t.Fatalf("record = %v, %v; want UserName only", rec.GetFields(), err)
+	}
+	kept, _ := filepath.Glob(filepath.Join(root, "splat3-save-review", alice.ID, "*", "save.dat"))
+	if len(kept) != 1 {
+		t.Fatalf("kept saves = %v", kept)
+	}
+	if got, _ := os.ReadFile(kept[0]); string(got) != string(file) {
+		t.Error("the kept save is not the uploaded one")
+	}
+	list, _ := os.ReadFile(filepath.Join(filepath.Dir(kept[0]), "unknown.txt"))
+	if !strings.Contains(string(list), "0x9e3779b9") {
+		t.Errorf("unknown.txt = %q", list)
 	}
 }
