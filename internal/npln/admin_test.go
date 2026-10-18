@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/n-popescu/grid0plus/internal/matchmaking"
 )
 
 // adminHarness is a server with the admin API turned on.
@@ -386,5 +388,15 @@ func TestTheAdminSnapshotReportsTheGracePeriodsInForce(t *testing.T) {
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Versus != 20 || body.Coop != 10 {
 		t.Errorf("grace = %+v (%v), want 20 and 10", body, err)
+	}
+}
+
+func TestASessionWithNoPlayersEncodesAnEmptyListNotNull(t *testing.T) {
+	body, err := json.Marshal(sessionBody(matchmaking.Session{ID: "s", Mode: "m"}, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"players":[]`) {
+		t.Fatalf("players not encoded as []: %s", body)
 	}
 }

@@ -978,6 +978,7 @@ function renderMatchmaking(mm) {
   $("#mm-sessions-empty").hidden = sessions.length > 0;
   $("#mm-sessions").replaceChildren(
     ...sessions.map((s) => {
+      s.players = s.players || [];
       const card = document.createElement("div");
       card.className = "mm-session";
       card.innerHTML = `

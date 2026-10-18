@@ -193,10 +193,16 @@ func sessionBody(s matchmaking.Session, sizeOf map[string]int) adminSession {
 	if size, ok := sizeOf[s.Mode]; ok && len(s.Players) < size {
 		forced = true
 	}
+	// A session every player has left has a nil slice, which would encode as
+	// null and break the page's s.players.length.
+	players := s.Players
+	if players == nil {
+		players = []string{}
+	}
 	return adminSession{
 		ID:        s.ID,
 		Mode:      s.Mode,
-		Players:   s.Players,
+		Players:   players,
 		Host:      s.Host,
 		CreatedAt: s.CreatedAt,
 		Forced:    forced,
