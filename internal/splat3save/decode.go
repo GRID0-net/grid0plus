@@ -77,6 +77,12 @@ func LoadNames(path string) (int, error) {
 			continue
 		}
 		h := murmur3([]byte(n), 0)
+		// A big list would otherwise make some small game id (a weapon's 40)
+		// look like a name and turn an id map into a struct. Ids stay below
+		// 2^24 (hashLike); a name hashing there must come from names.txt.
+		if h < 1<<24 {
+			continue
+		}
 		if _, ok := byHash[h]; ok {
 			// names.txt wins: two strings can share a hash, and the
 			// embedded list is the one checked against stored records.
