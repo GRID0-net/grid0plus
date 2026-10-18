@@ -32,6 +32,7 @@ CatalogPoint
 ChangeFestRegionTimestamp
 ChangeNameTimestamp
 ChannelName
+CheckTimeUtc
 CloudRandomSet
 CntrbtSumChallenge
 CntrbtSumRegular
@@ -46,6 +47,7 @@ Context3
 Context4
 Coop
 CoopSkin
+CoopWeaponId
 Count
 Current
 CurrentSeasonId
@@ -55,6 +57,7 @@ DocumentRewardAcceptFlagMap_Sdodr
 EndTime
 EnemyRewardAcceptFlagMap_Sdodr
 ExSkillArray
+ExSkillAry
 Exp
 EyeColor
 Eyebrow
@@ -70,6 +73,7 @@ FestRegion
 FleaMarketLotteryRewardTimeStamp_Sdodr
 FleaMarketRewardAcceptFlagMap_Sdodr
 GameRecordHistory
+Gear
 GearClothesId
 GearClothesVariationId
 GearHeadId
@@ -129,6 +133,7 @@ IsAcquiredClearDifficultyMaxTripleBoss
 IsAcquiredReward
 IsAcquiredTransferReward
 IsAcquiredXRankingReward
+IsCheckedLeaderboard
 IsClearDifficultyMax
 IsClearDifficultyMaxTripleBoss
 IsDoneBigRunTutorial
@@ -154,6 +159,7 @@ IsEnableGyro
 IsGetDefaultDeck
 IsGetRankUpRewardMap
 IsGetUdemaeRewardMap
+IsInFsodr
 IsOnceAcquiredBigRunReward
 IsOnceAcquiredFestReward
 IsOnceAcquiredFestRewardAfterFsodr
@@ -262,11 +268,14 @@ MysteryBoxANum
 MysteryBoxBNum
 MysteryBoxGetInsideFlag
 NoneTrophyNum
+NplnUserId
 OnlineEvalMaxOfMapMap
 OnlinePlayPenalty
 OrderAry
 OrderNum
 OrderNum_Fsodr
+OrderTimeUtc
+OwnerNplnUserId
 PaletteRewardAcceptFlagMap_Sdodr
 PenaltyBitFlag
 PenaltyTimestamp
@@ -301,6 +310,7 @@ RandomContext
 RandomDrinkTicketNum
 RandomFoodTicketNum
 RandomNamePlateNum
+Rank
 RareEnemyKillNumMap
 Rarity
 Records
@@ -351,6 +361,7 @@ TotalPaymentInShoesShopFsodr
 TotalPaymentInShoesShopSdodr
 TotalPenaltyCount
 TriggerRewardAcceptFlagMap
+TrophyType
 Type
 Udemae
 UseBoost
