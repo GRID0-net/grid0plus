@@ -441,7 +441,40 @@ func (s *Service) currentFest(ctx context.Context, region string) (Fest, bool, e
 		s.log.Warn("toyohr: more than one fest is live at once; announcing the most recent",
 			"count", found, "announcing", chosen.ID, "region", region)
 	}
+	if chosen.ID == "" {
+		chosen = lastClosedFest(rows, region, now)
+	}
 	return chosen, chosen.ID != "", nil
+}
+
+// lastClosedFest is the fest to announce when none is live: the most recent
+// one whose results are out, enabled or not, however long ago it closed.
+//
+// Splatoon 3 never sees "no fest" as no fest. With an empty schedule the
+// console's fest object keeps an all-zero timetable, and the game's fest
+// state function (0x710352f160) calls a timetable whose open time is not
+// before its start Invalid (state 0). The lobby turns its layers on by fest
+// state, and every big screen in the lobby sits on a fest layer, FestNone
+// included -- so with Invalid, every screen was blank for every player from
+// 2026-10-17, when the last fest left the schedule. A fest past its close is
+// state 1, None, which is exactly the FestNone layer: on hardware the screens
+// worked all the while a closed JUEA-90003 was announced. Its BCAT pack must
+// still be served, or the console reports BcatInvalid instead.
+func lastClosedFest(rows []db.Fest, region string, now time.Time) Fest {
+	var last Fest
+	for _, row := range rows {
+		f := festFromRow(row)
+		if region != "" && !f.publishedIn(region) {
+			continue
+		}
+		if f.PhaseAt(now) != PhaseClosed {
+			continue
+		}
+		if last.ID == "" || f.Start.After(last.Start) {
+			last = f
+		}
+	}
+	return last
 }
 
 func (f Fest) publishedIn(region string) bool {

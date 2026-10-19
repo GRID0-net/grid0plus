@@ -146,32 +146,68 @@ func TestTheAnnouncedTimetableIsSlotAlignedOnTheWire(t *testing.T) {
 	}
 }
 
-// Outside its publication window, a configured fest is not announced.
-func TestNoFestIsAnnouncedBetweenFests(t *testing.T) {
+// Before its announcement, a configured fest is not announced.
+func TestNoFestIsAnnouncedBeforeItsAnnouncement(t *testing.T) {
 	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	f := NewFest(start, nil)
+	svc, _ := newService(t, f.Timetable().Open.Add(-48*time.Hour))
+	if err := svc.SaveFest(context.Background(), f, true, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	resp, err := svc.SelectFestSchedule(context.Background(),
+		&toyohrpb.SelectFestScheduleRequest{Tenant: testTenant, Region: "JP"})
+	if err != nil {
+		t.Fatalf("SelectFestSchedule: %v", err)
+	}
+	if resp.GetSchedule() != nil {
+		t.Errorf("announced a fest long before its announcement")
+	}
+}
 
-	for _, when := range []struct {
-		name string
-		at   time.Time
-	}{
-		{"long before the announcement", f.Timetable().Open.Add(-48 * time.Hour)},
-		{"after its publication window", func() time.Time { _, end := f.PublishWindow(); return end.Add(time.Hour) }()},
-	} {
-		t.Run(when.name, func(t *testing.T) {
-			svc, _ := newService(t, when.at)
-			if err := svc.SaveFest(context.Background(), f, true, nil); err != nil {
+// With no fest live, the last closed one is announced, disabled or past its
+// publication window: an empty schedule leaves the console's fest Invalid,
+// and the lobby's big screens only exist on fest layers (2026-10-19,
+// hardware: blank for everyone once the schedule went empty).
+func TestTheLastClosedFestIsAnnouncedWhenNoFestIsLive(t *testing.T) {
+	older := NewFest(time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC), nil)
+	older.ID = "JUEA-90001"
+	last := NewFest(time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC), nil)
+	last.ID = "JUEA-90002"
+	_, end := last.PublishWindow()
+
+	for _, enabled := range []bool{true, false} {
+		svc, _ := newService(t, end.Add(time.Hour))
+		for _, f := range []Fest{older, last} {
+			if err := svc.SaveFest(context.Background(), f, enabled, nil); err != nil {
 				t.Fatalf("save: %v", err)
 			}
-			resp, err := svc.SelectFestSchedule(context.Background(),
-				&toyohrpb.SelectFestScheduleRequest{Tenant: testTenant, Region: "JP"})
-			if err != nil {
-				t.Fatalf("SelectFestSchedule: %v", err)
-			}
-			if resp.GetSchedule() != nil {
-				t.Errorf("announced a fest %s, outside its publication window", when.name)
-			}
-		})
+		}
+		resp, err := svc.SelectFestSchedule(context.Background(),
+			&toyohrpb.SelectFestScheduleRequest{Tenant: testTenant, Region: "JP"})
+		if err != nil {
+			t.Fatalf("SelectFestSchedule: %v", err)
+		}
+		if got := resp.GetSchedule().GetFest(); !strings.HasSuffix(got, "/fests/JUEA-90002") {
+			t.Errorf("enabled=%v: announced %q, want the last closed fest JUEA-90002", enabled, got)
+		}
+	}
+}
+
+// A fest that is only announced or scheduled is never the fallback: the
+// fallback is for a fest whose results are out.
+func TestAnUpcomingDisabledFestIsNotAnnounced(t *testing.T) {
+	f := NewFest(time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC), nil)
+	svc, _ := newService(t, f.Timetable().Start)
+	if err := svc.SaveFest(context.Background(), f, false, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	resp, err := svc.SelectFestSchedule(context.Background(),
+		&toyohrpb.SelectFestScheduleRequest{Tenant: testTenant, Region: "JP"})
+	if err != nil {
+		t.Fatalf("SelectFestSchedule: %v", err)
+	}
+	if resp.GetSchedule() != nil {
+		t.Errorf("announced a disabled fest that is still being played")
 	}
 }
 
@@ -523,5 +559,21 @@ func TestOrdinaryFestKeyResponsesOmitFuturePackFieldsOnTheWire(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The console asks for the results of the closed fest it is shown; a
+// disabled fest it can be shown must answer, not NotFound.
+func TestADisabledClosedFestStillAnswersItsResults(t *testing.T) {
+	f := NewFest(time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC), nil)
+	_, end := f.PublishWindow()
+	svc, _ := newService(t, end.Add(time.Hour))
+	if err := svc.SaveFest(context.Background(), f, false, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if _, err := svc.GetFestResult(context.Background(), &toyohrpb.GetFestResultRequest{
+		Name: "tenants/" + testTenant + "/fests/" + f.ID + "/result",
+	}); err != nil {
+		t.Errorf("GetFestResult for a disabled closed fest: %v", err)
 	}
 }

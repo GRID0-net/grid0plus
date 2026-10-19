@@ -302,10 +302,13 @@ func (s *Service) loadFest(ctx context.Context, festID string) (Fest, error) {
 		s.log.Error("toyohr: load fest", "fest", festID, "error", err)
 		return Fest{}, status.Error(codes.Internal, "")
 	}
-	if !row.Enabled {
-		// A scheduled-but-disabled fest is how the operator holds one ready
-		// without announcing it. To a console it does not exist.
+	f := festFromRow(row)
+	// A scheduled-but-disabled fest is how the operator holds one ready
+	// without announcing it. To a console it does not exist -- until its
+	// results are out: a closed fest is announced whether enabled or not
+	// (lastClosedFest), and the console asks for its results.
+	if !row.Enabled && f.PhaseAt(s.now()) != PhaseClosed {
 		return Fest{}, status.Error(codes.NotFound, "no such fest")
 	}
-	return festFromRow(row), nil
+	return f, nil
 }
