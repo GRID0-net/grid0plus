@@ -55,7 +55,7 @@ What each open item is waiting on:
 
 | Item | Blocked on |
 | --- | --- |
-| §1.6 | **deploy + a hardware run** — decoder, bot API route and `/splatoon-save-upload` built; the operator installs the table file |
+| §1.6 | **a hardware run** — deployed 2026-10-13 (table installed on grid0); one import still has to be seen surviving going online |
 | §4.4 | **a console.** Four one-boot re-tests of workarounds from 2026-09-25 |
 | §4.3 | **RE, GDB on the emuMMC, or tests against GRID0+** — never a Nintendo capture |
 | §2.1 | **an external tool.** The pipeline is built; writing the texture converter in Go is explicitly the wrong answer |
@@ -176,7 +176,7 @@ four of them named `Unk1` through `Unk4` in this project's own proto
 reversal, and answering would mean inventing values for fields whose meaning
 is unknown — worse than a logged `Unimplemented`.
 
-### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, built, not deployed**
+### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, deployed, hardware-unconfirmed**
 
 **What:** a `/splatoon-save-upload file:<save.dat> [username:]` command in
 `GRID0-net/grid0plus-discord` that replaces the player's CloudSave record
@@ -237,13 +237,17 @@ told apart). `POST /bot/v1/splatoon3/save/import` (`{username?, save:
 <base64>}`) archives the current record, then replaces it whole, moving its
 version forward. It is off until `baas.bot_api.splatoon3_save_table` names
 the operator's 128-byte table file. Refusals: `not_a_save` (check word),
-`bad_save` (header, parse, or a field `names.txt` does not know).
+`bad_save` (header or parse). A field `names.txt` does not know is left out
+rather than refused: the upload and the list of what was dropped are kept
+under `data/splat3-save-review/<user>/` for a re-import once the name is
+known, and an optional operator names file (`splatoon3_save_names`) resolves
+new fields without a release.
 
 Left:
 
-1. Install the table on grid0 (`/opt/switchnet/secrets/`) and set the key.
-2. Deploy both (the bot's `/splatoon-save-upload` is in `grid0plus-discord`
-   e4835c4) and try one import on hardware.
+Deployed 2026-10-13 (server 81fb0f6, bot cb38ae7) with the table installed on
+grid0; the lenient import followed on 2026-10-18. Left: try one import on
+hardware.
 
 **Rules:** the key table, any constant lifted from `main` and every real
 save stay out of the repository (CLAUDE.md rule 1); load them from an
