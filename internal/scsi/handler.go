@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/n-popescu/grid0plus/internal/db"
@@ -69,6 +70,9 @@ type Server struct {
 	blobs      BlobStore
 	idVerifier *sjwt.Verifier
 	log        *slog.Logger
+	// uploads holds one *sync.Mutex per owner, so one owner's uploads run
+	// one at a time; see uploadComponentData.
+	uploads sync.Map
 }
 
 // New returns an OLSC server. idVerifier must verify tokens signed with the
@@ -519,6 +523,14 @@ func (s *Server) uploadComponentData(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+
+	// The usage read, the write and the recorded size are one step per
+	// owner. The quota check used to read usage before the write and record
+	// the new size after it, so N parallel uploads each saw the same usage,
+	// each passed, and together stored N times the quota.
+	lock, _ := s.uploads.LoadOrStore(c.NSAID, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	defer lock.(*sync.Mutex).Unlock()
 
 	used, err := s.usedBytes(r.Context(), c.NSAID)
 	if err != nil {

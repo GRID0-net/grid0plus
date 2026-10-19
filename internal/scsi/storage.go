@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 // ErrQuotaExceeded means writing this blob would exceed the configured quota.
@@ -48,8 +47,6 @@ type LocalDisk struct {
 	// should set this: a single console must not be able to fill the disk and
 	// take the rest of GRID0+ down with it.
 	PerOwnerQuota int64
-
-	mu sync.Mutex
 }
 
 // NewLocalDisk returns a LocalDisk rooted at dir, creating it if missing.
@@ -67,12 +64,10 @@ func (d *LocalDisk) path(key string) string {
 }
 
 func (d *LocalDisk) Put(_ /* owner, only used for the quota message */ string, key string, r io.Reader, usedByOwner int64) (int64, error) {
-	// One writer at a time: two uploads racing past the quota check could
-	// both pass it and together exceed the quota. A private deployment's
-	// upload volume never makes this a real bottleneck.
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
+	// No lock here: the quota race is closed per owner by the caller (see
+	// uploadComponentData), across the usage read and the size update that
+	// a lock in here never covered. One lock held across the whole network
+	// read also made every console wait behind the slowest upload.
 	tmp, err := os.CreateTemp(d.Dir, ".upload-*")
 	if err != nil {
 		return 0, fmt.Errorf("scsi: create temp file: %w", err)

@@ -446,3 +446,49 @@ func TestCustomerOperationsRequiresAuthentication(t *testing.T) {
 		t.Errorf("status = %d, want 401 (unimplemented endpoints must still require a token, like every other endpoint here)", resp.StatusCode)
 	}
 }
+
+// Two uploads at once used to read the same usage, both pass the quota, and
+// together store twice it. Exactly one of two 8-byte uploads fits 10 bytes.
+func TestParallelUploadsCannotOverrunTheQuota(t *testing.T) {
+	h := newHarness(t)
+	blobs, err := NewLocalDisk(t.TempDir(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	New(Config{PublicURL: "https://x"}, h.store, blobs,
+		sjwt.NewVerifier(h.issuer.Key()), slog.New(slog.DiscardHandler)).Routes(mux)
+	h.server.Close()
+	h.server = httptest.NewServer(mux)
+
+	resp := h.do("POST", "/api/nx/v2/save_data_archives/start_upload", startUploadRequest{ApplicationID: testApplicationID, DataSize: 16})
+	archiveID := decode[map[string]archiveView](t, resp)["save_data_archive"].ID
+	var comps []string
+	for i := 0; i < 2; i++ {
+		resp = h.do("POST", "/api/nx/v2/save_data_archives/"+archiveID+"/component_files/create",
+			createComponentFileRequest{Datatype: "save"})
+		comps = append(comps, decode[map[string]componentView](t, resp)["component_file"].ID)
+	}
+	codes := make(chan int, 2)
+	for _, id := range comps {
+		go func(id string) {
+			req, _ := http.NewRequest("PUT", h.server.URL+"/api/nx/v2/component_files/"+id+"/data",
+				bytes.NewReader([]byte("12345678")))
+			req.Header.Set("Authorization", "Bearer "+h.accessToken())
+			r, err := http.DefaultClient.Do(req)
+			if err != nil {
+				codes <- 0
+				return
+			}
+			r.Body.Close()
+			codes <- r.StatusCode
+		}(id)
+	}
+	got := map[int]int{}
+	for i := 0; i < 2; i++ {
+		got[<-codes]++
+	}
+	if got[http.StatusNoContent] != 1 || got[http.StatusInsufficientStorage] != 1 {
+		t.Fatalf("statuses = %v, want one 204 and one 507", got)
+	}
+}
