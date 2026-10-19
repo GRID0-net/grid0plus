@@ -23,6 +23,7 @@
 # Generated Switch-side files
 /switch/hosts.txt
 /deploy/nginx.generated.conf
+/deploy/nginx.generated.conf.prev
 /deploy/switchnet.dnsmasq.conf
 /deploy/switchnet.unbound.conf
 

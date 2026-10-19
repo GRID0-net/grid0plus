@@ -155,18 +155,39 @@ fi
 
 if echo "$restart" | grep -q nginx; then
     say "==> regenerating the nginx configuration"
-    go run ./cmd/switchnetctl -config config/config.yaml nginx > deploy/nginx.generated.conf
+    cp deploy/nginx.generated.conf deploy/nginx.generated.conf.prev 2>/dev/null || true
+    go run ./cmd/switchnetctl -config config/config.yaml nginx > deploy/nginx.generated.conf.new
+    mv deploy/nginx.generated.conf.new deploy/nginx.generated.conf
+    # Recreating nginx onto a config it rejects kills the TLS edge for every
+    # service, and nothing below would notice. Test it in a throwaway
+    # container with the same mounts first.
+    if ! docker compose run --rm --no-deps nginx nginx -t >/dev/null 2>/tmp/switchnet-nginx-t.$$; then
+        cat /tmp/switchnet-nginx-t.$$ >&2; rm -f /tmp/switchnet-nginx-t.$$
+        [ -f deploy/nginx.generated.conf.prev ] && mv deploy/nginx.generated.conf.prev deploy/nginx.generated.conf
+        die "the new nginx configuration fails nginx -t; the running edge was left alone"
+    fi
+    rm -f /tmp/switchnet-nginx-t.$$
 fi
 
 go_restart=$(echo "$restart" | tr ' ' '\n' | grep -v '^nginx$' | tr '\n' ' ')
 
 # ---- build (no test gate) --------------------------------------------------
 
+# Everything is built before anything is swapped in: a build failing half
+# way used to leave some binaries replaced but not restarted, so the next
+# unrelated restart quietly mixed new code with old. The previous binary is
+# kept as bin/<svc>.prev to roll back to.
 if [ -n "$go_restart" ]; then
     say "==> building (no fmt/vet/test gate): $go_restart"
+    rm -rf bin/.new && mkdir -p bin/.new
     for svc in $go_restart; do
-        go build -o "bin/$svc" "./cmd/$svc"
+        go build -o "bin/.new/$svc" "./cmd/$svc" || { rm -rf bin/.new; die "build of $svc failed; nothing was replaced"; }
     done
+    for svc in $go_restart; do
+        [ -f "bin/$svc" ] && cp -p "bin/$svc" "bin/$svc.prev"
+        mv "bin/.new/$svc" "bin/$svc"
+    done
+    rmdir bin/.new
 fi
 
 # ---- restart ----------------------------------------------------------
@@ -221,7 +242,14 @@ for svc in $go_restart; do
 done
 
 if [ -n "$failed" ]; then
-    warn "these did not come back healthy:$failed
+    for svc in $failed; do
+        if [ -f "bin/$svc.prev" ]; then
+            say "==> rolling $svc back to its previous binary"
+            cp -p "bin/$svc.prev" "bin/$svc"
+            sudo systemctl restart "switchnet-$svc.service"
+        fi
+    done
+    warn "these did not come back healthy (rolled back to the previous binary where one existed):$failed
   journalctl -u switchnet-<name> -n 50 --no-pager, replacing <name> with one of:$failed"
     exit 1
 fi
