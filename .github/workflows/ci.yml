@@ -1,0 +1,45 @@
+# Nothing used to run the tests before a change reached grid0: update.sh
+# deliberately has no test gate, and the PostgreSQL half of the store
+# contract only runs when a database is available. This does both, plus a
+# build for grid0's arm64.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: switchnet
+          POSTGRES_PASSWORD: switchnet
+          POSTGRES_DB: switchnet
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U switchnet"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://switchnet:switchnet@localhost:5432/switchnet?sslmode=disable
+      TEST_REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt, vet and tests
+        run: make check
+      - name: race detector, with PostgreSQL and Redis
+        run: make test-race TEST_DATABASE_URL="$TEST_DATABASE_URL" TEST_REDIS_URL="$TEST_REDIS_URL"
+      - name: build for grid0 (linux/arm64)
+        run: GOOS=linux GOARCH=arm64 go build ./...
