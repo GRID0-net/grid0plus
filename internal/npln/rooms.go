@@ -445,11 +445,14 @@ func (s *Server) joinRoom(ctx context.Context, sess matchmaking.Session, req *mm
 // roomCodeAlphabet leaves out O, 0, I and 1, so a code read off a friend's
 // screen cannot be misread.
 //
-// TODO(capture-needed): the format of a real room code. This alphabet and
-// length are NextendoNetwork's choice, made for a different title (their
-// short-alias capture is Mario Party Jamboree's), and nothing shows what
-// Splatoon 3 accepts when a player types one in. Change: this constant and
-// newRoomCode.
+// Splatoon 3 never lets a player type one in: its keyboard helper has no
+// room-code mode (only names, posts and the two 16-character share codes;
+// see docs/CAPTURES/splat3-share-codes-2026-10-19.md), so a room is joined
+// from a friend's presence and this code is only ever displayed.
+//
+// TODO(capture-needed): what a real code looks like on screen. This alphabet
+// and length are NextendoNetwork's choice for another title. Change: this
+// constant and newRoomCode.
 const roomCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // newRoomCode draws six characters. 32 is a power of two, so the modulo

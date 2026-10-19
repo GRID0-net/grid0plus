@@ -25,6 +25,9 @@
   them, unlike the name modes (2 and 6: 1–10 characters, callback
   `0x7103886620`; 7: 1–32, callback `0x7103886af0`).
 
+No mode takes a room code: Splatoon 3 has no typed room-code entry, so
+the room code GRID0+ mints (`internal/npln/rooms.go`) is display-only.
+
 So the code a console sends is exactly 16 characters, without dashes, in
 whatever character set the system keyboard's download-code preset allows.
 
