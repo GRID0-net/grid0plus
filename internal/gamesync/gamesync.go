@@ -173,6 +173,10 @@ type Server struct {
 	txns map[string]*transaction
 
 	grpc *grpc.Server
+	// stopSweep ends the sweep goroutine Serve starts.
+	stopSweep chan struct{}
+	sweepOnce sync.Once
+	stopOnce  sync.Once
 
 	lobbyLogFlag string
 	lobbyLog     atomic.Bool
@@ -229,6 +233,7 @@ func New(opts Options) (*Server, error) {
 		cleanups:           map[string]*userSessionCleanup{},
 		departures:         map[string]*time.Timer{},
 		txns:               map[string]*transaction{},
+		stopSweep:          make(chan struct{}),
 	}
 	s.watch.startup = s.startupVerdict
 	s.grpc = grpc.NewServer(
@@ -243,10 +248,59 @@ func New(opts Options) (*Server, error) {
 //
 // Cleartext HTTP/2, like the gateway: TLS is terminated at the nginx edge, which
 // already holds the certificate for every Nintendo hostname.
-func (s *Server) Serve(l net.Listener) error { return s.grpc.Serve(l) }
+func (s *Server) Serve(l net.Listener) error {
+	s.sweepOnce.Do(func() { go s.sweepLoop(s.stopSweep) })
+	return s.grpc.Serve(l)
+}
 
 // Stop stops the server, waiting for in-flight RPCs.
-func (s *Server) Stop() { service.StopGRPC(s.grpc, stopGrace) }
+func (s *Server) Stop() {
+	s.stopOnce.Do(func() { close(s.stopSweep) })
+	service.StopGRPC(s.grpc, stopGrace)
+}
+
+// How long state for a finished game outlives it. A store is kept well past
+// any match or room's length so a console reconnecting late still finds its
+// documents; a session is kept one TTL past expiry so its refresh token still
+// works; a transaction is a single batch the console commits within seconds.
+const (
+	idleStoreAge  = 30 * time.Minute
+	staleTxnAge   = 10 * time.Minute
+	sweepInterval = 5 * time.Minute
+)
+
+func (s *Server) sweepLoop(stop <-chan struct{}) {
+	t := time.NewTicker(sweepInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			s.sweep()
+		}
+	}
+}
+
+// sweep drops what nothing else ever removes: expired sessions whose
+// console never came back, abandoned transactions, and the documents of
+// game sessions nobody has touched or watched for idleStoreAge.
+func (s *Server) sweep() {
+	now := s.now()
+	s.mu.Lock()
+	for token, sess := range s.sessions {
+		if now.After(sess.expiresAt.Add(s.sessionTTL)) {
+			delete(s.sessions, token)
+		}
+	}
+	for token, txn := range s.txns {
+		if now.Sub(txn.startedAt) > staleTxnAge {
+			delete(s.txns, token)
+		}
+	}
+	s.mu.Unlock()
+	s.docs.drop(now.Add(-idleStoreAge), func(scope string) bool { return s.watch.playersIn(scope) > 0 })
+}
 
 // GRPCServer exposes the underlying server, for tests.
 func (s *Server) GRPCServer() *grpc.Server { return s.grpc }

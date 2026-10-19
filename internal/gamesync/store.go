@@ -46,10 +46,13 @@ type storeSet struct {
 	now    func() time.Time
 	mu     sync.Mutex
 	stores map[string]*store
+	// used is when each scope's store was last asked for, so idle game
+	// sessions can be dropped (see drop).
+	used map[string]time.Time
 }
 
 func newStoreSet(now func() time.Time) *storeSet {
-	return &storeSet{now: now, stores: map[string]*store{}}
+	return &storeSet{now: now, stores: map[string]*store{}, used: map[string]time.Time{}}
 }
 
 // in returns the store for one game session, creating it on first use.
@@ -61,7 +64,25 @@ func (ss *storeSet) in(scope string) *store {
 		st = newStore(ss.now)
 		ss.stores[scope] = st
 	}
+	ss.used[scope] = ss.now()
 	return st
+}
+
+// drop forgets every store idle since before cutoff that keep does not
+// claim. Nothing else ever deleted one, so every match, room and shift kept
+// its documents -- profiles, inboxes, referee reports -- until npln restarted.
+func (ss *storeSet) drop(cutoff time.Time, keep func(scope string) bool) int {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	n := 0
+	for scope, at := range ss.used {
+		if at.Before(cutoff) && !keep(scope) {
+			delete(ss.stores, scope)
+			delete(ss.used, scope)
+			n++
+		}
+	}
+	return n
 }
 
 func newStore(now func() time.Time) *store {
