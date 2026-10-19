@@ -182,6 +182,18 @@ func (r *Relay) pair(a, b *nex.Conn) (*relayPair, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if p := r.pairs[key]; p != nil {
+		// Each side's address is re-read on every lookup. Captured once, a
+		// console that reconnected from a new public IP -- a CGNAT pool
+		// change, a router reconnect -- had every datagram rejected, while
+		// its peer's traffic kept the pair from ever being reaped.
+		p.mu.Lock()
+		for i, pid := range key {
+			if c := r.s.Player(pid); c != nil && c.RemoteIP != "" && c.RemoteIP != p.ips[i] {
+				p.ips[i] = c.RemoteIP
+				p.addrs[i] = nil
+			}
+		}
+		p.mu.Unlock()
 		return p, nil
 	}
 	h := fnv.New32a()
@@ -224,7 +236,8 @@ func sameNet24(a, b string) bool {
 	return x != nil && y != nil && x[0] == y[0] && x[1] == y[1] && x[2] == y[2]
 }
 
-// side is which end of the pair src is, or -1 for neither.
+// side is which end of the pair src is, or -1 for neither. Caller holds p.mu:
+// pair refreshes the addresses it reads.
 func (p *relayPair) side(src *net.UDPAddr) int {
 	ip := src.IP.String()
 	for i := range 2 {
@@ -247,8 +260,8 @@ func (r *Relay) loop(p *relayPair) {
 		if err != nil {
 			return
 		}
-		i := p.side(src)
 		p.mu.Lock()
+		i := p.side(src)
 		if i < 0 {
 			p.reject++
 			p.mu.Unlock()
@@ -282,12 +295,13 @@ func (r *Relay) reap() {
 		for k, p := range r.pairs {
 			p.mu.Lock()
 			idle := time.Since(p.last) > r.cfg.IdleTimeout
+			fwd := p.fwd // read under the lock: loop may still be counting
 			p.mu.Unlock()
 			if idle {
 				_ = p.conn.Close()
 				delete(r.pairs, k)
 				delete(r.ports, p.port)
-				r.log.Info("relay: pair closed after silence", "a", k[0], "b", k[1], "port", p.port, "forwarded", p.fwd)
+				r.log.Info("relay: pair closed after silence", "a", k[0], "b", k[1], "port", p.port, "forwarded", fwd)
 			}
 		}
 		r.mu.Unlock()
