@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -269,7 +270,9 @@ func (s *Server) loginByUsername(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		// Same answer as a wrong password below: telling the two apart would
-		// tell a guesser which usernames exist.
+		// tell a guesser which usernames exist. Same time too -- see
+		// spendPasswordCheck.
+		spendPasswordCheck(password)
 		s.log.Warn("baas: login for unknown username")
 		writePlainError(w, http.StatusUnauthorized, "invalid username or password")
 		return
@@ -278,6 +281,9 @@ func (s *Server) loginByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if user.LoginPasswordHash == "" {
+		spendPasswordCheck(password)
+	}
 	if user.LoginPasswordHash == "" ||
 		bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(password)) != nil {
 		s.log.Warn("baas: login with wrong password", "user", user.ID)
@@ -1079,4 +1085,20 @@ func (s *Server) markOnline(ctx context.Context, userID string, at time.Time) {
 	if err := s.store.TouchPresence(ctx, userID, at); err != nil {
 		s.log.Warn("baas: touch presence", "user", userID, "error", err)
 	}
+}
+
+var (
+	dummyHashOnce sync.Once
+	dummyHash     []byte
+)
+
+// spendPasswordCheck costs what a real bcrypt comparison costs, for the
+// paths with no hash to compare against. Answering an unknown username at
+// once and a known one after bcrypt's ~50-100 ms told a guesser which
+// usernames exist, despite the identical response.
+func spendPasswordCheck(password string) {
+	dummyHashOnce.Do(func() {
+		dummyHash, _ = bcrypt.GenerateFromPassword([]byte("grid0plus-no-such-user"), bcrypt.DefaultCost)
+	})
+	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 }

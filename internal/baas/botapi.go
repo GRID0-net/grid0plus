@@ -323,6 +323,9 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 		b.internal(w, "load user by login", err)
 		return
 	}
+	if err != nil || user.LoginPasswordHash == "" {
+		spendPasswordCheck(req.Password)
+	}
 	// One answer for "no such login" and "wrong password", as on the login page.
 	b.s.log.Warn("botapi: link refused", "login_username", req.Username)
 	writeBotError(w, http.StatusUnauthorized, "bad_credentials", "wrong login or password")
