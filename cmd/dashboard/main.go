@@ -92,7 +92,7 @@ func main() {
 	healthz := health.New("dashboard").Add("database", store.Ping)
 
 	log.Info("dashboard: listening", "addr", cfg.Dashboard.Listen)
-	if err := service.ServeHTTPWithHealth(ctx, log, cfg.Dashboard.Listen, srv.Handler(), healthz); err != nil {
+	if err := service.ServeHTTPWithHealthUnbounded(ctx, log, cfg.Dashboard.Listen, srv.Handler(), healthz); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

@@ -64,7 +64,7 @@ func main() {
 
 	healthz := health.New("scsi").Add("database", store.Ping)
 
-	if err := service.ServeHTTPWithHealth(ctx, log, cfg.SCSI.Listen, mux, healthz); err != nil {
+	if err := service.ServeHTTPWithHealthUnbounded(ctx, log, cfg.SCSI.Listen, mux, healthz); err != nil {
 		service.Fatal(log, "serve", err)
 	}
 }

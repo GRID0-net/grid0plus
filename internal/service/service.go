@@ -95,6 +95,26 @@ func ServeHTTPWithHealth(
 	ctx context.Context, log *slog.Logger, addr string,
 	handler http.Handler, healthz *health.Handler,
 ) error {
+	return serveHTTP(ctx, log, addr, handler, healthz, 30*time.Second)
+}
+
+// ServeHTTPWithHealthUnbounded is ServeHTTPWithHealth without a whole-request
+// read or write timeout, for services whose requests are legitimately long:
+// a save-data upload over a home uplink (scsi), a 30 MB BCAT pack download
+// or the live event stream (dashboard). The thirty-second limit cut each of
+// those off mid-transfer. Headers must still arrive promptly, and idle
+// connections are still closed.
+func ServeHTTPWithHealthUnbounded(
+	ctx context.Context, log *slog.Logger, addr string,
+	handler http.Handler, healthz *health.Handler,
+) error {
+	return serveHTTP(ctx, log, addr, handler, healthz, 0)
+}
+
+func serveHTTP(
+	ctx context.Context, log *slog.Logger, addr string,
+	handler http.Handler, healthz *health.Handler, bodyTimeout time.Duration,
+) error {
 	if healthz != nil {
 		inner := handler
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,13 +125,12 @@ func ServeHTTPWithHealth(
 			inner.ServeHTTP(w, r)
 		})
 	}
-
 	return Serve(ctx, log, &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       bodyTimeout,
+		WriteTimeout:      bodyTimeout,
 		// Long enough that a console reuses its connection across the several
 		// requests a friend-list refresh makes, short enough that a console that
 		// went to sleep does not hold a slot for minutes.
