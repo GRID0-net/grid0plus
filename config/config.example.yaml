@@ -69,11 +69,10 @@ database:
 # redis: the presence bus
 # ---------------------------------------------------------------------------
 redis:
-  # Leave empty while only the BAAS server publishes presence: it then uses an
-  # in-process bus. Set it before running a second process that needs presence
-  # events — the phase 2 dashboard, the NPLN server, or a second BAAS replica —
-  # because an in-process bus silently delivers nothing across a process
-  # boundary.
+  # Leave empty only while BAAS is the sole process using presence; it then uses
+  # an in-process bus. Set it as soon as a second process needs presence events
+  # (the dashboard, the NPLN server, or a second BAAS replica), because an
+  # in-process bus silently delivers nothing across a process boundary.
   url: ""
   channel: "switchnet:presence"
 
@@ -105,8 +104,8 @@ dauth:
   # is the only thing that reaches it, over the edge TLS listener. Bind-all
   # would put it on the LAN unauthenticated with no reason to.
   listen: "127.0.0.1:8081"
-  # Keep Nintendo's values. The console does not check them, but tooling and
-  # packet-capture diffs compare against them.
+  # Keep Nintendo's values. The console doesn't check them, but tooling that
+  # compares against real traffic does.
   issuer: "dauth-lp1.ndas.srv.nintendo.net"
   jwks_url: "https://dcert-lp1.ndas.srv.nintendo.net/keys"
   token_ttl: 86400
@@ -118,10 +117,8 @@ dauth:
   client_cert_header: "X-SwitchNet-Client-Cert"
   # The header nginx puts the console's full TLS client certificate in
   # ($ssl_client_escaped_cert), used only to compute the 'x5t#S256' claim on
-  # issued tokens — a real SHA-256 thumbprint of already-untrusted, already-
-  # passed-through cert bytes, not verification of them. Leave empty to omit
-  # the claim instead of guessing at it. See internal/jwt/issue.go's
-  # DeviceInfo.X5tS256.
+  # issued tokens: a SHA-256 thumbprint of the certificate bytes, not a
+  # verification of them. Leave empty to omit the claim.
   client_cert_pem_header: "X-SwitchNet-Client-Cert-PEM"
 
 # ---------------------------------------------------------------------------
@@ -184,10 +181,8 @@ baas:
 
   image_dir: "data/images"
   # Where uploaded profile pictures are served from. It has to be a host in the
-  # redirect list, or the console cannot fetch them. No path suffix: a
-  # 2026-09-19 capture shows the console requests images at the root of this
-  # host, as '/1/<etag>' and '/2/<etag>' -- see internal/baas/images.go's
-  # imageURLs doc comment. Do not add '/images' back onto this.
+  # redirect list, or the console can't fetch them. Don't add a path: the console
+  # requests images at the root of this host, as '/1/<etag>' and '/2/<etag>'.
   image_base_url: "https://cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com"
   max_image_bytes: 1048576
 
@@ -204,9 +199,9 @@ baas:
   bot_api:
     listen: ""   # e.g. "127.0.0.1:8096"
     token: ""
-    # Lets a player import a Splatoon 3 save.dat into their cloud save. The
-    # game's 128-byte save key table (main 0x71050b6dec in 11.3.0), which is
-    # never in this repository. Empty turns the import off.
+    # Path to a file that lets a player import a Splatoon 3 save.dat into their
+    # cloud save. It holds the game's save key table (128 bytes), which is never
+    # in this repository. Empty turns the import off.
     splatoon3_save_table: ""
     # Optional: more save field names, one per line, e.g. every identifier
     # in the game's main binary. Fields newer than the built-in list are then
@@ -215,36 +210,31 @@ baas:
     splatoon3_save_names: ""
 
   # How many login attempts (POST /1.0.0/login and federation) one client
-  # address gets per login_window_seconds, before further attempts from it are
+  # address gets per login_window_seconds before further attempts from it are
   # refused until the window rolls forward. 0 disables the limit. A device
-  # account's password is generated and never user-chosen, so unbounded
-  # guessing is a smaller risk here than for a password a person picked -- but
-  # smaller is not zero, and there was previously no limit at all.
+  # account's password is generated, not chosen by a person, so guessing is a
+  # smaller risk than usual, but not zero.
   login_attempts_per_window: 20
   login_window_seconds: 300
 
-  # Log request and response bodies on the access log line. Useful exactly
-  # once, to see the real bytes a console sent or received without a
-  # console-side capture. Carries real tokens and device account passwords
-  # in plain text in the log -- far too sensitive and chatty to leave on.
+  # Log request and response bodies on the access log line. Useful to see the
+  # real bytes a console sent or received. It puts real tokens and device
+  # account passwords in the log in plain text, so don't leave it on.
   log_bodies: false
 
 # ---------------------------------------------------------------------------
-# scsi: OLSC cloud save backup (phase 4)
+# scsi: per-game cloud save backup
 # ---------------------------------------------------------------------------
 scsi:
   # Loopback only, same reasoning as dauth.listen above.
   listen: "127.0.0.1:8091"
 
-  # This service's own externally-reachable base URL. Must be a host in the
-  # redirect list (storage.hac.lp1.scsi.srv.nintendo.net) -- see internal/scsi's
-  # signedURI doc comment for why it is used at all.
+  # This service's own externally-reachable base URL. It must be a host in the
+  # redirect list (storage.hac.lp1.scsi.srv.nintendo.net).
   public_url: "https://storage.hac.lp1.scsi.srv.nintendo.net"
 
-  # Where save data blobs are written, on this same box. See
-  # docs/ROADMAP.md's phase 4 section for why local disk is the default
-  # storage backend rather than object storage: no new recurring cost, and
-  # the operator already pays for this machine regardless.
+  # Where save data blobs are written, on this same machine. Local disk is the
+  # default because it adds no recurring cost beyond the machine you already run.
   storage_dir: "data/save-archives"
 
   # Caps one BAAS user's total stored save data across every title. 0 means
@@ -260,29 +250,27 @@ scsi:
 stubs:
   # Loopback only, same reasoning as dauth.listen above.
   listen: "127.0.0.1:8084"
-  # Log request bodies. Useful exactly once, while working out what an
-  # unimplemented endpoint is being asked for. Far too chatty to leave on.
+  # Log request bodies. Useful while working out what an unimplemented endpoint
+  # is being asked for. Too chatty to leave on.
   log_bodies: false
 
   # Record every request to the bcat-* hosts, hexdumped, into this directory.
   #
-  # The hosts are answered 304 ("your cache is current") either way; this only
-  # adds a transcript of what the console asked for -- the list and data paths
-  # native BCAT serving would have to answer (TODO.md 2.4, stage 1). Safe to
+  # Hosts with no seed files are answered 304 ("your cache is current") either
+  # way; this only adds a transcript of what the console asked for. Safe to
   # leave on; empty records nothing.
   bcat_record_dir: ""
 
 # ---------------------------------------------------------------------------
-# bcat -- Splatfest content packs (phase 2)
+# bcat: Splatfest content packs
 # ---------------------------------------------------------------------------
 bcat:
   # A command that turns a source asset into a game format.
   #
-  # SWITCHNET DOES NOT CONVERT TEXTURES ITSELF, deliberately. A BFRES texture in
-  # the wrong compression or the wrong Tegra swizzle LOADS and renders as
-  # garbage -- on a console, with nothing on the server to look at. Switch
-  # Toolbox and the BinaryTextureLibrary family already do it correctly, and they
-  # exist because it is hard.
+  # GRID0+ does not convert textures itself. A BFRES texture in the wrong
+  # compression or the wrong Tegra swizzle loads and renders as garbage on a
+  # console, with nothing on the server to look at. Switch Toolbox and the
+  # BinaryTextureLibrary family already do it correctly.
   #
   # The command is called as:
   #
@@ -304,31 +292,26 @@ bcat:
   # the build, and on the dashboard a request that never answers.
   converter_timeout: 120
 
-  # The delivery cache served to consoles and emulators, laid out as
+  # The delivery cache served to consoles, laid out as
   # <seed_dir>/<title id>/<directory>/<file>. `switchnetctl fest build -enable`
-  # stages the fest it builds here; the dashboard shows Splatoon 3's folder and
-  # serves it to the console-side installer (switch/bcat-installer/). Empty
-  # means nothing is served.
+  # stages the fest it builds here. Empty means nothing is served.
   seed_dir: ""
 
-  # Rewrite {FEST} in an asset's in-pack path to the fest's own id.
-  #
-  # A real custom pack had every internal file named for the fest it was DERIVED
-  # from while announcing a different one, and nobody has established what the
-  # game keys on. On is the consistent choice; off keeps whatever names the
-  # source files carry. See docs/QUESTIONS.md.
+  # Rewrite {FEST} in an asset's in-pack path to the fest's own id. On keeps
+  # the internal names consistent with the fest that announces them; off keeps
+  # whatever names the source files carry.
   substitute_fest_id: true
 
 # ---------------------------------------------------------------------------
-# dashboard -- the operator's web view (phase 2)
+# dashboard: the operator's web view
 # ---------------------------------------------------------------------------
 dashboard:
   listen: ":8087"
 
   # Where to reach npln's matchmaking controls, and the token for them. Both
-  # must match npln.admin_listen and npln.admin_token above. Leave either empty
-  # and the matchmaking panel says it is not configured -- deliberately, rather
-  # than showing an empty queue that reads as "nobody is playing".
+  # must match npln.admin_listen and npln.admin_token below. Leave either empty
+  # and the matchmaking panel says it is not configured, rather than showing an
+  # empty queue that reads as "nobody is playing".
   npln_admin_url: "127.0.0.1:8089"
   npln_admin_token: ""
 
@@ -339,9 +322,6 @@ dashboard:
 
   # A shared secret required on every request. Empty means NO authentication:
   # anyone who can reach this port can schedule and cancel Splatfests.
-  #
-  # Nothing in phase 1 authenticates a person -- every credential in the stack
-  # belongs to a console -- so there is no user account to check against yet.
   token: ""
 
   # NOTE: the dashboard is a separate process from baas, so it needs redis.url
@@ -349,7 +329,7 @@ dashboard:
   # boundary, and it fails silently: the page simply never updates.
 
 # ---------------------------------------------------------------------------
-# npln -- the Splatoon 3 game server (phase 2)
+# npln: the Splatoon 3 game server
 # ---------------------------------------------------------------------------
 npln:
   # THREE listeners, and they are not interchangeable.
@@ -374,25 +354,22 @@ npln:
   # the port is a much worse first symptom than a port that reads oddly here.
   gamesync_listen: "127.0.0.1:8088"
 
-  # The NPLN tenant id, in the full form a real Nintendo token carries in its
-  # tid (and the one the console is recorded sending as npln-tenant-id):
-  # Splatoon 3's is t-dce9377b-lp1 -- also the first label of its tenant host,
-  # t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net. It names this tenant's
+  # The NPLN tenant id, in the full form a Nintendo token carries in its tid.
+  # Splatoon 3's is t-dce9377b-lp1, which is also the first label of its tenant
+  # host, t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net. It names this tenant's
   # resources and goes into every token. The short form "dce9377b" is still
   # accepted from the console.
   tenant: "t-dce9377b-lp1"
 
   # The title id an access token's npln.app_id claim carries. Splatoon 3's is
-  # 0100c2500fc20000 -- a public, documented constant, not a guessed value.
+  # 0100c2500fc20000.
   app_id: "0100c2500fc20000"
 
-  # NPLN access tokens are ES256 -- the only ES256 tokens in the stack. See
-  # internal/jwt's README for why that path is deliberately separate from the
-  # RS256 one.
+  # NPLN access tokens are ES256, the only ES256 tokens in the stack. See
+  # internal/jwt's README.
   issuer: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
   jwks_url: "https://t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net/1.0.0/certificates"
-  # 28800 (8h) is confirmed by a 2026-09-23 decrypted capture of a real
-  # working server's access token, not guessed.
+  # Eight hours.
   access_token_ttl: 28800
 
   # The most players a match takes.
@@ -407,20 +384,18 @@ npln:
   # Per-mode overrides of the above.
   #
   # Keyed on the mode name the game sends in a ticket's matchmaking_config.
-  # Any mode that arrives without an entry is logged once. Turf War and
-  # Anarchy are 4v4 (eight players, the default above), Salmon Run is four,
+  # A mode that arrives without an entry is logged once. Turf War and Anarchy
+  # are 4v4 (eight players, the default above), Salmon Run is four and
   # Tricolour is 4v2v2.
   mode_players:
     "tenants/current/matchmakingConfigs/coop_regular_config": 4
     "tenants/current/matchmakingConfigs/coop_bigrun_config": 4
     "tenants/current/matchmakingConfigs/coop_team_contest_config": 4
 
-  # Modes formed like Salmon Run -- one team, no even split -- rather than
-  # like Turf War/Anarchy. Give each one its size in mode_players too;
-  # otherwise it takes up to players_per_match. These are the three Salmon
-  # Run configs in Splatoon 3's own table: regular, Big Run, and Eggstra
-  # Work (coop_team_contest_config). coop_regular_config is seen on hardware;
-  # the other two come from the game binary.
+  # Modes formed like Salmon Run (one team, no even split) rather than like
+  # Turf War/Anarchy. Give each one its size in mode_players too; otherwise it
+  # takes up to players_per_match. These are the three Salmon Run configs:
+  # regular, Big Run and Eggstra Work (coop_team_contest_config).
   coop_modes:
     - "tenants/current/matchmakingConfigs/coop_regular_config"
     - "tenants/current/matchmakingConfigs/coop_bigrun_config"
@@ -443,9 +418,9 @@ npln:
   # Both grace periods can be changed while people play: edit this file, then
   # `sudo systemctl reload switchnet-npln`. Only these two are reloaded.
 
-  # Experimental: advertise seven measured latency regions, all mapped to
-  # the first reachable STUN endpoint (or network.public_ip:3478). Leave
-  # disabled unless investigating this compatibility path.
+  # Experimental: advertise seven latency regions, all mapped to the first
+  # reachable STUN endpoint (or network.public_ip:3478). Leave this off unless
+  # you are investigating a latency-measurement problem.
   regional_latency_servers: false
 
   # How long a matchmaking ticket waits before giving up, in seconds. A ticket
@@ -491,40 +466,34 @@ npln:
   frontline_host: "fro-3.hac.lp1.penne.srv.nintendo.net"
 
   # Where a match tells each console to open its gamesync session
-  # (GameSession.host and .port). The tenant host on 443: nginx sends the
-  # Gamesync service path there to gamesync. A 2026-09-27 working Ryujinx
-  # capture instead uses a literal IP on :7575. Both edge routes exist; use
-  # the endpoint your clients actually reach. Hostnames must be redirected.
+  # (GameSession.host and .port). By default that is the tenant host on 443,
+  # where nginx sends the Gamesync service path to gamesync. A literal IP on
+  # :7575 also works; both edge routes exist, so use the one your clients
+  # reach. Hostnames must be redirected.
   session_host: "t-dce9377b-lp1.lp1.t.npln.srv.nintendo.net"
   session_port: 443
 
-  # Optional reference-timing probe: minimum age of TrackMatchmakingTicket
-  # before sending SUCCEEDED. Zero leaves normal matchmaking timing unchanged.
+  # Minimum age, in seconds, of a ticket before it is reported as matched. Zero
+  # leaves matchmaking timing unchanged.
   track_minimum_seconds: 0
 
   # Record every JSON front-end request and response to this directory.
   #
-  # The vermillion, penne and frontline shapes are undocumented, and this is how
-  # they get settled: point it somewhere, put a console through one boot, and the
-  # transcript is on disk -- hexdumped, in order, with credentials redacted.
-  # Then write it up under docs/CAPTURES/ and reconcile internal/nplnrest.
+  # The vermillion, penne and frontline shapes are undocumented. Point this at a
+  # directory, put a console through one boot, and the transcript is on disk,
+  # hexdumped, in order, with credentials redacted.
   #
   # Off by default: it writes whatever the console sends.
   rest_record_dir: ""
 
   # The stage and mode rotation the lobby shows.
   #
-  # THE NUMBERS ARE SPLATOON 3'S OWN. Stage ids ARE public and documented --
-  # internal/toyohr.VsStages (all 25 listed stages, sourced from
-  # github.com/Leanny/splat3's own VersusSceneInfo.json, the same public data
-  # dump this project's Salmon Run stage table already uses) -- see that
-  # file's own doc comment for the sourcing. The commented-out example below
-  # uses eight of those real ids as a starting point, not a guess. Rule ids
-  # are 1-4 on the wire (both working hall captures use exactly that range
-  # for Bankara, X and League); which number is which mode is not yet pinned
-  # down, so check the in-game schedule screen after setting bankara_rules.
-  # What GRID0+ supplies either way is everything around
-  # the numbers: two-hour slot alignment, the rotation order, the window a
+  # The numbers are Splatoon 3's own. Stage ids come from internal/toyohr.VsStages
+  # (all 25 listed stages, from github.com/Leanny/splat3's public data), and the
+  # commented-out example below uses eight of them as a starting point. Rule ids
+  # are 1-4 on the wire; check the in-game schedule screen after setting
+  # bankara_rules to see which number is which mode. GRID0+ supplies everything
+  # around the numbers: two-hour slot alignment, the rotation order, the window a
   # client asked for, and the etag its conditional request compares.
   #
   # Empty is fine. The schedule handlers then answer with no schedules, which is
@@ -545,7 +514,7 @@ npln:
     # Um'ami Ruins, Mincemeat Metalworks, Brinewater Springs, Barnacle & Dime:
     # regular_stages: ["1", "2", "3", "4", "5", "6", "7", "8"]
     # bankara_stages: ["9", "10", "11", "12", "13", "14", "15", "16"]
-    # bankara_rules: 1-4, mapping to modes unconfirmed -- see above:
+    # bankara_rules: 1-4, see above:
     # bankara_rules: ["1", "2"]
 
   # The matchmaking controls the dashboard drives: the live queue, force-start,
@@ -562,7 +531,7 @@ npln:
   admin_token: ""
 
 # ---------------------------------------------------------------------------
-# nex -- NEX game servers: Splatoon 2
+# nex: NEX game servers (Splatoon 2)
 # ---------------------------------------------------------------------------
 nex:
   # NEX is the stack before NPLN. A Switch reaches a NEX title as a WebSocket
@@ -588,7 +557,7 @@ nex:
     # Where the secure half of the game server lives. Empty keeps it on the
     # same WebSocket as the login half -- the console is told "0.0.0.1",
     # which a Switch reads as "where you already are". Set both only if a
-    # console turns out not to honour that; see internal/splatoon2/README.md.
+    # console doesn't honour that; see internal/splatoon2/README.md.
     secure_address: ""
     secure_port: 0
 
@@ -620,22 +589,19 @@ toolbox:
   # SNI map -- this answers a homebrew app, not a Nintendo endpoint.
   listen: "127.0.0.1:8090"
 
-  # Identify the private repository /updates/* reads Toolbox releases from
-  # (GRID0-net/GRID0plus-cfw, whose releases carry grid0plus-toolbox.nro). Leave this and the other three toolbox.* keys below empty to serve
-  # /status only, with /updates/* answering 503 instead of 502ing on every
-  # request.
+  # The GitHub repository /updates/* reads Toolbox releases from
+  # (GRID0-net/GRID0plus-cfw, whose releases carry grid0plus-toolbox.nro). Leave
+  # this and the other three toolbox.* keys below empty to serve /status only,
+  # with /updates/* answering 503 instead of failing on every request.
   github_owner: "GRID0-net"
   github_repo: "GRID0plus-cfw"
 
   # A fine-grained personal access token (github.com/settings/personal-access-tokens),
-  # scoped to ONLY github_owner/github_repo, permission Contents: Read-only,
-  # nothing else. Never a classic token -- those cannot be scoped to one
-  # repository, and this one exists specifically so the scope stays that
-  # narrow.
+  # scoped to only github_owner/github_repo, with Contents: read-only and nothing
+  # else. Never a classic token; those can't be scoped to one repository.
   #
-  # This is the one credential in all of GRID0+ that exists so a *client*
-  # binary never has to hold one: the console asks this service, never
-  # GitHub directly, and the token never leaves this box.
+  # The console asks this service, never GitHub directly, so the token never
+  # leaves this machine.
   github_token: "CHANGE-ME-a-fine-grained-PAT-scoped-to-GRID0plus-cfw-contents-read-only"
 
   # This service's own address as a console reaches it: the same public IP
@@ -670,7 +636,7 @@ toolbox:
 # natcheck: the UDP NAT-check responder
 # ---------------------------------------------------------------------------
 natcheck:
-  # Nintendo's ports. The console connects to these numbers, so do not change
+  # Nintendo's ports. The console connects to these numbers, so don't change
   # them unless something is forwarding.
   primary_listen: ":10025"
   secondary_listen: ":10125"
@@ -682,9 +648,8 @@ natcheck:
   # NAT than the router really has.
   alternate_listen: "192.168.1.51:10025"
 
-  # Answer type 102 from the port it was sent to (10025), as a working
-  # Nextendo server does. False answers from 10125 instead, which a
-  # port-restricted home router drops.
+  # Answer type 102 from the port it was sent to (10025). False answers from
+  # 10125 instead, which a port-restricted home router drops.
   type102_same_port: true
 
   # Answers STUN (RFC 5389) Binding requests -- a different protocol from NCS

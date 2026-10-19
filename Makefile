@@ -154,11 +154,6 @@ gen-dns:
 .PHONY: gen-switch
 gen-switch: gen-nginx gen-dns gen-hosts
 
-## switchnet-mode: point a console's SD card back at GRID0+ after Nextendo (or any other) mode. SD=/path/to/sd/card
-.PHONY: switchnet-mode
-switchnet-mode:
-	scripts/switchnet-mode.sh $(SD)
-
 ## config-check: validate the config and warn about risky settings
 .PHONY: config-check
 config-check:

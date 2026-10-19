@@ -1,126 +1,100 @@
-# internal/baas
+# baas
 
-Accounts, friend codes, friend requests, friend lists, presence, blocks and
-profile pictures. **This is the server the stock Nintendo friends applet talks
-to**, and the only place in GRID0+ where identity is decided.
+Accounts, friend codes, friend requests, friend lists, presence, blocks and profile
+pictures. This is the server the stock Switch friends applet talks to, and the only place
+in GRID0+ where identity is decided.
 
 | | |
 | --- | --- |
-| Reimplements | `https://e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com` |
-| | `https://m-lp1.baas.nintendo.com` (accounts, 21.0.0 and later) |
-| | `https://cdn-image-e0d67c…baas.nintendo.com` (profile pictures) |
-| Reference | [BAAS Server](https://github.com/kinnay/NintendoClients/wiki/BAAS-Server) |
-| | [Switch Tokens](https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#baas-access-tokens) |
+| Stands in for | `e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com`, `m-lp1.baas.nintendo.com` (accounts, firmware 21.0.0 and later) and the `cdn-image-...baas.nintendo.com` host (profile pictures) |
+| Reference | [BAAS Server](https://github.com/kinnay/NintendoClients/wiki/BAAS-Server), [Switch Tokens](https://github.com/kinnay/NintendoClients/wiki/Switch-Tokens#baas-access-tokens) |
 | Needs a database | yes |
 
 ## Files
 
 | File | What |
 | --- | --- |
-| `router.go` | routing, the authentication middleware, the access log |
-| `accounts.go` | `application/token`, `users`, `login`, `federation`, lookups, and `POST /login` (username/password, not Nintendo-shaped) |
-| `devices.go` | `push_channels`, `devices/snapshot` — real response shapes, not `acknowledge` |
-| `friends.go` | friend requests, friend list, favourites, relationships |
-| `friendcodes.go` | code generation with the cooldown, and blocks |
-| `presence.go` | the presence report, the TTL rules, profile patches |
+| `router.go` | routing, the authentication middleware and the access log |
+| `accounts.go` | `application/token`, `users`, `login`, `federation`, lookups, and the username/password `POST /login` |
+| `devices.go` | `push_channels` and `devices/snapshot` |
+| `friends.go` | friend requests, the friend list, favourites and relationships |
+| `friendcodes.go` | friend code generation with its cooldown, and blocks |
+| `presence.go` | the presence report, the time-limit rules and profile patches |
 | `images.go` | profile picture upload and serving |
 | `certificates.go` | the two JWK set endpoints |
 | `errors.go` | Nintendo's error response shape |
-| `models.go` | the wire objects, and visibility scoping |
-| `nalink.go` | the Nintendo Account link flow (`accounts.nintendo.com`) — GRID0+'s own login page, not a copy of anyone's real OAuth |
+| `models.go` | the wire objects and visibility scoping |
+| `nalink.go` | the Nintendo Account link flow: GRID0+'s own login page, not a copy of Nintendo's |
 | `people.go` | creating a person's account (login, password hash, friend code), independent of any console |
-| `botapi.go` | the Discord bot's account API (`baas.bot_api`): the only way to create a person's account, plus friends, avatars, who is online and status. Loopback only, shared token, caller named by Discord user id. One Discord account owns several GRID0+ accounts — the first is its main account, the rest are named by login, and a password reset reaches only the caller's own; see [`GRID0-net/grid0plus-discord`](https://github.com/GRID0-net/grid0plus-discord) |
+| `botapi.go`, `botapi_save.go` | the Discord bot's API; see [DISCORD_BOT.md](../../docs/DISCORD_BOT.md) |
 | `botfest.go` | the bot API's Splatfest side: the vote post (in-game or Discord-only fest), first-pick-final votes, LAN games players submit and a mod accepts or refuses, standings no earlier than the game shows them, and `GET /bot/v1/fest-events`, the stream that gives a player the team role the moment they pick in game. See [The Discord bot's fests](#the-discord-bots-fests) |
-| `provision.go` | device account id/password shape and validation, shared by registration and login |
-| `ratelimit.go` | the sliding-window limiter over login attempts |
-| `wire.go` | form/JSON body decoding shared by every handler |
+| `provision.go` | device account id and password shape and validation |
+| `ratelimit.go` | the sliding-window limiter on login attempts |
+| `wire.go` | form and JSON body decoding shared by every handler |
 
 ## Two things to read before changing anything here
 
-### Identity is fail-closed
+### Identity fails closed
 
-A request is authorised by exactly one thing: an access token this server signed,
-whose subject is a user that exists **and** whose device account still belongs to
-that user. There is no default account, no "last console that logged in", and no
-lookup that falls back to a global.
+A request is authorised by exactly one thing: an access token this server signed, whose
+subject is a user that exists and whose device account still belongs to that user. There is
+no default account, no "last console that logged in", and no lookup that falls back to a
+global. [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#identity) explains the failure this
+prevents.
 
-That is not caution for its own sake. The production Switch-facing account server
-this replaces resolved a console by device account id and fell back to a
-process-wide variable when the lookup missed. Every console then acted as one
-person, they all sent friend requests as him, they all showed **his** friend code,
-and regenerating the code changed nothing — because the code was never the
-identity.
-
-The tests in `accounts_test.go` named `TestLoginRefuses…`,
+The tests in `accounts_test.go` named `TestLoginRefuses...`,
 `TestATokenWhoseSubjectDoesNotOwnItsDeviceAccountIsRefused` and
-`TestOneUserCannotReadOrChangeAnother` are the ones that hold that property. They
-are the most important tests in the repository.
+`TestOneUserCannotReadOrChangeAnother` hold that property. They are the most important tests
+in the repository.
 
-**`POST /login` (username/password) is a second, independent identity check,
-not a fallback bolted onto the one above.** It exists for a caller with no
-device account to present at all — an emulator's own account client, which
-has no console-issued credential and no way to get one, unlike a real
-console going through dauth/aauth — and it resolves identity entirely on its
-own: `GetUserByLoginUsername` plus a `bcrypt` compare against
-`LoginPasswordHash`, both already used by `nalink.go`'s login page. Once that
-succeeds, it hands off to `issueLoginTokens` — the same function
-`completeLogin` uses once *its* check succeeds — so the token shape is one
-piece of code, not two that could drift. `deviceAccountForLogin` finds or
-mints the device account those tokens name; see its own doc comment for why
-"finds the person's own oldest one, or makes one" is still fail-closed and
-not the process-wide-variable bug above wearing a new shape: the id and
-password below are never involved, so there is nothing for this path to
-guess about them.
+`POST /login` (username and password) is a second, independent identity check, not a
+fallback. It exists for a caller with no device account to present, such as an emulator's own
+account client, and it resolves identity on its own: `GetUserByLoginUsername` plus a bcrypt
+comparison against `LoginPasswordHash`. Once that succeeds it hands off to `issueLoginTokens`,
+the same function `completeLogin` uses, so the token shape is one piece of code.
+`deviceAccountForLogin` finds the person's own oldest device account or makes one; see its
+comment for why that is still fail-closed.
 
 ### Presence takes the strongest fresh signal
 
 ```
-fresh report from the console?  →  use it exactly, including OFFLINE
-otherwise, seen recently?       →  ONLINE, app fields cleared
-otherwise                       →  OFFLINE
+fresh report from the console?   use it exactly, including OFFLINE
+otherwise, seen recently?        ONLINE, app fields cleared
+otherwise                        OFFLINE
 ```
 
-Both halves are load-bearing. Without the expiry, a console switched off
-mid-game shows as playing forever. Without the heartbeat, a console idling in the
-Home Menu — which reports nothing, and is exactly where players look at each
-other's status — reads as offline to all its friends.
-
-`presence.go` has the long version, including the two subtleties that were only
-found by running it: "never reported" is not "reported OFFLINE", and the app
-fields have to be cleared whenever the effective state is not `PLAYING`.
+Both halves matter. Without the expiry, a console switched off mid-game shows as playing
+forever. Without the heartbeat, a console idling in the Home Menu, which reports nothing,
+reads as offline to all its friends. `presence.go` has the long version, including the two
+traps: "never reported" isn't "reported OFFLINE", and the app fields must be cleared whenever
+the effective state isn't `PLAYING`.
 
 ## How the console reports presence
 
-Not through an endpoint you would guess. It JSON-patches the **device account**:
+Not through an endpoint you would guess. It JSON-patches the device account:
 
 ```http
 PATCH /1.0.0/users/<uid>/device_accounts/<daid>
 Content-Type: application/json-patch+json
 
 [{"op":"replace","path":"/presence/state","value":"PLAYING"},
- {"op":"add","path":"/presence/extras/friends/appInfo:appId","value":"0100c2500fc20000"},
- …]
+ {"op":"add","path":"/presence/extras/friends/appInfo:appId","value":"0100c2500fc20000"}, ...]
 ```
 
-Shape confirmed against `kinnay/NintendoClients`, `nintendo/switch/baas.py`,
-`BAASClient.update_presence`. `appInfo:appId` is the field that makes
-"Playing Splatoon 3" appear in the applet.
+`appInfo:appId` is what makes "Playing Splatoon 3" appear in the applet.
 
-## Where the guesses are
+## Unconfirmed shapes
 
-The `2.0.0` friends endpoints are **not documented anywhere** and no public
-implementation exists to compare against. Every guessed shape carries a
-`TODO(capture-needed):` comment saying what a capture would settle and which
-single function to change:
+The `2.0.0` friends endpoints aren't documented anywhere and no public implementation exists
+to compare against. Every guessed request or response shape carries an `UNCONFIRMED:` comment
+that says what would settle it and which single function to change:
 
 ```sh
-grep -rn 'TODO(capture-needed)' .
+grep -rn 'UNCONFIRMED' .
 ```
 
-Priority order and capture instructions are in
-[`docs/CAPTURES/README.md`](../../docs/CAPTURES/README.md). The friend list
-response shape is first, because getting it wrong leaves the applet empty with
-nothing in the log.
+The friend list response shape matters most, because getting it wrong leaves the applet empty
+with nothing in the log.
 
 The bot's authenticated `GET /bot/v1/presence-count` returns idle `online`,
 `playing`, and their `total`, using the shared TTL resolver and `/online`'s

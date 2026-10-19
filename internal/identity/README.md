@@ -1,18 +1,17 @@
-# internal/identity
+# identity
 
-Who a game server is talking to, decided from a BAAS id token. Shared by every
-game server GRID0+ runs:
+Decides who a game server is talking to, from a BAAS id token. Every game server GRID0+
+runs shares it:
 
-- `internal/npln` (Splatoon 3) at `IssueToken` / `IssuePrearrangedUserToken`;
-- `internal/splatoon2` (Splatoon 2, NEX) at the ticket-granting login.
+- `internal/npln` (Splatoon 3), at `IssueToken` and `IssuePrearrangedUserToken`;
+- `internal/splatoon2` (Splatoon 2, over NEX), at the ticket-granting login.
 
-No Nintendo endpoint lives here. The token is GRID0+'s own, signed by
-`internal/baas` with the `baas_id` key and published at
-`/1.0.0/certificates` — see
-[BAAS server](https://github.com/kinnay/NintendoClients/wiki/BAAS-Server) for
-what the console does with it.
+No Nintendo endpoint lives here. The token is GRID0+'s own, signed by `internal/baas` with
+the `baas_id` key and published at `/1.0.0/certificates`. See the
+[BAAS server](https://github.com/kinnay/NintendoClients/wiki/BAAS-Server) page for what a
+console does with it.
 
-The rule it holds: any lookup that cannot resolve the caller is an error. No
-fallback, no default user. CLAUDE.md's "Every console acted as one person"
-section is the reason; the tests here are that section's tests, once for every
+The rule it holds is that any lookup that can't resolve the caller is an error. There is
+no fallback and no default user. [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#identity)
+explains why, and the tests here are the same tests that protect BAAS, run once for every
 game server.

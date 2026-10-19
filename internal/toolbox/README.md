@@ -1,131 +1,70 @@
-# internal/toolbox
+# toolbox
 
-The public API for the GRID0+ Toolbox homebrew app
-([`GRID0-net/GRID0plus-cfw`](https://github.com/GRID0-net/GRID0plus-cfw), `toolbox/`):
-whether a newer build exists, and a coarse status of the other GRID0+
-services.
+The public API for the GRID0+ Toolbox homebrew app ([GRID0-net/GRID0plus-cfw](https://github.com/GRID0-net/GRID0plus-cfw), `toolbox/`). It tells the app
+whether a newer build exists and gives a coarse status of the other GRID0+ services. The setup steps are in [TOOLBOX.md](../../docs/TOOLBOX.md).
 
 | | |
 | --- | --- |
 | Needs a database | no |
-| Reimplements a Nintendo endpoint | no — this is not part of the console-facing protocol at all |
-| Credential it holds | a fine-grained GitHub PAT, scoped to `GRID0plus-cfw`'s contents, read-only |
+| Stands in for a Nintendo endpoint | no, this isn't part of the console-facing protocol |
+| Credential it holds | a fine-grained GitHub token, scoped to the Toolbox repository's contents, read-only |
 | Credential the caller needs | none |
 
-## Why this exists, and why it is its own service
+## Why it is its own service
 
-`GRID0plus-cfw` (the homebrew app's own source, under `toolbox/`) was a private
-repository when this service was written, and the relay is kept so it can be
-private again without shipping a token. While it is private, an unauthenticated `GET /repos/.../releases/latest` from a console gets a
-404. The two ways around that are: give the console a GitHub token, or give
-it a service that holds the token instead. The first means every console
-carries a real, extractable credential — anyone who runs `strings` on the
-`.nro` has it, permanently, until every distributed copy is somehow revoked
-and replaced. This package is the second option: the console asks *this*
-service, which asks GitHub, and the token never leaves the box.
+If the app's repository is private, an unauthenticated `GET /repos/.../releases/latest` from a console gets a 404. The two ways around that are to give the
+console a GitHub token or to give it a service that holds the token. The first puts a real, extractable credential in every console: anyone who runs `strings`
+on the `.nro` has it, permanently, until every distributed copy is replaced. This service is the second option. The console asks it, it asks GitHub, and the token
+never leaves the server.
 
-It is a separate service (`cmd/toolbox`) rather than a route added to
-`stubs` or `dashboard` for three separate reasons:
+It is a separate service (`cmd/toolbox`) instead of a route in `stubs` or `dashboard` for three reasons:
 
-- **It is not a Nintendo endpoint.** `stubs` answers hostnames
-  `internal/nintendo/hosts.go` redirects; this app is not on that list and
-  does not need DNS redirection at all — it already knows the server's
-  address (the same one the app's own hosts screen writes) and reaches this
-  service directly, on its own port (`deploy/nginx.toolbox.conf`, the same
-  pattern `gamesync` uses for port 7575 rather than a slot in the SNI map).
-- **It must never require dashboard's token.** `internal/dashboard`'s
-  `/api/health` answers the same question `/status` here does, in more
-  detail, behind the shared operator token — the right amount of detail for
-  the operator, and exactly the amount that would leak internal error text
-  (a database host, a connection error) to whichever console asks. `/status`
-  here answers only `ok` / `degraded` / `down` / `unknown`, on purpose, with
-  no token at all: an unauthenticated caller earns no more than that.
-- **It is the one place the GitHub token needs to exist.** Nothing else in
-  GRID0+ talks to GitHub. Giving that credential its own service, rather
-  than folding it into one that already does several other things, keeps the
-  one thing that must never reach a console physically separate from
-  everything that already does.
+- **It isn't a Nintendo endpoint.** `stubs` answers hostnames `internal/nintendo/hosts.go` redirects, and this app isn't on that list and needs no DNS redirection.
+  It already knows the server's address and reaches this service directly on its own port (`deploy/nginx.toolbox.conf`), the same pattern `gamesync` uses for 7575.
+- **It must never need the dashboard's token.** The dashboard's `/api/health` answers the same question as `/status` here, in more detail and behind the shared
+  token. That is the right amount of detail for the operator and exactly the amount that would leak internal error text (a database host, a connection error) to
+  whichever console asks. `/status` here answers only `ok`, `degraded`, `down` or `unknown`, with no token.
+- **It is the one place the GitHub token needs to exist.** Nothing else in GRID0+ talks to GitHub, so giving that credential its own service keeps the one thing that
+  must never reach a console physically separate from everything else.
 
 ## Endpoints
 
 | Path | Answers |
 | --- | --- |
-| `GET /status` | `{"services":[{"name":"baas","status":"ok"}, ...]}` — see below |
-| `GET /updates/latest` | `{"tag_name", "browser_download_url", "size"}`, shaped exactly like GitHub's own release JSON |
-| `GET /updates/latest/download` | streams the latest release's `.nro`, for a caller that does not know the asset id |
+| `GET /status` | `{"services":[{"name":"baas","status":"ok"}, ...]}` |
+| `GET /updates/latest` | `{"tag_name", "browser_download_url", "size"}`, shaped like GitHub's own release JSON |
+| `GET /updates/latest/download` | streams the latest release's `.nro`, for a caller that doesn't know the asset id |
 | `GET /updates/download?asset=<id>` | streams that release's `.nro` asset |
 
 ### `/status`
 
-Each named service (`dauth`, `aauth`, `baas`, `stubs`, `npln`'s admin
-listener, `dashboard`) is asked its own `/healthz` and reduced to one word:
-`ok`, `degraded`, `down`, or `unknown` if it answered but not with a health
-report. `dns` and `natcheck` are UDP — there is no `/healthz` to ask — so
-they are reported `unknown` with a reason, never guessed at. This is the
-same honesty rule `internal/dashboard/servicehealth.go` applies to its own,
-more detailed probe: a status that says "unknown, and here is why" is worth
-more than a colour this package never earned.
+Each named service (`dauth`, `aauth`, `baas`, `stubs`, `npln`'s admin listener and `dashboard`) is asked its own `/healthz` and reduced to one word: `ok`, `degraded`,
+`down`, or `unknown` if it answered but not with a health report. DNS and `natcheck` are UDP, so there is no `/healthz` to ask and they are reported `unknown` with a
+reason instead of guessed at. A status that says "unknown, and here is why" is worth more than a colour nothing earned.
 
 ### `/updates/latest` and `/updates/download`
 
-`/updates/latest/download` is the same body as `/updates/download`, reached
-without the caller having to walk `/updates/latest` first and hold on to a
-numeric asset id. The updater shipped before this endpoint knew only the
-`browser_download_url` that `/updates/latest` hands back, so a console that
-wants the newest `.nro` outright — a first install, or a recovery where its
-stored URL is stale — otherwise has two round trips and a piece of
-GitHub-shaped state to get wrong. It resolves the asset through the same
-release fetch/cache and the same `nroAsset` check as everything else here, so
-a release with several `.nro` files is a `502` rather than whichever one
-GitHub happened to list first.
+`/updates/latest` answers the three keys the app's updater reads from a GitHub release (`tag_name`, `browser_download_url`, `size`), so the app only needed a different host
+to ask. `browser_download_url` is rewritten to point back at this service's own `/updates/download`, so a console never sees, and can't use, the token that made the answer
+possible. A release is expected to carry exactly one `.nro`. If it carries several or none, the answer is a `502` rather than a guess.
 
-Its response differs from the legacy path in one deliberate way: it sets
-`Content-Disposition: attachment; filename="switchnet.nro"`. That filename is
-part of the stable URL the toolbox's own updater was built against, so
-changing it would strand installed copies. `/updates/download?asset=<id>`
-keeps its old headers untouched, because something may already be parsing
-them.
+`/updates/latest/download` is the same body as `/updates/download`, reached without walking `/updates/latest` first and holding on to a numeric asset id. It is for a console that
+wants the newest `.nro` outright, such as a first install or a recovery with a stale stored URL. It uses the same release lookup and cache, so a release with several `.nro` files is a
+`502` and not whichever one GitHub listed first. It sets `Content-Disposition: attachment; filename="switchnet.nro"`, a filename the app's updater was built against, so changing it
+would strand installed copies. `/updates/download?asset=<id>` keeps its original headers untouched.
 
-`toolbox/source/update.c` in `GRID0plus-cfw` already parses exactly three keys out
-of a GitHub release response — `tag_name`, `browser_download_url`, `size` —
-tolerant of GitHub's own formatting. `/updates/latest` answers those same
-three keys, so the client needed no parsing changes, only a different host
-to ask. `browser_download_url` is rewritten to point back at this service's
-own `/updates/download`: a console must never see, and cannot use, the
-token that made the answer possible. The release's asset list is expected to
-carry exactly one `.nro`; if it carries several or none, that is reported as
-a `502` rather than guessed at.
+The rewritten URL is built from `toolbox.public_base_url`, never from the incoming request. It looks derivable, but behind the real nginx block neither `r.TLS` nor the port is
+available: nginx terminates TLS and proxies plain HTTP, so `r.TLS` is always nil, and `proxy_set_header Host $host` forwards the hostname without the port. Together those produced
+`http://host/updates/download?...`, with the wrong scheme and no `:8443`. `public_base_url` is required, alongside the three GitHub settings, for `/updates/*` to answer anything but `503`.
+`release_cache_ttl_seconds` bounds how often GitHub is actually asked, so several consoles checking within one window cost one request.
 
-That rewritten URL is built from `toolbox.public_base_url`
-(`config.Toolbox.PublicBaseURL`), never from the incoming request. It looks
-like it should be derivable from `r.TLS`/`r.Host` — this service *does* know
-its own hostname and whether the connection is TLS — but behind the real
-`deploy/nginx.toolbox.conf` neither is true: nginx terminates TLS itself and
-proxies to this service over plain HTTP, so `r.TLS` is always `nil` here,
-and `proxy_set_header Host $host;` forwards the hostname without the port
-(`$host` never carries one). Both mistakes together used to produce
-`http://host/updates/download?...` — wrong scheme, missing `:8443` — a URL
-nothing listens on. `public_base_url` is required, alongside the three
-GitHub fields, for `/updates/*` to answer anything but `503`.
+## What it deliberately doesn't do
 
-`release_cache_ttl_seconds` bounds how often GitHub is actually asked:
-several consoles checking within the same window cost one request, not one
-per console.
-
-## What this deliberately does not do
-
-- **No authentication on the console's side, anywhere.** The whole point is
-  that a homebrew binary distributed to consoles can reach this safely with
-  no credential to protect. If GRID0+ ever needs to restrict *which*
-  consoles can check for updates, that has to be a different mechanism —
-  this package is not it.
-- **No error detail in `/status`.** See "why this exists" above.
-- **No mirroring or caching of the `.nro` itself.** `/updates/download` and
-  `/updates/latest/download` proxy GitHub live, per request; the latter reuses
-  only the *release metadata* cache, never the binary. At the traffic level one GRID0+
-  deployment sees, holding a second copy of the binary on disk (and keeping
-  it in sync with whatever GitHub currently has tagged latest) is
-  complexity this does not need yet.
+- **No authentication on the console's side.** The point is that a homebrew binary distributed to consoles can reach this safely with no credential to protect. If you ever need to
+  restrict which consoles can check for updates, that needs a different mechanism.
+- **No error detail in `/status`**, for the reason above.
+- **No mirroring of the `.nro`.** Downloads proxy GitHub live, per request, and only the release metadata is cached. At the traffic a private deployment sees, a second copy on disk would
+  be complexity it doesn't need.
 
 ## The patch mirror
 

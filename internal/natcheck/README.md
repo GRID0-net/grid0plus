@@ -1,33 +1,29 @@
-# internal/natcheck
+# natcheck
 
-The NAT-check (NCS) responder. It carries no gameplay traffic, but without it
-peer-to-peer play does not start.
+The NAT-check (NCS) responder. It carries no gameplay traffic, but peer-to-peer play doesn't
+start without it.
 
 | | |
 | --- | --- |
-| Reimplements | `nncs1-lp1.n.n.srv.nintendo.net` |
-| | `nncs2-lp1.n.n.srv.nintendo.net` |
+| Stands in for | `nncs1-lp1.n.n.srv.nintendo.net` and `nncs2-lp1.n.n.srv.nintendo.net` |
 | Reference | [NAT Check Server](https://github.com/kinnay/NintendoClients/wiki/NAT-Check-Server) |
 | Protocol | UDP, ports 10025 and 10125 |
 | Needs a database | no |
 
 ## What it does
 
-The console sends a 16-byte message; the server fills in the source address it
-saw and sends it back. From that the console learns its own external address and,
-by comparing **which socket answered which message type**, classifies its
-router's NAT.
-
-Message layout, big-endian:
+The console sends a 16-byte message and the server fills in the source address it saw and
+sends it back. From that, and from **which socket answered which message type**, the console
+learns its external address and classifies its router's NAT. Messages are big-endian:
 
 ```
 0x0  4  message type
-0x4  4  external port   (the server fills this in)
-0x8  4  external IP     (the server fills this in)
+0x4  4  external port   (filled in by the server)
+0x8  4  external IP     (filled in by the server)
 0xC  4  the console's external IP outbound; the server's local IP inbound
 ```
 
-| Type | Must be answered from |
+| Type | Answered from |
 | --- | --- |
 | 1 | the regular address and port |
 | 2 | **a different address** |
@@ -36,53 +32,40 @@ Message layout, big-endian:
 | 101, 103 | like 1 |
 | 102 | the regular address and port by default (`type102_same_port`); like 3 when off |
 
-Type 102 is answered from the port it was sent to. A capture of Nextendo's
-working server (2026-10-02) shows its replies coming from 10025, not 10125.
-Answered from 10125, the reply is dropped by a port-restricted home router.
-That alone was not the cause of the emulator's room-creation error: it
-persisted after the change.
+Type 102 is answered from the port it was sent to, because a reply from 10125 is dropped by
+a port-restricted home router.
 
 ## The two-address requirement
 
-**`nncs1` and `nncs2` must resolve to two different IP addresses.**
-
-Message type 2 has to be answered from a different address, and the console
-probes the two hostnames as separate servers. Point both at one IP and the
-console de-duplicates the probe, never sends the second one, and NAT detection
-does not complete. In the deployment this was checked against, that surfaced as
-Mario Kart 8 error 2618-201 and looked nothing like a NAT problem.
+`nncs1` and `nncs2` must resolve to two different IP addresses. Message type 2 has to be
+answered from a different address, and the console probes the two hostnames as separate
+servers. With one address the console de-duplicates the probe, never sends the second one and
+NAT detection doesn't complete. It showed up as Mario Kart 8 error 2618-201 and looked
+nothing like a NAT problem.
 
 A second address on the same machine is enough. `make config-check` warns when
-`network.natcheck_secondary_ip` is unset, and the config validator refuses to
-accept the two being equal.
+`network.natcheck_secondary_ip` is unset, and the config validator refuses to accept the two
+being equal. Running with one address works, since type 2 falls back to the secondary port,
+but consoles then report a stricter NAT than their router really has and some titles refuse to
+matchmake.
 
-Running with one address does work — type 2 falls back to the secondary port —
-but consoles then report a stricter NAT type than their router really has, and
-some titles refuse to matchmake on that basis.
+## STUN
 
-## `cmd/natcheck` also answers STUN
+`cmd/natcheck` also runs [`internal/stunresponder`](../stunresponder/README.md), an RFC 5389
+Binding responder, on `natcheck.stun_listen` (default `:3478`). It is a different protocol but
+the same kind of small stateless UDP responder, so it shares this service.
 
-`internal/stunresponder`'s RFC 5389 Binding responder runs in the same
-process, on `natcheck.stun_listen` (default `:3478`) -- a different protocol
-from NCS above, but the same kind of small, stateless UDP responder, so it
-shares this service rather than getting its own. See that package's own
-README for why Splatoon 3 needs it.
+## Why it runs natively
 
-## Why this has to run natively
-
-The protocol works by the console observing *which* address and port
-answered. `natcheck` runs as a native process talking directly on its
-configured addresses (`primary_listen`, `secondary_listen`,
-`alternate_listen`) rather than behind any port-forwarding layer, which is
-what makes that observation trustworthy. (Running it in Docker used to be a
-real footgun here: the userland proxy rewrote the reply's source address, so
-every message type appeared to come from the same place and classification
-came out wrong — in a way that looked like a NAT problem, not a Docker one.)
+The protocol works by the console observing which address and port answered. `natcheck` talks
+directly on the addresses it is configured with (`primary_listen`, `secondary_listen`,
+`alternate_listen`) with nothing in between. Behind Docker's userland proxy, every reply's
+source address is rewritten, so every message type seems to come from the same place and the
+NAT type comes out wrong in a way that looks like a router problem.
 
 ## Sharing what it observes
 
-With `redis.url` set, every reachability message's source address — the
-external port the console's router mapped for its Pia socket — is written to
-Redis (`internal/natobs`), off the read loop so a slow Redis never delays a
-reply. `cmd/nex` reads it to correct the public stations it hands out for
-Splatoon 2 (see `internal/rendezvous`'s bridge).
+With `redis.url` set, the source address of every reachability message (the external port the
+console's router mapped for its peer-to-peer socket) is written to Redis through
+[`internal/natobs`](../natobs/README.md), off the read loop so a slow Redis never delays a
+reply. `cmd/nex` uses it to correct the public stations it hands out for Splatoon 2.

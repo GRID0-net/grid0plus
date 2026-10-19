@@ -1,71 +1,63 @@
 # Deployment
 
-Getting GRID0+ onto a machine your consoles can reach.
+How to put GRID0+ on a machine your consoles can reach and keep it running.
 
-- [Local, on one machine](#local-on-one-machine)
-- [The nginx TLS edge](#the-nginx-tls-edge)
+- [Installing](#installing)
+- [The nginx edge](#the-nginx-edge)
 - [Addresses and ports](#addresses-and-ports)
+- [The two addresses](#the-two-addresses)
 - [Checklist: from nothing to a console with a friend](#checklist-from-nothing-to-a-console-with-a-friend)
-- [Operating it](#operating-it)
-- [Security](#security)
+- [Running it](#running-it)
 
----
+## Installing
 
-## Local, on one machine
-
-Postgres, Redis and the nginx TLS edge run in Docker (off-the-shelf images,
-never rebuilt from this repo). The nine Go services run natively: as
-systemd units on the box that actually serves your consoles, installed
-once with `scripts/install-systemd.sh`.
+Postgres, Redis and nginx run in Docker, using the stock images. The Go services
+run as native processes: systemd units on the machine that serves your consoles.
 
 ```sh
 git clone https://github.com/n-popescu/grid0plus /opt/switchnet && cd /opt/switchnet
 
 cp config/config.example.yaml config/config.yaml
-$EDITOR config/config.yaml            # network.public_ip and keys.device_id_secret
-                                       # (openssl rand -hex 32 for the latter) are the
-                                       # two you must set yourself
+$EDITOR config/config.yaml            # network.public_ip and keys.device_id_secret are the
+                                      # two you must set (openssl rand -hex 32 for the secret)
 
-make config-check                     # validates and warns about risky settings
+make config-check                     # refuses a config that can't work, warns about risky ones
 make up                               # Postgres, Redis and nginx
-make gen-certs                        # the local CA and the edge certificate
-make gen-switch                       # switch/hosts.txt and the nginx config
-scripts/install-systemd.sh            # builds every service, installs the units
-sudo systemctl start switchnet.target # starts all eight
+make gen-certs                        # a local CA and the edge certificate
+make gen-switch                       # the nginx config, DNS config and hosts file
+scripts/install-systemd.sh            # builds every service and installs the units
+sudo systemctl start switchnet.target
 ```
 
-The clone location matters: `deploy/systemd/*.service` hardcode
-`/opt/switchnet` (`WorkingDirectory=`, `ExecStart=`), since a static unit
-file can't discover an arbitrary checkout path at install time.
-`install-systemd.sh` refuses to run from anywhere else.
+Clone to `/opt/switchnet`. The systemd units name that path, because a static unit
+file can't discover where it was cloned, and `install-systemd.sh` refuses to run from
+anywhere else.
 
-`make config-check` is worth running first. It refuses a configuration that
-cannot work and warns about the ones that are valid but cause trouble — most
-importantly `natcheck_secondary_ip` being unset.
+`make config-check` is worth running first. The setting it most often catches is
+`network.natcheck_secondary_ip` being unset (see [the two addresses](#the-two-addresses)).
 
-Then check the chain works before involving a console:
+Before involving a console, check the chain works:
 
 ```sh
 make seed
 ```
 
-That drives the real HTTP API — device token, application token, anonymous token,
-register, log in, friend code, friend request, accept, presence — and prints the
-resulting friend list. If it completes, everything except DNS and TLS is correct.
+It drives the HTTP API (device token, application token, sign-up, login, friend code,
+friend request, accept, presence) and prints the resulting friend list. If it
+completes, everything except DNS and TLS is correct.
 
-## The nginx TLS edge
+## The nginx edge
 
-The console connects to Nintendo hostnames on port 443 and picks the backend by
-SNI. One nginx in front of the services does that routing.
+The console connects to Nintendo hostnames on port 443, and one nginx in front of
+the services picks the backend by hostname.
 
 ```sh
 make gen-nginx        # writes deploy/nginx.generated.conf
 ```
 
-Do not hand-edit the result: it is generated from the same host list as the
-console's hosts file and the certificate SANs, and the next regeneration loses
-the edit. To add a host, add it to `internal/nintendo/hosts.go` and regenerate
-all three.
+Don't edit the result by hand. It is generated from the same host list as the DNS
+configuration and the certificate names, and the next regeneration would lose your
+edit. To add a host, add it to `internal/nintendo/hosts.go` and regenerate.
 
 Install it:
 
@@ -77,134 +69,101 @@ sudo cp deploy/nginx.generated.conf /etc/nginx/conf.d/switchnet.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Two things in the generated config are load-bearing:
+Two things in the generated config matter:
 
 **`ssl_verify_client optional_no_ca`.** The console presents its own device
-certificate to dauth, and from firmware 21.0.0 to `m-lp1.baas`. It is signed by
-Nintendo, so it cannot be validated here. `optional_no_ca` asks for it and passes
-the fingerprint through without validating it, which is what gives each console a
-stable device id. Nothing is authorised on that id — accounts are keyed on the
-BAAS device account — so without this everything still works, but the dashboard's
-device list becomes a single row.
+certificate to dauth (and to the BAAS host from firmware 21.0.0). Nintendo signed it,
+so it can't be validated here. This setting asks for it and passes the fingerprint
+through without validating it, which gives each console a stable device id. Nothing
+is authorised on that id, so without it everything still works, but the dashboard's
+device list collapses to a single row.
 
-**A `default_server` block.** A hostname that was redirected on the console but
-has no block here would otherwise fall through to whichever block nginx saw
-first, and get an answer from the wrong service. The generated config sends
-unmatched hosts to the stub server, which logs them. That log is the to-do list.
+**A `default_server` block.** A hostname that was redirected on the console but has
+no block here would otherwise fall to whichever block nginx saw first and get an
+answer from the wrong service. The generated config sends unmatched hosts to the stub
+service, which logs them. That log is a useful to-do list.
 
 ## Addresses and ports
 
-GRID0+ does not run its own DNS server or listen on port 53 anywhere; a
-console finds it via a resolver you already run, configured with
-`make gen-dns` (see [`switch/README.md`](../switch/README.md#part-1-redirection-with-dns)).
+GRID0+ doesn't run its own DNS server. A console finds it through a resolver you
+already run, configured with `make gen-dns` (see [CONSOLE_SETUP.md](CONSOLE_SETUP.md)).
 
-| Port | Protocol | Faces | What |
+| Port | Protocol | Reachable by | What |
 | --- | --- | --- | --- |
-| 443 | TCP | **the consoles** | the nginx TLS edge |
-| **7575** | TCP | **the consoles** | the nginx edge again, for NPLN's `gamesync` |
-| **8443** | TCP | **consoles running GRID0+ Toolbox** | the nginx edge again, for `toolbox` — see below |
-| 10025, 10125 | **UDP** | **the consoles** | NAT check (phase 1 titles; **not** Splatoon 3) |
-| 3478 | UDP and TCP | **the consoles** | STUN/TURN, if you run one — Splatoon 3 uses ICE |
-| 8081–8084 | TCP | localhost only | phase 1's services, behind nginx |
-| 8085–8087 | TCP | localhost only | phase 2's: gateway, JSON front end, dashboard |
-| 8088, 8089 | TCP | localhost only | gamesync; npln's matchmaking admin API (off unless configured) |
-| 8090 | TCP | localhost only | `toolbox` — see below |
-| 8091 | TCP | localhost only | `scsi` — phase 4's OLSC cloud save |
-| 8092, 8093 | TCP | localhost only | `nex` (Splatoon 2), and its admin API (off unless configured) |
-| 30100–30999 | **UDP** | **the consoles** | the NEX relay, **only if `nex.relay.enabled`** |
-| 5432, 6379 | TCP | localhost only | Postgres, Redis |
+| 443 | TCP | consoles | the nginx edge |
+| 7575 | TCP | consoles | the nginx edge again, for Splatoon 3's `gamesync` |
+| 8443 | TCP | consoles running the Toolbox | the nginx edge again, for the `toolbox` service |
+| 10025, 10125 | UDP | consoles | NAT check, used by most titles but **not** Splatoon 3 |
+| 3478 | UDP and TCP | consoles | STUN/TURN, if you run one; Splatoon 3 uses ICE |
+| 30100-30999 | UDP | consoles | the Splatoon 2 relay, **only if** `nex.relay.enabled` |
+| 8081-8084 | TCP | localhost | dauth, aauth, baas, stubs, behind nginx |
+| 8085-8089 | TCP | localhost | npln (gateway, JSON front end, gamesync, optional admin API) and the dashboard |
+| 8090 | TCP | localhost | toolbox |
+| 8091 | TCP | localhost | scsi |
+| 8092, 8093 | TCP | localhost | nex and its optional admin API |
+| 5432, 6379 | TCP | localhost | Postgres and Redis |
 
-The UDP rules are the ones people forget. A firewall that only opens TCP gives
-you a friends list that works and games that never start a match. The same is
-true of UDP 53 on whichever machine runs your resolver — block that and a
-console resolves nothing at all.
+The UDP rules are the ones people forget. A firewall that opens only TCP gives you a
+friends list that works and games that never start a match. The same goes for UDP 53
+on whichever machine runs your resolver.
 
-`8081–8084`'s loopback confinement comes from `config.example.yaml`'s own
-defaults (`dauth.listen`, `aauth.listen`, `stubs.listen` are all
-`127.0.0.1:<port>`) now that nothing publishes these ports for it — change
-one of those to bind-all and it is reachable from the LAN, not just this
-machine, so leave them as configured unless you have a specific reason not
-to. The same is true of `npln.listen`, `.rest_listen`, `.gamesync_listen` and
-`.admin_listen`.
+The localhost-only services are confined by their default `listen` settings
+(`127.0.0.1:<port>`). If you change one to bind all addresses, it becomes reachable
+from your network with nothing in front of it, so leave them alone unless you have a
+reason.
 
-**7575 is the one that is easy to miss.** Splatoon 3 reaches `gamesync` on that
-port directly rather than through the tenant host on 443, so the edge needs a
-second listener and the firewall needs a second rule. Without it the game
-authenticates, opens its gRPC channel, and then cannot sync the lobby.
+**7575 is easy to miss.** Splatoon 3 reaches `gamesync` on that port directly rather
+than through the host on 443, so the edge needs a second listener and your firewall a
+second rule. Without it the game signs in, opens its gRPC channel and then can't sync
+the lobby.
 
-**Note which NAT mechanism applies to which title.** Phase 1's titles and
-Splatoon 2 use the Pia NAT-check pair on 10025/10125. **Splatoon 3 does not** — it uses ICE, so
-`natcheck` is not involved and `npln.ice_servers` is what matters. Those
-addresses have to be reachable *from the console*, not from the server; getting
-them wrong gives a lobby that fills and a match that never starts, which from the
-server side looks exactly like a matchmaking bug. `switchnetctl check` warns when
-the list is empty, and consoles on one LAN work without it.
+**Which NAT mechanism applies to which title.** Most titles, including Splatoon 2,
+use the NAT-check pair on 10025 and 10125. Splatoon 3 uses ICE instead, so `natcheck`
+isn't involved and `npln.ice_servers` is what matters. Those addresses must be
+reachable from the console, not just from the server. Wrong ones give a lobby that
+fills and a match that never starts, which looks exactly like a matchmaking bug from
+the server side. `switchnetctl check` warns when the list is empty, and consoles on
+one LAN work without it.
 
-### Splatoon 2's process
+### Notes on specific services
 
-| Service | Listens | Notes |
-| --- | --- | --- |
-| `nex` | 8092, and 8093 if `admin_token` is set | every NEX title on one WebSocket listener behind nginx. **Set `redis.url`** for both `natcheck` and `nex`: it is how the NAT-check responder's view of each console's router reaches the game server, and without it a console behind a router that remaps ports is handed to its peers at a port nothing listens on |
+**npln** runs four listeners in one process. `gamesync` verifies tokens the gateway
+signs, so splitting it into its own process would mean inventing a protocol between
+them. The admin API only runs when `npln.admin_token` is set.
 
-The relay (`nex.relay`) is off by default. It carries match traffic through
-this machine for pairs of consoles that cannot reach each other, one UDP port
-per pair from `port_base`/`port_span` (30100–30999 by default), on
-`advertise_ip` (default `network.public_ip`). Open that range to the consoles
-only if you enable it, and start with `allow` naming the one player who
-cannot connect: `switchnetctl check` warns when it is enabled for nobody.
+**dashboard** binds to all addresses, since it is a page for a browser on your
+network. Set `dashboard.token`, or anyone who can reach it can schedule and cancel
+Splatfests.
 
-### Phase 2's processes
+**redis.url** must be set for the dashboard, `npln`, `baas`, `natcheck` and `nex`.
+The in-process presence bus delivers nothing across a process boundary, silently.
+Without Redis the dashboard's live view never updates and the matchmaking tile shows
+no data, and a console behind a router that remaps ports is handed to its peers at a
+port nothing listens on. The processes warn at start-up, and so does
+`switchnetctl check`.
 
-| Service | Listens | Notes |
-| --- | --- | --- |
-| `npln` | 8085, 8086, 8088, and 8089 if `admin_listen` is set | four listeners, one process. gamesync verifies tokens the gateway signs, so splitting it out would mean inventing a protocol between them; the admin API is served only when `npln.admin_token` is set |
-| `dashboard` | 8087 | bound to `0.0.0.0`, like `baas`: it is a page for a person's browser on the LAN. **Set `dashboard.token`**, or anybody who can reach it can schedule and cancel Splatfests |
+**npln.rest_record_dir** is worth setting before you try a new console. The JSON
+front end Splatoon 3 contacts first has request shapes nobody has published; with
+this set, one boot writes the whole exchange to disk, hexdumped, with credentials
+redacted.
 
-### `toolbox`: the GRID0+ Toolbox homebrew app's own API
+**The Splatoon 2 relay** (`nex.relay`) is off by default. It carries match traffic
+through this machine for pairs of consoles that can't reach each other, using one UDP
+port per pair from `port_base` and `port_span`, on `advertise_ip` (default
+`network.public_ip`). Open that range to the consoles only if you enable it, and
+start with `allow` naming the one player who can't connect.
 
-**Step-by-step deployment checklist: [`docs/TOOLBOX_SETUP.md`](TOOLBOX_SETUP.md).**
+**The toolbox service** has its own page, [TOOLBOX.md](TOOLBOX.md).
 
-`toolbox` (`internal/toolbox`, listens on `127.0.0.1:8090`) is not a
-Nintendo endpoint and deliberately not in `internal/nintendo/hosts.go`'s
-redirect list — it answers the GRID0+ Toolbox homebrew app, on its own
-edge port (**8443**, `deploy/nginx.toolbox.conf`) rather than a slot in the
-generated SNI map, the same reasoning `gamesync` gets its own port instead
-of one. It needs no `redis.url`, no database, and no console credential:
-see `internal/toolbox`'s own README for why it is unauthenticated by
-design.
+## The two addresses
 
-Set `toolbox.github_owner`, `.github_repo`, `.github_token` (a fine-grained
-PAT, `Contents: Read-only`, scoped to only that one repository) and
-`.public_base_url` (this service's own `https://<public IP>:8443`, needed to
-build a `browser_download_url` a console can actually reach — it cannot be
-inferred from the request behind nginx's TLS-terminating proxy) to enable
-`/updates/latest` and `/updates/download` — the mechanism that lets
-the Toolbox's release source be a private repository, if the operator wants it private, while the homebrew app
-still auto-updates. Leave all four empty and `/status` still works;
-`/updates/*` answers 503 instead.
+`network.public_ip` and `network.natcheck_secondary_ip` must be different addresses.
 
-**`redis.url` must be set for both**, and it is in `config.yaml`. The
-dashboard is a separate process from `npln` and `baas`, and the in-process
-presence bus delivers nothing across a process boundary — *silently*. Without it
-the live view never updates and the matchmaking tile reports no data. Both
-processes warn at start-up, and `switchnetctl check` does too.
-
-**Set `npln.rest_record_dir` before the first console test.** The JSON front end
-Splatoon 3 contacts first has undocumented request shapes; with this set, one boot
-writes the whole exchange to disk, hexdumped, with credentials redacted. It costs
-one line and it is the only record anyone would have.
-
-### The two addresses
-
-**`network.public_ip` and `network.natcheck_secondary_ip` must be different
-addresses.**
-
-Pia probes `nncs1` and `nncs2` as two separate servers, and one of the NAT-check
-message types has to be answered from a different address. If both hostnames
-resolve to the same IP, the console de-duplicates the probe, never sends the
-second one, and NAT detection does not complete. In the deployment this was
-checked against, that appeared as Mario Kart 8 error 2618-201 and looked nothing
-like a NAT problem.
+Consoles probe `nncs1` and `nncs2` as two separate servers, and one NAT-check
+message type has to be answered from a different address. If both names resolve to
+the same IP, the console de-duplicates the probe, never sends the second one, and NAT
+detection doesn't complete. In practice this showed up as Mario Kart 8 error
+2618-201 and looked nothing like a NAT problem.
 
 A second address on the same machine is enough:
 
@@ -212,14 +171,11 @@ A second address on the same machine is enough:
 # temporary, to try it
 sudo ip addr add 192.168.1.51/24 dev eth0
 
-# permanent, systemd-networkd
-# /etc/systemd/network/10-eth0.network
+# permanent, with systemd-networkd, in /etc/systemd/network/10-eth0.network:
 #   [Network]
 #   Address=192.168.1.50/24
 #   Address=192.168.1.51/24
 ```
-
-Then in `config.yaml`:
 
 ```yaml
 network:
@@ -229,163 +185,141 @@ natcheck:
   alternate_listen: "192.168.1.51:10025"
 ```
 
-Running with one address works, but consoles report a stricter NAT type than
-their router really has, and some titles refuse to matchmake on that basis.
+Running with one address does work, but consoles then report a stricter NAT type than
+their router really has, and some titles refuse to matchmake because of it.
 
-### natcheck runs natively, and that is load-bearing
-
-The protocol works by the console observing *which* address and port
-answered. That only works cleanly because `natcheck` is a native process
-talking directly on the two addresses it configures (`natcheck.primary_listen`,
-`.secondary_listen`, `.alternate_listen`) — there is no NAT or userland proxy
-of any kind between it and the network sitting in the way and rewriting the
-reply's source address. (This used to be a real footgun when natcheck ran in
-Docker: the userland proxy would make every message type look like it came
-from the same place, and NAT classification would silently come out wrong in
-a way that looked like a router problem. Running natively removes the
-failure mode entirely rather than working around it.)
+`natcheck` has to run natively rather than behind Docker's port forwarding. The
+protocol works by the console observing which address and port answered, and a
+userland proxy rewrites the reply's source address, so every message looks like it
+came from the same place and the NAT type comes out wrong.
 
 ## Checklist: from nothing to a console with a friend
 
-Do these in order. Each rules out everything before it, which is what makes
-debugging on hardware tractable.
+Do these in order. Each one rules out everything before it, which makes debugging
+on real hardware manageable.
 
-- [ ] **1. The services answer locally.**
-      ```sh
-      curl -fsS localhost:8081/keys              | jq .keys[0].kid   # dauth
-      curl -fsS localhost:8082/keys              | jq .keys[0].kid   # aauth
-      curl -fsS localhost:8083/1.0.0/certificates | jq .keys[0].kid  # baas id
-      curl -fsS -H 'Host: ctest.cdn.nintendo.net' localhost:8084/     # -> ok
-      ```
-      Three *different* key ids. Two the same means two issuers are sharing a
-      key.
+1. **The services answer locally.**
+   ```sh
+   curl -fsS localhost:8081/keys               | jq .keys[0].kid   # dauth
+   curl -fsS localhost:8082/keys               | jq .keys[0].kid   # aauth
+   curl -fsS localhost:8083/1.0.0/certificates | jq .keys[0].kid   # baas id
+   curl -fsS -H 'Host: ctest.cdn.nintendo.net' localhost:8084/     # prints ok
+   ```
+   You should see three different key ids. Two the same means two issuers share a key.
 
-- [ ] **2. The chain works.** `make seed` completes and prints a friend list with
-      a `PLAYING` entry carrying a title id.
+2. **The chain works.** `make seed` completes and prints a friend list with a
+   "playing" entry carrying a title id.
 
-- [ ] **3. TLS answers on 443, with the right certificate.** From another machine
-      on the console's network:
-      ```sh
-      curl -vk --resolve dauth-lp1.ndas.srv.nintendo.net:443:<YOUR_IP> \
-           https://dauth-lp1.ndas.srv.nintendo.net/keys
-      ```
-      A completed handshake and a JSON key set. Check the certificate came from
-      *your* server: `openssl s_client -connect <YOUR_IP>:443 -servername
-      dauth-lp1.ndas.srv.nintendo.net | openssl x509 -noout -issuer` should say
-      `SwitchNet Local CA`.
+3. **TLS answers on 443 with the right certificate.** From another machine on the
+   console's network:
+   ```sh
+   curl -vk --resolve dauth-lp1.ndas.srv.nintendo.net:443:<YOUR_IP> \
+        https://dauth-lp1.ndas.srv.nintendo.net/keys
+   openssl s_client -connect <YOUR_IP>:443 -servername dauth-lp1.ndas.srv.nintendo.net \
+        </dev/null 2>/dev/null | openssl x509 -noout -issuer
+   ```
+   You want a completed handshake, a JSON key set, and an issuer that is your own local
+   CA.
 
-- [ ] **4. Every redirected host resolves to a backend.** For each hostname in
-      `switch/hosts.txt`, curl it through `--resolve` and confirm you do not land
-      on the stub server's unmatched log. `make gen-nginx` covers them all, so
-      this is a check that nginx reloaded, not that the config is right.
+4. **Every redirected host reaches a backend.** For each name in `switch/hosts.txt`,
+   curl it with `--resolve` and check you don't land on the stub service's
+   "unmatched host" log.
 
-- [ ] **4b. DNS resolves, and resolves the right way.** From a machine on the
-      console's network:
-      ```sh
-      dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net A     +short   # -> <YOUR_IP>
-      dig @<YOUR_IP> nncs2-lp1.n.n.srv.nintendo.net  A     +short   # -> the SECOND address
-      dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net AAAA           # -> NOERROR, no answer
-      dig @<YOUR_IP> atumn.hac.lp1.d4c.nintendo.net  A     +short   # -> 0.0.0.0
-      dig @<YOUR_IP> example.com                     A     +short   # -> a real address
-      ```
-      The AAAA and `atumn` checks are the ones people skip, and both are
-      misconfigurations that bite later rather than immediately. `atumn`
-      resolves to `0.0.0.0` (null-routed), not real Nintendo: this
-      deployment's emuMMC is permanently and exclusively GRID0+'s, so
-      there is no "switching back to real Nintendo" for the system-update
-      hosts to stay passthrough for — see `docs/ROADMAP.md`'s note on this.
+5. **DNS resolves the right way.** From a machine on the console's network:
+   ```sh
+   dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net A    +short   # your address
+   dig @<YOUR_IP> nncs2-lp1.n.n.srv.nintendo.net   A    +short   # the SECOND address
+   dig @<YOUR_IP> dauth-lp1.ndas.srv.nintendo.net AAAA          # NOERROR, no answer
+   dig @<YOUR_IP> atumn.hac.lp1.d4c.nintendo.net   A    +short   # 0.0.0.0
+   dig @<YOUR_IP> example.com                      A    +short   # a real address
+   ```
+   The AAAA and `atumn` lines are the ones people skip. Both are mistakes that bite
+   later rather than immediately.
 
-- [ ] **5. NAT check answers on UDP.**
-      ```sh
-      # 16 bytes: message type 1, then three zero fields
-      printf '\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' \
-        | timeout 2 nc -u <YOUR_IP> 10025 | xxd
-      ```
-      16 bytes back, with your source port in bytes 4–7.
+6. **NAT check answers on UDP.**
+   ```sh
+   printf '\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' \
+     | timeout 2 nc -u <YOUR_IP> 10025 | xxd
+   ```
+   Sixteen bytes come back, with your source port in bytes 4 to 7.
 
-- [ ] **6. The console side.** Follow [`../switch/README.md`](../switch/README.md):
-      hosts file on both `sysmmc.txt` and `emummc.txt`, `enable_dns_mitm`,
-      the `disable_ca_verification` patch **matching your firmware**, and the
-      clock set.
+7. **The console side.** Follow [CONSOLE_SETUP.md](CONSOLE_SETUP.md): DNS, the
+   certificate-trust patches that match your firmware, and a correct clock.
 
-- [ ] **7. `baas: registered user` in the log.** DNS, TLS, routing and the whole
-      auth chain are correct at that point.
+8. **`baas: registered user` appears in the log.** DNS, TLS, routing and the whole
+   authentication chain are right at that point.
 
-- [ ] **8. Two consoles, a friend code, a request, an accept.** Both should show
-      the other online.
+9. **Two consoles, a friend code, a request, an accept.** Each should show the other
+   online.
 
-- [ ] **9. Launch a game on one.** The other shows "Playing &lt;game&gt;", and
-      the log shows `presence reported … state=PLAYING title=…`.
+10. **Launch a game on one.** The other shows "Playing <game>", and the log shows
+    `presence reported ... state=PLAYING title=...`.
 
-- [ ] **10. Decide on registration.** `baas.allow_registration: false` stops
-      both the Discord bot's `/register` and a new console's own placeholder
-      account, so a new console cannot join until it is turned back on. With
-      the bot, the usual gate is the Discord server itself (and the bot's
-      `register_role_id`); turn this off only to freeze the group.
+11. **Decide about registration.** `baas.allow_registration: false` stops both the bot's
+    `/register` and a new console's own placeholder account, so nobody new can join
+    until you turn it back on. With the bot, the Discord server itself is usually the
+    gate.
 
 People get their accounts from the Discord bot
-([`GRID0-net/grid0plus-discord`](https://github.com/GRID0-net/grid0plus-discord)):
-set `baas.bot_api` (a loopback `listen` and a token from `openssl rand -hex 32`)
-and install the bot on the same host, as its README describes. There is no
-registration web page any more.
+([`GRID0-net/grid0plus-discord`](https://github.com/GRID0-net/grid0plus-discord)). Set `baas.bot_api` and install the
+bot on the same machine. [DISCORD_BOT.md](DISCORD_BOT.md) has the details. There is no
+registration web page.
 
-## Operating it
+## Running it
 
-**Back up the key directory.** `certs/keys` holds four RSA keys. Losing them
-invalidates every token every console is holding — recoverable, since consoles
-re-authenticate, but it also means every already-issued id token stops verifying.
-Once it is backed up, set `keys.generate_if_missing: false` so a lost volume
-fails loudly instead of silently minting a new identity for the network.
+**Back up the key directory.** `certs/keys` holds the signing keys. Losing them
+invalidates every token a console holds. Consoles recover by authenticating again, but
+every id token already issued stops verifying. Once it is backed up, set
+`keys.generate_if_missing: false` so a lost volume fails loudly instead of quietly
+creating a new identity for the network.
 
-**Back up the database.** It is the accounts, the friend graph and the friend
-codes. `pg_dump` on a schedule.
+**Back up the database.** It holds the accounts, the friend graph and the friend
+codes.
 
 ```sh
 docker compose exec postgres pg_dump -U switchnet switchnet | gzip > backup.sql.gz
 ```
 
-**Migrations** run on startup when `database.auto_migrate` is on. The files are
-also golang-migrate compatible if you prefer to run them yourself:
+**Migrations** run on start-up when `database.auto_migrate` is on. The files are also
+golang-migrate compatible if you prefer to run them yourself:
 
 ```sh
 migrate -path internal/db/migrations -database "$SWITCHNET_DATABASE_URL" up
 ```
 
-**Logs.** `make logs` follows Postgres/Redis/nginx. The Go services log to
-journald: `journalctl -u switchnet-baas -f` for one, `journalctl -u
-'switchnet-*' -f` for all eight together. `log.level: debug` logs every
-NAT-check datagram, which is a lot, and is the right setting while bringing
-a console up. `stubs.log_bodies` logs what unimplemented endpoints are being
-asked for — invaluable exactly once, far too chatty to leave on.
+**Logs.** `make logs` follows Postgres, Redis and nginx. The Go services log to
+journald: `journalctl -u switchnet-baas -f` for one, `journalctl -u 'switchnet-*' -f`
+for all of them. `log.level: debug` logs every NAT-check datagram, which is a lot but
+the right setting while you bring a console up. `stubs.log_bodies` logs what the
+unimplemented endpoints are being asked for; useful once, far too chatty to leave on.
 
-**Upgrades.** `scripts/update.sh`, from `/opt/switchnet`: pulls, works out
-which services the change actually reaches (by reading each binary's Go
-package graph, not by guessing from directory names), runs `make check` —
-the replacement for what a Docker image build's `go vet`/`go test` step used
-to gate on, now that there is no image build in the loop at all — builds
-only what changed, and restarts only those systemd units. `--dry-run` says
-what it would do without doing it; `--all` forces every service regardless.
+**Updating.** `scripts/update.sh`, from `/opt/switchnet`, pulls, works out which
+services the change reaches (by reading each binary's Go package graph, not by
+guessing from directory names), runs `make check`, builds only what changed and
+restarts only those units. `--dry-run` shows what it would do, and `--all` restarts
+everything.
 
-### systemd
-
-`scripts/install-systemd.sh` (from `/opt/switchnet`, once) creates a
-dedicated `switchnet` system user, builds every service, and installs
-`deploy/systemd/switchnet-*.service` plus a grouping `switchnet.target`.
+**systemd.** `scripts/install-systemd.sh` creates a `switchnet` system user, builds
+every service and installs `deploy/systemd/switchnet-*.service` plus a
+`switchnet.target` that groups them.
 
 ```sh
-sudo systemctl start switchnet.target     # start all eight
-sudo systemctl status switchnet.target    # is everything up
-sudo systemctl restart switchnet-baas     # restart just one
+sudo systemctl start switchnet.target     # start everything
+sudo systemctl status switchnet.target    # is it all up
+sudo systemctl restart switchnet-baas     # restart one service
 journalctl -u switchnet-baas -f           # its logs
 ```
 
-Each unit restarts on its own on a crash (`Restart=on-failure`, uncapped --
-see the comment on `switchnet-baas.service` for why the usual "5 failures in
-10s" throttle is deliberately disabled) without taking any other service
-down with it, the same per-service isolation the old Docker setup's
-separate containers gave for free.
+Each unit restarts itself after a crash without taking the others down. The usual
+"five failures in ten seconds" throttle is turned off on purpose; see the comment in
+`switchnet-baas.service`.
 
-### The box must not look idle
+**Cloud instances that reclaim idle machines.** Some free-tier hosts (Oracle's, for
+one) reclaim an instance that looks unused. A server waiting for a console that
+hasn't booted yet looks exactly like that. `deploy/keepalive` is a small helper that
+`install-systemd.sh` installs, which keeps CPU use at a modest level and does nothing
+on a host that isn't a reclaiming cloud instance. See
+[deploy/keepalive/README.md](../deploy/keepalive/README.md).
 
 If this deployment runs on Oracle's Always Free tier, the box has a deadline
 nobody wrote a ticket for: Oracle reclaims an instance that looks unused, and
@@ -406,39 +340,7 @@ it off, are in [`deploy/keepalive/README.md`](../deploy/keepalive/README.md).
 **The console's own CPU graph in the cloud console is the reading that
 decides.** Check that, not just the status file, after changing anything.
 
-## Security
-
-This is a private server for a group of friends. It is not hardened for the open
-internet, and a few properties are worth being explicit about.
-
-**Anybody who can reach port 443 can register an account** while
-`baas.allow_registration` is true. Turn it off once your group is registered. On
-a VPS, also firewall 443 and 10025/10125 to your friends' addresses.
-
-**There is no rate limiting.** A friend-code lookup is a cheap indexed query, but
-somebody who can reach the server could enumerate the 10^12 code space given
-enough time. Registration being off closes the interesting half of that; nginx's
-`limit_req` closes the rest if you need it.
-
-**Device tokens are not authenticated.** Anybody who can reach dauth can get one.
-That is inherent — the real check is a Nintendo-signed client certificate, which
-cannot be verified here — and it is why nothing is authorised on the device id.
-
-**Never expose Postgres or Redis.** The compose file binds them to 127.0.0.1.
-There is no authentication on Redis and the Postgres password is a development
-default.
-
-**dauth/aauth/stubs stay loopback-only by configuration, not by a container
-port mapping.** `config.example.yaml`'s defaults already bind them to
-`127.0.0.1`; changing one of those `listen` values to bind-all puts it on
-the LAN with nothing in front of it. nginx is the only thing that is meant
-to reach them.
-
-**`config/config.yaml`, `certs/` and `switch/hosts.txt` are gitignored.** They
-contain your addresses and your keys. Check `git status` before committing if you
-have edited anything under those paths.
-
-### Repeated connections from distant players
+## Repeated connections from distant players
 
 Generated console-facing HTTP and gRPC TLS blocks use bounded shared session
 caches (1 MiB per backend/client-certificate policy, ten-minute expiry).
@@ -474,3 +376,6 @@ reconnection/setup overhead; gameplay RTT still depends on the peers' routes
 and any TURN relay. gRPC's automatic flow-control adaptation and existing
 unbuffered streams remain enabled; arbitrary fixed windows and shorter
 startup deadlines are not substitutes for a nearer relay.
+
+For what the server does and doesn't protect, and how to lock it down, see
+[SECURITY.md](../SECURITY.md).
