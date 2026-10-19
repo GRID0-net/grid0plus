@@ -59,7 +59,21 @@ func (r *Redis) Subscribe(ctx context.Context) (<-chan Event, error) {
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()
-		for msg := range sub.Channel() {
+		// Waiting on the channel alone left a subscriber that went away
+		// during a quiet spell parked here -- goroutine and Redis connection
+		// both -- until the next event happened to arrive.
+		msgs := sub.Channel()
+		for {
+			var msg *redis.Message
+			select {
+			case <-ctx.Done():
+				return
+			case m, ok := <-msgs:
+				if !ok {
+					return
+				}
+				msg = m
+			}
 			var e Event
 			if err := json.Unmarshal([]byte(msg.Payload), &e); err != nil {
 				// A malformed message means something else is publishing on our

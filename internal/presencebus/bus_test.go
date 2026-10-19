@@ -305,3 +305,32 @@ func TestAnEmptyQueueIsNotTheSameAsNoData(t *testing.T) {
 		t.Errorf("matchmaking = %v, want empty", got.Matchmaking)
 	}
 }
+
+// A subscriber that leaves while nothing is being published must not stay
+// parked until the next event: its channel closes when its context ends.
+func TestRedisSubscriptionEndsWhenItsContextIsCancelledWhileIdle(t *testing.T) {
+	url := os.Getenv("SWITCHNET_TEST_REDIS_URL")
+	if url == "" {
+		t.Skip("SWITCHNET_TEST_REDIS_URL is not set")
+	}
+	channel := "switchnet:test:presence:idle:" + time.Now().Format("150405.000000000")
+	bus, err := NewRedis(t.Context(), url, channel, discardLogger())
+	if err != nil {
+		t.Fatalf("connect to redis: %v", err)
+	}
+	defer func() { _ = bus.Close() }()
+	ctx, cancel := context.WithCancel(t.Context())
+	ch, err := bus.Subscribe(ctx)
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	cancel()
+	select {
+	case _, open := <-ch:
+		if open {
+			t.Fatal("received an event nobody published")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the subscription outlived its context with nothing published")
+	}
+}
