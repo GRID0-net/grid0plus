@@ -300,6 +300,7 @@ func (b *botAPI) link(w http.ResponseWriter, r *http.Request) {
 	user, err := b.s.store.GetUserByLoginUsername(r.Context(), req.Username)
 	if err == nil && !user.Deleted && user.LoginPasswordHash != "" &&
 		bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(req.Password)) == nil {
+		b.s.loginLimiter.Succeeded("discord:" + req.DiscordUserID)
 		// Re-linking an account this Discord account already owns is a no-op,
 		// not a refusal: running /link twice must not be an error.
 		if user.DiscordUserID != "" && user.DiscordUserID != req.DiscordUserID {

@@ -290,6 +290,8 @@ func (s *Server) loginByUsername(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.loginLimiter.Succeeded(service.ClientIP(r))
+
 	da, err := s.deviceAccountForLogin(r.Context(), user.ID)
 	if err != nil {
 		writeInternalError(s.log, w, r, "resolve device account for username login", err)
@@ -458,6 +460,8 @@ func (s *Server) completeLogin(w http.ResponseWriter, r *http.Request, form form
 		writeError(w, r, errInvalidDeviceAccount)
 		return
 	}
+
+	s.loginLimiter.Succeeded(service.ClientIP(r) + "/" + deviceAccountID)
 
 	// Only past this point: the caller has just proven it holds this device
 	// account's password. attachToUserID (only ever set by federation, only

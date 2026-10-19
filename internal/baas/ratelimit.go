@@ -80,6 +80,16 @@ func (l *loginLimiter) Allow(key string, now time.Time) bool {
 	return true
 }
 
+// Succeeded forgets key's attempts after a login that worked. Every
+// attempt counts when it is made, before the outcome is known, so without
+// this someone who mistyped a few times and then got it right stayed
+// throttled as if every try had failed.
+func (l *loginLimiter) Succeeded(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, key)
+}
+
 // sweepLocked drops every address with no attempts left inside the window.
 // Caller holds l.mu.
 func (l *loginLimiter) sweepLocked(now time.Time) {

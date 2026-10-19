@@ -109,3 +109,31 @@ func TestUnlinkedProfilesOnAConsoleDoNotThrottleTheLinkedOne(t *testing.T) {
 		t.Errorf("the linked profile after its console's unlinked ones: status = %d, want 200", code)
 	}
 }
+
+// Mistyping twice and then getting it right resets the budget: the
+// successful login was counted as an attempt too, so the next few logins
+// from that address were throttled as if every try had failed.
+func TestASuccessfulLoginClearsTheThrottle(t *testing.T) {
+	h := newHarness(t, func(cfg *Config) {
+		cfg.LoginAttemptsPerWindow = 3
+		cfg.LoginWindow = time.Minute
+	})
+	a := h.register()
+	attempt := func(password string) int {
+		return h.do(request{
+			method: "POST", path: "/1.0.0/login", token: h.anonymousToken(),
+			form:    url.Values{"id": {a.DeviceAccountID}, "password": {password}},
+			headers: map[string]string{"X-Forwarded-For": "203.0.113.7"},
+		}).StatusCode
+	}
+	attempt("wrong")
+	attempt("wrong")
+	if code := attempt(a.Password); code != 200 {
+		t.Fatalf("right password on the third try: %d", code)
+	}
+	for i := 0; i < 3; i++ {
+		if code := attempt(a.Password); code != 200 {
+			t.Fatalf("login %d after a success: status %d, want 200", i+1, code)
+		}
+	}
+}
