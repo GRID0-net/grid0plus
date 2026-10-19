@@ -1688,9 +1688,21 @@ func (q *Queue) setStateLocked(t *Ticket, s State) {
 	for _, ch := range q.watchers[t.ID] {
 		select {
 		case ch <- *t:
+			continue
 		default:
-			// The watcher is not keeping up. Dropping the update is better than
-			// blocking match formation for every other player on this queue.
+		}
+		// The watcher is not keeping up, and blocking here would stall match
+		// formation for every other player. Each update is a full snapshot,
+		// so the oldest queued one is the one to lose: dropping the newest
+		// lost a final Succeeded behind a run of Searching/Placing flips, and
+		// that console never joined the match the others waited in.
+		select {
+		case <-ch:
+		default:
+		}
+		select {
+		case ch <- *t:
+		default:
 		}
 	}
 }
