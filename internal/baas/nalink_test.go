@@ -918,3 +918,25 @@ func TestNARefreshTokenSurvivesARestart(t *testing.T) {
 		t.Error("the refresh token is stored in the clear")
 	}
 }
+
+// A refresh token outlived its account: a deleted user's console kept
+// minting NA access tokens for up to 30 days.
+func TestNATokenRefreshIsRefusedForADeletedUser(t *testing.T) {
+	h := newHarness(t)
+	user := registerLoginUser(t, h, "gone", "hunter2222")
+	_, refreshToken := naLogin(t, h, "gone", "hunter2222")
+	deleted := true
+	if _, err := h.store.UpdateUser(t.Context(), user.ID, db.UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.PostForm(h.server.URL+"/connect/1.0.0/api/token", url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {"6ffd70c434d303c8"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	requireStatus(t, resp, http.StatusBadRequest)
+}

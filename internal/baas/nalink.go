@@ -468,6 +468,17 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			writeNAOAuthError(w, http.StatusBadRequest, "invalid_grant")
 			return
 		}
+		// The refresh token outlives the account it was granted for: without
+		// this, a deleted user's console kept minting NA access tokens for up
+		// to 30 days. Fail closed on any miss.
+		if user, err := s.store.GetUser(r.Context(), userID); errors.Is(err, db.ErrNotFound) || (err == nil && user.Deleted) {
+			s.log.Warn("nalink: token refresh for a missing or deleted user", "user", userID)
+			writeNAOAuthError(w, http.StatusBadRequest, "invalid_grant")
+			return
+		} else if err != nil {
+			writeInternalError(s.log, w, r, "load user for na token refresh", err)
+			return
+		}
 		// The console's refresh request carries no scope at all, and a real answer
 		// restates the original grant's twelve scopes, with the matching ac:scp in the
 		// access token. Echoing the empty request would answer scope: [] and an access
