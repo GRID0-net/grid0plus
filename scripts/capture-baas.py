@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Capture the real BAAS friends API from a PC, without touching the console.
 
-This is the recommended way to get the captures GRID0+ still needs. It talks
-to Nintendo's real BAAS server from your computer, using your console's
+It talks to Nintendo's real BAAS server from your computer, using your console's
 credentials, and writes the responses to disk.
 
 Compared to running mitmproxy against the console it has two large advantages:
@@ -51,7 +50,7 @@ USAGE
       --password "<40 characters>" \
       --country NL \
       --system-version 2250 \
-      --out docs/CAPTURES/raw
+      --out captures
 
   # the same requests against your own server, no Nintendo involved
   python3 scripts/capture-baas.py ... --against-switchnet https://192.168.1.50
@@ -340,11 +339,9 @@ async def run(args, http, switch, baas, dauth) -> None:
     print()
     print("Next:")
     print("  1. Check the files for anything the redaction missed. Serial")
-    print("     numbers and JWTs are blanked; read them before committing.")
-    print("  2. Write each up under docs/CAPTURES/ using the template in")
-    print("     docs/CAPTURES/README.md.")
-    print("  3. Reconcile internal/baas, and delete the matching")
-    print("     TODO(capture-needed) comment in the same commit.")
+    print("     numbers and JWTs are blanked; read them before sharing them.")
+    print("  2. Reconcile internal/baas, and delete the matching")
+    print("     UNCONFIRMED comment in the same commit.")
 
 
 def main() -> None:
@@ -368,8 +365,8 @@ def main() -> None:
     parser.add_argument("--system-version", type=int, default=2250,
                         help="system version as an integer, e.g. 2250 for 22.5.0 "
                              "(default: 2250)")
-    parser.add_argument("--out", default="docs/CAPTURES/raw",
-                        help="output directory (default: docs/CAPTURES/raw)")
+    parser.add_argument("--out", default="captures",
+                        help="output directory (default: captures)")
     parser.add_argument("--against-switchnet", metavar="URL",
                         help="talk to your own GRID0+ instead of Nintendo. "
                              "Captures request shapes only, with no Nintendo traffic")

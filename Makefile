@@ -207,16 +207,16 @@ fest-build:
 seed:
 	scripts/seed-dev-data.sh
 
-## seed-phase2: drive the phase 2 game server end to end (needs `make up` first)
-.PHONY: seed-phase2
-seed-phase2:
-	scripts/seed-phase2.sh
+## seed-npln: drive the Splatoon 3 game server end to end (needs `make up` first)
+.PHONY: seed-npln
+seed-npln:
+	scripts/seed-npln.sh
 
-## capture: capture the real BAAS friends API from a PC (see docs/PACKET_CAPTURE.md)
+## capture: capture the real BAAS friends API from a PC (see scripts/capture-baas.py)
 .PHONY: capture
 capture:
 	@echo "This needs prod.keys, PRODINFO and your BAAS device account credentials."
-	@echo "Read docs/PACKET_CAPTURE.md first, then:"
+	@echo "Then:"
 	@echo
 	@echo "  python3 scripts/capture-baas.py --parse-save <save>/su/baas/xxxxx.dat"
 	@echo "  python3 scripts/capture-baas.py --keys prod.keys --prodinfo PRODINFO \\"

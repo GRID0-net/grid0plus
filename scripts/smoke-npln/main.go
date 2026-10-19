@@ -1,14 +1,11 @@
-// Command smoke-npln drives phase 2 the way a console would, and reports what
-// came back.
+// Command smoke-npln drives the NPLN game server the way a console would, and
+// reports what came back.
 //
-// CLAUDE.md rule 4: run it, do not just test it. Three of the bugs fixed in this
-// repository were invisible to a green test suite and obvious within thirty
-// seconds of starting the processes — and two more were found by this program.
-// scripts/seed-dev-data.sh is the same idea for phase 1; this is the phase 2
-// half, because the gRPC services cannot be driven with curl.
+// CLAUDE.md rule 4: run it, do not just test it. The gRPC services cannot be
+// driven with curl, so this is the gRPC half of scripts/seed-dev-data.sh.
 //
 //	make up
-//	scripts/seed-phase2.sh          # registers two accounts, then runs this
+//	scripts/seed-npln.sh          # registers two accounts, then runs this
 //
 // It goes through the REAL chain end to end: a device token, an application
 // token, a BAAS login, the id token that login returns, an NPLN session, a
@@ -49,7 +46,7 @@ func main() {
 	userIDs := strings.Split(*users, ",")
 	if len(idTokens) < 2 || len(userIDs) != len(idTokens) {
 		log.Fatal("need at least two id tokens and the matching user ids; " +
-			"run scripts/seed-phase2.sh instead of this directly")
+			"run scripts/seed-npln.sh instead of this directly")
 	}
 
 	conn := dial(*gateway)
@@ -68,7 +65,7 @@ func main() {
 		return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(pairs...))
 	}
 
-	// 1. The phase 1 → phase 2 seam: a BAAS id token buys an NPLN session.
+	// 1. The BAAS to NPLN seam: a BAAS id token buys an NPLN session.
 	auth := authpb.NewAuthClient(conn)
 	sessions := make([]context.Context, len(idTokens))
 	for i, idToken := range idTokens {

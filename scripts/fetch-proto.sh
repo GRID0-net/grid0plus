@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the upstream NPLN protobuf definitions.
 #
-# The definitions are Kinnay's, decompiled from the game and published at
+# The definitions are Kinnay's, recovered from the game and published at
 # github.com/kinnay/NPLN-Protocols. They are NOT vendored as .proto files in
 # this repository: they are fetched here and compiled by gen-proto.sh, so an
 # upstream update is one command rather than a diffing exercise. Only the
@@ -15,14 +15,14 @@ set -euo pipefail
 
 readonly UPSTREAM_URL="https://github.com/kinnay/NPLN-Protocols"
 
-# Pinned 2026-08-28. Bump deliberately, regenerate, and read the diff: a field
-# number that moved is a wire break, not a cosmetic change.
+# Pinned. Bump deliberately, regenerate, and read the diff: a field number that
+# moved is a wire break, not a cosmetic change.
 readonly UPSTREAM_COMMIT="e55caa5385cf72f0282209e95756a71ad3911b6b"
 
-# Which upstream tree to compile. `latest` is the manual decompilation that
-# covers current firmware, and the only one carrying Splatoon 3's own
-# toyohr/v1 services. 0.20.x and 0.21.x are the automatic decompilations from
-# Monster Hunter Rise's reflection data and predate the services this needs.
+# Which upstream tree to compile. `latest` covers current firmware, and is the
+# only one carrying Splatoon 3's own toyohr/v1 services. 0.20.x and 0.21.x are
+# automatically generated from Monster Hunter Rise's reflection data and predate
+# the services this needs.
 readonly UPSTREAM_TREE="latest"
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -61,10 +61,9 @@ fi
 # in go.mod.
 rm -rf "${DEST}/${UPSTREAM_TREE}/google/protobuf"
 
-# Reapply GRID0+'s own additions: fields and messages settled by RE or
-# captures that upstream's reconstruction lacks. Kept as one tracked patch so a
-# re-fetch cannot silently drop them; see the patch's own comments and
-# docs/CAPTURES/README.md for where each came from.
+# Reapply GRID0+'s own additions: fields and messages that upstream's
+# reconstruction lacks. Kept as one tracked patch so a re-fetch cannot silently
+# drop them; see the patch's own comments.
 for patch in "${ROOT}"/scripts/proto-patches/*.patch; do
     git -C "${DEST}" apply --whitespace=nowarn "${patch}"
     echo "proto: applied $(basename "${patch}")"

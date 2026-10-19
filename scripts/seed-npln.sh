@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# Drive phase 2 end to end: register two accounts through the real BAAS API,
-# then run scripts/smoke-npln against the game server with the id tokens BAAS
-# handed out.
+# Drive the Splatoon 3 game server end to end: register two accounts through the
+# real BAAS API, then run scripts/smoke-npln against the game server with the
+# id tokens BAAS handed out.
 #
 # CLAUDE.md rule 4: run it, do not just test it. scripts/seed-dev-data.sh does
-# this for phase 1; the gRPC half cannot be driven with curl, so the second stage
-# is a small Go client.
+# this for the account layer; the gRPC half cannot be driven with curl, so the
+# second stage is a small Go client.
 #
 # Usage:
 #   make up
-#   scripts/seed-phase2.sh
+#   scripts/seed-npln.sh
 #
 # Two accounts are created each time it runs. That is deliberate: it exercises
 # registration, and a private server with a handful of leftover smoke accounts is
@@ -29,14 +29,14 @@ REGION="${SWITCHNET_SMOKE_REGION:-EU}"
 # Splatoon 3, so the application token carries the title the game server expects.
 SPLATOON3="0100c2500fc20000"
 
-command -v curl >/dev/null || { echo "seed-phase2: curl is not installed" >&2; exit 1; }
-command -v jq   >/dev/null || { echo "seed-phase2: jq is not installed" >&2; exit 1; }
+command -v curl >/dev/null || { echo "seed-npln: curl is not installed" >&2; exit 1; }
+command -v jq   >/dev/null || { echo "seed-npln: jq is not installed" >&2; exit 1; }
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "seed-phase2: checking the servers are up"
+echo "seed-npln: checking the servers are up"
 for url in "$DAUTH/keys" "$AAUTH/keys" "$BAAS/1.0.0/certificates"; do
     curl -fsS -o /dev/null "$url" || { echo "  $url is not answering" >&2; exit 1; }
 done
@@ -45,12 +45,12 @@ tokens=()
 users=()
 
 for n in 1 2; do
-    echo "seed-phase2: account $n/2"
+    echo "seed-npln: account $n/2"
 
     # Each console gets its own client-certificate fingerprint, so they get
     # distinct device ids -- what a real deployment behind nginx looks like.
     dtoken="$(curl -fsS -X POST "$DAUTH/v7/device_auth_token" \
-        -H "X-SwitchNet-Client-Cert: phase2-console-$n" \
+        -H "X-SwitchNet-Client-Cert: npln-console-$n" \
         --data-raw "client_id=8f849b5d34778d8e&ist=false&key_generation=13" \
         | jq -r .device_auth_token)"
 
@@ -72,7 +72,7 @@ for n in 1 2; do
         --data-urlencode "media_type=DIGITAL" \
         | jq -r .application_auth_token)"
 
-    # The id token this returns is the phase 1 -> phase 2 seam: it is what the
+    # The id token this returns is the seam between the account layer and the game server: it is what the
     # game presents to the NPLN gateway, and the gateway verifies it against the
     # same key BAAS publishes at /1.0.0/certificates.
     login="$(curl -fsS -X POST "$BAAS/1.0.0/login" \
@@ -98,7 +98,7 @@ for n in 1 2; do
 done
 
 echo
-echo "seed-phase2: driving the game server"
+echo "seed-npln: driving the game server"
 echo
 
 go run "$ROOT/scripts/smoke-npln" \

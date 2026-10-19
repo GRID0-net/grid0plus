@@ -14,11 +14,11 @@ index e383d62..05b2283 100644
  	// [UNKNOWN]
  }
  
-+// The messages below were recovered by GRID0+ from Splatoon 3 28C4287A's
-+// generated parsers (see docs/CAPTURES/README.md, "GameRecord calls recovered
-+// from the game's parsers"). Field NUMBERS and TYPES are read from the binary;
-+// the binary carries no descriptors, so every NAME here is GRID0+'s choice, and
-+// unknown_N names a field whose meaning is not known.
++// The messages below were recovered by GRID0+ from Splatoon 3's generated
++// parsers. Field NUMBERS and TYPES are read from the binary; the binary carries
++// no descriptors, so every NAME here is GRID0+'s choice, and unknown_N names a
++// field whose meaning is not known.
++//
 +
 +message PrepareTagRequest {
 +	string tenant = 1;
@@ -115,12 +115,12 @@ index 2ef8484..184d6ba 100644
  	google.protobuf.Timestamp end_time = 5;
  	nn.npln.common.MapValue attributes = 6;
  	string schedule_set_id = 7;
-+	// Both preserved working hall captures carry an undocumented field 8 here
-+	// -- absent from upstream's own reconstruction -- decoding to the raw
-+	// string "default", the same target every other schedule message in this
-+	// family (VsSchedule, LeagueSchedule) embeds in its own resource name's
-+	// "targets/default" segment instead of a dedicated field. See
-+	// internal/toyohr/README.md's SeasonSchedule section.
++	// Undocumented field 8 here, absent from upstream's own reconstruction,
++	// decoding to the raw string "default": the same target every other
++	// schedule message in this family (VsSchedule, LeagueSchedule) embeds in its
++	// own resource name's "targets/default" segment instead of a dedicated field.
++	// See internal/toyohr/README.md's SeasonSchedule section.
++	//
 +	string target = 8;
  }
  
@@ -134,12 +134,12 @@ index 4684b8f..8741ff1 100644
  
  message GetViolationResponse {
 -	// [UNKNOWN]
-+	// NextendoNetwork/splatoon-3 measured (facts only, not its code) that
 +	// Splatoon 3's own client parses this response's own resource name and
-+	// requires it to end in a "violations" segment -- an empty response
-+	// (this field absent, field 1 defaulting to "") crashes the client at a
-+	// hard abort in its resource-path parser. See
-+	// internal/toyohr/messaging.go's GetViolation.
++	// requires it to end in a "violations" segment -- an empty response (this
++	// field absent, field 1 defaulting to "") crashes the client at a hard abort
++	// in its resource-path parser. See internal/toyohr/messaging.go's
++	// GetViolation.
++	//
 +	string name = 1;
  }
  

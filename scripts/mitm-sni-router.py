@@ -48,8 +48,7 @@ DEFAULT_PORT = 8084
 # gamesync.npln.nintendo.net is NOT reached through this port at all -- nginx
 # listens for it on its own port, 7575, the same reason given in ROUTES'
 # comment above. mitmdump needs a second reverse-mode listener bound to 7575
-# to see it; see docs/PACKET_CAPTURE.md's own command for how the two are
-# combined in one process. This addon's server_connect only ever sees
+# to see it, combining the two listeners in one process. This addon's server_connect only ever sees
 # connections mitmdump itself accepted, so nothing here has to special-case
 # that port -- whichever listener accepted the connection already fixed
 # which of the two mitmdump was told to treat it as.

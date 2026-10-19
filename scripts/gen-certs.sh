@@ -11,9 +11,9 @@
 #
 # A retail Switch will not let you add a CA to the trust store its `ssl`
 # sysmodule uses, so the usual "install our root certificate" step is not
-# available. What the community does instead — and what Nextendo's Prelude
-# installs — is an Atmosphere exefs patch (`disable_ca_verification`) that stops
-# the sysmodule validating the chain at all. See switch/README.md.
+# available. What the community does instead is an Atmosphere exefs patch
+# (`disable_ca_verification`) that stops the sysmodule validating the chain at
+# all. See docs/CONSOLE_SETUP.md.
 #
 # So on the console the certificate's contents do not matter. They matter for
 # everything else: curl during bring-up, an emulator, a browser, and any future

@@ -11,7 +11,7 @@
 # come out of the game binary. There is no dump in this repository and there is
 # not going to be one, so there is nothing to ship: a prebuilt patch would be a
 # patch for somebody else's copy, and it would go stale on the next title
-# update anyway (see docs/ROADMAP.md 4.1).
+# update anyway.
 #
 # The search-and-patch logic is Kinnay's, in generate_patch.py at
 # github.com/kinnay/NPLN-Protocols. It is NOT vendored here -- that repository

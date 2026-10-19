@@ -34,8 +34,8 @@
 /.env
 
 # Raw capture output from scripts/capture-baas.py. Contains friend nicknames
-# and user IDs; commit only the per-endpoint docs under docs/CAPTURES/*.md.
-/docs/CAPTURES/raw/
+# and user IDs, so it is never committed.
+/captures/
 
 # Python (scripts/capture-baas.py)
 __pycache__/
@@ -53,9 +53,8 @@ __pycache__/
 # Only the generated Go in proto/ is tracked.
 .proto-upstream/
 
-# Session scratchpad backups (raw packet captures, crash-analysis scratch
-# files). Never repo content -- same "no raw captures in git" rule
-# docs/CAPTURES/raw/ already follows.
+# Scratchpad backups (raw packet captures, crash-analysis scratch files).
+# Never repo content.
 docs/scratchpad backups/
 
 # Service binaries built into the repo root.
