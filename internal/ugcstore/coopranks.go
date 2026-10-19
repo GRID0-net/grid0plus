@@ -143,13 +143,13 @@ func CoopGradePoint(ctx context.Context, store db.Store, tenant, uid string) (in
 // one shift, so the same shift twice must change nothing. A player with no
 // stored shift has had nothing to reset.
 //
-// TODO(capture-needed): that Nintendo's server applies the reset when the
-// game sends coop_shift. The console never sends a grade (grid0's logs,
-// 2026-09-20..10-17: coop_shift only, never coop_grade), so the server must
-// apply it somewhere, and coop_shift is the only rotation signal it gets. RE
-// of how the game handles coop_shift and shows the grade at a rotation
-// change would settle it, or hardware: after a reset the game shows title+40
-// and never sends coop_grade. Change RollCoopRotation.
+// UNCONFIRMED: that Nintendo's server applies the reset when the game sends
+// coop_shift. The console never sends a grade (only coop_shift, never
+// coop_grade, in the server's logs), so the server has to apply it somewhere, and
+// coop_shift is the only rotation signal it gets. Reading how the game handles
+// coop_shift and shows the grade at a rotation change would settle it, or
+// hardware: after a reset the game shows title+40 and never sends coop_grade.
+// Change RollCoopRotation.
 func RollCoopRotation(ctx context.Context, store db.Store, tenant, uid, shift string, stageBest int64, now time.Time) (bool, error) {
 	name := coopAttributeName(tenant, uid)
 	for attempt := 0; attempt < 4; attempt++ {

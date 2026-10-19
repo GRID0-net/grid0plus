@@ -1092,9 +1092,9 @@ func (s *Server) logLobbyControlWrites(caller *session, ops []*syncpb.WriteOpera
 		}
 		name := doc.GetName()
 		if name == "docs/__mt/nat_traversal" {
-			// The preserved Nextendo match carries per-peer reports here.
+			// Each console reports its peers here.
 			// Keep the game's raw field names: rc/re semantics are not proven
-			// by a successful gRPC write or a successful reference match.
+			// by a successful gRPC write or a successful match.
 			for _, item := range doc.GetFields().GetFields()["a"].GetArrayValue().GetValues() {
 				f := item.GetMapValue().GetFields()
 				s.log.Info("gamesync: client peer report", "session", scopeOf(caller), "user", caller.userID,

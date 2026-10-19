@@ -45,8 +45,8 @@ func (b *botAPI) salmonRoutes(mux *http.ServeMux) {
 // average of the players present is the reading used -- a job short of
 // players keeps its hazard and only lowers its quotas.
 //
-// TODO(capture-needed): the game's own hazard for two or three players.
-// RE of the game's hazard computation would settle it; change salmonHazard.
+// UNCONFIRMED: the game's own hazard for two or three players. Reading the
+// game's hazard computation would settle it. Change salmonHazard.
 func salmonHazard(totals []int64) int64 {
 	var sum int64
 	for _, t := range totals {
