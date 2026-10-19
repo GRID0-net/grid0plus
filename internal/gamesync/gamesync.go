@@ -24,6 +24,7 @@ package gamesync
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -427,7 +428,7 @@ func (s *Server) RefreshToken(
 	s.mu.Lock()
 	var found *session
 	for token, sess := range s.sessions {
-		if sess.refreshToken == presented {
+		if subtle.ConstantTimeCompare([]byte(sess.refreshToken), []byte(presented)) == 1 {
 			found = sess
 			delete(s.sessions, token)
 			break
