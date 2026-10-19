@@ -1634,6 +1634,24 @@ func testFests(t *testing.T, s Store) {
 	if err := s.DeleteFest(ctx, "NXTD-00044"); err != nil {
 		t.Errorf("deleting a missing fest errored: %v", err)
 	}
+
+	// A deleted fest is remembered, so saves left on it can be reset; one that
+	// never existed is not, and creating the id again forgets the deletion.
+	if deleted, err := s.FestDeleted(ctx, "NXTD-00044"); err != nil || !deleted {
+		t.Errorf("FestDeleted after delete = %v, %v; want true", deleted, err)
+	}
+	if err := s.DeleteFest(ctx, "NXTD-00045"); err != nil {
+		t.Fatalf("delete a fest that never existed: %v", err)
+	}
+	if deleted, err := s.FestDeleted(ctx, "NXTD-00045"); err != nil || deleted {
+		t.Errorf("FestDeleted for a fest that never existed = %v, %v; want false", deleted, err)
+	}
+	if err := s.UpsertFest(ctx, Fest{ID: "NXTD-00044", StartAt: time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatalf("recreate: %v", err)
+	}
+	if deleted, err := s.FestDeleted(ctx, "NXTD-00044"); err != nil || deleted {
+		t.Errorf("FestDeleted after recreating = %v, %v; want false", deleted, err)
+	}
 }
 
 func testCoopShifts(t *testing.T, s Store) {

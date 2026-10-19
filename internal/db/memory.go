@@ -34,6 +34,7 @@ type Memory struct {
 	presence       map[string]Presence
 	images         map[string]Image
 	fests          map[string]Fest
+	deletedFests   map[string]bool
 	// festEntries is keyed by fest id then user id: one entry per account per
 	// fest, the same shape friendships uses for its own per-pair map.
 	festEntries map[string]map[string]FestEntry
@@ -75,6 +76,7 @@ func NewMemory() *Memory {
 		deviceAccounts:    map[string]DeviceAccount{},
 		friendCodes:       map[string]FriendCode{},
 		fests:             map[string]Fest{},
+		deletedFests:      map[string]bool{},
 		festEntries:       map[string]map[string]FestEntry{},
 		festBattles:       map[string]map[string]FestBattle{},
 		festBattlePlayers: map[string]map[string]FestBattlePlayer{},
@@ -1476,6 +1478,7 @@ func (m *Memory) UpsertFest(_ context.Context, f Fest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	delete(m.deletedFests, f.ID)
 	if existing, ok := m.fests[f.ID]; ok {
 		f.CreatedAt = existing.CreatedAt
 		if f.EndAt.IsZero() {
@@ -1533,6 +1536,9 @@ func (m *Memory) ListFests(_ context.Context) ([]Fest, error) {
 func (m *Memory) DeleteFest(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, ok := m.fests[id]; ok {
+		m.deletedFests[id] = true
+	}
 	delete(m.fests, id)
 	// The entries go with it, matching the ON DELETE CASCADE on the table.
 	// Without this a recreated fest of the same id would inherit the old votes.
@@ -1553,6 +1559,12 @@ func (m *Memory) DeleteFest(_ context.Context, id string) error {
 // UpsertFestEntry records or changes a player's team choice. An upsert, not
 // an insert: the dashboard corrects a player's team, and a console fills in
 // the region of an entry the Discord bot made, both on an existing row.
+func (m *Memory) FestDeleted(_ context.Context, id string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.deletedFests[id], nil
+}
+
 func (m *Memory) UpsertFestEntry(_ context.Context, e FestEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

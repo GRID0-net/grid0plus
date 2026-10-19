@@ -1378,8 +1378,11 @@ func (p *Postgres) UpsertFest(ctx context.Context, f Fest) error {
 		f.PackKeys = []string{}
 	}
 
+	// A fest created again under a deleted id is a live fest: saves on it are
+	// no longer stale.
 	_, err := p.pool.Exec(ctx,
-		`INSERT INTO npln_fests (id, resource, revision, start_at, regions, pack_keys, enabled, end_at)
+		`WITH undeleted AS (DELETE FROM npln_deleted_fests WHERE id = $1)
+		 INSERT INTO npln_fests (id, resource, revision, start_at, regions, pack_keys, enabled, end_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 ON CONFLICT (id) DO UPDATE SET
 		     resource   = EXCLUDED.resource,
@@ -1423,8 +1426,30 @@ func (p *Postgres) ListFests(ctx context.Context) ([]Fest, error) {
 func (p *Postgres) DeleteFest(ctx context.Context, id string) error {
 	// No rows affected is not an error: the dashboard's delete button should be
 	// idempotent, and the in-memory store's delete is too.
-	_, err := p.pool.Exec(ctx, `DELETE FROM npln_fests WHERE id = $1`, id)
-	return mapErr(err)
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return mapErr(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `DELETE FROM npln_fests WHERE id = $1`, id)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() > 0 {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO npln_deleted_fests (id) VALUES ($1)
+			 ON CONFLICT (id) DO UPDATE SET deleted_at = now()`, id); err != nil {
+			return mapErr(err)
+		}
+	}
+	return mapErr(tx.Commit(ctx))
+}
+
+func (p *Postgres) FestDeleted(ctx context.Context, id string) (bool, error) {
+	var deleted bool
+	err := p.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM npln_deleted_fests WHERE id = $1)`, id).Scan(&deleted)
+	return deleted, mapErr(err)
 }
 
 // ---- splatfest entries ---------------------------------------------------

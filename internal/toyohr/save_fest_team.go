@@ -66,3 +66,34 @@ func (s *Service) syncFestTeam(ctx context.Context, uid string, data *common.Map
 		"from", from, "to", entry.Team)
 	return true
 }
+
+// dropDeletedFest removes a save's fest block when the fest it names was
+// deleted on this server, and reports whether it did.
+//
+// The game keeps Fest.FestId after a fest ends and waits for that fest's
+// results. After a test fest (JUEA-90004) was deleted on 2026-10-17, the two
+// saves that joined it still named it on 2026-10-19, waiting on a fest the
+// server would never mention again. Dropping the block leaves the save the
+// way a save that never joined a fest looks -- four saves on grid0 have no
+// Fest block and play normally -- and the game starts a new one with its
+// own InitFest write when the next fest is announced.
+//
+// Only a deleted fest: a save on a fest that never existed here (imported
+// from Nintendo's servers, say JUEA-00018) is left as it is.
+func (s *Service) dropDeletedFest(ctx context.Context, uid string, data *common.MapValue) bool {
+	festID := data.GetFields()["Fest"].GetMapValue().GetFields()["FestId"].GetStringValue()
+	if festID == "" {
+		return false
+	}
+	deleted, err := s.store.FestDeleted(ctx, festID)
+	if err != nil {
+		s.log.Warn("toyohr: was a save's fest deleted", "user", uid, "fest", festID, "error", err)
+		return false
+	}
+	if !deleted {
+		return false
+	}
+	delete(data.Fields, "Fest")
+	s.log.Info("toyohr: dropped a deleted fest from a save", "user", uid, "fest", festID)
+	return true
+}

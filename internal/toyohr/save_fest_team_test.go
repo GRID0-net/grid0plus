@@ -81,3 +81,55 @@ func TestASaveOnAnotherFestKeepsItsTeam(t *testing.T) {
 		t.Errorf("an old fest's VoteTeam = %v, want 2 untouched", got)
 	}
 }
+
+// A save left on a deleted fest waits for that fest's results forever; on
+// grid0 two saves still named the deleted test fest JUEA-90004 two days later.
+func TestASaveOnADeletedFestLosesItsFestBlock(t *testing.T) {
+	const uid = "aaaaaaaaaaaaaaaa"
+	as(t, uid)
+	svc, store := newService(t, time.Now())
+	ctx := context.Background()
+	if err := store.UpsertFest(ctx, db.Fest{ID: "JUEA-90004", StartAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{SaveRecord: festSave("JUEA-90004", intValue(1))}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteFest(ctx, "JUEA-90004"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, err := svc.GetSaveRecord(ctx, &toyohrpb.GetSaveRecordRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rec.GetSaveData().GetFields()["Fest"]; ok {
+		t.Errorf("a save read after its fest was deleted still has a Fest block")
+	}
+	// The running game still holds the old block and writes it back.
+	if _, err := svc.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{SaveRecord: festSave("JUEA-90004", intValue(1))}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := svc.loadSave(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := stored.GetSaveData().GetFields()["Fest"]; ok {
+		t.Errorf("a write naming the deleted fest stored its Fest block")
+	}
+}
+
+// A fest that never existed on this server is not a deleted one: imported
+// saves carry Nintendo's own fest ids.
+func TestASaveOnAFestThisServerNeverHadKeepsItsFestBlock(t *testing.T) {
+	const uid = "aaaaaaaaaaaaaaaa"
+	as(t, uid)
+	svc, _ := newService(t, time.Now())
+	ctx := context.Background()
+	if _, err := svc.WriteSaveRecord(ctx, &toyohrpb.WriteSaveRecordRequest{SaveRecord: festSave("JUEA-00018", intValue(0))}); err != nil {
+		t.Fatal(err)
+	}
+	if got := savedTeam(t, svc); got == nil {
+		t.Errorf("an imported fest's block was dropped")
+	}
+}

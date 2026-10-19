@@ -1001,6 +1001,9 @@ type Store interface {
 	// DeleteFest removes a fest. Not an error if it does not exist: the
 	// dashboard's delete button should be idempotent.
 	DeleteFest(ctx context.Context, id string) error
+	// FestDeleted reports whether a fest of this id was deleted and not
+	// created again since. A fest that never existed is not deleted.
+	FestDeleted(ctx context.Context, id string) (bool, error)
 
 	// ---- Salmon Run / Big Run schedule (phase 2) ----
 
