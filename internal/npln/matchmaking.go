@@ -336,7 +336,10 @@ func (m *matchmakerService) CancelMatchmakingTicket(
 		return nil, ErrNotFound
 	}
 
-	m.s.queue.Cancel(id)
+	_, formed := m.s.queue.CancelForming(id)
+	for _, sess := range formed {
+		m.s.recordMatch(ctx, sess, false)
+	}
 	return &emptypb.Empty{}, nil
 }
 

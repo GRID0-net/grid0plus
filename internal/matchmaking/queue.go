@@ -439,32 +439,40 @@ func memberTeam(teams map[string]string, user, fallback string) string {
 // the other players are already being told to connect. Pulling one player back
 // out at that point leaves them waiting for somebody who will not arrive.
 func (q *Queue) Cancel(ticketID string) bool {
+	ok, _ := q.CancelForming(ticketID)
+	return ok
+}
+
+// CancelForming is Cancel that also returns any match the departure let
+// form, so the caller can record it like any other.
+func (q *Queue) CancelForming(ticketID string) (bool, []Session) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	t, ok := q.tickets[ticketID]
 	if !ok || !t.State.waiting() {
-		return false
+		return false, nil
 	}
-	mode := t.Mode
+	q.cancelTicketLocked(t)
+	// The rest of the mode's grace period, if one was running, was counting
+	// down to include this ticket. Re-evaluate with the mode's own rules --
+	// the plain versus ones re-formed Tricolor, Open and Anarchy two-step
+	// lobbies into shapes the game never starts -- rather than leave a stale
+	// countdown (or the rest of the mode's tickets stuck in StatePlacing).
+	return true, q.formModeLocked(t.Mode)
+}
+
+// cancelTicketLocked cancels one waiting ticket and, since a squad leaves
+// together, its members' tickets with it.
+func (q *Queue) cancelTicketLocked(t *Ticket) {
 	q.setStateLocked(t, StateCancelled)
 	q.removeFromWaitingLocked(t)
-	// A squad leaves together: its members' tickets go with the one it queued.
 	for _, other := range q.tickets {
 		if other.Party == t.ID && other.State.waiting() {
 			q.setStateLocked(other, StateCancelled)
 			q.removeFromWaitingLocked(other)
 		}
 	}
-	// The rest of the mode's grace period, if one was running, was counting
-	// down to include this ticket. Re-evaluate rather than leave a stale
-	// countdown (or the rest of the mode's tickets stuck in StatePlacing).
-	if q.cfg.CoopModes[mode] {
-		q.formCoopLocked(mode)
-	} else {
-		q.formVersusLocked(mode)
-	}
-	return true
 }
 
 // Get returns a ticket by id.
@@ -1030,23 +1038,29 @@ func (q *Queue) formMatchesLocked() []Session {
 	var formed []Session
 
 	for _, mode := range sortedKeys(q.waiting) {
-		if q.cfg.CoopModes[mode] {
-			formed = append(formed, q.formCoopLocked(mode)...)
-		} else if isTricolorTeamMode(mode) {
-			formed = append(formed, q.formTricolorTeamLocked(mode)...)
-		} else if isBankaraTeamMode(mode) {
-			formed = append(formed, q.formBankaraTeamLocked(mode)...)
-		} else if isBankaraChallengeMode(mode) {
-			formed = append(formed, q.formBankaraChallengeLocked(mode)...)
-		} else if isFestRegularNormalMode(mode) {
-			formed = append(formed, q.formFestRegularNormalLocked(mode)...)
-		} else if isFestMode(mode) && isDirectPairMode(mode) {
-			formed = append(formed, q.formFestDirectPairLocked(mode)...)
-		} else {
-			formed = append(formed, q.formVersusLocked(mode)...)
-		}
+		formed = append(formed, q.formModeLocked(mode)...)
 	}
 	return formed
+}
+
+// formModeLocked forms what one mode is ready for, by that mode's rules.
+func (q *Queue) formModeLocked(mode string) []Session {
+	switch {
+	case q.cfg.CoopModes[mode]:
+		return q.formCoopLocked(mode)
+	case isTricolorTeamMode(mode):
+		return q.formTricolorTeamLocked(mode)
+	case isBankaraTeamMode(mode):
+		return q.formBankaraTeamLocked(mode)
+	case isBankaraChallengeMode(mode):
+		return q.formBankaraChallengeLocked(mode)
+	case isFestRegularNormalMode(mode):
+		return q.formFestRegularNormalLocked(mode)
+	case isFestMode(mode) && isDirectPairMode(mode):
+		return q.formFestDirectPairLocked(mode)
+	default:
+		return q.formVersusLocked(mode)
+	}
 }
 
 // formVersusLocked forms a Turf War/Anarchy-shaped match: two even teams.
@@ -1657,10 +1671,13 @@ func (q *Queue) removeFromWaitingLocked(t *Ticket) {
 }
 
 func (q *Queue) cancelUserTicketsLocked(userID string) {
+	// The squad goes too: a member ticket left behind when its leader
+	// re-queued stayed Searching as a squad of one, and could be matched
+	// into a session that console never joined -- a ghost peer for everyone
+	// else in it.
 	for _, t := range q.tickets {
 		if t.UserID == userID && t.State.waiting() {
-			q.setStateLocked(t, StateCancelled)
-			q.removeFromWaitingLocked(t)
+			q.cancelTicketLocked(t)
 		}
 	}
 }
