@@ -41,7 +41,8 @@ tab asks the server for its own game's history (`/api/matches?game=`).
 ## How the page stays current
 
 Nothing needs a manual refresh. Presence changes arrive on the event stream and repaint the one row. The queue is polled
-every 2 s and everything else (overview, players, matches, fests) every 5 s, only while the tab is visible, and a poll
+every second and everything else (overview, players, matches, fests) every 3 s, with a presence event also
+triggering an immediate refresh, only while the tab is visible, and a poll
 whose answer has not changed is not re-rendered, so an input being typed in keeps focus. "Last seen", "started" and queue
 waits are `<time>`/`<span>` elements that count up on the client every second. After the stream reconnects, or the tab
 becomes visible again, the page resyncs immediately. A queue card is not rebuilt while its size box has focus.

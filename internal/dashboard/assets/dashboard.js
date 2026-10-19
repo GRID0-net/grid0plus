@@ -107,6 +107,8 @@ function currentTheme() {
 async function api(path, options) {
   const res = await fetch(url(path), {
     headers: { "Content-Type": "application/json" },
+    // A cached answer is exactly the "have to refresh" symptom.
+    cache: "no-store",
     ...options,
   });
   if (!res.ok) {
@@ -2050,6 +2052,9 @@ function connect() {
       p.lastSeenAt = e.at;
       lastSeen.delete("players");
       renderPlayers();
+      // The event carries the state but not the resolved activity, ordering or
+      // the overview counts; ask for them now rather than on the next tick.
+      pollSoon();
       const row = $(`[data-player="${CSS.escape(e.userId)}"]`);
       if (row) {
         row.classList.remove("just-changed");
@@ -2171,8 +2176,31 @@ function pollNow() {
   refresh();
   loadMatchmaking();
 }
-setInterval(() => !document.hidden && loadMatchmaking(), 2000);
-setInterval(() => !document.hidden && refresh(), 5000);
+// Coalesces a burst of events into one refresh.
+let soonTimer = null;
+function pollSoon() {
+  if (soonTimer) return;
+  soonTimer = setTimeout(() => {
+    soonTimer = null;
+    pollNow();
+  }, 250);
+}
+// One request of each kind at a time: a slow answer must not stack up behind
+// the next tick.
+function every(ms, fn) {
+  let busy = false;
+  setInterval(async () => {
+    if (busy || document.hidden) return;
+    busy = true;
+    try {
+      await fn();
+    } finally {
+      busy = false;
+    }
+  }, ms);
+}
+every(1000, loadMatchmaking);
+every(3000, refresh);
 setInterval(tickTimes, 1000);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {

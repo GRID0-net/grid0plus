@@ -1152,6 +1152,9 @@ func (s *Server) fail(w http.ResponseWriter, what string, err error) {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// The page polls these; a browser or proxy serving a stored copy would
+	// make it look frozen.
+	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(v)
 }
 
