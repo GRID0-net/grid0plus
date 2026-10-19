@@ -1381,8 +1381,27 @@ func (q *Queue) selectFestPlayersLocked(ids []string, size int) []string {
 	// the longest-waiting player: picking the two biggest teams left a third
 	// team waiting for as long as the other two kept queuing.
 	by, teams := festTeams(q.festUnitsLocked(ids))
+	// The size preference alone still starved a smaller team: Alpha and
+	// Bravo kept making 4v4s while two Charlie players waited out the TTL.
+	// Once the longest-waiting team has waited past festStarvation, a match
+	// including it wins -- if one can start at all: without early starts
+	// only a full match forms, and holding a full Alpha v Bravo back for a
+	// Charlie match that cannot form would starve both instead.
+	best := bestFestPair(by, teams, size, false)
+	if len(teams) > 0 && q.now().Sub(q.tickets[by[teams[0]][0].ids[0]].CreatedAt) >= festStarvation {
+		if first := bestFestPair(by, teams, size, true); len(first) == size || (len(first) > 0 && q.cfg.VersusGracePeriod > 0) {
+			best = first
+		}
+	}
+	return best
+}
+
+// bestFestPair is the biggest whole-squad match between two fest teams, the
+// longest-waiting pair on a tie; firstOnly limits it to pairs including
+// teams[0].
+func bestFestPair(by map[string][]festUnit, teams []string, size int, firstOnly bool) []string {
 	var best []string
-	for i := 0; i < len(teams); i++ {
+	for i := 0; i < len(teams) && !(firstOnly && i > 0); i++ {
 		for j := i + 1; j < len(teams); j++ {
 			for k := size / 2; k > len(best)/2; k-- {
 				a, b := pickUnits(by[teams[i]], k), pickUnits(by[teams[j]], k)
@@ -1395,6 +1414,10 @@ func (q *Queue) selectFestPlayersLocked(ids []string, size int) []string {
 	}
 	return best
 }
+
+// festStarvation is how long a fest team's longest-waiting player waits
+// before that team is guaranteed the next match it can be part of.
+const festStarvation = time.Minute
 
 // formCoopLocked forms a Salmon Run-shaped match: one team, no even split.
 // Nobody waits on a clock alone -- a countdown only exists once a second

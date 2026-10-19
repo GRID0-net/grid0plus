@@ -83,3 +83,45 @@ func TestTheLongestWaitingFestTeamIsMatchedFirst(t *testing.T) {
 }
 
 func sorted(s []string) []string { out := slices.Clone(s); slices.Sort(out); return out }
+
+func queueStarvedCharlie(t *testing.T, grace time.Duration) (*Queue, *time.Time, []Session) {
+	t.Helper()
+	q, clock := testQueue(t, 8)
+	q.cfg.VersusGracePeriod = grace
+	mode := "fest_match_challenge_oneshot_config"
+	q.EnqueueWithFestTeam("c1", mode, "Charlie")
+	q.EnqueueWithFestTeam("c2", mode, "Charlie")
+	*clock = clock.Add(2 * time.Minute)
+	var formed []Session
+	for _, p := range []struct{ u, team string }{
+		{"a1", "Alpha"}, {"a2", "Alpha"}, {"a3", "Alpha"}, {"b1", "Bravo"}, {"b2", "Bravo"},
+		{"b3", "Bravo"}, {"a4", "Alpha"}, {"b4", "Bravo"},
+	} {
+		_, f, _ := q.EnqueueWithFestTeam(p.u, mode, p.team)
+		formed = append(formed, f...)
+	}
+	return q, clock, formed
+}
+
+// Splatfest Pro: once Charlie's players have waited a minute, the next match
+// includes Charlie even though Alpha and Bravo could make a bigger one.
+func TestAStarvedFestTeamGetsTheNextMatchEvenIfSmaller(t *testing.T) {
+	q, clock, formed := queueStarvedCharlie(t, 20*time.Second)
+	if len(formed) != 0 {
+		t.Fatalf("formed %v ahead of Charlie, who has waited two minutes", formed[0].Players)
+	}
+	*clock = clock.Add(21 * time.Second)
+	_, formed = q.Sweep()
+	if len(formed) != 1 || !slices.Contains(formed[0].Players, "c1") || len(formed[0].Players) != 4 {
+		t.Fatalf("formed %v, want Charlie's 2v2", formed)
+	}
+}
+
+// Without early starts a Charlie match cannot form at all, so the full
+// Alpha v Bravo is not held back for it.
+func TestAStarvedTeamDoesNotBlockAFullMatchItCannotJoin(t *testing.T) {
+	_, _, formed := queueStarvedCharlie(t, 0)
+	if len(formed) != 1 || len(formed[0].Players) != 8 {
+		t.Fatalf("formed %v, want the full Alpha v Bravo", formed)
+	}
+}
