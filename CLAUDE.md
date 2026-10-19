@@ -198,6 +198,20 @@ you ever reuse this host list for a console that *does* move back and forth
 between GRID0+ and real Nintendo, put these back to `ServicePassthrough`
 first.
 
+**Never let Splatoon 3's fest schedule go empty, and keep a fest's BCAT pack
+served while it is announced.** The game has no "no fest" answer: an empty
+`SelectFestSchedule` leaves its fest with an all-zero timetable, which it
+treats as Invalid. Every big screen in the lobby sits on a fest layer, so
+Invalid made them blank for every player (2026-10-17 to 2026-10-19). A fest
+whose results are out is "no fest" to the game (state None, the FestNone
+layer), so `lastClosedFest` keeps announcing the most recent closed fest
+until a newer one exists. So when an operator disables or deletes fests,
+there must still be a closed one left, with its seed in
+`data/bcat-native/0100c2500fc20000`; without the pack the console reports
+BcatInvalid. Deleting a fest also strands saves on it: `dropDeletedFest`
+cleans those up. Do not "tidy" the fallback away, and do not empty
+`bcat-native`.
+
 **Redirection and certificate trust are separate problems.** Redirection is DNS
 and happens off the console, in a resolver the operator already runs — the
 generated dnsmasq/unbound configuration, never GRID0+ itself. Certificate
