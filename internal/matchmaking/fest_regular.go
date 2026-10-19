@@ -1,9 +1,6 @@
 package matchmaking
 
-import (
-	"sort"
-	"strings"
-)
+import "strings"
 
 // Splatfest Open is two matchmaking steps, the same shape as Tricolor's.
 //
@@ -89,19 +86,21 @@ func unitIDs(units []festUnit) []string {
 	return ids
 }
 
-// festTeamsLocked groups single-team units by fest team, teams in name order.
+// festTeams groups single-team units by fest team, the team whose player has
+// waited longest first. Name order made Alpha and Bravo always pair first, so
+// with all three teams queued Charlie waited out every match.
 func festTeams(units []festUnit) (map[string][]festUnit, []string) {
 	by := map[string][]festUnit{}
+	var teams []string
 	for _, u := range units {
-		if u.team != "" {
-			by[u.team] = append(by[u.team], u)
+		if u.team == "" {
+			continue
 		}
+		if _, seen := by[u.team]; !seen {
+			teams = append(teams, u.team)
+		}
+		by[u.team] = append(by[u.team], u)
 	}
-	teams := make([]string, 0, len(by))
-	for t := range by {
-		teams = append(teams, t)
-	}
-	sort.Strings(teams)
 	return by, teams
 }
 

@@ -1168,17 +1168,30 @@ func tricolorSlot(team, defender string) string {
 // once every team is waiting and the grace period has passed.
 func (q *Queue) formTricolorTeamLocked(mode string) []Session {
 	var formed []Session
+	// Friends of one team who queued together are the pair; strangers pair
+	// in arrival order. A squad that cannot be one pair -- bigger than two,
+	// or spanning teams -- is placed by member, as before.
 	byTeam := map[string][]string{}
 	var teams []string
-	for _, id := range q.liveWaitingLocked(mode) {
-		team := q.tickets[id].FestTeam
-		if team == "" {
-			continue
-		}
+	add := func(team string, ids ...string) {
 		if _, seen := byTeam[team]; !seen {
 			teams = append(teams, team)
 		}
-		byTeam[team] = append(byTeam[team], id)
+		byTeam[team] = append(byTeam[team], ids...)
+	}
+	for _, u := range q.festUnitsLocked(q.liveWaitingLocked(mode)) {
+		switch {
+		case u.team != "" && len(u.ids) == 2:
+			formed = append(formed, q.formSessionLocked(mode, u.ids))
+		case u.team != "" && len(u.ids) == 1:
+			add(u.team, u.ids...)
+		default:
+			for _, id := range u.ids {
+				if team := q.tickets[id].FestTeam; team != "" {
+					add(team, id)
+				}
+			}
+		}
 	}
 	var singles []string
 	for _, team := range teams {
@@ -1289,19 +1302,15 @@ func (q *Queue) SetTricolorDefender(mode, team string) {
 // official shape should still get to play Tricolor rather than wait forever. Result
 // grouped defender first, then each attacker.
 func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
-	mode := q.modeOf(ids)
-	defender := q.tricolorDefender[mode]
-	byTeam := map[string][]string{}
-	for _, id := range ids {
-		if team := q.tickets[id].FestTeam; team != "" {
-			byTeam[team] = append(byTeam[team], id)
-		}
-	}
-	if defender == "" || len(byTeam[defender]) == 0 {
+	defender := q.tricolorDefender[q.modeOf(ids)]
+	// Whole units: a pair from fest_match_tricolor_team_config re-queues as
+	// one squad and must play together.
+	by, teams := festTeams(q.festUnitsLocked(ids))
+	if defender == "" || len(by[defender]) == 0 {
 		return nil
 	}
-	attackers := make([]string, 0, 2)
-	for team := range byTeam {
+	var attackers []string
+	for _, team := range teams {
 		if team != defender {
 			attackers = append(attackers, team)
 		}
@@ -1310,16 +1319,17 @@ func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
 		return nil
 	}
 	sort.Strings(attackers)
-	perAttacker := min(size/4, len(byTeam[defender])/2, len(byTeam[attackers[0]]), len(byTeam[attackers[1]]))
-	if perAttacker < 1 {
-		if len(byTeam[attackers[0]]) == 0 || len(byTeam[attackers[1]]) == 0 {
-			return nil
+	for k := size / 4; k >= 1; k-- {
+		d, a, b := pickUnits(by[defender], 2*k), pickUnits(by[attackers[0]], k), pickUnits(by[attackers[1]], k)
+		if d != nil && a != nil && b != nil {
+			return append(append(unitIDs(d), unitIDs(a)...), unitIDs(b)...)
 		}
-		return []string{byTeam[defender][0], byTeam[attackers[0]][0], byTeam[attackers[1]][0]}
 	}
-	out := append([]string(nil), byTeam[defender][:2*perAttacker]...)
-	out = append(out, byTeam[attackers[0]][:perAttacker]...)
-	return append(out, byTeam[attackers[1]][:perAttacker]...)
+	d, a, b := pickUnits(by[defender], 1), pickUnits(by[attackers[0]], 1), pickUnits(by[attackers[1]], 1)
+	if d == nil || a == nil || b == nil {
+		return nil
+	}
+	return append(append(unitIDs(d), unitIDs(a)...), unitIDs(b)...)
 }
 
 // selectFestPlayersLocked requires two different fest teams with equal
@@ -1329,33 +1339,24 @@ func (q *Queue) selectFestPlayersLocked(ids []string, size int) []string {
 	if isTricolorMode(q.modeOf(ids)) {
 		return q.selectTricolorPlayersLocked(ids, size)
 	}
-	byTeam := map[string][]string{}
-	for _, id := range ids {
-		if team := q.tickets[id].FestTeam; team != "" {
-			byTeam[team] = append(byTeam[team], id)
+	// Whole squads, so the session never holds half of one. Of the team pairs
+	// that can play, the biggest match wins, and on a tie the pair holding
+	// the longest-waiting player: picking the two biggest teams left a third
+	// team waiting for as long as the other two kept queuing.
+	by, teams := festTeams(q.festUnitsLocked(ids))
+	var best []string
+	for i := 0; i < len(teams); i++ {
+		for j := i + 1; j < len(teams); j++ {
+			for k := size / 2; k > len(best)/2; k-- {
+				a, b := pickUnits(by[teams[i]], k), pickUnits(by[teams[j]], k)
+				if a != nil && b != nil {
+					best = append(unitIDs(a), unitIDs(b)...)
+					break
+				}
+			}
 		}
 	}
-	if len(byTeam) < 2 {
-		return nil
-	}
-	teams := make([]string, 0, len(byTeam))
-	for team := range byTeam {
-		teams = append(teams, team)
-	}
-	sort.Slice(teams, func(i, j int) bool {
-		if len(byTeam[teams[i]]) != len(byTeam[teams[j]]) {
-			return len(byTeam[teams[i]]) > len(byTeam[teams[j]])
-		}
-		return teams[i] < teams[j]
-	})
-	perTeam := min(size/2, len(byTeam[teams[0]]), len(byTeam[teams[1]]))
-	if perTeam == 0 {
-		return nil
-	}
-	out := make([]string, 0, perTeam*2)
-	out = append(out, byTeam[teams[0]][:perTeam]...)
-	out = append(out, byTeam[teams[1]][:perTeam]...)
-	return out
+	return best
 }
 
 // formCoopLocked forms a Salmon Run-shaped match: one team, no even split.
