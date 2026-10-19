@@ -38,6 +38,14 @@ A switch at the top picks Splatoon 3 or Splatoon 2, each with its own tabs. Play
 services, so they are there for both. Each overview counts only the players whose presence names that game, and each Matches
 tab asks the server for its own game's history (`/api/matches?game=`).
 
+## How the page stays current
+
+Nothing needs a manual refresh. Presence changes arrive on the event stream and repaint the one row. The queue is polled
+every 2 s and everything else (overview, players, matches, fests) every 5 s, only while the tab is visible, and a poll
+whose answer has not changed is not re-rendered, so an input being typed in keeps focus. "Last seen", "started" and queue
+waits are `<time>`/`<span>` elements that count up on the client every second. After the stream reconnects, or the tab
+becomes visible again, the page resyncs immediately. A queue card is not rebuilt while its size box has focus.
+
 Splatoon 2's state lives in `cmd/nex`, so its tabs read it over nex's admin API (`splatoon2.go`), the same way the matchmaking
 panel reads npln's: `dashboard.nex_admin_url` and `nex_admin_token` here, `nex.admin_listen` and `admin_token` there. Without
 them, each Splatoon 2 tab says so, instead of showing an empty list that reads as "nobody is playing". Live status is polled

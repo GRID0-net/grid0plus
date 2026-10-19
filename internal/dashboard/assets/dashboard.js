@@ -219,6 +219,46 @@ function ago(iso) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
+/**
+ * ago() as an element that keeps itself current. tickTimes() rewrites every
+ * [data-ago] once a few seconds, so a "last seen" or "started" label moves on
+ * its own instead of waiting for the next poll to repaint the row.
+ */
+function agoHTML(iso) {
+  return `<time data-ago="${escape(iso || "")}">${ago(iso)}</time>`;
+}
+
+/** A matchmaking wait that counts up between polls: `since` is the epoch ms it began. */
+function waitedHTML(seconds) {
+  const since = Date.now() - seconds * 1000;
+  return `<span data-waited-since="${since}">${waited(seconds)}</span>`;
+}
+
+function tickTimes() {
+  for (const el of document.querySelectorAll("[data-ago]")) {
+    const text = ago(el.dataset.ago);
+    if (el.textContent !== text) el.textContent = text;
+  }
+  const now = Date.now();
+  for (const el of document.querySelectorAll("[data-waited-since]")) {
+    const text = waited(Math.max(0, Math.floor((now - Number(el.dataset.waitedSince)) / 1000)));
+    if (el.textContent !== text) el.textContent = text;
+  }
+}
+
+/**
+ * True when `data` differs from what was last rendered under `key`. Polling
+ * every few seconds would otherwise rebuild tables, and drop focus from
+ * whatever the operator is typing in, for nothing.
+ */
+const lastSeen = new Map();
+function changed(key, data) {
+  const json = JSON.stringify(data);
+  if (lastSeen.get(key) === json) return false;
+  lastSeen.set(key, json);
+  return true;
+}
+
 let players = [];
 
 function renderPlayers() {
@@ -234,7 +274,7 @@ function renderPlayers() {
         <td><span class="player-cell">${avatarWithStatusHTML(p, "avatar-sm")}<strong>${escape(p.nickname)}</strong>${p.login ? ` <span style="color:var(--fg-dim)">@${escape(p.login)}</span>` : ""}${p.unlinked ? ` <span class="badge" title="A console that has not linked to a person's account yet">unlinked console</span>` : ""}</span></td>
         <td><span class="badge ${stateClass(p.state)}">${stateWord(p.state)}</span></td>
         <td>${p.activity ? escape(p.activity) : "<span style='color:var(--fg-faint)'>—</span>"}</td>
-        <td style="color:var(--fg-dim)">${ago(p.lastSeenAt)}</td>`;
+        <td style="color:var(--fg-dim)">${agoHTML(p.lastSeenAt)}</td>`;
       return tr;
     })
   );
@@ -347,7 +387,7 @@ function renderMatchTable(tableSel, emptySel, list) {
     ...list.map((m) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td style="color:var(--fg-dim)">${ago(m.createdAt)}</td>
+        <td style="color:var(--fg-dim)">${agoHTML(m.createdAt)}</td>
         <td><code>${escape(matchmakingModeName(m.mode))}</code>
           ${m.forced ? `<span class="pill warn" title="Started by an operator with fewer players than the mode wanted, rather than filling on its own">forced</span>` : ""}
         </td>
@@ -891,6 +931,18 @@ function waited(seconds) {
 function renderMatchmaking(mm) {
   matchmaking = mm;
 
+  // Waits tick on the client, so they must not make every poll look different.
+  const stable = JSON.parse(JSON.stringify(mm), (k, v) => (k === "waitingForSeconds" ? 0 : v));
+  if (!changed("matchmaking", [stable, $("#mm-show-all").checked])) return;
+  // Rebuilding the cards would throw away a size the operator is typing; the
+  // next poll picks the change up once focus leaves.
+  const typing = document.activeElement && document.activeElement.closest("#mm-modes") &&
+    document.activeElement.matches("input");
+  if (typing) {
+    lastSeen.delete("matchmaking");
+    return;
+  }
+
   $("#mm-unconfigured").hidden = mm.configured;
   $("#mm-configured").hidden = !mm.configured;
 
@@ -962,7 +1014,7 @@ function renderMatchmaking(mm) {
             li.innerHTML =
               `<span class="pip online"></span>` +
               `<span>${escape(playerName(t.userId))}</span>` +
-              `<span class="what">waiting ${waited(t.waitingForSeconds)}</span>` +
+              `<span class="what">waiting ${waitedHTML(t.waitingForSeconds)}</span>` +
               `<button class="btn btn-ghost btn-danger btn-tiny" data-drop="${escape(t.id)}" ` +
               `title="Take this ticket out of the queue">Drop</button>`;
             return li;
@@ -1003,7 +1055,8 @@ function playerName(userId) {
   return p ? p.nickname : userId;
 }
 
-async function loadMatchmaking() {
+async function loadMatchmaking(force) {
+  if (force) lastSeen.delete("matchmaking");
   try {
     renderMatchmaking(await api("/api/matchmaking"));
   } catch (e) {
@@ -1967,7 +2020,14 @@ function setLive(state, label) {
 function connect() {
   const es = new EventSource(url("/api/events"));
 
-  es.addEventListener("open", () => setLive("live", "live"));
+  let opened = false;
+  es.addEventListener("open", () => {
+    setLive("live", "live");
+    // Events sent while the stream was down are gone; resync instead of
+    // showing a stale page that claims to be live.
+    if (opened) pollNow();
+    opened = true;
+  });
 
   es.addEventListener("nobus", () => {
     // The server said it has no bus. Reconnecting would not help, and a pill
@@ -1988,6 +2048,7 @@ function connect() {
       p.state = e.state;
       p.appId = e.appId || "";
       p.lastSeenAt = e.at;
+      lastSeen.delete("players");
       renderPlayers();
       const row = $(`[data-player="${CSS.escape(e.userId)}"]`);
       if (row) {
@@ -1997,7 +2058,7 @@ function connect() {
       }
     }
     // A player we have never seen means a new account: pull the full list.
-    if (!p) refresh();
+    if (!p) pollNow();
   });
 
   es.addEventListener("error", () => {
@@ -2018,18 +2079,22 @@ async function refresh() {
       api("/api/matches"),
       api("/api/matches?game=splatoon3"),
     ]);
+    if (!lastSeen.has("conn-ok")) setLive("live", "live");
+    lastSeen.set("conn-ok", "1");
+    const playersChanged = changed("players", ps);
     players = ps;
     matches = ms;
     s3Matches = s3ms;
-    renderOverview(o);
-    renderPlayers();
-    renderFests(fs);
-    renderCoopShifts(cs);
+    if (changed("overview", o)) renderOverview(o);
+    if (playersChanged) renderPlayers();
+    if (changed("fests", fs)) renderFests(fs);
+    if (changed("coop", cs)) renderCoopShifts(cs);
     // After players, so a match's host/players can be shown by nickname
     // rather than by id.
-    renderMatches();
-    await loadMatchmaking();
+    if (playersChanged || changed("matches", [ms, s3ms])) renderMatches();
+    if (playersChanged) loadMatchmaking(true);
   } catch (e) {
+    lastSeen.delete("conn-ok");
     setLive("down", "server unreachable");
   }
 }
@@ -2095,6 +2160,23 @@ setInterval(() => {
 }, 15000);
 
 connect();
-// Presence arrives on the stream; this catches everything else -- a fest
-// crossing into its next phase, an account created elsewhere.
-setInterval(refresh, 30000);
+
+// Presence arrives on the stream. Everything else -- someone joining or
+// leaving a queue, a match forming, a fest changing phase, an account created
+// elsewhere -- is polled, and only while the tab is visible: a background tab
+// has nobody to show it to. Unchanged answers are not re-rendered (changed()),
+// and times count up on their own (tickTimes), so the page never needs a
+// manual refresh.
+function pollNow() {
+  refresh();
+  loadMatchmaking();
+}
+setInterval(() => !document.hidden && loadMatchmaking(), 2000);
+setInterval(() => !document.hidden && refresh(), 5000);
+setInterval(tickTimes, 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    pollNow();
+    tickTimes();
+  }
+});
