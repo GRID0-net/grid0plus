@@ -334,9 +334,23 @@ func (s *Server) sweepTickets() {
 					"players", len(sess.Players), "host", sess.Host)
 				s.recordMatch(context.Background(), sess, false)
 			}
+			s.forgetPrunedTicketDefs()
 			s.publishStats()
 		}
 	}
+}
+
+// forgetPrunedTicketDefs drops the user definitions of tickets the queue
+// has pruned. Nothing else ever deleted them, so every ticket's definitions
+// stayed in memory until npln restarted.
+func (s *Server) forgetPrunedTicketDefs() {
+	s.ticketDefs.Range(func(k, _ any) bool {
+		id, _, _ := strings.Cut(k.(string), "/")
+		if _, ok := s.queue.Get(id); !ok {
+			s.ticketDefs.Delete(k)
+		}
+		return true
+	})
 }
 
 // publishStats republishes the matchmaking gauge.
