@@ -196,7 +196,7 @@ baas:
   # add themselves to it.
   allow_registration: true
 
-  # The Discord bot's account API (n-popescu/grid0plus-discord): the only way
+  # The Discord bot's account API (GRID0-net/grid0plus-discord): the only way
   # to create a person's account, plus friends, avatars, who is online and
   # service status. Loopback only; the bot runs on this host. Empty listen
   # turns it off. The token is a shared secret the bot also holds:

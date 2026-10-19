@@ -324,7 +324,7 @@ debugging on hardware tractable.
       `register_role_id`); turn this off only to freeze the group.
 
 People get their accounts from the Discord bot
-([`n-popescu/grid0plus-discord`](https://github.com/n-popescu/grid0plus-discord)):
+([`GRID0-net/grid0plus-discord`](https://github.com/GRID0-net/grid0plus-discord)):
 set `baas.bot_api` (a loopback `listen` and a token from `openssl rand -hex 32`)
 and install the bot on the same host, as its README describes. There is no
 registration web page any more.

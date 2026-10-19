@@ -179,7 +179,7 @@ is unknown — worse than a logged `Unimplemented`.
 ### 1.6 Upload a Splatoon 3 `save.dat` through the Discord bot — **P2, built, not deployed**
 
 **What:** a `/splatoon-save-upload file:<save.dat> [username:]` command in
-`n-popescu/grid0plus-discord` that replaces the player's CloudSave record
+`GRID0-net/grid0plus-discord` that replaces the player's CloudSave record
 with the one inside their own save, so a save made elsewhere (another
 server, an edited save, an old dump) counts on grid0 as if it had been
 played there.
