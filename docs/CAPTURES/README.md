@@ -134,6 +134,24 @@ and nothing preserved shows one), and what `Rewards` must hold for the
 reward meter. A capture of `SelectCoopSchedules` during a real Big Run would
 settle both.
 
+### Smaller open markers, not written up further
+
+Each is a `TODO(capture-needed)` whose comment already says what would settle
+it and which function changes; listed here so this file and the source agree.
+
+- `internal/bcat/nisasyst.go` — the base/notice and bh/start pack mapping.
+- `internal/bcat/probe.go` — `mode` values, `conditions.serial`, the `digest` hash.
+- `internal/npln/leaderboard.go` — what a populated board holds; which seasons are asked for.
+- `internal/toyohr/cloud_save.go` — `ChangeUserName`'s answer identifier and timestamps.
+- `internal/toyohr/fest_breaking_news.go` — a response that actually carries news.
+- `internal/ugcstore/coopresults.go` — the `grade_rate` convention.
+- `internal/rendezvous/ranking.go` — `orderBy` and `updateMode`.
+- `internal/rendezvous/utility.go` — Splatoon 2's settings groups.
+- `internal/splatoon2/datastore.go` — "nothing ordered", `getType`, `PrepareGetPlayLog`.
+- `internal/splatoon2/extensions.go` — Splatoon 2's game-mode numbering.
+- `internal/splatoon2/ranking.go` — `battleResult`, team score, `status`/`rankRatio`,
+  `UploadXPower`/`UploadEventMatchResult`, `GetXPowerRanking`, `GetEventMatchResult`.
+
 ### 1. `GET /2.0.0/users/<id>/friends` — ~~the response shape~~ **CAPTURED**
 
 See [baas-2.0.0-friends.md](baas-2.0.0-friends.md).
