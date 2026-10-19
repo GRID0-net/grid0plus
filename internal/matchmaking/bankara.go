@@ -80,7 +80,7 @@ func (q *Queue) formBankaraTeamLocked(mode string) []Session {
 	}
 	g, pending := q.grace[mode]
 	if !pending || n != g.lastCount {
-		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod), lastCount: n}
+		q.grace[mode] = q.regraceLocked(mode, q.cfg.VersusGracePeriod, n)
 		q.setModeStateLocked(mode, StatePlacing)
 		return formed
 	}

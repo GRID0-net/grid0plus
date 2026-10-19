@@ -297,6 +297,29 @@ type graceState struct {
 	// its own clock; versus does not use it (its countdown starts once and
 	// runs to completion regardless of who else queues behind it).
 	lastCount int
+	// started is when this countdown was first armed. Re-arming on every
+	// arrival or departure let one console that kept re-queuing hold a
+	// whole mode in Placing -- exempt from the ticket TTL -- forever.
+	started time.Time
+}
+
+// maxGraceRestarts caps how far re-arming can push a countdown: never past
+// this many grace periods after it was first armed.
+const maxGraceRestarts = 3
+
+// regraceLocked (re)arms a mode's countdown for n waiting players, keeping
+// when it first started so the deadline cannot drift past the cap.
+func (q *Queue) regraceLocked(mode string, period time.Duration, n int) *graceState {
+	now := q.now()
+	started := now
+	if g, ok := q.grace[mode]; ok && !g.started.IsZero() {
+		started = g.started
+	}
+	deadline := now.Add(period)
+	if limit := started.Add(maxGraceRestarts * period); deadline.After(limit) {
+		deadline = limit
+	}
+	return &graceState{deadline: deadline, lastCount: n, started: started}
 }
 
 // New builds a queue.
@@ -1135,7 +1158,7 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 
 	g, pending := q.grace[mode]
 	if !pending || n != g.lastCount {
-		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod), lastCount: n}
+		q.grace[mode] = q.regraceLocked(mode, q.cfg.VersusGracePeriod, n)
 		q.setModeStateLocked(mode, StatePlacing)
 		return formed
 	}
@@ -1234,7 +1257,7 @@ func (q *Queue) formTricolorTeamLocked(mode string) []Session {
 	n := len(q.liveWaitingLocked(mode)) + len(q.liveWaitingLocked(tricolorOneshotMode(mode)))
 	g, pending := q.grace[mode]
 	if !pending || n != g.lastCount {
-		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.VersusGracePeriod), lastCount: n}
+		q.grace[mode] = q.regraceLocked(mode, q.cfg.VersusGracePeriod, n)
 		return formed
 	}
 	if q.now().Before(g.deadline) {
@@ -1418,7 +1441,7 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 	if !pending || len(ids) != g.lastCount {
 		// First player past solo, or a new arrival since the clock was last
 		// set: (re)start it from here.
-		q.grace[mode] = &graceState{deadline: q.now().Add(q.cfg.CoopGracePeriod), lastCount: len(ids)}
+		q.grace[mode] = q.regraceLocked(mode, q.cfg.CoopGracePeriod, len(ids))
 		q.setModeStateLocked(mode, StatePlacing)
 		return nil
 	}
