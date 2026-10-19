@@ -141,12 +141,11 @@ func TestUnauthenticatedRequestIsRefused(t *testing.T) {
 }
 
 // TestConsoleV3RoutesAnswerTheSameAsTheirV2Counterparts is the regression
-// test for the hall-stall cause found on 2026-09-23: a real console calls
+// test for the hall-stall cause: a real console calls
 // /api/console/v3/save_data_archives and
 // /api/console/v3/network_service_accounts/{id}/notification_tokens, not the
-// /api/nx/v2/ paths this server had routes for, and got a 404 on both --
-// which it retried continuously roughly every 700ms rather than treating as
-// harmless.
+// /api/nx/v2/ paths, and a 404 on both is retried continuously roughly every
+// 700ms rather than treated as harmless.
 func TestConsoleV3RoutesAnswerTheSameAsTheirV2Counterparts(t *testing.T) {
 	h := newHarness(t)
 
@@ -166,12 +165,11 @@ func TestConsoleV3RoutesAnswerTheSameAsTheirV2Counterparts(t *testing.T) {
 	}
 }
 
-// TestStartUploadReachableUnderConsoleV3Path is the regression test for a
-// real 2026-09-24 finding: two consecutive hardware attempts both reached
-// POST /api/console/v3/save_data_archives/start_upload and got a 404 from
-// logUnimplemented, a shape this project already found causes the console
-// to retry continuously rather than move on. Routed to the same handler as
-// its v2 counterpart, the same way the two routes above it already are.
+// TestStartUploadReachableUnderConsoleV3Path is the regression test for the
+// same retry loop: POST /api/console/v3/save_data_archives/start_upload answered
+// with a 404 from logUnimplemented makes the console retry continuously rather
+// than move on. Routed to the same handler as its v2 counterpart, the same way
+// the two routes above it already are.
 func TestStartUploadReachableUnderConsoleV3Path(t *testing.T) {
 	h := newHarness(t)
 
@@ -187,11 +185,10 @@ func TestStartUploadReachableUnderConsoleV3Path(t *testing.T) {
 	}
 }
 
-// TestStartUploadSeriesIDSurvivesBeyondInt64Range is the regression test
-// for a real 2026-09-24 finding: a real console's series_id
-// (12237957226414712540) exceeds int64's own maximum
-// (9223372036854775807), so it must round-trip as an exact digit string,
-// never any fixed-width integer type.
+// TestStartUploadSeriesIDSurvivesBeyondInt64Range is the regression test for
+// a real finding: a real console's series_id (12237957226414712540) exceeds
+// int64's own maximum (9223372036854775807), so it must round-trip as an exact
+// digit string, never any fixed-width integer type.
 func TestStartUploadSeriesIDSurvivesBeyondInt64Range(t *testing.T) {
 	h := newHarness(t)
 	const wantSeriesID = "12237957226414712540"

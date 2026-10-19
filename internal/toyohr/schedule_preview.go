@@ -34,27 +34,21 @@ func (s *Service) PreviewVsSchedule(now time.Time, slots int) []*toyohrpb.VsSche
 // liveCoopFillEnabled gates whether PreviewCoopSchedule fills gaps with
 // liveNormalCoopShifts at all.
 //
-// Was disabled 2026-09-24 after two hardware crashes right as the hall
-// would render Salmon Run content. The strongest confirmed gap found in
-// that window -- CoopSchedule_Normal/BigRun/TeamContest's kuma_weapon
-// scalar field, which both working captures never populate, versus
-// attributes.KumaWeapons (an array), which both always do -- is now fixed
-// (coopKumaWeaponsAttribute, coop_schedule.go). Real Nintendo servers
-// always answer a Salmon Run schedule alongside Turf War/Anarchy/League --
-// an operator running GRID0+ with none is not the real-server shape
-// this project is reproducing -- so this is back on rather than left off
-// indefinitely.
+// Real Nintendo servers always answer a Salmon Run schedule alongside Turf
+// War/Anarchy/League -- an operator running GRID0+ with none is not the shape
+// this project is reproducing -- so this is on by default. The kuma_weapon
+// scalar field, which a real schedule never populates, versus
+// attributes.KumaWeapons (an array), which it always does, is handled by
+// coopKumaWeaponsAttribute (coop_schedule.go).
 //
-// CoopUsedRewardGears (also present in both captures' CoopSchedule and
-// VsParams attributes, real gear id/kind pairs) is still not sent: it needs
-// a real gear id table this project has not built (Leanny/splat3's
+// CoopUsedRewardGears (also present in a real CoopSchedule and VsParams
+// attributes, real gear id/kind pairs) is still not sent: it needs a real gear
+// id table this project has not built (Leanny/splat3's
 // GearInfoHead/Clothes/Shoes.json can source one the same way
-// vs_ids.go/coop_ids.go's tables were). That gap stays open and is worth
-// watching on the next hardware test, but the confirmed, fixed
-// kuma_weapon/attributes mismatch was the stronger, more clear-cut lead.
+// vs_ids.go/coop_ids.go's tables were).
 //
-// A var, not a const, so a future finding can disable it again the same
-// way without hunting down every call site.
+// A var, not a const, so a future finding can disable it again without hunting
+// down every call site.
 var liveCoopFillEnabled = true
 
 // PreviewCoopSchedule returns the same merge SelectCoopSchedules serves a

@@ -182,8 +182,7 @@ func TicketAcceptor(serverKey []byte, now func() time.Time) AcceptFunc {
 			// The secure station URL must use the "prudps" scheme; with
 			// "prudp" the console completes the handshake with an EMPTY
 			// CONNECT -- no ticket at all -- and only fails later, once Pia
-			// needs a principal. NextendoNetwork measured that (facts only);
-			// here it is refused at once instead.
+			// needs a principal. It is refused here at once instead.
 			return Identity{}, nil, errors.New("kerberos: CONNECT carries no ticket")
 		}
 		r := NewReader(payload)

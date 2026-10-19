@@ -120,8 +120,8 @@ func TestAMatchedSessionCarriesASessionTokenTheConsoleCanRead(t *testing.T) {
 				t.Errorf("%s: gamesync object has no %q: %v", userID, field, gs)
 			}
 		}
-		// Nextendo's matched-session tokens carry no friend_room at all; only
-		// room tokens do, set to true.
+		// Matched-session tokens carry no friend_room at all; only room tokens do, set to
+		// true.
 		if _, present := gs["friend_room"]; present {
 			t.Errorf("%s: a matched session's token claims friend_room: %v", userID, gs)
 		}

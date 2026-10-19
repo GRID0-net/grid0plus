@@ -3,14 +3,12 @@
 //
 // Several parts of GRID0+ answer hosts whose request and response shapes are
 // not documented anywhere: NPLN's JSON front end (internal/nplnrest) and the
-// BCAT probe (internal/bcat). CLAUDE.md rule 6 says to implement the most
-// defensible reading and say what a capture would settle — and the cheapest way
-// to make that capture happen is for the server to write it while a console is
-// talking to it.
+// BCAT probe (internal/bcat). The cheapest way to learn what a console sends is
+// for the server to write it down while the console is talking to it.
 //
 // So: point a Recorder at a directory, put a console through one boot, and every
 // request and response lands on disk hexdumped, in order, with credentials
-// redacted. That transcript is what gets written up under docs/CAPTURES/.
+// redacted.
 //
 // Recording is off unless a directory is configured, because it writes whatever
 // the console sends.
@@ -134,9 +132,9 @@ func (r *Recorder) writeTranscript(req *http.Request, response []byte, status in
 		for _, v := range req.Header[key] {
 			// Bearer tokens and device credentials go through these hosts. The
 			// value is replaced rather than the header dropped, because WHICH
-			// credentials the console presents is part of what a capture is
-			// for; their contents are not, and a capture written up under
-			// docs/CAPTURES/ has to be redactable without re-reading it.
+			// credentials the console presents is part of what a recording is
+			// for; their contents are not, and a recording has to be shareable
+			// without re-reading it.
 			if sensitiveHeader(key) {
 				fmt.Fprintf(f, "%s: <redacted, %d bytes>\n", key, len(v))
 				continue

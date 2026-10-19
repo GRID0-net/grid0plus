@@ -16,8 +16,7 @@ import (
 )
 
 // One friend graph, not two: this file reads internal/db's friendship store
-// directly, the same rows internal/baas/friends.go reads. See
-// docs/ROADMAP.md#2.5.
+// directly, the same rows internal/baas/friends.go reads. See internal/npln/README.md.
 
 // defaultFriendsPageSize and maxFriendsPageSize mirror internal/baas's own
 // defaultFriendCount and maxFriendCount, for the same reasons -- a console
@@ -28,9 +27,9 @@ const (
 	maxFriendsPageSize     = 1000
 )
 
-// A working 2026-09-23 capture advertises 50 seconds in every friend-stream
-// response, but sends a lightweight heartbeat every 20 seconds. The two
-// values are deliberately independent.
+// A real response advertises 50 seconds in every friend-stream response, but
+// sends a lightweight heartbeat every 20 seconds. The two values are
+// deliberately independent.
 const friendsKeepAlive = 50 * time.Second
 
 var friendsStreamTick = 20 * time.Second
@@ -45,7 +44,7 @@ type friendsService struct {
 // ActivateUser is called before the other Friends RPCs, per the reference
 // implementation's boot order (internal/npln/README.md).
 //
-// TODO(capture-needed): what "activating" a user actually changes server-side.
+// UNCONFIRMED: what "activating" a user actually changes server-side.
 // GRID0+ has no separate activation state to flip -- presence is already
 // resolved fresh on every read (internal/presence), and there is nothing else
 // here that is "off" until this is called. The defensible reading is that
@@ -292,7 +291,7 @@ func (s *Server) friendsSnapshot(ctx context.Context, userID string) (*friendspb
 // friendUserProto renders one friend as the wire message, from the caller's
 // point of view.
 //
-// TODO(capture-needed): the resource-name shape (Name below), same as
+// UNCONFIRMED: the resource-name shape (Name below), same as
 // matchmaking.go's ticketProto -- lastSegment parses whatever comes back
 // leniently, so a wrong prefix costs a cosmetic mismatch rather than a
 // broken call.
@@ -308,8 +307,7 @@ func (s *Server) friendUserProto(ctx context.Context, callerUser, friend db.User
 			PresenceReceivable: presence.Visible(ctx, s.store, friend, callerUser.ID),
 			// PresenceDeliverable: may the FRIEND see the caller's presence,
 			// per the caller's own privacy setting. Both must be set, or the
-			// client neither shows a friend's presence nor publishes its own --
-			// see docs/ROADMAP.md#2.5.
+			// client neither shows a friend's presence nor publishes its own.
 			PresenceDeliverable: presence.Visible(ctx, s.store, callerUser, friend.ID),
 		},
 	}

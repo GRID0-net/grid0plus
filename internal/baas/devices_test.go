@@ -5,10 +5,9 @@ import "testing"
 // TestUpdatePushChannelEchoesTheRealShape covers PUT
 // /1.0.0/push_channels/{uid}/{daid}.
 //
-// Previously this route answered a bare 204 (acknowledge). A real, working
-// Nextendo capture (2026-08-27) shows a real server answers 200 with a JSON
-// body echoing the request plus createdAt/updatedAt/userId/deviceAccountId
-// and an always-empty userAttributes -- see devices.go's own comment.
+// A bare 204 (acknowledge) is not what a real server sends: it answers 200 with a
+// JSON body echoing the request plus createdAt/updatedAt/userId/deviceAccountId and an
+// always-empty userAttributes. See devices.go's own comment.
 func TestUpdatePushChannelEchoesTheRealShape(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
@@ -74,9 +73,8 @@ func TestUpdatePushChannelRefusesAnotherAccount(t *testing.T) {
 // TestDevicesSnapshotSplitsPersistentAndDeletedUsers covers POST
 // /1.0.0/devices/snapshot.
 //
-// Previously this route answered a bare 204 (acknowledge). A real, working
-// Nextendo capture (2026-08-27) shows a real server answers 200 with
-// {"deletedUserIds": [...], "persistentUserIds": [...]} -- see devices.go's
+// A real server answers 200 with
+// {"deletedUserIds": [...], "persistentUserIds": [...]}, not a bare 204. See devices.go's
 // own comment for why that split costs nothing extra to implement for real.
 func TestDevicesSnapshotSplitsPersistentAndDeletedUsers(t *testing.T) {
 	h := newHarness(t)

@@ -5,10 +5,10 @@ import (
 )
 
 // A document name is "tenants/<tenant>/documents/<rest>". The console's own
-// Ugcstore client aborts on anything else -- 2162-0001 in nn.npln.Worker,
-// measured by NextendoNetwork/splatoon-3, and a malformed name that reaches
-// storage keeps crashing the game after a restart because it is read back
-// every time. So a name that does not parse is refused before it is stored.
+// Ugcstore client aborts on anything else -- 2162-0001 in nn.npln.Worker -- and a
+// malformed name that reaches storage keeps crashing the game after a restart
+// because it is read back every time. So a name that does not parse is refused
+// before it is stored.
 const documentsSegment = "/documents/"
 
 // canonicalName validates name and returns the key it is stored under.

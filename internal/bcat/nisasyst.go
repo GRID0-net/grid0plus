@@ -40,9 +40,7 @@ var (
 //
 // It is NOT in this repository, and must not be: the table is lifted from the
 // game binary, and CLAUDE.md's first rule is that no Nintendo key, certificate,
-// ticket or dumped file is committed here. The operator supplies it, the same
-// way Nextendo's own server loads its measured responses from a directory
-// rather than shipping them.
+// ticket or dumped file is committed here. The operator supplies it.
 //
 // Without it, everything in this package that needs an IV fails with a message
 // saying exactly what is missing, rather than producing packs that silently do
@@ -188,7 +186,7 @@ var KeyFields = []string{
 // calculated winner and supplies that key in result_winning_team after close.
 // There is therefore no static pack for the result slot in this map.
 //
-// TODO(capture-needed): confirm the base/notice and bh/start mapping against
+// UNCONFIRMED: confirm the base/notice and bh/start mapping against
 // a successful native BCAT download whose phase keys and packs are available.
 // The working reference server uses base, bh, then the winning outcome pack.
 // Change this map if that comparison establishes a different phase mapping.

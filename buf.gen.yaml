@@ -5,7 +5,7 @@
 # toolchain story and CI needs no C++ build. The generated output is identical.
 version: v2
 
-# Most of the `latest` tree declares no `go_package` — the manual decompilations
+# Most of the `latest` tree declares no `go_package` — the manually reconstructed definitions
 # (all of toyohr/v1, hydro, maintenance, ugcstore, leaderboard, …) have none,
 # and the few that do point at the module path the definitions were originally
 # compiled under, which is not ours. Managed mode assigns every file a Go
@@ -63,7 +63,7 @@ plugins:
       # Generate the unimplemented-server embeds. GRID0+ implements these
       # services a few RPCs at a time, and an unimplemented RPC must answer
       # codes.Unimplemented rather than fail to compile — that log line is the
-      # to-do list (ROADMAP §2.4).
+      # list of what a console asks for that is not implemented yet.
       - require_unimplemented_servers=false
 
 inputs:

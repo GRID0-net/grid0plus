@@ -120,9 +120,8 @@ type Config struct {
 	// AlternateAdvertisedIP is the public address of AlternateListen. Cloud
 	// hosts often bind a private address that maps to a second public IP.
 	AlternateAdvertisedIP string
-	// Type102SamePort answers type 102 from the addressed socket. A capture
-	// of Nextendo's working server (2026-10-02) shows it answered from the
-	// same port; from 10125 a port-restricted NAT drops the reply.
+	// Type102SamePort answers type 102 from the addressed socket. Answering from
+	// the same port matters: from 10125 a port-restricted NAT drops the reply.
 	Type102SamePort bool
 	// Observe, when set, is told the source address of every reachability
 	// message: the external port the console's router mapped for its Pia

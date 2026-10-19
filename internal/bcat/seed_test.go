@@ -12,10 +12,9 @@ import (
 
 // TestTheSummaryMatchesARealOne, field for field and in order.
 //
-// Compared against the summary.yml from a seed folder a working server produced
-// (JUEA-00210, 2026-08-24). The console parses this to learn which fest its
-// cache holds, and the announced schedule has to agree with all three values or
-// the game answers BcatInvalid.
+// Compared against the summary.yml from a real seed folder (JUEA-00210). The
+// console parses this to learn which fest its cache holds, and the announced
+// schedule has to agree with all three values or the game answers BcatInvalid.
 func TestTheSummaryMatchesARealOne(t *testing.T) {
 	s := Seed{
 		FestID:     "JUEA-00210",

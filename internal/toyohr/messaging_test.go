@@ -110,18 +110,14 @@ func TestTheSenderIsTakenFromTheTokenNotFromTheRequest(t *testing.T) {
 	}
 }
 
-// TestSelfAddressedNplnLoginIsEchoedBack reproduces the exact wire shape
-// both preserved working Nextendo hall captures show
-// (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z and
-// nextendo-second-20260923T210513Z): the console addresses its own
-// LobbyMessaging/SendMessage "NplnLogin" message straight back to itself
-// (receiver_users names its own user id), and reads it back on its own
-// RecvMessage stream. NextendoNetwork/splatoon-3's own source names this a
-// hard client-side gate found by decompiling the client: "S3's ink loading
-// screen only advances when a 'type':'NplnLogin' message comes BACK on
-// RecvMessage" (replay.go). sendTo (unlike sendToLobby) never excludes the
-// sender, so this is GRID0+'s ordinary delivery path, not a special case
-// -- this test exists to prove that stays true, not to add behavior.
+// TestSelfAddressedNplnLoginIsEchoedBack covers the wire shape the console
+// uses: it addresses its own LobbyMessaging/SendMessage "NplnLogin" message
+// straight back to itself (receiver_users names its own user id), and reads it
+// back on its own RecvMessage stream. This is a hard client-side gate: the ink
+// loading screen only advances when a 'type':'NplnLogin' message comes BACK on
+// RecvMessage. sendTo (unlike sendToLobby) never excludes the sender, so this is
+// GRID0+'s ordinary delivery path, not a special case -- this test exists to prove
+// that stays true, not to add behavior.
 func TestSelfAddressedNplnLoginIsEchoedBack(t *testing.T) {
 	l := messagingFor(t)
 	self, cancel := receive(t, l, "player1", "")

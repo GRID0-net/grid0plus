@@ -60,11 +60,8 @@ func festKey(fid uint32, pid uint64) string { return fmt.Sprintf("%d:%d", fid, p
 
 // uploadFestivalVote: FestivalUploadVoteParam{u32 festivalId, u8 themeId}.
 //
-// Kinnay documents this as returning nothing. NextendoNetwork answered it
-// with an empty list instead, reading it as a query it saw fired at the
-// start of an 8-player fest match (facts only); the documented shape is
-// used here, and both are answers the game accepted where NotImplemented
-// was 2306-0103.
+// Kinnay documents this as returning nothing, and that is what is answered. The
+// game accepts it; NotImplemented raises 2306-0103.
 func (s *Server) uploadFestivalVote(c *nex.Conn, req *nex.Request) *nex.Response {
 	r := nex.NewReader(req.Body)
 	var v festVote
@@ -108,7 +105,7 @@ func (s *Server) uploadFestivalScore(c *nex.Conn, req *nex.Request) *nex.Respons
 	cur.PID, cur.Team, cur.UniqueID, cur.Region = c.PID, in.Team, in.UniqueID, in.Region
 	cur.Total += uint64(score)
 	cur.Battles++
-	// TODO(capture-needed): what battleResult encodes. Read as 1 = win.
+	// UNCONFIRMED: what battleResult encodes. Read as 1 = win.
 	if result == 1 {
 		cur.Wins++
 	}
@@ -155,7 +152,7 @@ func (s *Server) TallyFestival(fid uint32) FestivalTally {
 // length, so a reader expecting revision 0 skips them, while one expecting
 // revision 1 would fail on a revision-0 body.
 //
-// TODO(capture-needed): what a team's score is -- here, the sum of the
+// UNCONFIRMED: what a team's score is -- here, the sum of the
 // scores its players uploaded -- and what the revision-1 byte means (sent as
 // 0). A capture of a real result would settle both; this function is the one
 // to change.
@@ -293,7 +290,7 @@ func (s *Server) LeagueStandings(leagueID string) []LeagueEntry {
 // u8 status, u32 specificRank, u8 rankRatio, u32 tagNum, u32 matchCount}, or
 // Ranking::NotFound for a team with no result in that league.
 //
-// TODO(capture-needed): what status and rankRatio mean. Sent as 0 and as the
+// UNCONFIRMED: what status and rankRatio mean. Sent as 0 and as the
 // team's percentile (1 = top). A capture of a real result settles both; this
 // function is the one to change.
 func (s *Server) getLeagueResult(c *nex.Conn, req *nex.Request) *nex.Response {
@@ -332,7 +329,7 @@ type rawUpload struct {
 // storeRaw keeps an upload whose shape is not documented, whole, and
 // acknowledges it.
 //
-// TODO(capture-needed): UploadXPower (22) and UploadEventMatchResult (24)
+// UNCONFIRMED: UploadXPower (22) and UploadEventMatchResult (24)
 // have no documented request shape. They are read as uploads -- void, like
 // every other Upload* method on this protocol -- and kept byte for byte, so
 // that once their shape is known the history can be decoded rather than
@@ -351,17 +348,16 @@ func (s *Server) storeRaw(kind string) rendezvous.Method {
 // getXPowerRanking answers Ranking::NotFound -- the protocol's own "no
 // ranking to show" -- until the response shape is known.
 //
-// TODO(capture-needed): GetXPowerRanking's request and response shapes.
+// UNCONFIRMED: GetXPowerRanking's request and response shapes.
 func (s *Server) getXPowerRanking(c *nex.Conn, req *nex.Request) *nex.Response {
 	return req.Error(nex.ResultRankingNotFound)
 }
 
 // getEventMatchResult answers an empty list: the game calls it about every
-// six minutes while a Splatfest is running, and NextendoNetwork found an
-// empty list accepted where NotImplemented raised 2306-0103 (facts only).
+// six minutes while a Splatfest is running, and accepts an empty list where
+// NotImplemented raises 2306-0103.
 //
-// TODO(capture-needed): the element type, and what a populated answer
-// changes in the game.
+// UNCONFIRMED: the element type, and what a populated answer changes in the game.
 func (s *Server) getEventMatchResult(c *nex.Conn, req *nex.Request) *nex.Response {
 	w := nex.NewWriter()
 	w.U32(0)

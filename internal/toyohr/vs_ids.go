@@ -5,18 +5,16 @@ import "fmt"
 // The real stage ids Turf War and Anarchy's rotation content uses.
 //
 // Unlike the *shape* of nn.npln.toyohr.v1.VsSchedule (an operator-authored
-// mechanism -- see schedule.go's own package comment), these numeric ids are
-// the game's *content*: which integer means "Scorch Gorge," which means
-// "Hagglefish Market." Getting one of these wrong means the console asks its
-// own local asset tables for something that is not there -- the same,
-// materially smaller failure class CoopStages' own doc comment describes,
-// not an invented FRES container.
+// mechanism -- see schedule.go's Rotation comment), these numeric ids are the
+// game's *content*: which integer means "Scorch Gorge," which means "Hagglefish
+// Market." Getting one of these wrong means the console asks its own local asset
+// tables for something that is not there -- the same, materially smaller failure
+// class CoopStages' own doc comment describes, not an invented FRES container.
 //
 // Every id and name below was read directly out of the game's own shipped
-// parameter tables, not written down from memory or a wiki's prose: cloned
-// github.com/Leanny/splat3 (a public, actively-maintained community dump of
-// Splatoon 3's own data files, not a packet capture) and cross-referenced
-// two of its tables against each other, the same method CoopStages uses --
+// parameter tables: github.com/Leanny/splat3 (a public community dump of
+// Splatoon 3's own data files) with two of its tables cross-referenced against
+// each other, the same method CoopStages uses --
 //
 //	data/mush/1100/VersusSceneInfo.json  Id, __RowId, IsDisplayInStageList
 //	data/language/USen.json              CommonMsg/VS/VSStageName, keyed by
@@ -28,18 +26,16 @@ import "fmt"
 // rotates through on a real server, only that each id and name is real.
 // Two entries are worth naming explicitly because their codename reads
 // nothing like the stage: "AutoWalk" is Lemuria Hub (the newest stage at
-// Season 8), "Crank" is Urchin Underpass (id 26, added in v11 and used by
-// the 2026-09-23 working capture's X Battle slot), and "Manbou" -- present in the
-// language file but IsDisplayInStageList false in this data pull, so not
+// Season 8), "Crank" is Urchin Underpass (id 26, added in v11), and "Manbou"
+// -- present in the language file but IsDisplayInStageList false, so not
 // listed below -- is Grand Splatlands Bowl, already known from CoopStages
 // as a Big Run stage; Versus and Big Run share that one map.
 //
-// What this table is NOT: a claim that every one of these ids is
-// *currently* live in Nintendo's own rotation, or a source for BankaraRule
-// wire values. The working Nextendo hall captures show Bankara, X and League
-// settings using rule values 1 through 4, which settles the range; which
-// number is which mode is read from the game's own rule table or the
-// schedule screen, not from this file. TODO(capture-needed): the mapping.
+// What this table is NOT: a claim that every one of these ids is *currently*
+// live in Nintendo's own rotation, or a source for BankaraRule wire values.
+// Bankara, X and League settings use rule values 1 through 4, which settles the
+// range; which number is which mode is read from the game's own rule table or
+// the schedule screen, not from this file. UNCONFIRMED: the mapping.
 type VsStage struct {
 	// ID is VersusSceneInfo's own Id -- what VsSchedule's Stages field
 	// carries.
@@ -90,30 +86,25 @@ func VsStageByID(id int32) (stage VsStage, ok bool) {
 	return VsStage{}, false
 }
 
-// VsRuleIDs are the confirmed-valid BankaraSettings/XSettings/LeagueSettings
-// `rule` wire values -- 1, 2, 3, 4, one per real rule (Splat Zones, Tower
-// Control, Rainmaker, Clam Blitz).
+// VsRuleIDs are the valid BankaraSettings/XSettings/LeagueSettings `rule`
+// wire values -- 1, 2, 3, 4, one per real rule (Splat Zones, Tower Control,
+// Rainmaker, Clam Blitz).
 //
-// Not from a data dump like VsStages: read directly off a real capture
-// already sitting in this project (facts only, decoded here from the wire
-// bytes themselves, not from Nextendo's or anyone else's code) --
-// docs/CAPTURES/raw/nextendo-hall-20260923T205738Z's own
-// SelectVsSchedules response. Across every VsSchedule entry in it, all
-// three of those fields' values are drawn from exactly {1, 2, 3, 4} and
-// nothing else -- confirming the valid range, not a guess at it.
+// Across every VsSchedule entry a real server sends, all three of those fields'
+// values are drawn from exactly {1, 2, 3, 4} and nothing else, which confirms the
+// valid range.
 //
 // WHICH number is which named rule is NOT confirmed by this: the console
-// resolves the display name from its own local strings, the same way it
-// does for VsStages' names, so the wire never carries "Splat Zones" as a
-// string. A wrong-but-valid id here is not a protocol error -- the console
-// still gets a real rule it can play -- only this project's own labels
-// would be wrong, and nothing here guesses at them (see VsRuleName).
-// TODO(capture-needed): watch which id renders as which rule on real
-// hardware and rename these once known. Strong but indirect evidence:
-// SplatNet 3's public API numbers rules VsRule-0 Turf War, 1 Splat Zones,
-// 2 Tower Control, 3 Rainmaker, 4 Clam Blitz, the same order as the game's
-// own stage layers (Pnt, Var, Vlf, Vgl, Vcl). One Anarchy schedule checked
-// against the console's screen would confirm it.
+// resolves the display name from its own local strings, the same way it does for
+// VsStages' names, so the wire never carries "Splat Zones" as a string. A
+// wrong-but-valid id here is not a protocol error -- the console still gets a
+// real rule it can play -- only this project's own labels would be wrong, and
+// nothing here guesses at them (see VsRuleName).
+// UNCONFIRMED: watch which id renders as which rule on real hardware and rename
+// these once known. Indirect evidence: SplatNet 3's public API numbers rules
+// VsRule-0 Turf War, 1 Splat Zones, 2 Tower Control, 3 Rainmaker, 4 Clam Blitz,
+// the same order as the game's own stage layers (Pnt, Var, Vlf, Vgl, Vcl). One
+// Anarchy schedule checked against the console's screen would confirm it.
 var VsRuleIDs = []int32{1, 2, 3, 4}
 
 // VsRuleName is deliberately just "Rule <n>" for every id in VsRuleIDs --

@@ -73,22 +73,17 @@ func New(opts Options) *Server {
 			GameServerID: GameServerID,
 			ServerName:   "SwitchNet",
 
-			// The authentication half offers PRUDP minor version 5; the
-			// secure half 0. NextendoNetwork measured Splatoon 2's proven
-			// server answering the secure SYN with 0 where theirs answered 5,
-			// with the client held constant, and scoped the change to the
-			// secure half because a title's authentication stopped accepting
-			// logins when its version was forced to 0 (facts only).
+			// 			// The authentication half offers PRUDP minor version 5; the secure half
+			// 			// 0. The secure SYN is answered with 0, scoped to the secure half because
+			// 			// authentication stops accepting logins when its version is forced to 0.
 			AuthMinorVersion:   5,
 			SecureMinorVersion: 0,
 
 			SecureAddress: opts.Config.SecureAddress,
 			SecurePort:    opts.Config.SecurePort,
 
-			// type=3 (behind NAT | public) and no Pa: what Splatoon 2's
-			// proven server answers Register with, measured by
-			// NextendoNetwork against the same client (facts only). Newer
-			// Pia (5.19, Smash) wants type=11 and Pa; Splatoon 2's is older.
+			// 			// type=3 (behind NAT | public) and no Pa. Newer Pia (5.19, Smash) wants
+			// 			// type=11 and Pa; Splatoon 2's is older.
 			PublicStationType: 3,
 			PublicStationPa:   false,
 		},

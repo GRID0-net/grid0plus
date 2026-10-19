@@ -8,9 +8,8 @@
 // the right IP and the console's LOCAL port. The NAT-check responder
 // (cmd/natcheck) is the one component that sees the port the router actually
 // mapped for the console's Pia socket, because Pia runs its NAT check from
-// that socket. NextendoNetwork records the same gap and closes it the same
-// way, from a file their responder writes (facts only); GRID0+'s services
-// already share Redis, so it goes there.
+// that socket. GRID0+'s services already share Redis, so the observation goes
+// there.
 //
 // Keyed by public IP, so an observation is only usable while one console at
 // a time sits behind that IP -- see rendezvous's bridge.

@@ -23,18 +23,16 @@ import (
 // document has to exist in Ugcstore afterwards with the same fields, or it
 // re-initialises forever. The request says which record: field 15
 // (initial_coop) or 16 (coop_shift) is Salmon Run, anything else Versus; a
-// Salmon Run record handed back for a Versus request is what crashed the game
-// in NextendoNetwork/splatoon-3's measurement.
+// Salmon Run record handed back for a Versus request crashes the game.
 //
 // The attributes carry only what the request itself says -- no invented rank,
 // rating or X Power. The game's own parser reads every key only if it is
 // present and keeps its built-in default otherwise, so an absent key is a
-// fresh player's value, not a gap. See
-// docs/CAPTURES/npln-gamerecord-attributes-2026-09-23.md.
+// fresh player's value, not a gap.
 //
-// TODO(capture-needed): whether the console accepts a record this sparse on
-// hardware, and which of shift_id/limited_shift_id a coop_shift sets (job
-// types other than the regular rotation may use the latter).
+// UNCONFIRMED: whether the console accepts a record this sparse on hardware, and
+// which of shift_id/limited_shift_id a coop_shift sets (job types other than the
+// regular rotation may use the latter).
 func (s gameRecordService) InitializeAttributes(
 	ctx context.Context, req *toyohrpb.InitializeAttributesRequest,
 ) (*toyohrpb.InitializeAttributesResponse, error) {
@@ -89,14 +87,12 @@ func (s gameRecordService) InitializeAttributes(
 		if season != 0 {
 			attrs.Fields["season_id"] = intValue(int64(season))
 		}
-		// initial_vs carries the starting matchmaking rating the console
-		// chose. The working capture's VsUserAttribute keeps one rating per
-		// mode (tw, ar, lf, gl, cl) as mmr_rate_<mode>, flagged by
-		// mmr_initialized_<mode>. Without the flags the console treats the
-		// rating as uninitialised and sends initial_vs again: on hardware on
-		// 2026-09-25 it did so ~10 times a second, forever, from the hall.
-		// Only the rate the console sent is stored; rd/vol keep the game's
-		// own defaults.
+		// initial_vs carries the starting matchmaking rating the console chose.
+		// VsUserAttribute keeps one rating per mode (tw, ar, lf, gl, cl) as
+		// mmr_rate_<mode>, flagged by mmr_initialized_<mode>. Without the flags the
+		// console treats the rating as uninitialised and sends initial_vs again: on
+		// hardware it did so ~10 times a second, forever, from the hall. Only the rate
+		// the console sent is stored; rd/vol keep the game's own defaults.
 		if iv := req.GetInitialVs(); iv != nil && iv.GetInitialRate() != 0 {
 			for _, mode := range []string{"tw", "ar", "lf", "gl", "cl"} {
 				attrs.Fields["mmr_rate_"+mode] = &commonpb.Value{ValueType: &commonpb.Value_DoubleValue{DoubleValue: iv.GetInitialRate()}}
@@ -122,26 +118,20 @@ func (s gameRecordService) InitializeAttributes(
 // InitializeTag, GetTag and SelectTags answer instead of the embedded
 // Unimplemented default, for the same reason WriteSaveRecord does
 // (internal/toyohr/cloud_save.go): all three response messages are marked
-// "[UNKNOWN]" in kinnay/NPLN-Protocols' own reconstruction
-// (.proto-upstream/latest/proto/toyohr/v1/game_record.proto) and generate
-// with zero fields, so acknowledging them invents nothing -- there is
-// nothing to invent. Unimplemented is a harsher gRPC error than a
-// structurally valid empty response; a caller that reaches these RPCs at
-// all (which requires seeing real League schedule data first -- see
-// docs/CAPTURES/splat3-hall-boundary-2026-09-24.md) has already been told
-// League exists, so refusing outright here is the more likely crash, not
-// the safer default.
+// "[UNKNOWN]" in kinnay/NPLN-Protocols' reconstruction and generate with zero
+// fields, so acknowledging them invents nothing. Unimplemented is a harsher gRPC
+// error than a structurally valid empty response; a caller that reaches these
+// RPCs at all has already been told League exists, so refusing outright is the
+// more likely crash, not the safer default.
 //
 // No Tag is actually stored: there is nowhere honest to keep one yet
 // (SelectTags' own response has no field to list one in either), so
 // InitializeTag's acknowledgement does not persist anything -- unlike
-// InitializeAttributes, which does. If a capture ever settles these
-// messages' real fields, that is the point to add storage.
+// InitializeAttributes, which does. If the messages' real fields are ever
+// settled, that is the point to add storage.
 //
-// TODO(capture-needed): the real Tag/InitializeTagResponse/
-// GetTagResponse/SelectTagsResponse shapes -- neither preserved working
-// capture ever entered League Battle, so these RPCs were never observed on
-// the wire.
+// UNCONFIRMED: the real Tag/InitializeTagResponse/GetTagResponse/
+// SelectTagsResponse shapes; they were never observed on the wire.
 func (s gameRecordService) InitializeTag(
 	ctx context.Context, req *toyohrpb.InitializeTagRequest,
 ) (*toyohrpb.InitializeTagResponse, error) {
@@ -184,31 +174,27 @@ func intValue(v int64) *commonpb.Value {
 // CreateFestPowerMeasurement records a player's first Splatfest power
 // measurement, and stores the document the game reads it back from.
 //
-// Its shape is a real Nintendo capture that NextendoNetwork/splatoon-3
-// records (a new account's exchange; facts only, none of its code used):
-// named tenants/<t>/users/<uid>/festPowerMeasurements/<festId>, fields
+// Its shape: named tenants/<t>/users/<uid>/festPowerMeasurements/<festId>, fields
 // fest_id, npln_user_id, fest_power_challenge, is_initial=true, created_at,
 // battle_num=0, and the document the game then reads,
 // .../documents/services/GameRecord/users/<uid>/FestPowerMeasurement/<festId>.
 //
-// Both failure modes are measured there. Answered with nothing, the game
-// never learns which document holds its measurement, re-reads it, finds
-// nothing and creates it again: 1,058 creations in two minutes, the player
-// stuck at "Connecting to the Internet". Answered with a document name it
-// cannot parse, the game crashes.
+// Both failure modes are real. Answered with nothing, the game never learns which
+// document holds its measurement, re-reads it, finds nothing and creates it
+// again: 1,058 creations in two minutes, the player stuck at "Connecting to the
+// Internet". Answered with a document name it cannot parse, the game crashes.
 //
-// Like InitializeAttributes, the fields carry only what is known: the
-// request's own, the fest id and user, and the two constants the capture
-// shows. fest_power_challenge is kept only if the request sent one, and
-// created_at is left out -- its value type is not recorded -- so the game
-// keeps its own default for both.
+// Like InitializeAttributes, the fields carry only what is known: the request's
+// own, the fest id and user, and the two constants. fest_power_challenge is kept
+// only if the request sent one, and created_at is left out -- its value type is
+// not known -- so the game keeps its own default for both.
 //
 // The document keeps this package's tenants/current naming (see
-// InitializeAttributes): a switch to the concrete tenant was tried on
-// hardware and reverted.
+// InitializeAttributes): a switch to the concrete tenant was tried on hardware
+// and reverted.
 //
-// TODO(capture-needed): whether a real server fills fest_power_challenge
-// and created_at when the request leaves them out. Change: this function.
+// UNCONFIRMED: whether a real server fills fest_power_challenge and created_at
+// when the request leaves them out. Change: this function.
 func (s gameRecordService) CreateFestPowerMeasurement(
 	ctx context.Context, req *toyohrpb.CreateFestPowerMeasurementRequest,
 ) (*toyohrpb.FestPowerMeasurement, error) {
@@ -258,12 +244,12 @@ func (s gameRecordService) CreateFestPowerMeasurement(
 //
 // Shaped like CreateFestPowerMeasurement, the GameRecord call it sits beside:
 // the request carries the challenge's fields, and the answer is the stored
-// document under the player's GameRecord, named BankaraChallenges/<id> --
-// the collection NextendoNetwork/splatoon-3's notes show the game reading back
-// (and aborting with 2162-0001 when it came back with no name).
+// document under the player's GameRecord, named BankaraChallenges/<id> -- the
+// collection the game reads back (and aborts with 2162-0001 when it comes back
+// with no name).
 //
-// TODO(capture-needed): the id Nintendo assigns and any fields it adds. The
-// fields here are the game's own, plus npln_user_id. Change: this function.
+// UNCONFIRMED: the id Nintendo assigns and any fields it adds. The fields here
+// are the game's own, plus npln_user_id. Change: this function.
 func (s gameRecordService) CreateBankaraChallenge(
 	ctx context.Context, req *toyohrpb.CreateBankaraChallengeRequest,
 ) (*toyohrpb.BankaraChallenge, error) {

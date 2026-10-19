@@ -26,16 +26,12 @@ func TestFriendCodeShapeAndUniqueness(t *testing.T) {
 	}
 }
 
-// TestFriendCodeExistsFromAccountCreation used to be
-// TestFriendCodeIsOnlyCreatedWhenAskedFor, asserting the opposite of what
-// this test now checks. That was never confirmed by a capture -- a live
-// mitmdump capture of a real federation/login response (2026-09-21/22)
-// diffed against a known-working reference found a genuinely fresh account
-// missing links.friendCode entirely, and the console never called
-// generate_code itself to fix that; it just abandoned the link. Real
-// accounts have a friend code from the moment they exist (see
-// friendcodes.go's assignFriendCode), same as System Settings shows one
-// immediately with no Nintendo Account link required.
+// TestFriendCodeExistsFromAccountCreation checks that a fresh account has a
+// friend code from the moment it exists (see friendcodes.go's
+// assignFriendCode), the same as System Settings shows one immediately with no
+// Nintendo Account link required. A federation/login response without
+// links.friendCode makes the console abandon the link, and it never calls
+// generate_code itself to fix that.
 func TestFriendCodeExistsFromAccountCreation(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
@@ -174,9 +170,9 @@ func TestFindUserByFriendCode(t *testing.T) {
 }
 
 // TestFindUserByFriendCodeRealQueryParam is TestFindUserByFriendCode's own
-// query, "?friendCode=", replaced with the real parameter name a 2026-09-20
-// decompile of the friends sysmodule found: the console filters on
-// "filter.links.friendCode.id.$in", a MongoDB-style filter, not a plain key.
+// query, "?friendCode=", replaced with the real parameter name: the console
+// filters on "filter.links.friendCode.id.$in", a MongoDB-style filter, not a
+// plain key.
 func TestFindUserByFriendCodeRealQueryParam(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()

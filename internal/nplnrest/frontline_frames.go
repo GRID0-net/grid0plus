@@ -12,8 +12,7 @@ import (
 )
 
 // Frontline frames, both directions: a 4-byte little-endian length, then a
-// FlatBuffer of that many bytes. Settled by decompiling the npns sysmodule
-// (FUN_71000e8d70); see docs/CAPTURES/npns-sysmodule-decompile.md.
+// FlatBuffer of that many bytes.
 
 // frontlineMaxFrame is the client's own receive buffer (0x3400); it refuses
 // anything longer, so nothing longer is accepted from it either.
@@ -66,8 +65,7 @@ func frontlineFrameType(p []byte) int {
 	return int(p[root+off])
 }
 
-// frontlineTypeNames is the union enum, in the client's own order (its name
-// table at 0x7100168968).
+// frontlineTypeNames is the union enum, in the client's own order.
 var frontlineTypeNames = []string{
 	"NONE", "MessageRequest", "PublishRequest", "KickRequest", "PutRecord",
 	"DeleteRecord", "RootHash", "LeafHash", "SyncComplete", "Ack",
@@ -93,24 +91,21 @@ func frontlineTypeName(t int) string {
 //
 //   - RootHash: answered with the server's own, which lists no collections.
 //     npns compares the server's list with its local mirror of server-owned
-//     records (the "s-" keys, FUN_71000b2d00), not with the "c-" list it
-//     sends; an echo of that list read as server collections it lacked, so it
-//     asked for c-appearance's leaves and stalled. With an empty list it
-//     drops any stale mirror and goes FUN_71000dba50 -> FUN_71000dbe50 ->
-//     FUN_71000da010, state 8. The list field must be present: npns follows
-//     it without checking (FUN_71000da2f0).
-//   - SubscribeTopic, DAPresence and PowerState: an Ack. Both leave npns with a request
-//     pending and a 10 s deadline (FUN_71000dd980, FUN_71000de140); with no
-//     Ack it drops the connection, which on hardware meant a reconnect every
-//     ~11 s and no presence ever settling. The Ack's field 0 must be the id
-//     npns stored, compared with strcmp and aborting on a mismatch
-//     (FUN_71000deab0): the constant "topic.subscription" for a subscribe,
-//     "%016llx/%016llx" of the user and device account ids for a presence --
-//     the frame's own fields 1 and 2 (argument order read from the
-//     disassembly at 0x71000de254 and the string order in FUN_71000ebf40).
-//     Other request kinds stay unanswered until their ids are confirmed.
-//   - Ping: a Pong carrying the Ping's first field, which npns compares with
-//     the id it stored when it sent the Ping (FUN_71000df9e0).
+//     records (the "s-" keys), not with the "c-" list it sends; an echo of
+//     that list reads as server collections it lacked, so it asks for
+//     c-appearance's leaves and stalls. With an empty list it drops any stale
+//     mirror and settles. The list field must be present: npns follows it
+//     without checking.
+//   - SubscribeTopic, DAPresence and PowerState: an Ack. Each leaves npns with a
+//     request pending and a 10 s deadline; with no Ack it drops the connection,
+//     which on hardware meant a reconnect every ~11 s and no presence ever
+//     settling. The Ack's field 0 must be the id npns stored, compared with
+//     strcmp and aborting on a mismatch: the constant "topic.subscription" for
+//     a subscribe, "%016llx/%016llx" of the user and device account ids for a
+//     presence -- the frame's own fields 1 and 2. Other request kinds stay
+//     unanswered until their ids are confirmed.
+//   - Ping: a Pong carrying the Ping's first field, which npns compares with the
+//     id it stored when it sent the Ping.
 func (s *Server) frontlineReply(frame []byte, t int) []byte {
 	now := time.Now()
 	if s.now != nil {
@@ -124,8 +119,8 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 			return pos
 		})
 	case frontlinePowerState:
-		// Its id is the state's name from npns's table at 0x7100168908,
-		// "" past its end (FUN_71000dd2f0); field 0 defaults to Awake.
+		// Its id is the state's name from npns's table, "" past its end; field 0
+		// defaults to Awake.
 		body, ok := frontlineBody(frame)
 		if !ok {
 			return nil
@@ -139,10 +134,9 @@ func (s *Server) frontlineReply(frame []byte, t int) []byte {
 	case frontlineSubscribeTopic:
 		return frontlineAckFrame(now, "topic.subscription")
 	case frontlineReloadLink:
-		// npns builds "reload_link-<8 hex>", sends it as the frame's first
-		// field and keeps the same string as the id it waits on, 10 s, like
-		// the others (FUN_71000de920). Unanswered, it dropped the connection
-		// exactly 10 s later on grid0.
+		// npns builds "reload_link-<8 hex>", sends it as the frame's first field and
+		// keeps the same string as the id it waits on, 10 s, like the others.
+		// Unanswered, it drops the connection exactly 10 s later.
 		body, ok := frontlineBody(frame)
 		if !ok {
 			return nil

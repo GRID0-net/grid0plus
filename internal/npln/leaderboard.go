@@ -15,7 +15,7 @@ import (
 // The request is logged in full so the season names, and which in-game board
 // they belong to, can be read off the log.
 //
-// TODO(capture-needed): what a real board looks like (scores, ranks,
+// UNCONFIRMED: what a real board looks like (scores, ranks,
 // holders) and which seasons the game asks for. Change: BrowseLeaderboard.
 type leaderboardService struct {
 	leaderboardpb.UnimplementedLeaderboardServiceServer

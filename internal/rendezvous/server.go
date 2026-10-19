@@ -39,9 +39,8 @@ const (
 
 // SecurePID is the principal id of the secure server ("Quazal Rendez-Vous")
 // as it appears in the secure station URL and as a ticket's target. 2 is the
-// value every 3DS/Wii U server and NextendoNetwork's proven Switch servers use
-// (facts only); the client only checks that the ticket's target matches the
-// station, and both come from here.
+// value every 3DS/Wii U/Switch server uses; the client only checks that the
+// ticket's target matches the station, and both come from here.
 const SecurePID = 2
 
 // Title is what distinguishes one NEX game server from another.
@@ -314,11 +313,9 @@ func (s *Server) ConnByID(id uint32) *nex.Conn { return s.nex.Conn(id) }
 //
 // One place at a time, newest wins. A console that lost its connection opens
 // a new one before the old one times out, so refusing the newcomer would lock
-// a player out of their own session for the length of the timeout -- which is
-// what NextendoNetwork's players reported ("this account is already playing
-// elsewhere") until they added a reaper (facts only). The identity is not in
-// question either way: both connections were admitted on a ticket for this
-// PID.
+// a player out of their own session for the length of the timeout ("this account
+// is already playing elsewhere"). The identity is not in question either way:
+// both connections were admitted on a ticket for this PID.
 func (s *Server) playerConnected(c *nex.Conn) error {
 	s.mu.Lock()
 	old := s.players[c.PID]

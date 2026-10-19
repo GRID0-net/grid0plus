@@ -46,11 +46,10 @@ func main() {
 		ClientCertPEMHeader: cfg.DAuth.ClientCertPEMHeader,
 		DeviceIDSecret:      cfg.Keys.DeviceIDSecret,
 	}, issuer, log, func(id, serial, systemVersion string, ist bool) {
-		// Phase 1 only logs the console. Recording it in the devices table needs
-		// a database connection, which dauth otherwise does not want: it is the
-		// one service that has to answer before any account exists, so keeping
-		// it free of a database dependency means a console can always get far
-		// enough to see a useful error.
+		// dauth only logs the console. Recording it in the devices table needs a
+		// database connection, which dauth otherwise does not want: it is the one service
+		// that has to answer before any account exists, so keeping it free of a database
+		// dependency means a console can always get far enough to see a useful error.
 		log.Info("device authenticated",
 			"device", id, "serial", serial, "system_version", systemVersion, "ist", ist)
 	})

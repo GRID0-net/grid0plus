@@ -142,7 +142,7 @@ func (s *Server) ticketFor(c *nex.Conn, pid uint64) ([]byte, []byte) {
 }
 
 // loginEx is ValidateAndRequestTicketWithCustomData, Splatoon 2's login
-// (NEX 4.0; NextendoNetwork's server records S2 using method 2, facts only).
+// (NEX 4.0, method 2).
 //
 //	request:  String username | AnyDataHolder<AuthenticationInfo>
 //	response: Result | PID | Buffer ticket | RVConnectionData | String build name | String pSourceKey
@@ -199,7 +199,7 @@ func (s *Server) writeConnectionData(w *nex.Writer, ok bool) {
 // The scheme is "prudps", and must be: it is how the console decides the
 // target is a secure server and therefore puts its ticket in the CONNECT.
 // With "prudp" it connects with an empty CONNECT and only fails once Pia
-// needs the session (NextendoNetwork's measurement, facts only).
+// needs the session.
 func (s *Server) SecureStation() *nex.StationURL {
 	u := nex.NewStationURL("prudps")
 	addr, port := "0.0.0.1", 1

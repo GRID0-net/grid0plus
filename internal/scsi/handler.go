@@ -1,6 +1,6 @@
 // Package scsi reimplements the two Nintendo servers behind OLSC (Online
 // Save Cloud), the OS-level per-game save-data backup tied to a Nintendo
-// Switch Online subscription. Phase 4 of GRID0+ — see docs/ROADMAP.md.
+// Switch Online subscription.
 //
 // Endpoints:
 //
@@ -9,16 +9,14 @@
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers
 //
-// This is NOT the same thing as any one game's own cloud-save API —
-// Splatoon 3's CloudSave.GetSaveRecord (see ROADMAP.md phase 2.4) is a
-// separate, game-specific RPC on a separate protocol. OLSC is system-wide,
-// used by any title with save data, independent of NPLN or any other game
-// protocol.
+// This is NOT the same thing as any one game's own cloud-save API --
+// Splatoon 3's CloudSave.GetSaveRecord is a separate, game-specific RPC on a
+// separate protocol. OLSC is system-wide, used by any title with save data,
+// independent of NPLN or any other game protocol.
 //
-// See internal/scsi/README.md for exactly which endpoints and fields below
-// are confirmed from the wiki page above versus this project's own
-// defensible reading of an undocumented one — most are marked inline with
-// TODO(capture-needed) where they are the latter.
+// See internal/scsi/README.md for which endpoints and fields below are confirmed
+// from the wiki page above versus this project's own reading of an undocumented
+// one -- most of the latter are marked inline with UNCONFIRMED.
 package scsi
 
 import (
@@ -60,7 +58,7 @@ type Config struct {
 	// PublicURL is this service's own externally-reachable base URL (e.g.
 	// "https://storage.hac.lp1.scsi.srv.nintendo.net"), used to build the
 	// signed_uri this project's own upload/download endpoint is reached
-	// through. See signedURI's TODO(capture-needed).
+	// through. See signedURI's UNCONFIRMED.
 	PublicURL string
 }
 
@@ -101,44 +99,31 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/nx/v2/component_files/{id}/finish_upload", s.authenticated(s.finishComponentUpload))
 	mux.HandleFunc("POST /api/nx/v2/component_files/{id}/update", s.authenticated(s.unimplementedComponentUpdate))
 	// Not on the wiki at all — this project's own slot for the raw bytes a
-	// signed_uri points at. See signedURI's TODO(capture-needed).
+	// signed_uri points at. See signedURI's UNCONFIRMED.
 	mux.HandleFunc("PUT /api/nx/v2/component_files/{id}/data", s.authenticated(s.uploadComponentData))
 	mux.HandleFunc("GET /api/nx/v2/component_files/{id}/data", s.authenticated(s.downloadComponentData))
 
 	mux.HandleFunc("POST /api/nx/v2/network_service_accounts/{id}/notification_tokens", s.authenticated(s.registerNotificationToken))
 	mux.HandleFunc("GET /api/nx/v2/permissions", s.authenticated(s.permissions))
 
-	// A 2026-09-23 hardware capture shows a real Splatoon 3 console calling
-	// these same two resources under /api/console/v3/, not /api/nx/v2/ --
-	// this project's whole OLSC surface was built against the wiki's v2
-	// paths and had no route for v3 at all, so every one of these requests
-	// 404ed. The console did not treat that 404 as harmless: it retried
-	// roughly every 700ms, continuously, for the whole time the hall was
-	// open -- logUnimplemented's own doc comment assumed a clean 404
-	// wouldn't cause a retry loop, and empirically, here, it did.
+	// A real Splatoon 3 console calls these same two resources under
+	// /api/console/v3/, not the wiki's /api/nx/v2/. Without a route for v3 every one
+	// of these requests 404s, and the console does not treat that as harmless: it
+	// retries roughly every 700ms, continuously, for as long as the hall is open.
 	//
 	// Routed to the same handlers as their v2 counterparts, not a new
-	// implementation: both handlers already ignore anything path-shaped that
-	// would differ between the two prefixes (registerNotificationToken never
-	// reads the path's {id} at all; listArchives filters only on query
-	// parameters). Reusing them is applying already-confirmed-defensible
-	// logic to a newly-confirmed real path, not inventing a new one.
+	// implementation: both handlers already ignore anything path-shaped that would
+	// differ between the two prefixes (registerNotificationToken never reads the
+	// path's {id} at all; listArchives filters only on query parameters).
 	//
-	// A 2026-09-24 hardware capture (both preserved working Nextendo hall
-	// captures agree) confirms a third /api/console/v3/ path: start_upload,
-	// same two forms as the v2 route above. Two consecutive GRID0+
-	// hardware attempts on 2026-09-24 both reached this exact request and
-	// got logUnimplemented's 404 -- the same retry-loop-causing shape this
-	// comment already found once for the two routes above, on the RPC
-	// immediately after the one this project's own hall investigation had
-	// never seen a console reach before today.
+	// start_upload also exists under /api/console/v3/, with the same two forms as
+	// the v2 route above; left unrouted it produces the same retry loop.
 	//
-	// TODO(capture-needed): whether /api/console/v3/ is Splatoon 3's whole
-	// OLSC surface (in which case every remaining /api/nx/v2/ route above
-	// may need a v3 twin too) or just these three, and what "datatype" in
-	// ?datatype=0 on save_data_archives selects -- listArchives does not
-	// look at it today. Add a v3 route here, to the same handler, the
-	// moment another one is confirmed.
+	// UNCONFIRMED: whether /api/console/v3/ is Splatoon 3's whole OLSC surface (in
+	// which case every remaining /api/nx/v2/ route above may need a v3 twin too) or
+	// just these three, and what "datatype" in ?datatype=0 on save_data_archives
+	// selects -- listArchives does not look at it today. Add a v3 route here, to the
+	// same handler, when another one turns up.
 	mux.HandleFunc("POST /api/console/v3/network_service_accounts/{id}/notification_tokens", s.authenticated(s.registerNotificationToken))
 	mux.HandleFunc("GET /api/console/v3/save_data_archives", s.authenticated(s.listArchives))
 	mux.HandleFunc("POST /api/console/v3/save_data_archives/start_upload", s.authenticated(s.startUpload))
@@ -241,21 +226,17 @@ func (s *Server) loadOwnedArchive(w http.ResponseWriter, r *http.Request, c Call
 }
 
 // startUploadRequest is the wiki's documented body of
-// POST /api/nx/v2/save_data_archives/<id>/start_upload, plus ApplicationID:
-// both preserved working Nextendo hall captures' real start_upload request
-// bodies (decoded 2026-09-24, facts only, not Nextendo's code) carry
-// "application_id" as a plain JSON field, settling what this project used
-// to read from an invented X-SwitchNet-Application-Id header instead
-// (removed the same day this was found).
+// POST /api/nx/v2/save_data_archives/<id>/start_upload, plus ApplicationID: a
+// real console's start_upload request body carries "application_id" as a plain
+// JSON field.
 type startUploadRequest struct {
 	ApplicationID         string `json:"application_id"`
 	Datatype              int    `json:"datatype"`
 	DataSize              int64  `json:"data_size"`
 	SavedAtUnixtime       int64  `json:"saved_at_as_unixtime"`
 	LaunchRequiredVersion int    `json:"launch_required_version"`
-	// json.Number, not int64: a second real value observed on real
-	// hardware 2026-09-24 (12237957226414712540) exceeds int64's own
-	// maximum -- see db.SaveDataArchive.SeriesID's own comment.
+	// json.Number, not int64: a real value (12237957226414712540) exceeds int64's
+	// own maximum -- see db.SaveDataArchive.SeriesID's own comment.
 	SeriesID      json.Number `json:"series_id"`
 	EncodedDigest string      `json:"encoded_digest"`
 	HasThumbnail  bool        `json:"has_thumbnail"`
@@ -273,10 +254,9 @@ func (s *Server) startUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_params", "Invalid Params")
 		return
 	}
-	// Logged raw on any decode failure -- the exact shape a real console
-	// sends here has already surprised this project once (application_id,
-	// splat3-start-upload-console-v3-2026-09-24.md), so a second mismatch
-	// is worth seeing verbatim rather than guessing at from a bare error.
+	// Logged raw on any decode failure -- the exact shape a real console sends here
+	// has surprised this project before (application_id), so a second mismatch is
+	// worth seeing verbatim rather than guessing at from a bare error.
 	if err := json.Unmarshal(body, &req); err != nil {
 		s.log.Error("scsi: start_upload: decode request body", "error", err, "body", string(body))
 		writeError(w, http.StatusBadRequest, "invalid_params", "Invalid Params")
@@ -378,18 +358,14 @@ func (s *Server) generateKeySeedPackage(w http.ResponseWriter, r *http.Request) 
 		s.writeInternalError(w, "generate key seed package", err)
 		return
 	}
-	// TODO(capture-needed): the wiki confirms the response's field name and
-	// exact encoded length (512 base64url characters) but not the byte
-	// content's meaning. Real Nintendo hardware likely wraps this around the
-	// console's own SSL device key via an HSM GRID0+ has no equivalent
-	// of. This is this project's most defensible placeholder -- opaque,
-	// correctly sized, freshly random per request -- not a guess at the
-	// real wrapping format. If a console cryptographically validates this
-	// value before trusting a restored save, no shape guessed here will
-	// pass that check; see internal/scsi/README.md and
-	// docs/CAPTURES/README.md for why this is flagged as the single most
-	// likely hard blocker in this whole feature, the same way nxAccountBlob's
-	// header prefix was for phase 1's account linking.
+	// UNCONFIRMED: the wiki confirms the response's field name and exact encoded
+	// length (512 base64url characters) but not the byte content's meaning. Real
+	// Nintendo hardware likely wraps this around the console's own SSL device key via
+	// an HSM GRID0+ has no equivalent of. This is a placeholder -- opaque, correctly
+	// sized, freshly random per request -- not a guess at the real wrapping format. If
+	// a console cryptographically validates this value before trusting a restored
+	// save, no shape guessed here will pass that check; see internal/scsi/README.md.
+	// This is the single most likely hard blocker in the feature.
 	writeJSON(w, http.StatusOK, map[string]any{"encoded_key_seed_package": pkg})
 }
 
@@ -418,7 +394,7 @@ func (s *Server) deleteArchive(w http.ResponseWriter, r *http.Request) {
 
 // startDownload and finishDownload back a restore.
 //
-// TODO(capture-needed): neither is documented beyond appearing, method
+// UNCONFIRMED: neither is documented beyond appearing, method
 // unconfirmed ("?"), in the wiki's own URL table. The most defensible
 // reading: start_download hands back exactly what GET .../{id} already
 // does -- the archive plus its component_files, each with an id the console
@@ -448,7 +424,7 @@ func (s *Server) finishDownload(w http.ResponseWriter, r *http.Request) {
 // that the server cannot decide on its own (datatype, and index for
 // resumable multi-part uploads).
 //
-// TODO(capture-needed): confirm this shape, or replace it, against a real
+// UNCONFIRMED: confirm this shape, or replace it, against a real
 // capture.
 type createComponentFileRequest struct {
 	Datatype string `json:"datatype"`
@@ -488,7 +464,7 @@ func (s *Server) createComponentFile(w http.ResponseWriter, r *http.Request) {
 
 // signedURI answers GET /api/nx/v2/component_files/<id>/signed_uri.
 //
-// TODO(capture-needed): the wiki lists this URL's method as "?" with no
+// UNCONFIRMED: the wiki lists this URL's method as "?" with no
 // response shape. Real Nintendo infrastructure almost certainly hands back a
 // time-limited, cryptographically-signed URL to a separate storage backend
 // (S3-style — see the CloudFront/X-Amz-Cf-* headers in BAAS's own example
@@ -534,7 +510,7 @@ func (s *Server) loadOwnedComponentFile(w http.ResponseWriter, r *http.Request, 
 }
 
 // uploadComponentData and downloadComponentData are this project's own
-// endpoint, not a Nintendo one -- see signedURI's TODO(capture-needed) for
+// endpoint, not a Nintendo one -- see signedURI's UNCONFIRMED for
 // why. They exist because something has to be at the URL signedURI hands
 // back.
 func (s *Server) uploadComponentData(w http.ResponseWriter, r *http.Request) {
@@ -649,17 +625,15 @@ func (s *Server) registerNotificationToken(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid_params", "Invalid Params")
 		return
 	}
-	// Real delivery ("your backup finished") needs npns:s, which GRID0+
-	// does not implement (see docs/ROADMAP.md and switchnet-re's own
-	// FIRMWARE_IMPACT_AND_NPNS findings) -- acknowledged and otherwise
-	// dropped rather than stored, so this never silently promises a push
-	// notification that will never arrive.
+	// Real delivery ("your backup finished") needs npns:s, which GRID0+ does not
+	// implement -- acknowledged and otherwise dropped rather than stored, so this
+	// never silently promises a push notification that will never arrive.
 	writeJSON(w, http.StatusOK, map[string]any{"notification_token": req.NotificationToken})
 }
 
 // permissions answers GET /api/nx/v2/permissions.
 //
-// TODO(capture-needed): wiki lists method "?" with no shape. Answered
+// UNCONFIRMED: wiki lists method "?" with no shape. Answered
 // permissively (an empty object, no denial fields set) rather than refused,
 // matching this project's existing convention for a policy check with no
 // confirmed shape -- see internal/stubs's op2 membership stub, which
@@ -674,10 +648,9 @@ func (s *Server) permissions(w http.ResponseWriter, r *http.Request) {
 
 // listSaveDataSets answers GET /api/nx/v1/save_data_sets.
 //
-// TODO(capture-needed): wiki lists this with no method or shape at all.
-// Answered as an empty list -- the same "nothing to report" default
-// GetSaveRecord uses for a fresh account (see ROADMAP.md phase 2.4's
-// CloudSave table) -- rather than guessing at a nonempty shape.
+// UNCONFIRMED: the wiki lists this with no method or shape at all. Answered as
+// an empty list -- the same "nothing to report" default GetSaveRecord uses for a
+// fresh account -- rather than guessing at a nonempty shape.
 func (s *Server) listSaveDataSets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"save_data_sets": []any{}})
 }
@@ -691,7 +664,7 @@ func (s *Server) listSaveDataSets(w http.ResponseWriter, r *http.Request) {
 // carries fs's ISaveDataExporter/ISaveDataImporter proxies, so both key
 // packages are most likely handed to fs to unseal rather than read by OLSC.
 //
-// TODO(capture-needed): the bytes. fs unsealing them with a key only it holds
+// UNCONFIRMED: the bytes. fs unsealing them with a key only it holds
 // would make any answer from here fail; a GDB break on the fs import call
 // after this response would settle it. See internal/scsi/README.md.
 func (s *Server) generateKeyPackage(w http.ResponseWriter, r *http.Request) {

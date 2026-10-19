@@ -8,7 +8,7 @@ import (
 
 // apiError is the error envelope this server returns.
 //
-// TODO(capture-needed): no capture of a real SCSI/SATA error response
+// UNCONFIRMED: no capture of a real SCSI/SATA error response
 // exists. This mirrors BAAS's own confirmed shape
 // (https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#errors)
 // because both are the same family of Nintendo account-adjacent REST API and
@@ -46,13 +46,10 @@ func (s *Server) writeInternalError(w http.ResponseWriter, action string, err er
 // implement and answers with a body that will not send a real Nintendo
 // console into a hang or a retry loop.
 //
-// Matches ROADMAP.md's own convention for genuinely unimplemented Nintendo
-// surface ("log every unimplemented RPC with a hexdump -- that log is the
-// to-do list"), adapted to REST: an operator grepping this service's log for
-// this line has the exact to-do list for what a real console actually
-// reaches versus what this design only guessed at.
+// An operator grepping this service's log for this line has the exact list of
+// what a real console reaches that this server does not cover.
 func (s *Server) logUnimplemented(r *http.Request) {
 	s.log.Warn("scsi: unimplemented endpoint reached by a real request",
 		"method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery,
-		slog.Group("hint", "action", "capture this request and add it to docs/CAPTURES/README.md"))
+		slog.Group("hint", "action", "this endpoint is not implemented; report the request"))
 }

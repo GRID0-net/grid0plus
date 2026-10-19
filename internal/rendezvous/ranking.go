@@ -96,7 +96,7 @@ func (s *Server) uploadScore(c *nex.Conn, req *nex.Request) *nex.Response {
 	sc.PID, sc.At = c.PID, s.now().Unix()
 	key := scoreKey(sc.Category, sc.UniqueID, c.PID)
 
-	// TODO(capture-needed): the meaning of orderBy and updateMode. Read here
+	// UNCONFIRMED: the meaning of orderBy and updateMode. Read here
 	// as: orderBy 0 ranks higher scores first, anything else lower first;
 	// updateMode 0 keeps the better of the old and new score, anything else
 	// always replaces. A capture of a real ranking upload and the ranking read

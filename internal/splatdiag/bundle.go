@@ -70,9 +70,9 @@ func FromEnvironment() (*Bundle, error) {
 	if !strings.HasSuffix(b.vs.GetName(), "/VsUserAttribute/Data") || !strings.HasSuffix(b.coop.GetName(), "/CoopUserAttribute/Data") {
 		return nil, errors.New("diagnostic attribute has the wrong document kind")
 	}
-	// The preserved working sessions themselves pair a replayed save with
-	// attribute documents from another source account. Retarget each record
-	// independently; the two attribute documents must agree with each other.
+	// The working sessions pair a replayed save with attribute documents from
+	// another source account. Retarget each record independently; the two
+	// attribute documents must agree with each other.
 	attributeOwner := sourceDocumentUserID(b.vs.GetName())
 	if sourceSaveUserID(b.save.GetName()) == "" || attributeOwner == "" || sourceDocumentUserID(b.coop.GetName()) != attributeOwner {
 		return nil, errors.New("diagnostic source owner is missing or attributes disagree")

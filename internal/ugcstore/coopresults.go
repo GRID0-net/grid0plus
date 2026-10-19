@@ -11,20 +11,20 @@ import (
 
 // RecordCoopResults stores one finished Salmon Run job in every participant's
 // job history, at services/GameRecord/users/<uid>/CoopResults/<battleID>, the
-// collection the game queries (the string at 0x7104f599b8).
+// collection the game queries.
 //
-// The shape is what the game's reader takes (raw 0x710383a0b0, called from
-// the CoopResults query at 0x71032818c8):
+// The shape is what the game's reader takes:
 //
 //   - top level: job_id, shift_id, shift_time, started_at, result,
 //     final_wave, challenge_grade_point, scenario (the whole map),
 //     copper/silver/gold_scale_num, personal_data, wave_detail;
 //   - personal_data[i]: npln_user_id, is_supporter, disconnected,
 //     group_leader, kuma_point, grade_rate, grade_before/after,
-//     grade_point_before/after, smell_before/after (per player, see ApplyCoopGrades), personal_wave_result
-//     (wave, weapon_id, special_id, special_count, golden_ikura_num,
-//     assist_golden_ikura_num, ikura_num, rescued_num, rescue_num) and
-//     personal_profile {player_info, skin_id, report_score}.
+//     grade_point_before/after, smell_before/after (per player, see
+//     ApplyCoopGrades), personal_wave_result (wave, weapon_id, special_id,
+//     special_count, golden_ikura_num, assist_golden_ikura_num, ikura_num,
+//     rescued_num, rescue_num) and personal_profile {player_info, skin_id,
+//     report_score}.
 //
 // Every value comes from the job itself: job_id, shift_id, shift_time,
 // challenge_grade_point and scenario from the kickoff request the verdict
@@ -32,7 +32,7 @@ import (
 // profiles from @@Profile. kuma_point is the point cards' own rule.
 //
 // Grade changes come from the persisted per-player verdict, not a shared
-// team grade. TODO(capture-needed): the exact grade_rate field convention;
+// team grade. UNCONFIRMED: the exact grade_rate field convention;
 // leave it absent rather than invent a multiplier. Change coopPersonalData.
 func RecordCoopResults(ctx context.Context, store db.Store, tenant, battleID string,
 	report, verdict *commonpb.MapValue, sessionUsers map[string]string,

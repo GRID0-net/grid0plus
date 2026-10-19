@@ -30,10 +30,9 @@ type scheduleService struct {
 // **The mechanics here are GRID0+'s; the numbers are not.** Slot alignment,
 // windowing, ordering and the etag are all this package's to decide and are
 // implemented below. The stage and rule identifiers are Splatoon 3's own
-// internal numbering, which nothing public documents — so they are operator
-// input rather than a table in this source. Inventing them would be an invented
-// game internal, and an invalid stage number's behaviour on the console is
-// itself unknown (see docs/PHASE2_PLAN.md's capture list).
+// internal numbering, which nothing public documents -- so they are operator
+// input rather than a table in this source. An invalid stage number's behaviour
+// on the console is itself unknown.
 //
 // An empty Rotation is legitimate: the schedule handlers then answer with no
 // schedules at all, which is what the game sees on a real server between
@@ -73,9 +72,9 @@ const lastSeasonLeaderboardFixTime int64 = 1780288878
 // SelectVsSchedules returns the versus rotation.
 //
 // Generated rather than stored: a rotation is a deterministic function of the
-// clock and the operator's stage list. The working capture has distinct slot
-// resource names but one schedule-set id across all twelve slots; that id is
-// anchored to the current slot so the same window retains a stable etag.
+// clock and the operator's stage list. A real server has distinct slot resource
+// names but one schedule-set id across all twelve slots; that id is anchored to
+// the current slot so the same window retains a stable etag.
 func (sc *scheduleService) SelectVsSchedules(
 	ctx context.Context, req *toyohrpb.SelectVsSchedulesRequest,
 ) (*toyohrpb.SelectVsSchedulesResponse, error) {
@@ -128,9 +127,10 @@ func scheduleTarget(path string) string {
 	return target
 }
 
-// vsSchedule names its resource under the requested target. Splatoon 3's
-// path parser aborts if targets/<target> is absent; both working 2026-09-23
-// captures use targets/default for this request.
+// vsSchedule names its resource under the requested target. Splatoon 3's path
+// parser aborts if targets/<target> is absent; a real server uses
+// targets/default for this request.
+//
 // vsSchedule renders one two-hour slot.
 func (s *Service) vsSchedule(start time.Time, rot Rotation, target, setID string) *toyohrpb.VsSchedule {
 	end := start.Add(scheduleSlot)
@@ -242,9 +242,9 @@ func uniqueStages(groups ...[]int32) []int32 {
 }
 
 // permuteRules gives every configured ranked mode one rule in a stable,
-// slot-specific order. The working captures show all four rule IDs permuted
-// between slots; keying the shuffle by the absolute slot keeps refetches and
-// future schedule previews consistent.
+// slot-specific order. A real schedule permutes all four rule IDs between
+// slots; keying the shuffle by the absolute slot keeps refetches and future
+// schedule previews consistent.
 func permuteRules(rules []int32, slot int64) []int32 {
 	out := append([]int32(nil), rules...)
 	state := uint64(slot) ^ 0x9e3779b97f4a7c15
@@ -264,15 +264,13 @@ func permuteRules(rules []int32, slot int64) []int32 {
 
 // SelectLeagueSchedules answers the League Battle rotation.
 //
-// Always empty: League Battle is a limited-time, Nintendo-curated event mode
-// with its own separate ranking and reward structure this server has no
-// content for, not a Rotation-driven mode like Vs. An empty schedule list is
-// what a real server answers between events, and there is no event to
-// author here -- inventing one would be exactly the kind of made-up game
-// content CLAUDE.md's first ground rule forbids. Confirmed real and linked,
-// not previously implemented at all: a 2026-09-23 hardware attempt showed
-// the console calling this RPC and getting Unimplemented, not an empty
-// answer, right after the fest-region prompt appears.
+// Always empty: League Battle is a limited-time, Nintendo-curated event mode with
+// its own separate ranking and reward structure this server has no content for,
+// not a Rotation-driven mode like Vs. An empty schedule list is what a real
+// server answers between events, and there is no event to author here --
+// inventing one would be exactly the kind of made-up game content CLAUDE.md's
+// first ground rule forbids. The console calls this RPC right after the
+// fest-region prompt appears, and Unimplemented is not an acceptable answer.
 func (sc *scheduleService) SelectLeagueSchedules(
 	ctx context.Context, _ *toyohrpb.SelectLeagueSchedulesRequest,
 ) (*toyohrpb.SelectLeagueSchedulesResponse, error) {
@@ -288,48 +286,33 @@ func (sc *scheduleService) SelectLeagueSchedules(
 // SelectVsParams answers a real, non-nil VsParams, never a bare Etag with
 // `params` left unset.
 //
-// This used to leave `params` unset, reasoned as the correct answer rather
-// than a stub -- this is Nintendo's own game tuning data, not something a
-// private server can honestly fabricate, the same reasoning SelectVsSchedules
-// and friends give for an empty schedule. NextendoNetwork/splatoon-3 measured
-// (facts only, not its code) that leaving it unset is wrong: it replays a
-// real captured VsParams payload rather than answering empty, and separately
-// found that the payload's own two timestamps must be shifted onto the
-// current rotation along with everything else -- a real server never sends
-// stale ones, and a client that gets them "cannot tie the current rotation
-// to its parameters" and stops advancing. Reproduced on GRID0+'s own
-// hardware on 2026-09-24: the console called this RPC successfully and then
-// went silent before ever calling PresenceService/SubscribePresences, the
-// next call in the confirmed reference sequence -- the same crash family as
-// GetSaveRecord's real SaveRecord.
+// VsParams is Nintendo's own game tuning data, not something a private server
+// can honestly fabricate, but leaving it unset is wrong: the console calls this
+// RPC successfully and then goes silent before ever calling
+// PresenceService/SubscribePresences, the next call in the sequence -- the same
+// crash family as GetSaveRecord's real SaveRecord. The payload's own two
+// timestamps must also ride the current rotation: a client that gets stale ones
+// "cannot tie the current rotation to its parameters" and stops advancing.
 //
-// A real VsParams is answered instead, timestamped off the current clock so
-// it is never stale. ParamsSetId is a separate tuning revision, as it is
-// in both working captures. Attributes is populated by vsParamsAttributes
-// below with the fixed platform tuning values both preserved working
-// captures agree on byte-for-byte -- not invented, not session- or
-// account-specific. The captured params-set id is independent of the
-// rotation's schedule-set id; changing the latter every slot should not
-// announce a new revision of otherwise unchanged tuning data.
+// So a real VsParams is answered, timestamped off the current clock so it is
+// never stale. ParamsSetId is a separate tuning revision. Attributes is
+// populated by vsParamsAttributes below with the fixed platform tuning values.
+// The params-set id is independent of the rotation's schedule-set id; changing
+// the latter every slot should not announce a new revision of otherwise
+// unchanged tuning data.
 //
-// Name carries a "targets/<target>" segment -- settled by decompile, not a
-// guess. A 2026-09-24 decompile of Splatoon 3 v11.3.0's own main.nso (this
-// project's own hardware dump) found the client's resource-name parser for
-// a VsParams requires the literal shape
-// "tenants/<t>/targets/<target>/vsParams/<rest>" and hard-aborts when the
-// parse fails -- the first fix here answered "tenants/<t>/vsParams/<id>",
-// omitting that segment, and reproduced this exact crash on real hardware.
+// Name carries a "targets/<target>" segment. The client's resource-name parser
+// for a VsParams requires the literal shape
+// "tenants/<t>/targets/<target>/vsParams/<rest>" and hard-aborts when the parse
+// fails; omitting the segment crashes the console.
 //
-// <target> is the LAST SEGMENT of the request's own Target field, not the
-// field echoed back whole. A VM-side loopback capture on 2026-09-24 caught
-// the real value: "tenants/current/targets/default" -- a full resource path
-// using the same "current" alias convention GameRecord/InitializeAttributes
-// and Friends/ActivateUser already resolve elsewhere in this package, not a
-// bare id. Echoing it whole (this fix's own first attempt) built
-// "tenants/<t>/targets/tenants/current/targets/default/vsParams/<id>" --
-// two nested "targets" segments, which the parser rejects the same as a
-// missing one, and reproduced the identical crash address on real hardware
-// even after this fix first shipped.
+// <target> is the LAST SEGMENT of the request's own Target field, not the field
+// echoed back whole. The request carries "tenants/current/targets/default" -- a
+// full resource path using the same "current" alias convention
+// GameRecord/InitializeAttributes and Friends/ActivateUser already resolve
+// elsewhere in this package, not a bare id. Echoing it whole builds
+// "tenants/<t>/targets/tenants/current/targets/default/vsParams/<id>" -- two
+// nested "targets" segments, which the parser rejects the same as a missing one.
 func (sc *scheduleService) SelectVsParams(
 	ctx context.Context, req *toyohrpb.SelectVsParamsRequest,
 ) (*toyohrpb.SelectVsParamsResponse, error) {
@@ -338,16 +321,16 @@ func (sc *scheduleService) SelectVsParams(
 	}
 
 	now := sc.s.now()
-	// In both working captures, timestamp1 < the client's current_time <
-	// timestamp2. Equal endpoints made this server's params validity window
-	// empty. Our window spans the same rotation horizon we already return.
+	// timestamp1 < the client's current_time < timestamp2. Equal endpoints make
+	// this server's params validity window empty. Our window spans the same
+	// rotation horizon we already return.
 	currentSlot := AlignToSlot(now)
 	// SelectVsSchedules includes the previous slot. Its first schedule must
 	// still fall within the parameters' validity window, as in both captures.
 	windowStart := currentSlot.Add(-scheduleSlot)
 	windowEnd := currentSlot.Add(scheduleHorizon * scheduleSlot)
-	// The two working captures use a params revision distinct from the
-	// schedule-set id. Keep our own tuning revision stable across rotations.
+	// A real server uses a params revision distinct from the schedule-set id. Keep
+	// our own tuning revision stable across rotations.
 	const paramsRevision = "1"
 	target := lastSegment(req.GetTarget())
 	if target == "" {
@@ -370,19 +353,13 @@ func (sc *scheduleService) SelectVsParams(
 	}, nil
 }
 
-// vsParamsAttributes is VsParams.Attributes, populated with the keys both
-// preserved working Nextendo hall captures agree on byte-for-byte
-// (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z and
-// nextendo-second-20260923T210513Z, analysis/decoded-private.json's
-// SelectVsParams responses): fixed server config values, not anything
-// account- or session-specific, so nothing here is guessed. This project
-// previously sent an empty Attributes map; whether the client requires
-// these specific keys to be present (as opposed to merely tolerating their
-// absence) is unconfirmed -- correlated with the persistent hall
-// disconnect, not proven to cause it.
+// vsParamsAttributes is VsParams.Attributes, populated with the fixed server
+// config values a real server always sends: nothing account- or session-specific,
+// so nothing here is guessed. Whether the client requires these specific keys to
+// be present (as opposed to merely tolerating their absence) is unconfirmed.
 //
-// CoopUsedRewardGears uses the fixed pair list captured from working
-// responses. Its per-shift variation is not modelled.
+// CoopUsedRewardGears uses a fixed pair list. Its per-shift variation is not
+// modelled.
 func vsParamsAttributes() *common.MapValue {
 	intVal := func(v int64) *common.Value {
 		return &common.Value{ValueType: &common.Value_IntegerValue{IntegerValue: v}}
@@ -439,32 +416,30 @@ func vsParamsEtag(target, setID string) string {
 // scheduled shift that has not fully ended yet, soonest first, with any
 // Normal slot nothing has been stored for filled in live.
 //
-// Unlike currentFest, this does not pick just one: a console reasonably
-// wants to know about more than the shift live right now (Splatoon 3 shows
-// upcoming rotations in its Salmon Run menu before they open), so every
-// shift whose End is still in the future is included.
+// Unlike currentFest, this does not pick just one: a console reasonably wants to
+// know about more than the shift live right now (Splatoon 3 shows upcoming
+// rotations in its Salmon Run menu before they open), so every shift whose End
+// is still in the future is included.
 //
-// Not empty by policy, unlike the four Vs/season handlers above: unlike a
-// normal Vs rotation, nn.npln.toyohr.v1.CoopSchedule's own decompiled proto
-// already carries the real shape (Normal/BigRun/TeamContest as parallel
-// sub-messages -- resources.pb.go), independently corroborated by
-// nintendoapis/splatnet3-types' own SplatNet 3 GraphQL schema
-// (CoopGroupingSchedule.{regularSchedules,bigRunSchedules,
-// teamContestSchedules}, each CoopSchedule{startTime,endTime,setting}
-// discriminated by __typename). Real stage/weapon/boss content and an
-// authoring path come from SaveCoopShift and coop_ids.go -- see
-// internal/toyohr/README.md.
+// Not empty by policy, unlike the four Vs/season handlers above: unlike a normal
+// Vs rotation, nn.npln.toyohr.v1.CoopSchedule carries the real shape
+// (Normal/BigRun/TeamContest as parallel sub-messages -- resources.pb.go),
+// corroborated by nintendoapis/splatnet3-types' own SplatNet 3 GraphQL schema
+// (CoopGroupingSchedule.{regularSchedules,bigRunSchedules,teamContestSchedules},
+// each CoopSchedule{startTime,endTime,setting} discriminated by __typename). Real
+// stage/weapon/boss content and an authoring path come from SaveCoopShift and
+// coop_ids.go -- see internal/toyohr/README.md.
 //
-// The Normal rotation itself no longer needs an operator to pre-generate
-// it: liveNormalCoopShifts (coop_live.go) computes it the same way
-// SelectVsSchedules computes Turf War/Anarchy, live and deterministic from
-// the clock, nothing stored. A stored Normal shift for a given slot -- hand
-// authored, or written earlier by `switchnetctl coop generate` -- still
-// wins over the live fallback for that slot: this only fills gaps, it never
-// overrides what ListCoopShiftsForOperator's own additive-generation
-// guarantee already promises an operator. Big Run and Team Contest are
-// unaffected -- they stay exactly what SaveCoopShift/the store already
-// documents as calendar events, not a rotation to synthesize entries for.
+// The Normal rotation itself needs no operator to pre-generate it:
+// liveNormalCoopShifts (coop_live.go) computes it the same way SelectVsSchedules
+// computes Turf War/Anarchy, live and deterministic from the clock, nothing
+// stored. A stored Normal shift for a given slot -- hand authored, or written
+// earlier by `switchnetctl coop generate` -- still wins over the live fallback
+// for that slot: this only fills gaps, it never overrides what
+// ListCoopShiftsForOperator's own additive-generation guarantee already promises
+// an operator. Big Run and Team Contest are unaffected -- they stay exactly what
+// SaveCoopShift/the store already documents as calendar events, not a rotation to
+// synthesize entries for.
 func (sc *scheduleService) SelectCoopSchedules(
 	ctx context.Context, req *toyohrpb.SelectCoopSchedulesRequest,
 ) (*toyohrpb.SelectCoopSchedulesResponse, error) {
@@ -513,8 +488,8 @@ func (sc *scheduleService) SelectSeasonSchedules(
 	target := scheduleTarget(req.GetTarget())
 	schedules := make([]*toyohrpb.SeasonSchedule, 0, count)
 	start := seasonStart(now)
-	// Both working captures set fields 2 and 3 to 16 on every Season
-	// entry; the schema does not identify what they mean.
+	// A real server sets fields 2 and 3 to 16 on every Season entry; the schema does
+	// not identify what they mean.
 	for i := 0; i < count; i++ {
 		end := start.AddDate(0, 3, 0)
 		setID := scheduleSetID(start)

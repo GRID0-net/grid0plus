@@ -119,17 +119,16 @@ func (s *Server) register(c *nex.Conn, req *nex.Request) *nex.Response {
 
 // splitStations picks the console's LAN station and builds its public one.
 //
-// Chosen by address, not by the 'type' flags: NextendoNetwork records (facts
-// only) that a Switch commonly reports its stations without the public flag
-// set, so the flags do not say which is which.
+// Chosen by address, not by the 'type' flags: a Switch commonly reports its
+// stations without the public flag set, so the flags do not say which is which.
 //
-// The derived public station is a copy of the LAN one -- it has to keep
-// every parameter the console sent (sid, Pl, Tpt, natm, natf, ...) or, per
-// the same source, Pia does not recognise its own endpoint and gives up with
-// 2618-0562 -- with the address replaced by the one the connection came from.
-// The port is kept: it is Pia's UDP port, and the WebSocket's TCP port would
-// be meaningless to a peer. Whether the router preserved it is exactly what
-// the NAT check and the later ReplaceURL establish.
+// The derived public station is a copy of the LAN one -- it has to keep every
+// parameter the console sent (sid, Pl, Tpt, natm, natf, ...) or Pia does not
+// recognise its own endpoint and gives up with 2618-0562 -- with the address
+// replaced by the one the connection came from. The port is kept: it is Pia's
+// UDP port, and the WebSocket's TCP port would be meaningless to a peer. Whether
+// the router preserved it is exactly what the NAT check and the later ReplaceURL
+// establish.
 func (s *Server) splitStations(c *nex.Conn, urls []*nex.StationURL) (local, public *nex.StationURL) {
 	for _, u := range urls {
 		addr := u.Get("address")
@@ -238,8 +237,8 @@ func (s *Server) updateURLs(c *nex.Conn, req *nex.Request) *nex.Response {
 //
 // After its NAT check the console re-reports a station carrying what it has
 // just learned -- its mapped port and the connection id -- and a joiner's
-// probe needs exactly that, so it must be kept. NextendoNetwork records (facts
-// only) that dropping it broke every friend-join with a communication error.
+// probe needs exactly that, so it must be kept. Dropping it breaks every
+// friend-join with a communication error.
 //
 // Matched by address rather than by comparing the old URL: the console's
 // idea of its old URL and the server's (which added PID and RVCID) differ.

@@ -42,7 +42,7 @@ func TestPrivateRoomDocumentsKeepCapturedFixedAndMutableShapes(t *testing.T) {
 	if got := len(fixed.GetFields().GetFields()["rs"].GetBytesValue()); got != 32 {
 		t.Errorf("fixed rs length = %d, want captured 32", got)
 	}
-	// Ryujinx private room on Nextendo, 2026-10-02: the room's real capacity and config name.
+	// A private room: the room's real capacity and config name.
 	if got := fixed.GetFields().GetFields()["maxu"].GetIntegerValue(); got != 10 {
 		t.Errorf("fixed maxu = %d, want captured 10", got)
 	}
@@ -258,7 +258,7 @@ func TestAMaskedRoomUpdateKeepsTheFieldsItDidNotName(t *testing.T) {
 	boolean := func(b bool) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: b}}
 	}
-	// What the console sends when the room locks (gamesync capture, 2026-10-03).
+	// What the console sends when the room locks.
 	ops := []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_UpdateDocument{
 		UpdateDocument: &syncpb.UpdateDocumentRequest{
 			Document: &syncpb.Document{Name: "docs/__gs/m", Fields: &commonpb.MapValue{
@@ -297,7 +297,7 @@ func TestAConsolesOwnUpcsidIncrementAnswersWithItsRank(t *testing.T) {
 	iv := func(n int64) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_IntegerValue{IntegerValue: n}}
 	}
-	// The console's own write when it joins (gamesync capture, 2026-10-03).
+	// The console's own write when it joins.
 	name := "docs/__pgn/All/__pus/us-bob"
 	ops := []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_TransformDocument{
 		TransformDocument: &syncpb.TransformDocumentRequest{Name: name, FieldTransforms: []*syncpb.FieldTransform{

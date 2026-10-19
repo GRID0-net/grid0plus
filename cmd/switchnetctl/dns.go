@@ -115,7 +115,7 @@ func dnsmasqConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "address=/%s/%s\n", h.Pattern, cfg.Network.PublicIP)
 	}
 
-	section("NPLN game servers (phase 2)")
+	section("NPLN game servers")
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceNPLNRest) {
 		fmt.Fprintf(&b, "address=/%s/%s\n", h.Pattern, cfg.Network.PublicIP)
 	}
@@ -147,7 +147,7 @@ func dnsmasqConf(cfg config.Config) string {
 	section("deliberately NOT redirected")
 	b.WriteString("# Commented out so nobody adds them by mistake. A redirected system\n")
 	b.WriteString("# update host makes nim write a persistent flag that survives switching\n")
-	b.WriteString("# back to Nintendo. The eShop hosts are phase 3.\n")
+	b.WriteString("# back to Nintendo. The eShop hosts are not served by GRID0+.\n")
 	for _, h := range nintendo.ServiceHosts(nintendo.ServicePassthrough) {
 		fmt.Fprintf(&b, "# address=/%s/%s   # %s\n",
 			h.Pattern, cfg.Network.PublicIP, h.Comment)

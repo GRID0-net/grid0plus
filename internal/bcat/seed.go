@@ -12,8 +12,8 @@
 //	    bh.pack.zs.enc       battle help
 //	    wa/wb/wc.pack.zs.enc  one per team
 //
-// Layout and field names confirmed against a real seed folder produced by a
-// working server (JUEA-00210, 2026-08-24).
+// Layout and field names follow a real seed folder produced by a working server
+// (JUEA-00210).
 package bcat
 
 import (

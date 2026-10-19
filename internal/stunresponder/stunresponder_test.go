@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// buildBindingRequest mirrors the shape the 2026-09-23 hardware capture
-// showed: type Binding Request, zero-length body, the RFC 5389 magic cookie,
-// and a 12-byte transaction id.
+// buildBindingRequest mirrors the shape the console sends: type Binding
+// Request, zero-length body, the RFC 5389 magic cookie, and a 12-byte
+// transaction id.
 func buildBindingRequest(transactionID [12]byte) []byte {
 	out := make([]byte, 0, headerSize)
 	out = binary.BigEndian.AppendUint16(out, typeBindingRequest)

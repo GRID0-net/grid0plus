@@ -1218,7 +1218,7 @@ func (m *Memory) GetImage(_ context.Context, id string) (Image, error) {
 	return img, nil
 }
 
-// ---- OLSC save data archives (phase 4) -------------------------------------
+// ---- OLSC save data archives ----------------------------------------------
 
 func (m *Memory) CreateSaveDataArchive(_ context.Context, a SaveDataArchive) (SaveDataArchive, error) {
 	m.mu.Lock()

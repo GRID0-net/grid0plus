@@ -56,10 +56,10 @@ func TestGetSaveRecordRefusesAnUnauthenticatedCaller(t *testing.T) {
 }
 
 // TestWriteSaveRecordAcknowledgesRatherThanUnimplemented is the regression
-// test for a real crash: a VM-side loopback capture on 2026-09-24 showed
-// the console calling WriteSaveRecord twice immediately after receiving
-// GetSaveRecord's blank record, getting Unimplemented both times, and going
-// silent for good shortly after -- see WriteSaveRecord's own doc comment.
+// test for a real crash: the console calls WriteSaveRecord twice immediately
+// after receiving GetSaveRecord's blank record; getting Unimplemented both times,
+// it goes silent for good shortly after -- see WriteSaveRecord's own doc
+// comment.
 func TestWriteSaveRecordAcknowledgesRatherThanUnimplemented(t *testing.T) {
 	as(t, "aaaaaaaaaaaaaaaa")
 	svc, _ := newService(t, time.Now())

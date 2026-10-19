@@ -100,11 +100,10 @@ func (s *Server) resendKickoffVerdictAfterProfile(caller *session, ops []*syncpb
 	}
 }
 
-// refereeTraceID is the game-session id with its dashes removed: the working
-// Nextendo verdict for battle 20260930T153234_bc0ffe09-6aa4-443b-aaeb-
-// 463be2e7e135 carries trace_id bc0ffe096aa4443baaeb463be2e7e135. Every console
-// in the match reads it, so a random value is one more thing that could
-// disagree with the session it joined.
+// refereeTraceID is the game-session id with its dashes removed: battle
+// 20260930T153234_bc0ffe09-6aa4-443b-aaeb-463be2e7e135 carries trace_id
+// bc0ffe096aa4443baaeb463be2e7e135. Every console in the match reads it, so a
+// random value is one more thing that could disagree with the session it joined.
 func refereeTraceID(battleID string) string {
 	sessionID := battleID
 	if i := strings.Index(battleID, "_"); i >= 0 {
@@ -183,9 +182,9 @@ func (s *Server) publishRefereeVerdict(ctx context.Context, caller *session, sco
 			// trace ID while clients are already watching it.
 			return nil
 		}
-		// The request carries the stage, rule, season, teams and players. The
-		// working capture's kickoff verdict keeps those fields, drops the four
-		// request-only keys and adds this response's own identity and status.
+		// The request carries the stage, rule, season, teams and players. The kickoff
+		// verdict keeps those fields, drops the four request-only keys and adds this
+		// response's own identity and status.
 		if source.GetFields().GetFields()["users"] == nil {
 			return nil
 		}
@@ -346,9 +345,9 @@ func reportsDisconnect(v *commonpb.Value) bool {
 	return false
 }
 
-// The captured final verdict has a fixed per-player shape even when an
-// individual console omitted fields from its report. The neutral values below
-// were measured on the working capture; supplied player values take priority.
+// The final verdict has a fixed per-player shape even when an individual
+// console omitted fields from its report. The neutral values below are what a
+// real verdict carries; supplied player values take priority.
 func completePersonalResults(in, teamResult *commonpb.Value) *commonpb.Value {
 	players := in.GetMapValue().GetFields()
 	if players == nil {
@@ -391,9 +390,9 @@ func completePersonalResults(in, teamResult *commonpb.Value) *commonpb.Value {
 			}}}}
 		}
 		if reportsDisconnect(fields["disconnected"]) || fields["deemed_result"].GetIntegerValue() == 2 {
-			// deemed_result 2 is the disconnect result, and the game hands out
-			// its penalty card for it. A drop on GRID0+ is usually the network's
-			// fault, so it is scored as a plain loss, as Nextendo's server does.
+			// deemed_result 2 is the disconnect result, and the game hands out its
+			// penalty card for it. A drop on GRID0+ is usually the network's fault, so it is
+			// scored as a plain loss.
 			fields["deemed_result"] = verdictInt(1)
 		} else if fields["deemed_result"] == nil {
 			deemed := int64(1)

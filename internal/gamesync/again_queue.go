@@ -11,28 +11,28 @@ import (
 )
 
 // "Again!" reuses the old Gamesync session rather than entering the ticket
-// queue. Public Versus therefore needs this window too: queue.Sweep cannot
-// start a countdown for players who have not submitted new tickets.
+// queue. Public Versus therefore needs this window too: queue.Sweep cannot start
+// a countdown for players who have not submitted new tickets.
+//
 // Salmon Run's "Again!" does not send a matchmaking ticket. Every console that
 // presses it reopens the session it just played in with a masked update of
-// docs/__gs/m -- cp, ebf and ip true, pw empty (loopback capture of two
-// consoles, 2026-10-04) -- and then waits there. Nothing on GRID0+ answered
-// that, so the lobby never started.
+// docs/__gs/m -- cp, ebf and ip true, pw empty -- and then waits there. If
+// nothing answers that, the lobby never starts.
 //
 // GRID0+ treats the reopening as the group queuing again together: the first
-// press opens a grace window, every further press in the same session
-// restarts it, and when it runs out the session is locked again (cp and ebf
-// false), the same shape the console itself writes when a fresh match locks.
+// press opens a grace window, every further press in the same session restarts
+// it, and when it runs out the session is locked again (cp and ebf false), the
+// same shape the console itself writes when a fresh match locks.
 //
-// Keep bfmin as captured (1). The earlier bfmin=0 experiment did not fix
-// rematches; lowering a protocol field is not a substitute for the client's
-// separate eight-player minimum in its retained-lobby controller.
+// Keep bfmin as sent (1). Lowering it to 0 does not fix rematches; it is not a
+// substitute for the client's separate eight-player minimum in its
+// retained-lobby controller.
 //
-// Confirmed on hardware 2026-10-10: with bfmin 0 on the reopen, the next job
-// starts in the same session 3-4 s after this lock, every time. The host's
-// State::ActivateBackFill rejoin completes only once the session is locked,
-// so the grace window is the whole of the group's wait. It cannot end early
-// on everyone having pressed: only the host's reopen write is seen.
+// With bfmin 0 on the reopen, the next job starts in the same session 3-4 s
+// after this lock, every time. The host's State::ActivateBackFill rejoin
+// completes only once the session is locked, so the grace window is the whole of
+// the group's wait. It cannot end early on everyone having pressed: only the
+// host's reopen write is seen.
 var againGrace = 20 * time.Second
 
 type againQueue struct {
@@ -170,12 +170,11 @@ func (s *Server) lockAfterAgain(caller *session, window *againWindow) {
 	}
 	delete(s.again.timers, scope)
 
-	// Only the host's press is seen, so the window cannot tell who stayed.
-	// The open streams can: a Salmon Run lobby everyone else left would
-	// otherwise lock with the host alone and start a one-player job. Streams
-	// do stay open across Again!: on 2026-10-10 a two-player job's streams
-	// opened 12:24:36 and held through the press (12:31:40) and the lock
-	// (12:32:00), so a real group counts as two here.
+	// Only the host's press is seen, so the window cannot tell who stayed. The open
+	// streams can: a Salmon Run lobby everyone else left would otherwise lock with
+	// the host alone and start a one-player job. Streams do stay open across Again!
+	// (they hold through the press and the lock), so a real group counts as two
+	// here.
 	if strings.Contains(caller.details.Mode, "coop") {
 		if n := s.watch.playersIn(scope); n < 2 {
 			s.log.Info("gamesync: Again! lobby left unlocked; one player cannot start Salmon Run alone",

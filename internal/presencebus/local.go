@@ -15,10 +15,9 @@ const bufferPerSubscriber = 64
 // Local is an in-process Bus.
 //
 // It is correct when exactly one process publishes presence and every
-// subscriber lives in that same process. That is the whole of phase 1, where
-// only the BAAS server writes presence. As soon as a second process needs the
-// events — the phase 2 dashboard running separately, or a second BAAS replica —
-// use Redis instead, because a local bus silently delivers nothing across a
+// subscriber lives in that same process. As soon as a second process needs the
+// events -- the dashboard running separately, or a second BAAS replica -- use
+// Redis instead, because a local bus silently delivers nothing across a
 // process boundary.
 type Local struct {
 	mu     sync.Mutex

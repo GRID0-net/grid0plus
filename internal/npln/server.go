@@ -74,9 +74,9 @@ type Server struct {
 	// docs is the Ugcstore service, kept for its attachment HTTP handler.
 	docs *ugcstore.Service
 
-	// idTokens verifies the RS256 BAAS id tokens presented at the phase-1 seam.
-	// A different key AND a different algorithm from the one above, which is
-	// what stops either being accepted where the other belongs.
+	// idTokens verifies the RS256 BAAS id tokens presented at the seam between the
+	// account layer and the game server. A different key AND a different algorithm from
+	// the one above, which is what stops either being accepted where the other belongs.
 	idTokens *identity.IDTokens
 
 	tenant         string
@@ -126,13 +126,12 @@ type Server struct {
 	// BAAS's HTTP endpoints do -- see internal/presence's package doc.
 	presence presence.Resolver
 	// bus is where a fresh BAAS presence report arrives, so the Friends and
-	// PresenceService streams can push a change instead of only reporting what
-	// was already true when the stream opened. Nil is a valid value: the
-	// streams still work, they just only refresh on their own keep-alive timer
-	// -- the same graceful degradation internal/dashboard has without
-	// redis.url set (see cmd/npln/main.go and ROADMAP §2.6, and the same
-	// reason: this process is not the one BAAS's HTTP handlers run in, so the
-	// in-process bus variant delivers nothing across the boundary).
+	// PresenceService streams can push a change instead of only reporting what was
+	// already true when the stream opened. Nil is a valid value: the streams still
+	// work, they just only refresh on their own keep-alive timer -- the same graceful
+	// degradation internal/dashboard has without redis.url set (see cmd/npln/main.go),
+	// and for the same reason: this process is not the one BAAS's HTTP handlers run in,
+	// so the in-process bus variant delivers nothing across the boundary.
 	bus presencebus.Bus
 	// onFestEntry is Options.OnFestEntry.
 	onFestEntry func(context.Context, db.FestEntry)
@@ -451,24 +450,20 @@ func (s *Server) unaryInterceptor(
 	}
 	s.noteUnimplemented(info.FullMethod, err)
 	s.noteFirstSeen(info.FullMethod, err)
-	// Every call, not just the first: while this codebase's own hall-entry
-	// sequence is still being worked out on hardware, a call repeating (as
-	// ValidateToken did, invisibly, during the 2026-09-23 KeepAlive
-	// misdiagnosis -- noteFirstSeen's dedup hid the retry loop entirely) is
-	// exactly the kind of thing worth seeing without another deploy-and-retry
-	// cycle. Cheap at this deployment's traffic; revisit if it ever isn't.
+	// Every call, not just the first: a call repeating (as ValidateToken once did,
+	// invisibly -- noteFirstSeen's dedup hid the retry loop entirely) is exactly the
+	// kind of thing worth seeing without another deploy-and-retry cycle. Cheap at
+	// this deployment's traffic; revisit if it ever isn't.
 	s.log.Info("npln: call", "method", info.FullMethod, "code", status.Code(err), "duration_us", time.Since(started).Microseconds())
 	return resp, err
 }
 
 // noteFirstSeen logs the first time any given unary RPC is actually reached,
-// once, regardless of outcome -- the counterpart to noteUnimplemented, for
-// every call that IS implemented. Without it, a handler that runs and returns
+// once, regardless of outcome -- the counterpart to noteUnimplemented, for every
+// call that IS implemented. Without it, a handler that runs and returns
 // successfully (or with an ordinary, expected error like NotFound) leaves no
-// trace at all: exactly the gap that made ListLatencyMeasurementServers
-// invisible on 2026-09-23 right up until it was found to be Unimplemented --
-// there was no way to tell "never called" from "called and answered" for
-// anything already implemented.
+// trace at all, and there is no way to tell "never called" from "called and
+// answered" for anything already implemented.
 func (s *Server) noteFirstSeen(method string, err error) {
 	if _, seen := s.seenMethods.LoadOrStore(method, struct{}{}); seen {
 		return
@@ -484,39 +479,33 @@ func (s *Server) noteFirstSeen(method string, err error) {
 // grpc-go's default, when a unary handler returns without ever having sent
 // anything, IS Trailers-Only: headers and the grpc-status trailer folded into
 // one HEADERS frame, an optimisation for the common "failed before doing
-// anything" case. Nintendo's own NPLN gateway never does this -- every
-// response, empty or not, arrives as two frames: ordinary headers
-// (content-type, npln-grpc-type: Unary), then a separate trailers frame
-// carrying grpc-status. NextendoNetwork/splatoon-3 (a from-scratch NPLN
-// reimplementation tested against real hardware; PolyForm Shield-licensed,
-// so only this fact is taken, never its code) measured a real console
-// crashing specifically on the single-frame shape for an otherwise-correct
-// NotFound: nn.npln.Worker aborting with 2162-0001, immediately, the same
-// abort this repository's own ground rules exist to avoid shipping blind.
-// Calling SendHeader up front -- before the handler has a chance to return
-// -- is what keeps grpc-go from folding the two frames together, for every
-// RPC this gateway serves, not only the ones already known to answer empty.
+// anything" case. Nintendo's own NPLN gateway never does this -- every response,
+// empty or not, arrives as two frames: ordinary headers (content-type,
+// npln-grpc-type: Unary), then a separate trailers frame carrying grpc-status.
+// A console crashes on the single-frame shape for an otherwise-correct NotFound:
+// nn.npln.Worker aborts with 2162-0001, immediately. Calling SendHeader up front,
+// before the handler has a chance to return, is what keeps grpc-go from folding
+// the two frames together, for every RPC this gateway serves, not only the ones
+// already known to answer empty.
 //
-// A no-op outside a real call (grpc.SendHeader errors when the context
-// carries no live stream, e.g. a test invoking a handler directly): that
-// failure is expected and not this call's to report.
+// A no-op outside a real call (grpc.SendHeader errors when the context carries no
+// live stream, e.g. a test invoking a handler directly): that failure is expected
+// and not this call's to report.
 func sendNPLNHeader(ctx context.Context, log *slog.Logger, method string, emptyDocument ...bool) {
 	header := metadata.Pairs("npln-grpc-type", "Unary")
 	if method == "/nn.npln.ugcstore.v1.Ugcstore/GetDocument" {
-		// Both preserved working captures mark a populated GetDocument as
-		// ServerStreaming. A missing document has that value followed by
-		// Unary, even though the generated RPC is unary.
+		// A populated GetDocument is marked ServerStreaming. A missing document has
+		// that value followed by Unary, even though the generated RPC is unary.
 		header = metadata.Pairs("npln-grpc-type", "ServerStreaming")
 		if len(emptyDocument) > 0 && emptyDocument[0] {
 			header.Append("npln-grpc-type", "Unary")
 		}
 	}
-	// No content-length: 0, although Nintendo's opening headers carry one.
-	// Behind nginx's grpc_pass it ends the response after these headers and
-	// the trailers never reach the console: on hardware (2026-09-25) the
-	// game read these NotFounds as status 2 (UNKNOWN), not 5, and failed its
-	// point-card job at the hall. Nextendo sat behind Traefik, which passes
-	// the trailers through.
+	// No content-length: 0, although Nintendo's opening headers carry one. Behind
+	// nginx's grpc_pass it ends the response after these headers and the trailers
+	// never reach the console: the game reads these NotFounds as status 2 (UNKNOWN),
+	// not 5, and fails its point-card job at the hall. A proxy that passes the trailers
+	// through (Traefik, for one) doesn't have this problem.
 	if err := grpc.SendHeader(ctx, header); err != nil {
 		log.Debug("npln: send header", "method", method, "error", err)
 	}
@@ -538,9 +527,9 @@ func (s *Server) streamInterceptor(
 	// waiting for it to close before noting it was ever reached would often
 	// mean never.
 	s.noteFirstSeen(info.FullMethod, nil)
-	// Every stream's open and close, with message counts: nginx and the unary
-	// log only see a stream once it ends, which hid what the console was doing
-	// while it sat in matchmaking (2026-09-27).
+	// Every stream's open and close, with message counts: nginx and the unary log
+	// only see a stream once it ends, which hides what the console is doing while it
+	// sits in matchmaking.
 	caller, _ := CallerFrom(ctx)
 	s.log.Info("npln: stream open", "method", info.FullMethod, "user", caller.UserID)
 	counted := &countingStream{wrappedStream: wrappedStream{ServerStream: ss, ctx: ctx}}
@@ -555,12 +544,11 @@ func (s *Server) streamInterceptor(
 }
 
 // grpcKind is the value Nintendo's NPLN gateway puts in npln-grpc-type: the
-// kind of call. A capture of 704 responses from the real tenant host carries it
-// on every one -- Unary, ServerStreaming or BidirectionalStreaming -- per
-// NextendoNetwork/splatoon-3's measurement (facts only, not its code).
+// kind of call. It is on every response from the real tenant host: Unary,
+// ServerStreaming or BidirectionalStreaming.
 func grpcKind(info *grpc.StreamServerInfo) string {
-	// Both preserved Nextendo hall captures use this header for GetSaveRecord.
-	// Our stream registration is a framing workaround, not the wire contract.
+	// The console uses this header for GetSaveRecord too. Our stream registration is
+	// a framing workaround, not the wire contract.
 	if info.FullMethod == "/nn.npln.toyohr.v1.CloudSave/GetSaveRecord" {
 		return "BidirectionalStreaming"
 	}
@@ -578,11 +566,10 @@ func grpcKind(info *grpc.StreamServerInfo) string {
 // sameTenant reports whether a call's npln-tenant-id names the configured
 // tenant, accepting the id in either of the forms that circulate for it: the
 // full id Nintendo's own tokens carry ("t-dce9377b-lp1", the tid of a real
-// access token, and what NextendoNetwork/splatoon-3 records the console
-// sending) and the short hex id ("dce9377b") this project used until
-// 2026-09-23. Which one the console sends has not been seen by this server
-// yet -- the first call logs it -- and refusing the other would refuse every
-// call the game makes.
+// access token, and what the console sends) and the short hex id ("dce9377b")
+// this project used before. Which one the console sends hasn't been seen by this
+// server yet -- the first call logs it -- and refusing the other would refuse
+// every call the game makes.
 func sameTenant(got, want string) bool {
 	return got != "" && shortTenant(got) == shortTenant(want)
 }
@@ -602,13 +589,13 @@ func shortTenant(t string) string {
 // unknownService answers a call to a service this server does not register at
 // all (Ugcstore, Datastore, Appconfig... -- see services.go).
 //
-// Without it grpc-go answers Unimplemented as a single Trailers-Only frame,
-// and runs no interceptor, so nothing is logged either. That single-frame shape
-// is the one NextendoNetwork/splatoon-3 measured crashing Splatoon 3
-// (2162-0001 in nn.npln.Worker) -- see sendNPLNHeader. Here the call still goes
-// through streamInterceptor (authentication, npln-grpc-type), the headers go
-// out on their own, and the Unimplemented follows in a separate trailers frame,
-// logged once per method like any other unimplemented RPC.
+// Without it grpc-go answers Unimplemented as a single Trailers-Only frame, and
+// runs no interceptor, so nothing is logged either. That single-frame shape is
+// the one that crashes Splatoon 3 (2162-0001 in nn.npln.Worker); see
+// sendNPLNHeader. Here the call still goes through streamInterceptor
+// (authentication, npln-grpc-type), the headers go out on their own, and the
+// Unimplemented follows in a separate trailers frame, logged once per method like
+// any other unimplemented RPC.
 func (s *Server) unknownService(_ any, stream grpc.ServerStream) error {
 	if err := stream.SendHeader(nil); err != nil {
 		s.log.Debug("npln: send header", "error", err)
@@ -620,16 +607,17 @@ func (s *Server) unknownService(_ any, stream grpc.ServerStream) error {
 // answer, once per method.
 //
 // **This log is the to-do list**, which is why it is worth a mechanism rather
-// than a line in each handler. ROADMAP §2.4 says to let the console drive the
-// order of the remaining toyohr services; that only works if an unanswered RPC
-// says so, and it only says so if its service is registered. So: register
-// everything, and catch the refusals here.
+// than a line in each handler. Letting the console drive the order of the remaining
+// toyohr services only works if an unanswered RPC says so, and it only says so if
+// its service is registered. So: register everything, and catch the refusals here.
 //
 // Matched on the generated message rather than on the code alone. codes
-// .Unimplemented is also what this server deliberately answers for a flow it
-// will not serve — a delegated matchmaking ticket, malformed metadata — and
-// those are decisions, not gaps. protoc-gen-go-grpc's stubs all say "method X
-// not implemented"; GRID0+'s own refusals never do.
+//
+//	.Unimplemented is also what this server deliberately answers for a flow it
+//
+// will not serve -- a delegated matchmaking ticket, malformed metadata -- and
+// those are decisions, not gaps. protoc-gen-go-grpc's stubs all say "method X not
+// implemented"; GRID0+'s own refusals never do.
 func (s *Server) noteUnimplemented(method string, err error) {
 	if status.Code(err) != codes.Unimplemented {
 		return

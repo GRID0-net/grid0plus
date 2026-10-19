@@ -24,9 +24,9 @@ import (
 // register attaches the implemented services to the gRPC server.
 //
 // Services are added as they are implemented. An RPC that is registered but not
-// implemented answers codes.Unimplemented and logs, which is the to-do list
-// ROADMAP §2.4 describes; an RPC on a service that is not registered at all
-// fails the same way without the log line, so registering early is worth it.
+// implemented answers codes.Unimplemented and logs, which is the to-do list; an RPC
+// on a service that is not registered at all fails the same way without the log
+// line, so registering early is worth it.
 func (s *Server) register() {
 	authpb.RegisterAuthServer(s.grpc, &authService{s: s})
 	authpb.RegisterUserServiceServer(s.grpc, &userService{s: s})
@@ -89,13 +89,14 @@ type authService struct {
 
 // IssueToken exchanges a BAAS id token for an NPLN session.
 //
-// This is the phase-1 → phase-2 seam. The game sends the id token BAAS gave it
-// in ExternalIdToken.nsa_id_token; GRID0+ verifies it against the same key
-// it publishes at /1.0.0/certificates and issues an ES256 access token.
+// This is the seam between the account layer and the game server. The game sends
+// the id token BAAS gave it in ExternalIdToken.nsa_id_token; GRID0+ verifies it
+// against the same key it publishes at /1.0.0/certificates and issues an ES256
+// access token.
 //
-// The request's own `user` field is ignored for identity. It is the client
-// naming a user, and the token is what proves one — the same distinction the
-// 'uid' metadata gets, for the same reason.
+// The request's own `user` field is ignored for identity. It is the client naming
+// a user, and the token is what proves one -- the same distinction the 'uid' metadata
+// gets, for the same reason.
 func (a *authService) IssueToken(
 	ctx context.Context, req *authpb.IssueTokenRequest,
 ) (*authpb.IssueTokenResponse, error) {
@@ -168,7 +169,7 @@ func (a *authService) IssuePrearrangedUserToken(
 			Name:    a.s.userResourceName(caller.UserID),
 			ShortId: int64(req.GetUserIndex()),
 			// Account, CreateTime and LastLoginTime are left unset: nothing in
-			// internal/db.Store tracks them today. See docs/CAPTURES/README.md.
+			// internal/db.Store tracks them today.
 		},
 		Token: &authpb.Token{
 			User:         a.s.userResourceName(caller.UserID),
@@ -182,10 +183,9 @@ func (a *authService) IssuePrearrangedUserToken(
 // RefreshToken trades a still-good refresh token for a fresh access token,
 // without the console needing to go back through BAAS for a new id token.
 //
-// Splatoon 3 links this RPC in (confirmed by a 2026-09-20 decompile of
-// v11.3.0's main), and Nextendo's own deployed server always hands a refresh
-// token back from IssueToken/IssuePrearrangedUserToken -- so this server now
-// does the same, and answers this RPC rather than leaving it Unimplemented.
+// Splatoon 3 links this RPC in, and a working server always hands a refresh token
+// back from IssueToken/IssuePrearrangedUserToken, so this server does the same and
+// answers this RPC rather than leaving it Unimplemented.
 func (a *authService) RefreshToken(
 	ctx context.Context, req *authpb.RefreshTokenRequest,
 ) (*authpb.RefreshTokenResponse, error) {
@@ -239,12 +239,11 @@ type maintenanceService struct {
 // maintenanceKeepAlive is how often a keep-alive is sent on an otherwise idle
 // maintenance stream.
 //
-// The stream carries a KeepAlive message in its own oneof, which is the
-// protocol saying out loud that silence is not expected. A stream that goes
-// quiet is treated as dead and the client stops trusting it — ROADMAP §2.5
-// records this for the friends streams, and it is the same rule here.
+// The stream carries a KeepAlive message in its own oneof, which is the protocol
+// saying out loud that silence is not expected. A stream that goes quiet is treated
+// as dead and the client stops trusting it; the friends streams follow the same rule.
 //
-// Both working 2026-09-23 captures send this response every 20 seconds.
+// A working server sends this response every 20 seconds.
 const maintenanceKeepAlive = 20 * time.Second
 
 // SubscribeMaintenanceSchedules reports that there is no maintenance, and keeps

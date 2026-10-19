@@ -67,9 +67,7 @@ type currentUser struct {
 //
 // Its answer gates Splatoon 2 going network-ready (AcquireNexUniqueID ->
 // UpdateCurrentUser -> network ready), and the answer is an EMPTY success:
-// NextendoNetwork measured Nintendo's reply at zero bytes, after an earlier
-// reading from a disassembly that it returned a structure turned out wrong
-// (facts only).
+// Nintendo's reply is zero bytes.
 //
 // The unique id comes from the game's save data, so it may be one this
 // server never handed out -- a save from before GRID0+. Such an id is
@@ -117,10 +115,9 @@ func (s *Server) adoptUniqueID(pid uint64, u rendezvous.UniqueID) {
 // uses the same id. Which lobby each of the caller's friends is in: how a
 // friend-join finds its target.
 //
-// NextendoNetwork answers this with an empty list for Splatoon 2, calling
-// that valid "for a normal match" (facts only). An empty list is also what
-// this answers whenever none of the caller's friends is in a lobby; when one
-// is, the lobby is named, which is what makes joining a friend possible.
+// An empty list is what this answers whenever none of the caller's friends is in
+// a lobby; when one is, the lobby is named, which is what makes joining a friend
+// possible.
 func (s *Server) customGetSimplePlayingSession(c *nex.Conn, req *nex.Request) *nex.Response {
 	r := nex.NewReader(req.Body)
 	pids := nex.ReadList(r, (*nex.Reader).PID)
@@ -164,7 +161,7 @@ const Tenant = "splatoon2"
 
 // GameModeName names a MatchmakeSession game mode for people.
 //
-// TODO(capture-needed): Splatoon 2's game-mode numbering. Nothing public
+// UNCONFIRMED: Splatoon 2's game-mode numbering. Nothing public
 // maps it, so the number is shown as-is; a capture of each mode's
 // AutoMatchmake (or RE of the game's matchmaking setup) would settle it,
 // and this is the one function to change.

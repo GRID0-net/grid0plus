@@ -5,17 +5,16 @@ import "strings"
 // Anarchy Battle (Series) is two matchmaking steps, the same shape as
 // Splatfest Open's (fest_regular.go) without fest teams.
 //
-// Splatoon 3's config chooser (FUN_71032c1d20, Bankara = match kind 2)
-// queues a player first on bankara_match_challenge_<rule>_team_config, a
-// lobby that is ONE side of the match, and the host then re-queues the
-// whole lobby on bankara_match_challenge_<rule>_config to meet another
-// lobby. The lobby ready check (0x71038aab34) and the delegate check
-// (0x71038af140) want exactly 4 for Bankara; the GRID0+ IPS relaxes both to
-// "at most", so smaller lobbies play on a patched game.
+// Splatoon 3's config chooser (Bankara = match kind 2) queues a player first on
+// bankara_match_challenge_<rule>_team_config, a lobby that is ONE side of the
+// match, and the host then re-queues the whole lobby on
+// bankara_match_challenge_<rule>_config to meet another lobby. The lobby ready
+// check and the delegate check want exactly 4 for Bankara; the GRID0+ IPS relaxes
+// both to "at most", so smaller lobbies play on a patched game.
 //
-// Before this, both steps went through formVersusLocked: a team lobby of 8,
-// which the game never starts (count above the required 4 does nothing),
-// or a second step that could pair a lobby of 4 with a lobby of 2.
+// Running both steps through formVersusLocked would form a team lobby of 8, which
+// the game never starts (count above the required 4 does nothing), or a second
+// step that could pair a lobby of 4 with a lobby of 2.
 //
 // So team lobbies form in pairs of equal size -- 4 at once, 2 or 1 after the
 // grace period -- and the second step pairs equal-size lobbies.

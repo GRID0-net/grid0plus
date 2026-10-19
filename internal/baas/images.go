@@ -221,17 +221,10 @@ func (s *Server) GetImagePath(relPath string) string {
 
 // imageURLs builds the two URLs a stored image is reachable at.
 //
-// A 2026-09-19 capture of a real, working Nintendo Account link -- the
-// console's very next request after a successful federation, immediately
-// fetching its own profile picture -- showed the console asking for
-// '/1/<etag>' and '/2/<etag>' at the root of the cdn-image host, not
-// '/images/<name>'. GRID0+'s own request log had never shown that
-// request at all, on any of the 17+ prior attempts at this same bug: the
-// shape mismatch meant the client's own URL validation rejected the field
-// before ever making the request, which is consistent with -- and the first
-// concrete explanation for -- the "succeeds through federation, then zero
-// further network activity" signature every one of those attempts shared.
-// See docs/CAPTURES/README.md and the 2124-0292 investigation notes.
+// The console asks for '/1/<etag>' and '/2/<etag>' at the root of the cdn-image host,
+// not '/images/<name>'. With any other shape the client's own URL validation rejects the
+// field before ever making the request, which looks like "succeeds through federation,
+// then zero further network activity" with no request in the server log at all.
 func (s *Server) imageURLs(relPath string) (thumb1, thumb2 string) {
 	base := strings.TrimSuffix(s.cfg.ImageBaseURL, "/")
 	return base + "/1/" + relPath, base + "/2/" + relPath
@@ -253,26 +246,20 @@ func (s *Server) defaultAvatarURLOrEmpty() (thumb1, thumb2 string) {
 // naUsersMe (nalink.go) points a person with no uploaded thumbnail at.
 //
 // Deliberately not "default-avatar.jpg" (no extension, matching the real
-// server's shape). A 2026-09-21 hardware capture, the first to show the
-// console actually requesting this URL at all, confirmed it fetches
-// exactly the relPath this constant sets -- meaning the extension mismatch
-// was invisible in every capture before that one purely because nothing had
-// exercised the "brand new account, no uploaded picture" path over a
-// hardware capture until then. The fetch itself still succeeded (a real
-// image came back either way), so this is a fidelity fix, not a diagnosis
-// of that session's actual failure.
+// server's shape): the console fetches exactly the relPath this constant sets,
+// so an extension mismatch only shows on the "brand new account, no uploaded
+// picture" path. The fetch still succeeds either way (a real image comes back),
+// so this is a fidelity choice, not a fix for a failure.
 const defaultAvatarRelPath = "default"
 
 // ensureDefaultAvatar returns the filename of a default avatar, relative to
 // ImageDir, generating the file the first time it is needed.
 //
-// A freshly registered person (website.go) has no uploaded thumbnail, and
-// real Nextendo's "add this user to this console" confirmation screen — the
-// model the whole Nintendo Account link flow is built to match, per the
-// operator 2026-08-26 — always has something to show there, never a blank
-// space. Checked and regenerated lazily rather than at startup: ImageDir may
-// not exist yet on a fresh deployment, and this endpoint is low-traffic
-// enough that an os.Stat per request costs nothing worth avoiding.
+// A freshly registered person has no uploaded thumbnail, and the console's "add this user to
+// this console" confirmation screen always has something to show there, never a blank
+// space. Checked and regenerated lazily rather than at start-up: ImageDir may not exist
+// yet on a fresh deployment, and this endpoint is low-traffic enough that an os.Stat per
+// request costs nothing worth avoiding.
 func (s *Server) ensureDefaultAvatar() (string, error) {
 	path := filepath.Join(s.cfg.ImageDir, defaultAvatarRelPath)
 	if _, err := os.Stat(path); err == nil {

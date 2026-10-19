@@ -282,7 +282,7 @@ func warn(cfg config.Config) {
 	if base := strings.TrimPrefix(cfg.BAAS.ImageBaseURL, "https://"); strings.ContainsRune(base, '/') {
 		fmt.Fprintln(os.Stderr,
 			"warning: baas.image_base_url has a path after the host ('"+cfg.BAAS.ImageBaseURL+"'). "+
-				"A 2026-09-19 capture showed the console requests profile pictures at the root "+
+				"The console requests profile pictures at the root "+
 				"of this host, as /1/<name> and /2/<name> -- see internal/baas/images.go's "+
 				"imageURLs doc comment. Any path here makes the console's own URL validation "+
 				"reject the field before it ever requests the image, which fails closed and "+
@@ -351,7 +351,7 @@ func hostsFile(cfg config.Config) string {
 	// generated file has to get the same answer by physical line order
 	// instead, since Atmosphere's own DNS-MITM resolver has no such
 	// preference.
-	section("phase 4: OLSC cloud save")
+	section("OLSC cloud save")
 	for _, h := range nintendo.ServiceHosts(nintendo.ServiceSCSI) {
 		emit(ip, h)
 	}
@@ -359,7 +359,7 @@ func hostsFile(cfg config.Config) string {
 	// Every service with hosts must appear in some section here, or its hosts
 	// vanish from the file with no error -- see
 	// TestEveryHostReachesTheGeneratedHostsFile.
-	section("NPLN game servers (phase 2)")
+	section("NPLN game servers")
 	for _, svc := range []nintendo.Service{
 		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
 	} {
@@ -466,9 +466,9 @@ func nginxConf(cfg config.Config) string {
 		fmt.Fprintf(&b, "upstream switchnet_%s { server %s; }\n",
 			names[svc], upstreamAddr(backends[svc]))
 	}
-	// Phase 2's upstreams. All three are served by cmd/npln, which exists now:
-	// the gRPC gateway on npln.listen, the JSON front end on npln.rest_listen,
-	// and gamesync on its own port (npln.gamesync_listen).
+	// The NPLN upstreams. All three are served by cmd/npln: the gRPC gateway on
+	// npln.listen, the JSON front end on npln.rest_listen, and gamesync on its own
+	// port (npln.gamesync_listen).
 	for _, svc := range []nintendo.Service{
 		nintendo.ServiceNPLNRest, nintendo.ServiceNPLN, nintendo.ServiceGamesync,
 	} {
@@ -587,8 +587,7 @@ func nginxConf(cfg config.Config) string {
 				b.WriteString("# answering it with an empty certificate: the browser applet on\n")
 				b.WriteString("# accounts.nintendo.com, and the friends sysmodule on the friends host\n")
 				b.WriteString("# (2121-1058, see its entry in internal/nintendo/hosts.go). For the\n")
-				b.WriteString("# browser, a 2026-08-25 capture of a\n")
-				b.WriteString("# real working Nextendo server showed this exact request made over plain\n")
+				b.WriteString("# browser, the request is made over plain\n")
 				b.WriteString("# HTTP/1.1 -- never HTTP/2. With http2 on and the browser offering 'h2'\n")
 				b.WriteString("# in ALPN, nginx picked h2 and the connection completed a full TLS\n")
 				b.WriteString("# handshake and a short encrypted exchange but nginx never logged an\n")
@@ -597,7 +596,7 @@ func nginxConf(cfg config.Config) string {
 			case !v.http2:
 				b.WriteString("# HTTP/2 off, ssl_verify_client kept: this host's traffic is genuine\n")
 				b.WriteString("# device-auth/system sync, not the browser applet, so it still needs the\n")
-				b.WriteString("# client-cert request -- but a 2026-08-26 capture showed the exact same\n")
+				b.WriteString("# client-cert request -- but it shows the exact same\n")
 				b.WriteString("# signature that led to disabling HTTP/2 for accounts.nintendo.com: a\n")
 				b.WriteString("# full, sizeable, bidirectional TLS exchange nginx never logs as a\n")
 				b.WriteString("# completed HTTP request. See Host.NoHTTP2.\n")
@@ -637,8 +636,8 @@ func nginxConf(cfg config.Config) string {
 	b.WriteString("# internal/nintendo/hosts.go) all belong to the stub server, the\n")
 	b.WriteString("# connection test first among them: ctest.cdn.nintendo.net over port\n")
 	b.WriteString("# 80, which the console must pass before any game goes online. With no\n")
-	b.WriteString("# block here the image's default page answered it instead (seen\n")
-	b.WriteString("# 2026-10-04, when a console reported error 2110-0101).\n")
+	b.WriteString("# block here the image's default page answers it instead, and the console\n")
+	b.WriteString("# reports error 2110-0101.\n")
 	b.WriteString(`server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -699,17 +698,16 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
         # jwt.DeviceInfo.X5tS256.
         proxy_set_header X-SwitchNet-Client-Cert-PEM $ssl_client_escaped_cert;`
 	} else {
-		// Captured 2026-08-25, after the http2-off fix: the TLS handshake to
-		// accounts.nintendo.com now completes cleanly and matches a plain curl
-		// baseline byte-for-byte, including OpenSSL's two default post-handshake
-		// NewSessionTicket messages -- but the console's browser closes the
-		// connection right there, client-initiated, without ever sending the
-		// HTTP request. ssl_session_tickets off did not stop nginx sending them
-		// (a known nginx/OpenSSL 3.x TLS 1.3 quirk), so instead force TLS 1.2 for
-		// this one host: TLS 1.2 delivers a session ticket synchronously, inside
-		// the handshake, never as the asynchronous post-Finished message TLS 1.3
-		// uses. Only affects this browser-only block, not the curl-based
-		// device-auth clients that already negotiate TLS 1.3 successfully.
+		// The TLS handshake to accounts.nintendo.com completes cleanly and matches a
+		// plain curl baseline byte-for-byte, including OpenSSL's two default
+		// post-handshake NewSessionTicket messages -- but the console's browser closes
+		// the connection right there, client-initiated, without ever sending the HTTP
+		// request. ssl_session_tickets off does not stop nginx sending them (a known
+		// nginx/OpenSSL 3.x TLS 1.3 quirk), so instead force TLS 1.2 for this one host:
+		// TLS 1.2 delivers a session ticket synchronously, inside the handshake, never as
+		// the asynchronous post-Finished message TLS 1.3 uses. Only affects this
+		// browser-only block, not the curl-based device-auth clients that already
+		// negotiate TLS 1.3 successfully.
 		verifyClientDirective = `
     ssl_protocols TLSv1.2;
 `
@@ -748,11 +746,10 @@ func httpServerBlock(cfg config.Config, serverNames []string, upstream string, v
 func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames []string) string {
 	// The tenant host also answers Gamesync. A match tells each console where
 	// to open its gamesync session (GameSession.host/port), and the address
-	// that is known to work is the tenant host on the edge port:
-	// NextendoNetwork/splatoon-3 measured on hardware that the same service
-	// reached by a literal address on :7575 accepts TLS and then never gets a
-	// request (2321-4992), while the tenant name on :443 does. gRPC names the
-	// service in the path, so the split needs no second listener.
+	// known to work is the tenant host on the edge port: the same service reached
+	// by a literal address on :7575 accepts TLS and then never gets a request
+	// (2321-4992), while the tenant name on :443 does. gRPC names the service in
+	// the path, so the split needs no second listener.
 	gamesync := ""
 	if upstream == "npln" {
 		gamesync = `
@@ -774,8 +771,7 @@ func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames [
     # (PresenceService/KeepAlive, LobbyMessaging/RecvMessage, ticket tracking,
     # Gamesync/KeepUserSession). nginx's defaults end a stream after 60s of
     # silence in either direction and an idle HTTP/2 connection after 75s; a
-    # stream torn down mid-lobby is 2321-4992 on the console, the pattern
-    # NextendoNetwork/splatoon-3 measured when its own server cut them.
+    # stream torn down mid-lobby is 2321-4992 on the console.
     grpc_read_timeout   1h;
     grpc_send_timeout   1h;
     client_body_timeout 1h;
@@ -833,14 +829,13 @@ func tlsNamesOf(hosts []nintendo.Host) []string {
 //     Splatoon 2, 2321-* on Splatoon 3 -- so an idle-timeout disconnect looks
 //     to the player like the game losing its connection for no reason.
 //
-// The fro-N hosts get their own block with HTTP/2 on. npns asks curl for
-// HTTP/2 (CURLOPT_HTTP_VERSION=3, FUN_71000d9250) and streams its frames on a
-// request body that never ends; over HTTP/1.1 curl sends the POST with an
-// empty body instead, so the digital-twin sync never starts, npns times out
-// in state 7 after 70 s and reconnects -- what grid0's log showed on
-// 2026-10-10 (content_length=0, a close every ~70 s, no frame ever read).
-// The other NPLN JSON hosts stay on HTTP/1.1, which is what they are known
-// to work with.
+// The fro-N hosts get their own block with HTTP/2 on. The push service asks curl
+// for HTTP/2 and streams its frames on a request body that never ends; over
+// HTTP/1.1 curl sends the POST with an empty body instead, so the digital-twin
+// sync never starts, the service times out after 70 s and reconnects (the log
+// shows content_length=0 and a close every ~70 s, with no frame ever read). The
+// other NPLN JSON hosts stay on HTTP/1.1, which is what they are known to work
+// with.
 func frontlineServerBlock(cfg config.Config, serverNames []string, http2 bool) string {
 	h2 := ""
 	if http2 {

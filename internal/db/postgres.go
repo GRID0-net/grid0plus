@@ -2017,7 +2017,7 @@ func (p *Postgres) listMatches(ctx context.Context, query string, args ...any) (
 	return out, mapErr(rows.Err())
 }
 
-// ---- OLSC save data archives (phase 4) -------------------------------------
+// ---- OLSC save data archives ----------------------------------------------
 
 const saveDataArchiveColumns = `id, nsa_id, application_id, device_id, device_serial,
 	data_size, description, series_id, datatype, status, auto_backup, num_of_partitions,

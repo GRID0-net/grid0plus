@@ -156,10 +156,9 @@ func TestCoopShiftValidateRejectsAnUnknownBoss(t *testing.T) {
 }
 
 // TestCoopScheduleKumaWeaponUsesAttributesNotTheScalarField is the
-// regression test for coopKumaWeaponsAttribute: both preserved working
-// Nextendo hall captures carry the Grizzco weapon in
-// attributes.KumaWeapons, never in the kuma_weapon scalar field, on every
-// CoopSchedule_Normal/BigRun/TeamContest observed.
+// regression test for coopKumaWeaponsAttribute: a real schedule carries the
+// Grizzco weapon in attributes.KumaWeapons, never in the kuma_weapon scalar
+// field, on every CoopSchedule_Normal/BigRun/TeamContest.
 func TestCoopScheduleKumaWeaponUsesAttributesNotTheScalarField(t *testing.T) {
 	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	svc, _ := newService(t, at)
@@ -281,10 +280,9 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 	if got, want := len(tc.GetMainWeapons()), 4; got != want {
 		t.Errorf("TeamContest.MainWeapons has %d entries, want %d", got, want)
 	}
-	// Not tc.GetKumaWeapon() (the scalar field): both working captures this
-	// project has decoded never populate it, carrying the Grizzco weapon in
-	// attributes.KumaWeapons instead -- see coopKumaWeaponsAttribute's own
-	// doc comment.
+	// Not tc.GetKumaWeapon() (the scalar field): a real schedule never populates
+	// it, carrying the Grizzco weapon in attributes.KumaWeapons instead -- see
+	// coopKumaWeaponsAttribute's own doc comment.
 	km := tc.GetAttributes().GetFields()["KumaWeapons"].GetArrayValue().GetValues()
 	if len(km) != 1 || km[0].GetIntegerValue() != shift.KumaWeaponID {
 		t.Errorf("TeamContest.Attributes[KumaWeapons] = %v, want [%d]", km, shift.KumaWeaponID)
@@ -295,13 +293,11 @@ func TestTeamContestRendersOnItsOwnWireSubMessage(t *testing.T) {
 }
 
 // TestCoopScheduleNameCarriesATargetsSegment is the regression test for a
-// real crash: a 2026-09-24 decompile of Splatoon 3 v11.3.0 found the
-// client's resource-name parser for a CoopSchedule requires the literal
-// shape "tenants/<t>/targets/<target>/coopSchedules/<rest>" and hard-aborts
-// when a name does not parse that way. The old shape here,
-// "tenants/<t>/coopSchedules/<id>", omitted the "targets/<target>" segment
-// entirely and reproduced on GRID0+'s own hardware with four real coop
-// shifts seeded.
+// real crash: the client's resource-name parser for a CoopSchedule requires the
+// literal shape "tenants/<t>/targets/<target>/coopSchedules/<rest>" and
+// hard-aborts when a name does not parse that way. A name of the form
+// "tenants/<t>/coopSchedules/<id>" omits the "targets/<target>" segment and
+// crashes the console.
 func TestCoopScheduleNameCarriesATargetsSegment(t *testing.T) {
 	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	svc, _ := newService(t, at)

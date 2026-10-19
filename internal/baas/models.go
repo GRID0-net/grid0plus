@@ -41,12 +41,11 @@ type UserResponse struct {
 	Links       LinksResponse    `json:"links"`
 	Permissions db.Permissions   `json:"permissions"`
 	Extras      db.ExtrasByScope `json:"extras"`
-	// Presence is a pointer, omitted entirely for visSelf: a 2026-08-27 capture
-	// of a working login/federation/GET-self response never has a 'presence'
-	// key at all — only a friend-visible read of someone else's user object
-	// does. Sending it for self is an extra key the console's reader has not
-	// been confirmed to tolerate, unlike the missing-key case the doc comment
-	// above warns about.
+	// Presence is a pointer, omitted entirely for visSelf: a working
+	// login/federation/GET-self response never has a 'presence' key at all -- only a
+	// friend-visible read of someone else's user object does. Sending it for self is
+	// an extra key the console's reader has not been confirmed to tolerate, unlike
+	// the missing-key case the doc comment above warns about.
 	Presence *PresenceResponse `json:"presence,omitempty"`
 
 	Deleted bool `json:"deleted"`
@@ -73,15 +72,13 @@ type DeviceAccountResponse struct {
 	Password string `json:"password,omitempty"`
 }
 
-// LinksResponse is the linked-accounts block. Only friendCode is ever populated
-// by GRID0+: there is no Nintendo Account, Twitter or Facebook to link to.
+// LinksResponse is the linked-accounts block. Only friendCode is ever populated by
+// GRID0+: there is no Nintendo Account, Twitter or Facebook to link to.
 //
-// A 2026-09-20 decompile of the account sysmodule confirms a "google" entry
-// exists in this same block, shaped identically to AccountLink
-// ($.links.google.id, $.links.google.createdAt). Not added: this server has
-// no real Google OAuth integration to back it with, and a private server has
-// no legitimate way to acquire one -- the same boundary Phase 3's eShop
-// draws, not a gap to fill.
+// The console also knows a "google" entry in this same block, shaped identically to
+// AccountLink ($.links.google.id, $.links.google.createdAt). It isn't added: this server
+// has no real Google OAuth integration to back it with, and a private server has no
+// legitimate way to acquire one.
 type LinksResponse struct {
 	FriendCode *FriendCodeLink `json:"friendCode,omitempty"`
 	// NintendoAccount is present only if a /1.0.0/federation or /link request
@@ -116,9 +113,7 @@ type PresenceResponse struct {
 
 // CollectionEnvelope wraps a pageable BAAS list response.
 //
-// Confirmed by captures at docs/CAPTURES/raw/03-friends.json and
-// docs/CAPTURES/raw/04-friend-requests-inbox.json. count is the requested page
-// size; itemsPerPage is the number of items actually returned.
+// count is the requested page size; itemsPerPage is the number of items actually returned.
 type CollectionEnvelope[T any] struct {
 	Count        int    `json:"count"`
 	ETag         string `json:"etag"`
@@ -140,9 +135,8 @@ func newCollection[T any](requested int, items []T) CollectionEnvelope[T] {
 
 // FriendUserResponse is the friend's profile embedded in a friend list entry.
 //
-// It differs from UserResponse in that birthday, country and links are absent,
-// and nicknameUpdatedAt is added. Shape confirmed by the capture at
-// docs/CAPTURES/raw/03-friends.json.
+// It differs from UserResponse in that birthday, country and links are absent, and
+// nicknameUpdatedAt is added.
 type FriendUserResponse struct {
 	ID       string `json:"id"`
 	ETag     string `json:"etag"`
@@ -169,27 +163,23 @@ type FriendUserResponse struct {
 
 // FriendResponse is one entry in GET /2.0.0/users/<id>/friends.
 //
-// It represents the relationship from the caller's perspective. Shape confirmed
-// by the capture at docs/CAPTURES/raw/03-friends.json.
+// It represents the relationship from the caller's perspective.
 type FriendResponse struct {
 	UserID     string             `json:"userId"`
 	FriendID   string             `json:"friendId"`
 	Friend     FriendUserResponse `json:"friend"`
 	IsFavorite bool               `json:"isFavorite"`
-	// Channels tracks per-channel authorization. In captures this contains
-	// {"FRIEND_CODE": {"authorizedAt": <unix>}}. GRID0+ does not track
-	// channel authorization separately, so this is always an empty map.
+	// Channels tracks per-channel authorization. A real server sends
+	// {"FRIEND_CODE": {"authorizedAt": <unix>}}. GRID0+ does not track channel
+	// authorization separately, so this is always an empty map.
 	//
-	// A 2026-09-20 decompile of the operator's own console's friends
-	// sysmodule found the parser for these channel-name strings, and
-	// FRIEND_CODE is one of ten it recognises: NX_FACED, FRIEND_CODE, IN_APP,
-	// NINTENDO_ACCOUNT, 3DS, NNID, FACEBOOK, TWITTER, WECHAT, CAMPUS. That
-	// confirms the shape (a channel names HOW a friendship was authorized,
-	// and FRIEND_CODE means "by exchanging codes") without settling the
-	// trigger condition or what authorizedAt represents beyond its name.
+	// FRIEND_CODE is one of ten channel names the console's parser recognises:
+	// NX_FACED, FRIEND_CODE, IN_APP, NINTENDO_ACCOUNT, 3DS, NNID, FACEBOOK, TWITTER,
+	// WECHAT, CAMPUS. A channel names HOW a friendship was authorized, and
+	// FRIEND_CODE means "by exchanging codes".
 	//
-	// TODO(capture-needed): settle what triggers a FRIEND_CODE entry and what
-	// the authorizedAt timestamp represents. Change: listFriends in friends.go.
+	// UNCONFIRMED: what triggers a FRIEND_CODE entry and what the authorizedAt
+	// timestamp represents. Change: listFriends in friends.go.
 	Channels   map[string]any   `json:"channels"`
 	Extras     db.ExtrasByScope `json:"extras"`
 	FriendNote string           `json:"friendNote"`
@@ -198,32 +188,24 @@ type FriendResponse struct {
 	UpdatedAt  int64            `json:"updatedAt"`
 }
 
-// TODO(capture-needed): extras.self on this type (not FriendUserResponse's own
-// extras.self, which is the friend's -- this one, the relationship's) can
-// apparently also carry a boolean "isOnlineNotification" key. Found
-// 2026-09-20 in a decompile of the operator's own console's friends
-// sysmodule: the string "$.extras.self.isOnlineNotification" is a
-// JSONPath-style field the client reads out of a response, in the same
-// "$.extras.self.*" family as the already-confirmed route:sender/isConfirmed
-// keys above -- and it lines up exactly with the friends IPC command
-// ChangeFriendOnlineNotificationFlag (per-friend "notify me when this friend
-// comes online", distinct from the console's own online-status broadcast).
-// Not implemented: docs/CAPTURES/raw/03-friends.json's real, working capture
-// has no such key for a normal (default-state) friendship, which is
-// consistent with it only appearing once actually toggled away from
-// whatever the default is -- but there is no confirmed write path (which
-// endpoint persists the toggle, or what the default even is) to build
-// against yet. Change: friendUserResponse/listFriends in friends.go, once a
-// capture shows a relationship with this flag set.
+// UNCONFIRMED: extras.self on this type (not FriendUserResponse's own extras.self,
+// which is the friend's -- this one, the relationship's) can apparently also carry a
+// boolean "isOnlineNotification" key. The friends module reads "$.extras.self.isOnlineNotification"
+// out of a response, in the same "$.extras.self.*" family as the already-known
+// route:sender/isConfirmed keys above, and it lines up with the friends IPC command
+// ChangeFriendOnlineNotificationFlag (per-friend "notify me when this friend comes
+// online", distinct from the console's own online-status broadcast). It isn't
+// implemented: a normal friendship in a working server's list has no such key, which is
+// consistent with it only appearing once toggled away from the default, but there is no
+// known write path (which endpoint persists the toggle, or what the default even is)
+// to build against. Change: friendUserResponse/listFriends in friends.go, once a
+// relationship with this flag set is observed.
 
 // FriendRequestResponse is one entry in the inbox or outbox.
 //
-// The per-item shape was settled 2026-09-22 by decompiling the operator's own
-// console's friends sysmodule — the two captures that would have shown it (04,
-// 05) both returned empty item lists, which is why it stayed a guess for so
-// long. The inbox parser (`0x1cf640`) and the outbox parser (`0x1cfe20`) read
-// identical field sets, and it is `senderId`/`receiverId` with `sender.*` and
-// `receiver.*` profiles, not `from`/`to`:
+// The inbox and outbox parsers read identical field sets, and it is
+// `senderId`/`receiverId` with `sender.*` and `receiver.*` profiles, not
+// `from`/`to`:
 //
 //	$.items[*].id                $.items[*].state
 //	$.items[*].senderId          $.items[*].receiverId
@@ -236,14 +218,14 @@ type FriendResponse struct {
 //	$.items[*].extras.sender.route:*
 //	$.items[*].extras.senderAndReceiver.route:*
 //
-// GRID0+ sent `from` and `to`, so every field the client actually reads was
-// missing: the friend-requests screen had rows with no name, no picture and no
-// ids to act on.
+// Sending `from` and `to` leaves every field the client actually reads missing:
+// the friend-requests screen gets rows with no name, no picture and no ids to
+// act on.
 //
-// TODO(capture-needed): `extras.receiver.read` is the recipient's unread flag --
-// the parser reads it, and this server keeps no read state for a request, so it
-// is not sent. Whether the client treats the absent key as unread (the useful
-// default) or as read needs a capture with a real pending request in it. Change:
+// UNCONFIRMED: `extras.receiver.read` is the recipient's unread flag -- the
+// parser reads it, and this server keeps no read state for a request, so it is
+// not sent. Whether the client treats the absent key as unread (the useful
+// default) or as read needs a real pending request. Change:
 // friendRequestResponse in friends.go.
 type FriendRequestResponse struct {
 	ID string `json:"id"`
@@ -257,24 +239,19 @@ type FriendRequestResponse struct {
 	// side is the caller as it used to be.
 	Sender   *UserResponse `json:"sender,omitempty"`
 	Receiver *UserResponse `json:"receiver,omitempty"`
-	// Channels and Extras are read by the decompiled inbox/outbox parsers
-	// (see this type's own field-list comment below) but were previously
-	// absent from this server's response entirely. See friendRequestResponse
-	// for what each is populated with and why.
+	// Channels and Extras are read by the client's inbox/outbox parsers (see
+	// this type's own field-list comment) and must be present in the response. See
+	// friendRequestResponse for what each is populated with and why.
 	Channels []any                     `json:"channels"`
 	Extras   map[string]map[string]any `json:"extras"`
-	// State's real values are confirmed: a
-	// 2026-09-20 decompile of the operator's own console's friends sysmodule
-	// found the actual enum -- PENDING, AUTHORIZED, REJECTED, CANCELED,
-	// EXPIRED -- and three of these are spelled differently from the
-	// pre-capture guess this comment used to carry (ACCEPTED, DENIED,
-	// CANCELLED). See requestStateFromWire in friends.go, which now
-	// translates the real spelling onto this server's own internal
-	// db.RequestAccepted/RequestDenied/RequestCancelled constants; this
-	// field always carries this server's spelling, not the console's.
-	// EXPIRED is not currently produced anywhere -- nothing here assigns a
-	// request that state -- so it never appears in a real response, only in
-	// the console's own enum.
+	// State's real values are PENDING, AUTHORIZED, REJECTED, CANCELED, EXPIRED;
+	// three differ in spelling from ACCEPTED, DENIED, CANCELLED. See
+	// requestStateFromWire in friends.go, which translates the real spelling onto
+	// this server's own internal db.RequestAccepted/RequestDenied/RequestCancelled
+	// constants; this field always carries this server's spelling, not the
+	// console's. EXPIRED is not currently produced anywhere -- nothing here assigns
+	// a request that state -- so it never appears in a real response, only in the
+	// console's own enum.
 	State     string `json:"state"`
 	CreatedAt int64  `json:"createdAt"`
 	UpdatedAt int64  `json:"updatedAt"`
@@ -282,29 +259,23 @@ type FriendRequestResponse struct {
 
 // RelationshipResponse is the answer to GET /2.0.0/users/<id>/relationships/<id>.
 //
-// # The wire shape, settled 2026-09-22 by decompiling the friends sysmodule
+// # The wire shape
 //
-// The request builder (`FUN_001d5b90`) formats this endpoint's URL and then
-// constructs its response object at `FUN_001d5d60`, whose vtable is the table
-// at `0x258558`. That table registers exactly two field callbacks:
+// The client reads exactly two things from this response:
 //
-//   - `0x1d5d90` reads `$.isFriend` and `$.isBlocking`, storing each as a
-//     boolean flag;
-//   - `0x1d5e30` reads `$.sentFriendRequestIds[0]` and reduces it to a third
-//     boolean -- it never reads the id itself, only whether the array has a
-//     first element.
+//   - `$.isFriend` and `$.isBlocking`, each stored as a boolean flag;
+//   - `$.sentFriendRequestIds[0]`, reduced to a third boolean: it never reads the id
+//     itself, only whether the array has a first element.
 //
-// So the client's entire model of a relationship is three booleans, and these
-// three keys are the ones that have to be right. GRID0+ used to send none of
-// them, which read as the all-false default: **every user looked like a
-// stranger**, including an existing friend, and an outgoing request looked like
-// no request at all.
+// So the client's entire model of a relationship is three booleans, and these three keys
+// are the ones that have to be right. Sending none of them reads as the all-false default:
+// **every user looks like a stranger**, including an existing friend, and an outgoing
+// request looks like no request at all.
 //
-// Type, User, IsFavorite and BecameFriendAt are this server's own additions.
-// The client ignores keys it does not ask for, and Type in particular is worth
-// keeping for GRID0+'s own tooling and tests -- but none of the four is read
-// by the console, and "$.becameFriendAt" appears nowhere in the friends
-// sysmodule. Do not treat their presence as evidence about the real wire shape.
+// Type, User, IsFavorite and BecameFriendAt are this server's own additions. The client
+// ignores keys it does not ask for, and Type in particular is worth keeping for GRID0+'s
+// own tooling and tests, but none of the four is read by the console. Do not treat their
+// presence as evidence about the real wire shape.
 type RelationshipResponse struct {
 	// IsFriend is true when a friendship exists in either direction.
 	IsFriend bool `json:"isFriend"`
@@ -341,11 +312,7 @@ const (
 
 // BlockResponse is one entry in GET /1.0.0/users/<id>/blocks.
 //
-// Shape settled 2026-09-22 by decompiling the operator's own console's friends
-// sysmodule (see docs/CAPTURES/friends-sysmodule-decompile.md). The blocks
-// response parser (an incremental JSON key callback at import address 0x1b50e0,
-// reached from the request builder at 0x1b4c60 that formats this very
-// endpoint) reads:
+// The console's blocks response parser reads:
 //
 //	$.items[*]                                  the array marker
 //	$.items[*].targetUserId                     hex-digit string
@@ -355,18 +322,15 @@ const (
 //	$.items[*].extras.self.route:*
 //	$.items[*].createdAt
 //
-// Two consequences, both of which this type and listBlocks used to get wrong.
-// It reads targetUser, not user -- and it reads $.items[*], which means the
-// response has to be an envelope: given a bare top-level array, the array
-// marker never matches and the screen is simply empty, with nothing in the
-// console's log to say why.
+// Two consequences. It reads targetUser, not user. And it reads $.items[*], which means the
+// response has to be an envelope: given a bare top-level array, the array marker never
+// matches and the screen is simply empty, with nothing in the console's log to say why.
 //
-// TODO(capture-needed): extras.self.reason is parsed as a string (the parser
-// routes it through the same string-to-enum helper its other enum fields use)
-// and this server always sends none, which the key callback tolerates. What
-// the values mean -- and what the extras.self.route:* block on a *blocked*
-// user holds, since a block shows no presence -- needs a capture. Change: the
-// entry construction in listBlocks (friendcodes.go).
+// UNCONFIRMED: extras.self.reason is parsed as a string (it goes through the same
+// string-to-enum helper its other enum fields use) and this server always sends none,
+// which the key callback tolerates. What the values mean, and what the
+// extras.self.route:* block on a *blocked* user holds, since a block shows no presence,
+// is not known. Change: the entry construction in listBlocks (friendcodes.go).
 type BlockResponse struct {
 	// TargetUserID is the blocked user's id, a hex-digit string ("%016llx"
 	// in the URL path, dec:hex-decoded by the client).
@@ -406,10 +370,9 @@ const (
 func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence, das []db.DeviceAccount, vis visibility, defaultThumb1, defaultThumb2 string) UserResponse {
 	thumbnailURL := u.ThumbnailURL
 	thumbnail2URL := u.Thumbnail2URL
-	// A real capture (2026-08-27) of a working account always carries both
-	// sizes, even for the "no picture uploaded" case (".../1/default" and
-	// ".../2/default") -- GRID0+ has one default image, not two sizes of
-	// it, so both fields point at the same relative path under their own
+	// A real account always carries both sizes, even for the "no picture uploaded"
+	// case (".../1/default" and ".../2/default") -- GRID0+ has one default image, not
+	// two sizes of it, so both fields point at the same relative path under their own
 	// '/1/' and '/2/' prefixes rather than leaving the large one blank.
 	if thumbnailURL == "" {
 		thumbnailURL = defaultThumb1
@@ -442,14 +405,13 @@ func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence,
 		p := presenceResponse(pres, vis)
 		out.Presence = &p
 	}
-	// nintendoAccountId is recordNintendoAccountLink's own bookkeeping key,
-	// read back by this function to populate Links.NintendoAccount above --
-	// it was never meant to reach the client itself, and a 2026-08-27 capture
-	// of a working account's extras.self confirmed real Nintendo doesn't send
-	// it (only nxAccount, which is a different, deliberately-client-visible
-	// key). scopedExtras aliases the stored map rather than copying it, so
-	// this copies the 'self' scope before deleting from it -- deleting
-	// straight from out.Extras would delete from the stored user too.
+	// nintendoAccountId is recordNintendoAccountLink's own bookkeeping key, read
+	// back by this function to populate Links.NintendoAccount above -- it was never
+	// meant to reach the client itself, and real Nintendo doesn't send it in
+	// extras.self (only nxAccount, which is a different, deliberately-client-visible
+	// key). scopedExtras aliases the stored map rather than copying it, so this
+	// copies the 'self' scope before deleting from it -- deleting straight from
+	// out.Extras would delete from the stored user too.
 	if self, ok := out.Extras[db.ScopeSelf]; ok {
 		if _, present := self["nintendoAccountId"]; present {
 			cleaned := make(map[string]any, len(self))
@@ -473,11 +435,9 @@ func userResponse(now time.Time, u db.User, fc *db.FriendCode, pres db.Presence,
 			Regenerable:   fc.Regenerable(now),
 		}
 	}
-	// recordNintendoAccountLink stores this in extras; it belongs in the
-	// response too, or a console that just did /1.0.0/federation gets a
-	// 200 whose links object never reflects the link it just made. Found
-	// 2026-08-26: real hardware got exactly that empty links object right
-	// after a successful federation call, then gave up (error 2124-3121)
+	// recordNintendoAccountLink stores this in extras; it belongs in the response
+	// too, or a console that just did /1.0.0/federation gets a 200 whose links
+	// object never reflects the link it just made, and gives up (error 2124-3121)
 	// without ever calling /1.0.0/users/{id}/link.
 	if self, ok := u.Extras[db.ScopeSelf]; ok {
 		if naID, ok := self["nintendoAccountId"].(string); ok && naID != "" {

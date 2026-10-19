@@ -89,7 +89,7 @@ func TestEveryProxiedServiceAppearsInTheGeneratedConfig(t *testing.T) {
 }
 
 // TestTheNPLNJSONHostsUseProxyPassAndTheTenantUsesGRPCPass is the routing
-// mistake ROADMAP.md and hosts.go both warn about, asserted rather than trusted.
+// mistake hosts.go warns about, asserted rather than trusted.
 //
 // Splatoon 3 talks JSON to vermillion and penne before it opens a gRPC channel.
 // Sending the JSON hosts through grpc_pass, or the tenant through proxy_pass,
@@ -180,7 +180,7 @@ func contextAround(s string, at int) string {
 // hasDirective reports whether block contains prefix as an nginx directive
 // rather than as prose in a comment.
 //
-// The generated phase-2 blocks are emitted commented out, so "#" is stripped
+// The generated Splatoon 3 blocks are emitted commented out, so "#" is stripped
 // before the line is considered -- but a line that is *explanatory* text rather
 // than commented-out configuration must not count. The distinction is that a
 // directive line, once de-commented, starts with the directive itself.

@@ -45,12 +45,10 @@ func newServiceForTest(t *testing.T, uid string) *Service {
 }
 
 // TestRunQueryAnswersZeroMatchesRatherThanUnimplemented is the regression
-// test for a real crash: RunQuery left Unimplemented (grpc-status 12) was
-// the last RPC in the confirmed boot sequence still unanswered, and
-// reproduced on real hardware on 2026-09-24 as a communication error right
-// after entering the lobby. A real capture (facts only, no code taken --
-// see RunQuery's own doc comment) shows a real server answers a query with
-// no matches as exactly one streamed message carrying only read_time.
+// test for a real crash: RunQuery left Unimplemented (grpc-status 12) is the last
+// RPC in the boot sequence still unanswered, and shows as a communication error
+// right after entering the lobby. A real server answers a query with no matches
+// as exactly one streamed message carrying only read_time.
 func TestRunQueryAnswersZeroMatchesRatherThanUnimplemented(t *testing.T) {
 	svc := newServiceForTest(t, "player-1")
 	stream := &runQueryStream{ctx: context.Background()}

@@ -262,9 +262,9 @@ type BotAPI struct {
 	Splatoon3SaveNames string `yaml:"splatoon3_save_names"`
 }
 
-// SCSI configures the OLSC (Online Save Cloud) cloud-save server (phase 4).
+// SCSI configures the OLSC (Online Save Cloud) cloud-save server.
 //
-// Reimplements storage.hac.lp1.scsi.srv.nintendo.net and
+// Stands in for storage.hac.lp1.scsi.srv.nintendo.net and
 // permission.lp1.sata.srv.nintendo.net. See internal/scsi for the endpoints.
 type SCSI struct {
 	Listen string `yaml:"listen"`
@@ -276,22 +276,19 @@ type SCSI struct {
 	// own profile images.
 	PublicURL string `yaml:"public_url"`
 
-	// StorageDir is where save data blobs are written, on the same box
-	// already running GRID0+ -- the default ROADMAP.md's phase 4 section
-	// picks: no new recurring cost, bounded by whatever disk the box has.
+	// StorageDir is where save data blobs are written, on the same machine already
+	// running GRID0+. Local disk adds no recurring cost beyond the machine itself.
 	StorageDir string `yaml:"storage_dir"`
 
 	// PerUserQuotaBytes caps one BAAS user's total stored save data across
 	// every title and every archive. Zero means unlimited: Validate permits
-	// it rather than requiring a number, since a small private deployment
-	// the operator already trusts every console on may reasonably accept
-	// that risk -- but ROADMAP.md §4.2 is explicit that a hard cap should
-	// normally exist, so one console cannot fill the disk and take the rest
-	// of GRID0+ down with it. Set this in any real deployment.
+	// it, since a small private deployment may reasonably accept that risk, but
+	// a hard cap should normally exist so one console cannot fill the disk and take
+	// the rest of GRID0+ down with it. Set this in any real deployment.
 	PerUserQuotaBytes int64 `yaml:"per_user_quota_bytes"`
 }
 
-// NPLN configures the Splatoon 3 game server (phase 2).
+// NPLN configures the Splatoon 3 game server.
 //
 // Two listeners, not one, and they are not interchangeable. Splatoon 3 opens
 // with ordinary JSON over HTTPS to the vermillion and penne hosts, and only
@@ -315,9 +312,8 @@ type NPLN struct {
 	GamesyncListen string `yaml:"gamesync_listen"`
 
 	// Tenant is the NPLN tenant id. Splatoon 3's is t-dce9377b-lp1: the full
-	// form a real Nintendo access token carries in its tid, and the one
-	// NextendoNetwork/splatoon-3 records the console sending as
-	// npln-tenant-id. It names this tenant's resources ("tenants/<id>/...")
+	// form a Nintendo access token carries in its tid, and the one the console
+	// sends as npln-tenant-id. It names this tenant's resources ("tenants/<id>/...")
 	// and goes into every token's tid. The short "dce9377b" is still accepted
 	// on incoming calls -- see npln.sameTenant.
 	Tenant string `yaml:"tenant"`
@@ -329,10 +325,8 @@ type NPLN struct {
 	Issuer string `yaml:"issuer"`
 	// JWKSURL is where those tokens' 'jku' points.
 	JWKSURL string `yaml:"jwks_url"`
-	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds.
-	// 28800 (8h) is confirmed, not guessed: a 2026-09-23 decrypted capture of
-	// a real IssuePrearrangedUserTokenResponse from a working server carries
-	// exactly iat=..., exp=iat+28800.
+	// AccessTokenTTL is the lifetime of an NPLN access token, in seconds. 28800
+	// (8h) is what a real server issues: exp = iat + 28800.
 	AccessTokenTTL int `yaml:"access_token_ttl"`
 
 	// PlayersPerMatch is the most players a match takes for any mode
@@ -412,11 +406,10 @@ type NPLN struct {
 	// SessionHost and SessionPort are what a match puts in GameSession.host
 	// and .port: where each console opens its gamesync session for that match.
 	//
-	// A 2026-09-27 capture of a working Nextendo Ryujinx session shows a
-	// literal IPv4 address on :7575. An older Nextendo hardware note reports
-	// that the tenant hostname on :443 worked where a literal address did not.
-	// Both are supported by the edge; the deployed value should follow the
-	// client being tested. Names must be in the redirected hosts list.
+	// Clients differ: some use a literal IPv4 address on :7575, while for others the
+	// tenant hostname on :443 works where a literal address did not. Both are
+	// supported by the edge; the deployed value should follow the client being
+	// used. Names must be in the redirected hosts list.
 	SessionHost string `yaml:"session_host"`
 	SessionPort int    `yaml:"session_port"`
 
@@ -489,10 +482,9 @@ type NEX struct {
 //
 // Off by default, and even when on it relays only the players Allow names
 // (or everyone who needs it, with AllowAll): it moves match traffic through
-// the operator's own connection, and NextendoNetwork's experience (facts
-// only) is that deciding who "needs" it went wrong often enough that
-// players who connected fine were pulled onto it. Start with the one
-// player who cannot connect.
+// the operator's own connection, and deciding who "needs" it can go wrong
+// often enough that players who connected fine get pulled onto it. Start with
+// the one player who cannot connect.
 type NEXRelay struct {
 	Enabled bool `yaml:"enabled"`
 	// AdvertiseIP is the public address consoles send relayed traffic to.
@@ -604,11 +596,9 @@ type BCAT struct {
 	// SubstituteFestID rewrites {FEST} in an asset's in-pack path to the fest's
 	// own id.
 	//
-	// A real custom pack had every internal file named for the fest it was
-	// DERIVED from while announcing a different one, and nobody has established
-	// what the game keys on. On is the consistent choice; off keeps whatever
-	// names the source files carry. Either way the decision lives in one place
-	// — see internal/bcat.Naming and docs/QUESTIONS.md.
+	// On keeps the internal names consistent with the fest that announces them;
+	// off keeps whatever names the source files carry. Either way the decision
+	// lives in one place: see internal/bcat.Naming.
 	SubstituteFestID bool `yaml:"substitute_fest_id"`
 }
 
@@ -619,11 +609,10 @@ type Dashboard struct {
 	// Token is a shared secret required on every request. Empty means no
 	// authentication at all.
 	//
-	// Nothing in phase 1 authenticates a PERSON -- every credential in the
-	// stack belongs to a console -- so there is no user account to check
-	// against. A shared token is the honest minimum: it keeps the Splatfest
-	// controls off the open network without pretending to be an identity
-	// system. See TODO.md for what a real answer would look like.
+	// Every credential in the stack belongs to a console, not a person, so there is
+	// no user account to check against. A shared token is the honest minimum: it
+	// keeps the Splatfest controls off the open network without pretending to be
+	// an identity system.
 	Token string `yaml:"token"`
 
 	// NPLNAdminURL and NPLNAdminToken reach cmd/npln's matchmaking controls,
@@ -742,16 +731,15 @@ type NATCheck struct {
 	// AlternateListen is a socket on a DIFFERENT ADDRESS, used for message
 	// type 2. Leave empty if you only have one address.
 	AlternateListen string `yaml:"alternate_listen"`
-	// Type102SamePort answers type 102 from the port it was sent to, as
-	// Nextendo's working server does (capture of 2026-10-02). From 10125 a
-	// port-restricted home router drops the reply.
+	// Type102SamePort answers type 102 from the port it was sent to. From
+	// 10125 a port-restricted home router drops the reply.
 	Type102SamePort bool `yaml:"type102_same_port"`
 	// StunListen answers STUN (RFC 5389) Binding requests -- a different
 	// protocol from the NCS one above, but the same kind of lightweight UDP
-	// connectivity responder, so it runs alongside it rather than as a
-	// separate service. Splatoon 3 sends these to whatever host
-	// npln.ListLatencyMeasurementServers names, confirmed by a 2026-09-23
-	// packet capture (see internal/stunresponder). Empty disables it.
+	// connectivity responder, so it runs alongside it rather than as a separate
+	// service. Splatoon 3 sends these to whatever host
+	// npln.ListLatencyMeasurementServers names (see internal/stunresponder). Empty
+	// disables it.
 	StunListen string `yaml:"stun_listen"`
 }
 

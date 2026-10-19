@@ -454,10 +454,9 @@ func presencePatchFromOps(ops []patchOp, current db.ExtrasByScope) (db.PresenceP
 			}
 			extrasChanged = true
 
-			// The console writes the app fields into the 'friends' scope, which
-			// is the one its friends can read. Mirror them into the denormalised
-			// columns so the dashboard and phase 2's NPLN presence service do
-			// not have to walk JSON to answer "who is playing what".
+			// The console writes the app fields into the 'friends' scope, which is the one its
+			// friends can read. Mirror them into the denormalised columns so the dashboard and the
+			// NPLN presence service do not have to walk JSON to answer "who is playing what".
 			if scope != db.ScopeFriends {
 				continue
 			}

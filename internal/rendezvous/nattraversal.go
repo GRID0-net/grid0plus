@@ -95,9 +95,8 @@ func (n NAT) Class() NATClass {
 // each other. Only the pairs that reliably fail are refused -- strict with
 // strict, strict with moderate -- and an unreported NAT is given the benefit
 // of the doubt, because refusing a console before it has reported anything
-// would isolate everyone at the start of every session. This is the rule
-// NextendoNetwork found necessary (facts only): one strict player dropped into
-// a lobby otherwise gives EVERYONE in it 2618-0510.
+// would isolate everyone at the start of every session. One strict player
+// dropped into a lobby otherwise gives EVERYONE in it 2618-0510.
 func NATCompatible(a, b NATClass) bool {
 	if a == NATUnknown || b == NATUnknown {
 		return true
@@ -155,8 +154,7 @@ func (s *Server) requestProbeInitiation(c *nex.Conn, req *nex.Request) *nex.Resp
 //
 // Two consoles reaching the server from the same public address are in one
 // household: aiming them at that public address needs the router to hairpin,
-// which most home routers do not. They get the caller's LAN station instead
-// (NextendoNetwork's fix, facts only).
+// which most home routers do not. They get the caller's LAN station instead.
 func (s *Server) initiateProbes(c *nex.Conn, targets []*nex.StationURL, probe *nex.StationURL) {
 	for _, t := range targets {
 		target := s.ConnByID(uint32(t.Int("RVCID")))
@@ -216,8 +214,7 @@ type NATObservations interface {
 // the router preserves ports. The NAT-check responder saw the port the
 // router actually mapped for the Pia socket, and a peer's probe has to aim at
 // that one; aimed at the local port it never lands and the match loops back
-// to matchmaking. NextendoNetwork closes the same gap the same way (facts
-// only).
+// to matchmaking.
 //
 // Only when exactly one connected console sits behind that public IP: the
 // observation is keyed by IP, so with two consoles in one household it
@@ -312,9 +309,9 @@ func (s *Server) reportNATProperties(c *nex.Conn, req *nex.Request) *nex.Respons
 //
 // The newer Pia's relay handshake; Splatoon 2's direct-mesh Pia is not
 // recorded calling it. Answered anyway, because a malformed answer is worse
-// than none: NextendoNetwork traced a title's black screen at match start to
-// exactly that (facts only). GRID0+'s own relay (relay.go) does not work
-// through this: it substitutes stations, which Pia does not need to agree to.
+// than none: a title's black screen at match start has been traced to exactly
+// that. GRID0+'s own relay (relay.go) does not work through this: it
+// substitutes stations, which Pia does not need to agree to.
 func (s *Server) getRelaySignatureKey(c *nex.Conn, req *nex.Request) *nex.Response {
 	w := nex.NewWriter()
 	w.S32(0)

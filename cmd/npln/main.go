@@ -1,4 +1,4 @@
-// Command npln is the NPLN game server for Splatoon 3 (phase 2).
+// Command npln is the NPLN game server for Splatoon 3.
 //
 // It runs three listeners, and they are not interchangeable:
 //

@@ -1,11 +1,11 @@
 package npln
 
-// knownModes is every matchmaking config name Splatoon 3's main links (read
-// out of its string table on 2026-10-04, build 28C4287A...), minus the
-// infrastructure configs (eds_*, npln_config, route_config, service_config,
-// ssl_do_config). They are the game's own names, not a guess: the dashboard
-// lists them all so an operator can set a mode's size before anyone queues
-// for it. Sizes are still configuration, not this list's business.
+// knownModes is every matchmaking config name Splatoon 3's main links (read out
+// of its string table), minus the infrastructure configs (eds_*, npln_config,
+// route_config, service_config, ssl_do_config). They are the game's own names,
+// not a guess: the dashboard lists them all so an operator can set a mode's size
+// before anyone queues for it. Sizes are still configuration, not this list's
+// business.
 var knownModes = []string{
 	"tenants/current/matchmakingConfigs/bankara_match_challenge_ar_config",
 	"tenants/current/matchmakingConfigs/bankara_match_challenge_ar_team_config",

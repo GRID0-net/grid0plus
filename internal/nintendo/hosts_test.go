@@ -73,7 +73,7 @@ func TestNATCheckHasTwoHosts(t *testing.T) {
 // TestSystemUpdateHostsAreNullRouted guards this deployment's specific choice
 // for the d4c hosts.
 //
-// The general-purpose advice — keep these ServicePassthrough — is for a
+// The general-purpose advice -- keep these ServicePassthrough -- is for a
 // console that moves back and forth between GRID0+ and real Nintendo: a
 // failed update check sets a persistent flag on the console that survives
 // switching back, which is expensive to hit by accident. This host list is
@@ -86,9 +86,9 @@ func TestNATCheckHasTwoHosts(t *testing.T) {
 // If this host list is ever reused for a console that DOES move back and
 // forth, put these back to ServicePassthrough first.
 //
-// The trap this still guards is that `atum` (game content, phase 3) and
-// `atumn` (system update content) differ by one letter and share the d4c
-// domain, so somebody implementing phase 3 could redirect the wrong one.
+// The trap this still guards is that `atum` (game content) and `atumn` (system
+// update content) differ by one letter and share the d4c domain, so someone
+// implementing eShop content delivery could redirect the wrong one.
 func TestSystemUpdateHostsAreNullRouted(t *testing.T) {
 	updateHosts := map[string]bool{
 		"sun.hac.lp1.d4c.nintendo.net":   false,
@@ -116,12 +116,11 @@ func TestSystemUpdateHostsAreNullRouted(t *testing.T) {
 }
 
 // TestNSOAppBackendIsNullRouted is the regression test for a real isolation
-// gap: a 2026-09-24 Ethernet capture showed the console completing a full
-// real TLS handshake with real Nintendo's own infrastructure for this host,
-// because it was not listed here at all -- not passthrough, not blackholed,
-// simply absent, so real DNS answered it. This deployment's emuMMC must
-// never talk to real Nintendo, for anything, so an unlisted host is as much
-// a bug as a wrongly-passthrough one.
+// gap: a console completed a full real TLS handshake with real Nintendo's own
+// infrastructure for this host, because it was not listed here at all -- not
+// passthrough, not blackholed, simply absent, so real DNS answered it. This
+// deployment's emuMMC must never talk to real Nintendo, for anything, so an
+// unlisted host is as much a bug as a wrongly-passthrough one.
 func TestNSOAppBackendIsNullRouted(t *testing.T) {
 	const host = "fw-api.lp1.nso.nintendo.net"
 	for _, h := range Hosts {
@@ -135,20 +134,19 @@ func TestNSOAppBackendIsNullRouted(t *testing.T) {
 	t.Errorf("%s is not listed at all, so real DNS can still answer it", host)
 }
 
-// TestPhase3HostsAreNotYetRedirected keeps a console pointed at GRID0+ from
-// ever reaching real Nintendo through a host nothing is built for yet.
+// TestEShopHostsAreNotRedirected keeps a console pointed at GRID0+ from
+// ever reaching real Nintendo through a host nothing is built for.
 //
-// The hosts are listed so that whoever implements phase 3 finds the list
+// The hosts are listed so that whoever implements the eShop finds the list
 // rather than assembling their own. They are null-routed rather than
-// forwarded: nothing exists behind them, and Phase 1 has no use for them, so
-// there is no reason for a console pointed at GRID0+ to ever complete a
-// connection to real Nintendo through one of these. A host redirected to a
-// GRID0+ service that does not exist would be worse — it breaks the
-// console's eShop for no gain — which is why these are ServiceBlackhole,
-// not ServiceRedirect: null-routing answers 0.0.0.0 and the console gives up
-// immediately, rather than reaching either a broken local endpoint or real
-// Nintendo.
-func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
+// forwarded: nothing exists behind them, so there is no reason for a console
+// pointed at GRID0+ to ever complete a connection to real Nintendo through one
+// of these. A host redirected to a GRID0+ service that does not exist would be
+// worse -- it breaks the console's eShop for no gain -- which is why these are
+// ServiceBlackhole, not ServiceRedirect: null-routing answers 0.0.0.0 and the
+// console gives up immediately, rather than reaching either a broken local
+// endpoint or real Nintendo.
+func TestEShopHostsAreNotRedirected(t *testing.T) {
 	phase3 := []string{
 		"bugyo.hac.lp1.eshop.nintendo.net",
 		"ecs-lp1.hac.shop.nintendo.net",
@@ -165,12 +163,12 @@ func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 	for _, pattern := range phase3 {
 		h, ok := byPattern[pattern]
 		if !ok {
-			t.Errorf("%s is not listed; phase 3 needs it and the list is where "+
+			t.Errorf("%s is not listed; the eShop needs it and the list is where "+
 				"somebody will look for it", pattern)
 			continue
 		}
 		if h.Service != ServiceBlackhole {
-			t.Errorf("%s is %s. If phase 3 now serves it, update this test and "+
+			t.Errorf("%s is %s. If the eShop now serves it, update this test and "+
 				"switch it to ServiceEShop; if not, it must stay ServiceBlackhole, "+
 				"so a console pointed at GRID0+ never reaches real Nintendo "+
 				"through it.", pattern, h.Service)
@@ -189,8 +187,8 @@ func TestPhase3HostsAreNotYetRedirected(t *testing.T) {
 
 // TestBlackholedHostsAreAccountedFor guards the null-route list against
 // silently growing to cover something that should be redirected instead:
-// every blackholed host must be telemetry (never useful to us), a Phase 3
-// host nothing is built for yet (covered by TestPhase3HostsAreNotYetRedirected),
+// every blackholed host must be telemetry (never useful to us), an eShop
+// host nothing is built for yet (covered by TestEShopHostsAreNotRedirected),
 // or a d4c system-update host null-routed under this deployment's
 // permanently-isolated-emuMMC policy (covered by
 // TestSystemUpdateHostsAreNullRouted).
@@ -207,9 +205,9 @@ func TestBlackholedHostsAreAccountedFor(t *testing.T) {
 		"atumn.hac.lp1.d4c.nintendo.net":    true,
 		"aqua.hac.lp1.d4c.nintendo.net":     true,
 		"cdn.accounts.nintendo.com":         true,
-		// All three bcat-* hosts moved out of this map 2026-09-24: none are
-		// null-routed any more. See internal/stubs.newsTopics and
-		// hosts.go's own "BCAT: answered with 304" section for why.
+		// All three bcat-* hosts are out of this map: none are null-routed any more.
+		// See internal/stubs.newsTopics and hosts.go's own "BCAT: answered with 304"
+		// section for why.
 		"fw-api.lp1.nso.nintendo.net": true, // covered by TestNSOAppBackendIsNullRouted
 	}
 
@@ -298,12 +296,10 @@ func TestBAASImageCDNIsRouted(t *testing.T) {
 }
 
 // TestHostsFoundBySweepingEveryTitleAreStubbedNotJustCaughtByTheFallback
-// guards the three hosts found 2026-09-20 by scanning every system title's
-// decrypted executable, not just the ones phase 1 already needed. All three
-// were already safe (isNintendoOwnedDomain blackholes any unlisted
-// *.nintendo.net host), but invisible to this list and to a console that
-// gets a refusal instead of an answer -- see the entries' own comments for
-// what was actually found in each title.
+// guards three hosts that no single title needed but that some system title
+// contacts. All three were already safe (isNintendoOwnedDomain blackholes any
+// unlisted *.nintendo.net host), but invisible to this list and to a console
+// that gets a refusal instead of an answer -- see the entries' own comments.
 func TestHostsFoundBySweepingEveryTitleAreStubbedNotJustCaughtByTheFallback(t *testing.T) {
 	names := []string{
 		"api.sect.srv.nintendo.net",
@@ -543,14 +539,13 @@ func TestAMoreSpecificPenneHostStillBeatsTheFrontlineWildcard(t *testing.T) {
 }
 
 func TestOLSCPermissionHostBeatsTheSataWildcard(t *testing.T) {
-	// permission.lp1.sata.srv.nintendo.net is phase 4's confirmed-shape OLSC
-	// endpoint; everything else under *.sata.srv.nintendo.net (including the
-	// privacy-policy pp.<region>.sata... pages) stays stubbed. Longest-suffix
-	// -wins in Resolve keeps this true regardless of declaration order in
-	// Hosts, but the generated Atmosphere hosts file needs the same outcome
-	// from physical line order instead (see switchnetctl's "phase 4: OLSC
-	// cloud save" section, which must be emitted after "stubs" for exactly
-	// this reason) -- this test only pins Resolve's own answer.
+	// permission.lp1.sata.srv.nintendo.net is the OLSC endpoint; everything else
+	// under *.sata.srv.nintendo.net (including the privacy-policy
+	// pp.<region>.sata... pages) stays stubbed. Longest-suffix-wins in Resolve
+	// keeps this true regardless of declaration order in Hosts, but the generated
+	// Atmosphere hosts file needs the same outcome from physical line order instead
+	// (see switchnetctl's OLSC cloud save section, which must be emitted after
+	// "stubs" for exactly this reason) -- this test only pins Resolve's own answer.
 	for name, want := range map[string]Service{
 		"permission.lp1.sata.srv.nintendo.net": ServiceSCSI,
 		"pp.lp1.sata.srv.nintendo.net":         ServiceStubs,

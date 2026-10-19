@@ -17,12 +17,12 @@ import (
 	maintpb "github.com/n-popescu/grid0plus/proto/maintenance/v1"
 )
 
-// TestABAASIDTokenBuysAnNPLNSession drives the phase-1 → phase-2 seam end to
-// end over a real gRPC connection.
+// TestABAASIDTokenBuysAnNPLNSession drives the seam between the account layer and
+// the game server end to end over a real gRPC connection.
 //
-// This is the test that proves the two halves of GRID0+ connect at all: an
-// id token signed by the key BAAS publishes at /1.0.0/certificates is presented
-// to the game server, which verifies it and issues its own session.
+// This is the test that proves the two halves of GRID0+ connect at all: an id token
+// signed by the key BAAS publishes at /1.0.0/certificates is presented to the game
+// server, which verifies it and issues its own session.
 func TestABAASIDTokenBuysAnNPLNSession(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("user-1", "device-account-1")
@@ -71,13 +71,11 @@ func TestABAASIDTokenBuysAnNPLNSession(t *testing.T) {
 }
 
 // TestAccessTokenCarriesTheNPLNRightsClaim asserts on the wire, not on the Go
-// struct: a real access token's payload carries an 'npln' object the client
-// reads to know what it may do (NextendoNetwork/splatoon-3's decrypted
-// capture, facts only -- see nplnRights' doc comment), and this server sent
-// none at all until this test existed. 'deny' must decode as an array, not
-// null: a nil Go slice and the capture's "[]" are not the same byte on the
-// wire, and a client that parses the field strictly would see one and not
-// the other.
+// struct: a real access token's payload carries an 'npln' object the client reads
+// to know what it may do (see nplnRights' doc comment), and this server sent none
+// at all until this test existed. 'deny' must decode as an array, not null: a nil Go
+// slice and "[]" are not the same byte on the wire, and a client that parses the
+// field strictly would see one and not the other.
 func TestAccessTokenCarriesTheNPLNRightsClaim(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("user-1", "device-account-1")
@@ -162,11 +160,10 @@ func TestRefreshTokenBuysANewAccessTokenWithoutGoingBackToBAAS(t *testing.T) {
 }
 
 // TestIssuePrearrangedUserTokenBuysAnNPLNSession is the same seam as
-// TestABAASIDTokenBuysAnNPLNSession, but for the RPC Splatoon 3 actually
-// calls first: confirmed on real hardware (2026-09-23 capture) as the first
-// gRPC call the console makes once its TLS handshake to the game server
-// succeeds. It differs from IssueToken by also returning a User message, and
-// by taking "tenant"/"user_index" fields that this handler intentionally
+// TestABAASIDTokenBuysAnNPLNSession, but for the RPC Splatoon 3 actually calls
+// first: the first gRPC call the console makes once its TLS handshake to the game
+// server succeeds. It differs from IssueToken by also returning a User message,
+// and by taking "tenant"/"user_index" fields that this handler intentionally
 // ignores for identity -- see the comment on the handler itself.
 func TestIssuePrearrangedUserTokenBuysAnNPLNSession(t *testing.T) {
 	h := newHarness(t)

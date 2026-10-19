@@ -337,7 +337,7 @@ func (s *Server) handleCoopReference(w http.ResponseWriter, r *http.Request) {
 }
 
 // coopRandomSlotNames names the two random main-weapon slots (see
-// toyohr.CoopRandomWeapon); both confirmed on hardware on 2026-10-04.
+// toyohr.CoopRandomWeapon).
 var coopRandomSlotNames = map[int64]string{
 	toyohr.CoopRandomWeapon:        "Random (green ?)",
 	toyohr.CoopRandomGrizzcoWeapon: "Random Grizzco (gold ?)",

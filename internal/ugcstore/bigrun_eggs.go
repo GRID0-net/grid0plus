@@ -9,18 +9,18 @@ import (
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
 )
 
-// A special Big Run (BigRunParams.IsSpecial) shows a community golden-egg
-// goal: the game compares a world total with 700,000,000, hard-coded at
-// main+0x3b2fc04, and pays a bonus once it is reached. It reads the total with
-// GlobalCounterService/GetSeason (seen on hardware on 2026-10-04: four calls on
-// entering the hall) and never adds to it itself, so the server keeps it:
-// every Big Run job adds the golden eggs its team delivered, once per job, and
-// the total starts again from zero at the next Big Run.
+// A special Big Run (BigRunParams.IsSpecial) shows a community golden-egg goal:
+// the game compares a world total with 700,000,000, hard-coded in its main, and
+// pays a bonus once it is reached. It reads the total with
+// GlobalCounterService/GetSeason (four calls on entering the hall) and never adds
+// to it itself, so the server keeps it: every Big Run job adds the golden eggs its
+// team delivered, once per job, and the total starts again from zero at the next
+// Big Run.
 //
-// TODO(capture-needed): the counter and season names GetSeason asks for, and
-// whether Nintendo's total also counts non-special Big Runs. One running total
-// is kept for the latest Big Run whatever name is asked for. Change:
-// AddBigRunEggs and BigRunEggs.
+// UNCONFIRMED: the counter and season names GetSeason asks for, and whether
+// Nintendo's total also counts non-special Big Runs. One running total is kept
+// for the latest Big Run whatever name is asked for. Change: AddBigRunEggs and
+// BigRunEggs.
 const bigRunEggsDoc = "grid0/globalCounter/bigRunEggs"
 
 // AddBigRunEggs adds one finished Big Run job's delivered golden eggs to the

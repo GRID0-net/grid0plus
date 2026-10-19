@@ -57,8 +57,8 @@ func TestNoViolationIsATwoFrameNotFound(t *testing.T) {
 	if got := header.Get("npln-grpc-type"); len(got) != 1 || got[0] != "Unary" {
 		t.Errorf("response headers = %v; want Unary header before status trailers", header)
 	}
-	// Never content-length: 0 -- behind nginx's grpc_pass it drops the
-	// trailers, and the console reads the call as UNKNOWN (2026-09-25 hardware).
+	// Never content-length: 0 -- behind nginx's grpc_pass it drops the trailers, and
+	// the console reads the call as UNKNOWN.
 	if got := header.Get("content-length"); len(got) != 0 {
 		t.Errorf("response headers = %v; content-length must be absent", header)
 	}

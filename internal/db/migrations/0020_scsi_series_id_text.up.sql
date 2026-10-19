@@ -1,6 +1,5 @@
 -- series_id became BIGINT in migration 0019 after INTEGER overflowed a
--- real console's value, but a second real value observed on real hardware
--- 2026-09-24 (12237957226414712540) exceeds int64's own maximum
+-- real console's value, but a second real value (12237957226414712540) exceeds int64's own maximum
 -- (9223372036854775807) -- not signed 64-bit either, so BIGINT still
 -- cannot hold it losslessly. Nothing in this project does arithmetic on
 -- series_id; it is an opaque identifier the console sends and reads back,

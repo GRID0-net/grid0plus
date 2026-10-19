@@ -1821,12 +1821,12 @@ type SeasonSchedule struct {
 	EndTime       *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
 	Attributes    *common.MapValue       `protobuf:"bytes,6,opt,name=attributes,proto3" json:"attributes,omitempty"`
 	ScheduleSetId string                 `protobuf:"bytes,7,opt,name=schedule_set_id,json=scheduleSetId,proto3" json:"schedule_set_id,omitempty"`
-	// Both preserved working hall captures carry an undocumented field 8 here
-	// -- absent from upstream's own reconstruction -- decoding to the raw
-	// string "default", the same target every other schedule message in this
-	// family (VsSchedule, LeagueSchedule) embeds in its own resource name's
-	// "targets/default" segment instead of a dedicated field. See
-	// internal/toyohr/README.md's SeasonSchedule section.
+	// Undocumented field 8 here, absent from upstream's own reconstruction,
+	// decoding to the raw string "default": the same target every other
+	// schedule message in this family (VsSchedule, LeagueSchedule) embeds in its
+	// own resource name's "targets/default" segment instead of a dedicated field.
+	// See internal/toyohr/README.md's SeasonSchedule section.
+	//
 	Target        string `protobuf:"bytes,8,opt,name=target,proto3" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

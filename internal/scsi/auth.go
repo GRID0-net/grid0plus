@@ -25,18 +25,13 @@ type Caller struct {
 // key -- the same seam internal/npln's exchangeIDToken checks, not
 // internal/baas's own access-token verification.
 //
-// Confirmed on real hardware, not guessed: a 2026-09-23 loopback capture of
-// the plaintext request nginx forwards to this service (between it and a
-// console that had already completed BAAS login) shows the Authorization
-// header's 'jku' pointing at /1.0.0/certificates -- the id-token JWKS,
-// distinct from /1.0.0/internal_certificates' access-token one -- and the
-// payload's own 'typ' as "id_token". This server previously verified against
-// the access-token key instead (an untested, and wrong, guess: the account
-// sysmodule reaches this host over a system-level credential separate from
-// any per-app access token, exactly the reasoning that makes an id token the
-// right one here too, in hindsight). Every request from that console 401ed
-// with "unknown key id" until this was found, and it retried continuously
-// rather than backing off.
+// The Authorization header's 'jku' points at /1.0.0/certificates -- the id-token
+// JWKS, distinct from /1.0.0/internal_certificates' access-token one -- and the
+// payload's own 'typ' is "id_token". The account sysmodule reaches this host
+// over a system-level credential separate from any per-app access token, which
+// is why an id token is the right one. Verifying against the access-token key
+// instead 401s every request with "unknown key id", and the console retries
+// continuously rather than backing off.
 func (s *Server) authenticate(r *http.Request) (Caller, error) {
 	header := r.Header.Get("Authorization")
 	scheme, token, found := strings.Cut(header, " ")

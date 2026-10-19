@@ -1,21 +1,18 @@
 // Package stunresponder answers STUN (RFC 5389) Binding requests.
 //
-// Splatoon 3 sends these to whatever host ListLatencyMeasurementServers
-// names, before matchmaking starts -- confirmed directly, not guessed: a
-// 2026-09-23 packet capture of a real console's UDP traffic to that host
-// shows every packet's byte offset 4 is 2112a442, RFC 5389's magic cookie,
-// inside an otherwise-unremarkable 20-byte Binding Request. Nothing answered
-// them (ICMP port-unreachable every time, since nothing listened on that
-// port), and the console gave up a few seconds later -- the hall then showed
-// "A communication error has occurred" and reloaded.
+// Splatoon 3 sends these to whatever host ListLatencyMeasurementServers names,
+// before matchmaking starts: each is a 20-byte Binding Request with RFC 5389's
+// magic cookie (2112a442) at byte offset 4. If nothing answers them (ICMP
+// port-unreachable every time, since nothing listens on that port), the console
+// gives up a few seconds later -- the hall then shows "A communication error has
+// occurred" and reloads.
 //
-// STUN itself is a generic, publicly documented internet standard (RFC
-// 5389), not a Nintendo internal: answering it is implementing a known
-// protocol, the same category as internal/natcheck's NCS responder, not
-// reverse-engineering anything undocumented. Only Binding is implemented --
-// the one message type the capture shows the console sending. Everything
-// else (fragmentation, authentication, other STUN usages) is out of scope
-// for what one client actually asks this server for.
+// STUN itself is a generic, publicly documented internet standard (RFC 5389), not
+// a Nintendo internal: answering it is implementing a known protocol, the same
+// category as internal/natcheck's NCS responder. Only Binding is implemented --
+// the one message type the console sends. Everything else (fragmentation,
+// authentication, other STUN usages) is out of scope for what one client
+// actually asks this server for.
 package stunresponder
 
 import (

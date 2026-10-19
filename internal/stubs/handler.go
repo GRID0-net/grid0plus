@@ -32,8 +32,7 @@ type Config struct {
 	LogBodies bool
 
 	// BCATRecordDir is where every bcat-* request is recorded, hexdumped,
-	// while still being answered 304 -- TODO.md §2.4 stage 1. Empty records
-	// nothing.
+	// while still being answered 304. Empty records nothing.
 	BCATRecordDir string
 	// BCATSeedDir contains per-title native delivery-cache files.
 	BCATSeedDir string
@@ -95,7 +94,7 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.emptyList(w)
 
 	case strings.Contains(host, ".five.nintendo.net"):
-		// Online play invitations. Phase 1 does not implement them, so there are
+		// Online play invitations. GRID0+ doesn't implement them, so there are
 		// no invitation groups to report.
 		h.emptyList(w)
 
@@ -103,14 +102,14 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// Nintendo Switch Online membership verification. Every registered user
 		// on a private network is entitled to play.
 		//
-		// A 2026-09-20 decompile of nim.nso confirms this host's real error-code
-		// convention (literal strings "500/op2_error", "503/op2_maintenance"),
-		// and a genuinely different membership-adjacent path this handler does
-		// not distinguish: "/v1/my/membership/free_trial_availability". Every
-		// path on this host answers the same membership() response regardless,
-		// which may be the wrong shape specifically for that one -- a free-trial
-		// eligibility check is a different question from "is there an active
-		// membership" and this server has never seen either one asked for.
+		// The host's error-code convention is literal strings "500/op2_error",
+		// "503/op2_maintenance". There is also a genuinely different
+		// membership-adjacent path this handler does not distinguish:
+		// "/v1/my/membership/free_trial_availability". Every path on this host answers
+		// the same membership() response regardless, which may be the wrong shape for
+		// that one -- a free-trial eligibility check is a different question from "is
+		// there an active membership" and this server has never seen either one asked
+		// for.
 		h.membership(w, path)
 
 	case strings.HasPrefix(host, "bvc-"):
@@ -147,11 +146,8 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		// GET /api/console/v2/application_policy/<title>/<value>, called by
 		// Splatoon 3 right before it would attempt a cloud save upload
 		// (storage.hac.lp1.scsi's own save_data_archives/start_upload).
-		// Both preserved working Nextendo hall captures answer this exact
-		// body, byte for byte, decoded directly from their raw flow files
-		// (facts only, not Nextendo's code): {"policy_type":"ALL_OK"}\n.
-		// This host previously fell through to emptyObject's bare "{}",
-		// which is not the shape either capture ever sends.
+		// The answer is exactly {"policy_type":"ALL_OK"}\n. A bare "{}" from the
+		// emptyObject fallthrough is not the shape a console expects.
 		h.applicationPolicy(w)
 
 	case strings.Contains(host, ".dragons.nintendo.net"):
@@ -186,17 +182,14 @@ func (h *Handler) connectionTest(w http.ResponseWriter) {
 // telemetrySink answers receive-*.dg/er.srv.nintendo.net (play and error
 // reports): read the body, discard it, answer 200 immediately.
 //
-// NextendoNetwork/Prelude's own commit history (facts only, not its code)
-// documents a real hardware measurement: the NSO/friends applet
-// (0100000000000816) waits SYNCHRONOUSLY for an HTTP response from these
-// two hosts before it loads its own main module (lp1.nso). Null-routed,
-// the connection hangs until timeout and the applet gives up without ever
-// reaching lp1.nso -- no profile icon handling, plausibly more of the
-// applet than that, never initialises. This is not the "answer whatever is
-// safe" reasoning most of this file's other stubs use; it is a specific,
-// documented synchronous dependency. Telemetry still never reaches real
-// Nintendo -- discarding it here, not forwarding it, is the whole point --
-// only the wait the applet blocks on is satisfied.
+// The NSO/friends applet (0100000000000816) waits SYNCHRONOUSLY for an HTTP
+// response from these two hosts before it loads its own main module (lp1.nso).
+// Null-routed, the connection hangs until timeout and the applet gives up without
+// ever reaching it, so more of the applet than the profile icon never
+// initialises. This is not the "answer whatever is safe" reasoning most of this
+// file's other stubs use; it is a specific synchronous dependency. Telemetry still
+// never reaches real Nintendo -- discarding it here, not forwarding it, is the
+// whole point -- only the wait the applet blocks on is satisfied.
 func (h *Handler) telemetrySink(w http.ResponseWriter, r *http.Request) {
 	// The whole body, not capped: a partially-drained request body can
 	// leave an HTTP/1.1 keep-alive connection in a state the next request
@@ -214,12 +207,10 @@ func (h *Handler) emptyObject(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
-// applicationPolicyBody is the exact bytes both preserved working Nextendo
-// hall captures answer policy.hac.lp1.scsi.srv.nintendo.net's
-// application_policy request with -- decoded directly from their raw flow
-// files, trailing newline included, not passed through writeJSON's own
-// json.Marshal (which would omit it and produce a 24-byte body a real
-// console has never been observed to receive).
+// applicationPolicyBody is the exact answer to
+// policy.hac.lp1.scsi.srv.nintendo.net's application_policy request, trailing
+// newline included. It is not passed through writeJSON's own json.Marshal,
+// which would omit the newline and produce a 24-byte body a console doesn't expect.
 var applicationPolicyBody = []byte(`{"policy_type":"ALL_OK"}` + "\n")
 
 func (h *Handler) applicationPolicy(w http.ResponseWriter) {
@@ -232,37 +223,28 @@ func (h *Handler) applicationPolicy(w http.ResponseWriter) {
 // newsTopics answers every bcat-* host (list, data and topics) with an
 // unconditional 304 Not Modified, empty body.
 //
-// Named for its first confirmed case -- GET /api/nx/v1/titles/<id>/topics,
-// the System news feed a title polls right at the start of its own boot
-// sequence -- but not specific to it any more. A real capture against
-// Nextendo (facts only, not its code) on 2026-09-24 --
-// `docs/CAPTURES/raw/nextendo-second-20260923T210513Z` -- caught the topics
-// exchange in full: the console's request carries no conditional-GET
-// header at all (no If-None-Match, no If-Modified-Since), just an
-// X-Nintendo-DenebEdgeToken it expects nobody to verify (CLAUDE.md is
-// explicit that a Nintendo-issued credential is accepted without being
-// looked at, never forged or checked), and the real server's answer is 304
-// with an empty body regardless. This is not conditional-GET cache
-// validation in the ordinary HTTP sense -- there is nothing here to
-// validate against -- it is the endpoint's own permanent "nothing new"
-// answer, confirmed on the wire, not inferred.
+// Named for its first case -- GET /api/nx/v1/titles/<id>/topics, the System
+// news feed a title polls right at the start of its own boot sequence -- but
+// not specific to it. The console's request carries no conditional-GET header
+// at all (no If-None-Match, no If-Modified-Since), just an
+// X-Nintendo-DenebEdgeToken it expects nobody to verify (a Nintendo-issued
+// credential is accepted without being looked at, never forged or checked), and
+// the answer is 304 with an empty body regardless. That isn't conditional-GET
+// cache validation in the ordinary HTTP sense, since there is nothing to
+// validate against: it is the endpoint's own permanent "nothing new" answer.
 //
-// NextendoNetwork/Prelude's own commit history (facts only, not its code)
-// independently confirms the same 304-always shape for bcat-list-lp1 and
-// bcat-data-lp1 too, and documents why it matters even without content:
-// Splatoon 3 raised a hard error, 2122-2403 (module 122 = bcat), when
-// bcat-list-lp1 was left unreachable instead. "Your cache is current" is
-// not the same as "here is your data" -- a player with nothing in their
-// BCAT cache still gets nothing -- it only stops that absence from being a
-// hard failure the game surfaces to the player.
+// The same 304-always shape is right for bcat-list-lp1 and bcat-data-lp1 too,
+// and it matters even without content: Splatoon 3 raises a hard error,
+// 2122-2403 (module 122 is bcat), when bcat-list-lp1 is left unreachable.
+// "Your cache is current" is not the same as "here is your data" -- a player
+// with nothing in their BCAT cache still gets nothing -- it only stops that
+// absence from being a hard failure the game surfaces to the player.
 //
-// Reproduced on GRID0+'s own hardware on 2026-09-24 for bcat-topics-lp1
-// specifically: null-routed (ServiceBlackhole), the console's very first
-// request of its own boot sequence failed outright, and "a communication
-// error has occurred" appeared instantly on opening the hall -- before
-// IssuePrearrangedUserToken even fires. Answering 304 costs nothing to get
-// right: there is no body to invent, and GRID0+ has no real BCAT or news
-// content of its own to serve regardless.
+// Null-routed (ServiceBlackhole), bcat-topics-lp1 makes the console's very first
+// boot request fail outright, and "a communication error has occurred" appears
+// instantly on opening the hall, before IssuePrearrangedUserToken even fires.
+// Answering 304 costs nothing to get right: there is no body to invent, and
+// GRID0+ has no news content of its own to serve regardless.
 func (h *Handler) newsTopics(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.BCATRecordDir != "" {
 		h.bcat.Observe(r, http.StatusNotModified, "bcat: answered 304; see internal/stubs newsTopics")
@@ -273,10 +255,8 @@ func (h *Handler) newsTopics(w http.ResponseWriter, r *http.Request) {
 }
 
 // dragons answers the eLicense host by path, rather than one blanket empty
-// object: NextendoNetwork/nx-dauth (a from-scratch dauth/aauth reimplementation
-// tested against real hardware; PolyForm Shield-licensed, so only these facts
-// are taken, never its code) documents that most of dragons' paths tolerate an
-// empty object, but the eligibility check specifically does not.
+// object: most of dragons' paths tolerate an empty object, but the eligibility
+// check specifically does not.
 func (h *Handler) dragons(w http.ResponseWriter, path string) {
 	switch {
 	case strings.HasSuffix(path, "/elicenses/exercise"):
@@ -291,64 +271,46 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		w.WriteHeader(http.StatusOK)
 
 	case strings.HasSuffix(path, "/elicenses/migration_state"):
-		// The path and the "migration_state" field name are now independently
-		// confirmed, not just matched against nx-dauth: a 2026-09-20 decompile
-		// of the operator's own console's nim sysmodule found the literal path
-		// "/{version}/elicenses/migration_state" and the JSONPath
-		// "$.migration_state" the client reads out of the response. Still
-		// unconfirmed: whether "COMPLETED"/"NONE" are the right values as
-		// opposed to some other real state the console also accepts -- nim's
-		// binary has the field name, not its enum of valid values.
-		// TODO(capture-needed): the real "state"/"migration_state" values.
+		// The path is "/{version}/elicenses/migration_state" and the client reads
+		// "$.migration_state" out of the response. Unconfirmed: whether
+		// "COMPLETED"/"NONE" are the right values as opposed to some other real state
+		// the console also accepts.
+		// UNCONFIRMED: the real "state"/"migration_state" values.
 		writeJSON(w, http.StatusOK, map[string]any{
 			"state": "COMPLETED", "migration_state": "NONE",
 		})
 
 	case strings.HasSuffix(path, "/elicense_archives/publish"),
 		strings.HasSuffix(path, "/rights/publish_device_linked_elicenses"):
-		// Same confirmation as migration_state above: the same nim decompile
-		// found the literal path "/{version}/elicense_archives/publish" and
-		// the "elicense_archives" key name is used elsewhere in the same
-		// binary for a real elicense-archive-shaped response, not just
-		// pattern-matched from nx-dauth. An empty list is still the right
+		// Same as migration_state above: the "elicense_archives" key name matches a
+		// real elicense-archive-shaped response. An empty list is still the right
 		// answer regardless -- GRID0+ has nothing to publish -- so nothing
 		// behavioral changes here.
 		//
-		// The same decompile also surfaced a much larger elicenses/rights
-		// schema this server does not and should not implement: full
-		// available_elicenses[]/elicenses[] field shapes, revoke/extend/prune
-		// paths, a nonce-signed elicenses request body. That is Phase 3's
-		// territory -- CLAUDE.md is explicit that "rights and content-delivery
-		// layers" belong to the separate, not-yet-started eShop module, not
-		// here. Knowing the shape now does not change the scope boundary;
-		// resist the temptation to build it just because it is now knowable.
+		// There is a much larger elicenses/rights schema (available_elicenses[] and
+		// elicenses[] shapes, revoke/extend/prune paths, a nonce-signed request body)
+		// that this server does not and should not implement: rights and
+		// content-delivery layers belong to a separate eShop module, not here. Knowing
+		// the shape doesn't change that boundary.
 		writeJSON(w, http.StatusOK, map[string]any{"elicense_archives": []any{}})
 
 	default:
 		// Includes contents_authorization_token_for_aauth/issue and the
-		// elicense_archives/<id>/report paths: GRID0+'s aauth accepts
-		// whatever is in that field without looking at it, so an empty
-		// success is enough to get past those specifically.
+		// elicense_archives/<id>/report paths: GRID0+'s aauth accepts whatever is in
+		// that field without looking at it, so an empty success is enough to get past
+		// those specifically.
 		//
-		// Also includes PUT /v2/penne_id -- confirmed real (not previously
-		// documented anywhere in this project) by NextendoNetwork's own
-		// public Splatoon 3 NPLN server, which found a real console PUTting
-		// its penne id here as part of NPLN's vermillion/penne bootstrap,
-		// before the console will attempt a penne login (see
-		// internal/nplnrest.go's package doc comment for the boundary on
-		// what is taken from their PolyForm-Shield-licensed project: facts,
-		// never code). This empty-object default already matches their own,
-		// independently-arrived-at answer for this exact path.
+		// Also includes PUT /v2/penne_id: a console PUTs its penne id here as part of
+		// NPLN's vermillion/penne bootstrap, before it will attempt a penne login. The
+		// empty-object default is the right answer for this exact path.
 		h.emptyObject(w)
 	}
 }
 
 // membership reports an active Nintendo Switch Online membership.
 //
-// GET /v1/users/<na id>/memberships has a known shape, read out of the
-// account sysmodule's own parser (fw 22.5.0: FUN_7100113d90 roots it at
-// $.items[0], FUN_7100113ed0 names the fields, FUN_7100113c00/FUN_7100114070
-// type them, FUN_7100113f70/FUN_7100113e10 judge the result):
+// GET /v1/users/<na id>/memberships has a known shape, taken from the account
+// module's own parser (firmware 22.5.0):
 //
 //   - each item needs all of user_id, context and membership.active, or the
 //     whole answer is 0x18647c (2124-3122, "no membership");
@@ -357,12 +319,12 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 //     and an answer is only accepted when it has one item of each;
 //   - an active "ex" with an inactive "default" is its own error, 0x18667c.
 //
-// The old catch-all {"active": true, "expiresAt": ...} had no items at all,
-// so every membership check the console made failed -- it retried each one
-// four times in a row, right before the friends applet reported an error.
+// A catch-all {"active": true, "expiresAt": ...} has no items at all, so every
+// membership check the console makes fails -- it retries each one four times in
+// a row, right before the friends applet reports an error.
 //
-// Every other op2 path keeps the old answer.
-// TODO(capture-needed): what those are asked, and whether any is.
+// Every other op2 path keeps the catch-all answer.
+// UNCONFIRMED: what those are asked, and whether any is.
 func (h *Handler) membership(w http.ResponseWriter, path string) {
 	if naID, ok := membershipsPathUser(path); ok {
 		item := func(context string) map[string]any {

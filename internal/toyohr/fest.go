@@ -144,8 +144,8 @@ func (f Fest) Timetable() Timetable {
 		Close: at(offsetClose),
 	}
 	// An operator's end of play, aligned like Start. Ignored unless it falls
-	// after the midpoint: the game's fest state machine (FUN_710352f160)
-	// treats a timetable out of order as no fest at all.
+	// after the midpoint: the game's fest state machine treats a timetable out of
+	// order as no fest at all.
 	if end := AlignToSlot(f.End); !f.End.IsZero() && end.After(tt.Mid) {
 		tt.End = end
 		tt.Close = end.Add((offsetClose - offsetEnd) * time.Second)

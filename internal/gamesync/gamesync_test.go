@@ -1383,8 +1383,8 @@ func TestCreateRoundEchoesTheClientsRoundWithoutInventingFields(t *testing.T) {
 	h := newHarness(t)
 	alice := h.session("token-alice")
 
-	// Round has five fields and four of them are Unk1..Unk4 in the decompiled
-	// definitions. The answer may carry only what the client sent.
+	// Round has five fields and four of them are Unk1..Unk4. The answer may carry
+	// only what the client sent.
 	sent := &syncpb.Round{Unk1: "a", Unk4: []string{"x", "y"}}
 	got, err := h.client.CreateRound(alice, &syncpb.CreateRoundRequest{Round: sent})
 	if err != nil {

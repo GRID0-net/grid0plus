@@ -65,7 +65,7 @@ make run                       # all Go services, in the foreground
 
 In a second terminal, `make seed` walks the whole account chain over HTTP
 (device token, sign-up, friend code, friend request, presence) and prints the
-resulting friend list. `make seed-phase2` does the same for the Splatoon 3 game
+resulting friend list. `make seed-npln` does the same for the Splatoon 3 game
 server. If both finish, everything except DNS and TLS on the console side is
 working.
 

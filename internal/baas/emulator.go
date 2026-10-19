@@ -11,15 +11,14 @@ import (
 )
 
 // The emulator API is what an emulator's friend service reads its friends and
-// writes its presence through. A console's nn::friends sysmodule speaks the
-// BAAS 2.0.0 friends protocol and keeps its own cache; an emulator has no such
-// sysmodule, so its HLE friend service asks here instead, with the BAAS access
-// token its username/password login (POST /login) already holds.
+// writes its presence through. A console's nn::friends sysmodule speaks the BAAS
+// 2.0.0 friends protocol and keeps its own cache; an emulator has no such sysmodule,
+// so its HLE friend service asks here instead, with the BAAS access token its
+// username/password login (POST /login) already holds.
 //
-// The ids are NSA ids, the same ids NPLN names friends by. Splatoon 3 takes
-// its friend list from NPLN, then asks the local friend service about each
-// friend by that id; an emulator that answered with any other id showed an
-// empty in-game friend list (NextendoNetwork's Ryujinx fork, facts only).
+// The ids are NSA ids, the same ids NPLN names friends by. Splatoon 3 takes its friend
+// list from NPLN, then asks the local friend service about each friend by that id; an
+// emulator that answered with any other id showed an empty in-game friend list.
 
 type emulatorFriend struct {
 	ID         string `json:"id"`

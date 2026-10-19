@@ -84,8 +84,8 @@ var coopUsedRewardGears = []CoopRewardGear{
 	{ID: 21023, Kind: "Head"},
 }
 
-// The two preserved working hall captures carry 23 reward candidates in each
-// CoopSchedule and 11 in VsParams.
+// A real schedule carries 23 reward candidates in each CoopSchedule and 11 in
+// VsParams.
 const (
 	coopScheduleRewardGearCount = 23
 	vsParamsRewardGearCount     = 11

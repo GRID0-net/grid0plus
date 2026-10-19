@@ -14,11 +14,9 @@ import (
 // history, at services/GameRecord/users/<uid>/VsResults/<battleID>.
 //
 // The console never writes these documents; Nintendo's server creates them
-// after each battle and the console only reads them back with RunQuery
-// (NextendoNetwork/splatoon-3's capture of an official Splatfest,
-// 2026-08-23). battleID is the referee report's own suffix,
-// "<compact timestamp>_<game session>", which is Nintendo's battle_id format
-// and sorts newest-last by name.
+// after each battle and the console only reads them back with RunQuery.
+// battleID is the referee report's own suffix, "<compact timestamp>_<game
+// session>", which is Nintendo's battle_id format and sorts newest-last by name.
 //
 // The fields are what the report itself carries -- the team result and each
 // player's personal result, split by team into personal_data_team1..3 as
@@ -26,9 +24,9 @@ import (
 // own ink ratios) are left out rather than invented.
 //
 // The top-level fields the history screen reads are in historyFields.
-// TODO(capture-needed): mmr_before/mmr_after/rate, which the same reader
-// looks for in some modes, and any value Nintendo computes that the report
-// does not carry. Change historyFields.
+// UNCONFIRMED: mmr_before/mmr_after/rate, which the same reader looks for in
+// some modes, and any value Nintendo computes that the report does not carry.
+// Change historyFields.
 func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID, mode string,
 	players []string, report, verdict *commonpb.MapValue, profiles map[string]*commonpb.Value,
 	festTeams map[string]string, now time.Time) error {
@@ -101,11 +99,10 @@ func RecordVsResults(ctx context.Context, store db.Store, tenant, battleID, mode
 }
 
 // withProfile adds the player's profile ({player_info: ...}) to one personal
-// result. The history reader (raw 0x7103dc4c10) takes each player's name,
-// weapon, gear and name plate from profile.player_info, parsed by
-// 0x71032ba410; without it every row showed no name and a default weapon.
-// The console writes player_info for each battle to @@Profile, not to its
-// report.
+// result. The history reader takes each player's name, weapon, gear and name
+// plate from profile.player_info; without it every row shows no name and a
+// default weapon. The console writes player_info for each battle to @@Profile,
+// not to its report.
 func withProfile(p *commonpb.Value, profiles map[string]*commonpb.Value) *commonpb.Value {
 	f := p.GetMapValue().GetFields()
 	if f == nil {
@@ -136,20 +133,17 @@ func withProfile(p *commonpb.Value, profiles map[string]*commonpb.Value) *common
 }
 
 // historyFields are the battle's top-level fields as the history screen
-// reads them. Its reader (raw code at 0x7103dc3684, which Ghidra leaves
-// undefined) takes game_mode, game_rule, stage, elapsed_time, winner and
-// score_team%d as integers, battle_id, npln_user_id and color_pattern as
+// reads them. Its reader takes game_mode, game_rule, stage, elapsed_time, winner
+// and score_team%d as integers, battle_id, npln_user_id and color_pattern as
 // strings, started_at as a timestamp, est_mmr_team%d and paint_ratio%d as
-// doubles, then the personal_data_team%d arrays, all from the document's
-// top level; the history query also orders on a top-level started_at
-// (FUN_7103280c00). With them only inside team_result the screen showed
-// 1/1/1970, 0p for both teams and a win for everyone. The console reports
-// the team values in team_result; the rest are the referee request's,
-// carried by the verdict.
+// doubles, then the personal_data_team%d arrays, all from the document's top
+// level; the history query also orders on a top-level started_at. With them only
+// inside team_result the screen shows 1/1/1970, 0p for both teams and a win for
+// everyone. The console reports the team values in team_result; the rest are the
+// referee request's, carried by the verdict.
 func historyFields(report, verdict *commonpb.MapValue) map[string]*commonpb.Value {
 	out := map[string]*commonpb.Value{}
-	// The match context next to game_mode/game_rule/stage: Nextendo's server
-	// (NextendoNetwork/splatoon-3 1d6c062, facts only) copies these from the
+	// The match context next to game_mode/game_rule/stage: copied from the
 	// verdict so the history can name the season, the event and the Splatfest.
 	for _, k := range []string{"game_mode", "game_rule", "stage", "color_pattern",
 		"est_mmr_team1", "est_mmr_team2", "est_mmr_team3",
@@ -176,17 +170,16 @@ func historyFields(report, verdict *commonpb.MapValue) map[string]*commonpb.Valu
 }
 
 // historyEntry nests a player's stats the way the history screen reads them.
-// Its per-player reader (raw 0x7103dc4234) takes kill_num, kill_assist_num,
-// death_num, special_num, paint_point, deemed_result, disconnected and
-// group_leader from a "result" map inside the entry, not from the entry
-// itself; with them only at the top every player showed 0p and x00, and a
-// missing deemed_result read as a win, so the loser's history said VICTORY
-// and its Recent Battles count was wrong (2026-10-10, hardware). The top-level
-// copies stay for anything else that reads them.
+// Its per-player reader takes kill_num, kill_assist_num, death_num, special_num,
+// paint_point, deemed_result, disconnected and group_leader from a "result" map
+// inside the entry, not from the entry itself; with them only at the top every
+// player shows 0p and x00, and a missing deemed_result reads as a win, so the
+// loser's history says VICTORY and its Recent Battles count is wrong. The
+// top-level copies stay for anything else that reads them.
 //
-// A Splatfest player also gets fest_info.fest_team (Alpha/Bravo/Charlie, read
-// at 0x7103dc4ef0) and the Tricolor signal fields the same reader takes from
-// fest_info, so the row is drawn in its team's colour.
+// A Splatfest player also gets fest_info.fest_team (Alpha/Bravo/Charlie) and the
+// Tricolor signal fields the same reader takes from fest_info, so the row is
+// drawn in its team's colour.
 func historyEntry(p *commonpb.Value, festTeams map[string]string) *commonpb.Value {
 	f := p.GetMapValue().GetFields()
 	if f == nil {

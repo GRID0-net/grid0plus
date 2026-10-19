@@ -13,11 +13,9 @@ import (
 
 // leagueDiagnosticPath is a temporary, disposable experiment: if set, replay
 // the raw captured SelectLeagueSchedules bytes from this path, with every
-// timestamp shifted so the earliest one lands on the current 2-hour slot --
-// the same technique NextendoNetwork/splatoon-3's own serveShifted uses for
-// all its captured schedule types. Not wired into any committed config; test
-// on the VM directly and remove this file plus its one call site in
-// SelectLeagueSchedules if it does not help.
+// timestamp shifted so the earliest one lands on the current 2-hour slot. Not
+// wired into any committed config; test on the VM directly and remove this file
+// plus its one call site in SelectLeagueSchedules if it does not help.
 var leagueDiagnosticPath = os.Getenv("SWITCHNET_NPLN_DIAGNOSTIC_LEAGUE_PATH")
 
 func leagueDiagnosticResponse(now time.Time) (*toyohrpb.SelectLeagueSchedulesResponse, bool) {
@@ -61,9 +59,7 @@ func leagueDiagnosticResponse(now time.Time) (*toyohrpb.SelectLeagueSchedulesRes
 }
 
 // walkLeagueTimestamps visits every google.protobuf.Timestamp field anywhere
-// in msg, recursively -- the same generic walk NextendoNetwork/splatoon-3's
-// walkTimestamps does, reimplemented here rather than imported since that is
-// a private, uncommitted binary this project has no dependency on.
+// in msg, recursively.
 func walkLeagueTimestamps(msg proto.Message, visit func(*timestamppb.Timestamp)) {
 	if ts, ok := msg.(*timestamppb.Timestamp); ok {
 		visit(ts)

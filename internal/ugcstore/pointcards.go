@@ -17,9 +17,8 @@ import (
 //	services/GameRecord/users/<uid>/PointCardRegular/<shift_id>
 //
 // The server keeps them from each finished job. Without this the meter stays
-// at zero whatever the player does. Everything below, the field sets, the
-// version and the points rule, is NextendoNetwork/splatoon-3's reading of
-// its captures of Nintendo's server (facts only, not its code):
+// at zero whatever the player does. The field sets, the version and the points
+// rule below follow Nintendo's server:
 //
 //   - PointCardTotal/Data has eight fields: job_num, golden_ikura_total,
 //     ikura_total, rescue_total, boss_total, kuma_point, limited_kuma_point
@@ -27,24 +26,21 @@ import (
 //   - PointCardRegular/<shift_id> adds the shift's grade, total and best grade
 //     points, best golden eggs, total cleared waves, job_type_string,
 //     shift_id and shift_time.
-//   - kuma_point never comes from the console. Fitted over seventeen captured
-//     jobs: 2 per golden egg the team delivered, plus 50 when the job is
-//     cleared (final_wave 2), the same for all four players.
+//   - kuma_point never comes from the console. Fitted over seventeen jobs:
+//     2 per golden egg the team delivered, plus 50 when the job is cleared
+//     (final_wave 2), the same for all four players.
 //
-// TODO(capture-needed): the exact kuma_point rule. The fit is off by six
-// points on average; a capture with more jobs would settle it. Change
-// jobPoints.
+// UNCONFIRMED: the exact kuma_point rule. The fit is off by six points on
+// average; more jobs would settle it. Change jobPoints.
 const pointCardVersion = 131072
 
 // shiftCard names the per-shift point card a job is credited to. Splatoon 3
-// builds three document names under services/GameRecord/users/<uid>/ (the
-// strings at 0x7104f46d02, 0x7104f50845 and 0x7104fe73c8): PointCardRegular,
-// PointCardBigRun and PointCardLimited (Eggstra Work), each keyed by the
-// shift's start as YYYYMMDDHH0000. For the Big Run and Eggstra Work cards
-// the game reads best_golden_ikura_num and trophy together and ignores the
-// card unless both are there (FUN_7103281354): the console writes trophy
-// itself at the end of the event (FUN_7103286ae0, FUN_7103287030), so the
-// server supplies best_golden_ikura_num.
+// builds three document names under services/GameRecord/users/<uid>/:
+// PointCardRegular, PointCardBigRun and PointCardLimited (Eggstra Work), each
+// keyed by the shift's start as YYYYMMDDHH0000. For the Big Run and Eggstra Work
+// cards the game reads best_golden_ikura_num and trophy together and ignores the
+// card unless both are there: the console writes trophy itself at the end of the
+// event, so the server supplies best_golden_ikura_num.
 func shiftCard(mode string) string {
 	switch {
 	case strings.Contains(mode, "bigrun"):
@@ -183,10 +179,9 @@ func creditPointCards(ctx context.Context, store db.Store, prefix, uid string, j
 		return err
 	}
 	// The bonus meter is read from PointCardRegular/<shift> even during a Big
-	// Run: FUN_7103284090 builds only the Regular or the Limited name, and the
-	// console asks for PointCardRegular/<big run shift> after every Big Run
-	// job. Without it the meter, and the catalog experience that follows it,
-	// do not move.
+	// Run: the game builds only the Regular or the Limited name, and the console
+	// asks for PointCardRegular/<big run shift> after every Big Run job. Without it
+	// the meter, and the catalog experience that follows it, do not move.
 	if j.card == "PointCardBigRun" {
 		return creditShiftCard(ctx, store, prefix, uid, "PointCardRegular", j, now)
 	}

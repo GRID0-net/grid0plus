@@ -32,8 +32,7 @@ type BlobStore interface {
 }
 
 // LocalDisk is a BlobStore backed by a directory on the same box GRID0+
-// runs on — the storage backend ROADMAP.md's phase 4 section picks as the
-// default: no new recurring cost, bounded by whatever disk the box has.
+// runs on: no new recurring cost, bounded by whatever disk the box has.
 //
 // Keys are opaque component-file ids (see db.ComponentFile.BlobKey), written
 // as flat files directly under Dir. No directory sharding: a private
@@ -43,12 +42,11 @@ type LocalDisk struct {
 	// Dir is the root directory. Must already exist.
 	Dir string
 	// PerOwnerQuota caps one owner's (one BAAS user's) total stored bytes
-	// across every archive. Zero means unlimited — the config validator
+	// across every archive. Zero means unlimited -- the config validator
 	// warns rather than refuses on zero, the same posture as other
 	// unbounded-by-default settings in config/config.go, but an operator
-	// should set this: ROADMAP.md §4.2 calls out that a single console must
-	// not be able to fill the disk and take the rest of GRID0+ down with
-	// it.
+	// should set this: a single console must not be able to fill the disk and
+	// take the rest of GRID0+ down with it.
 	PerOwnerQuota int64
 
 	mu sync.Mutex

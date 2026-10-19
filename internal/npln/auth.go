@@ -80,41 +80,34 @@ type nplnClaims struct {
 
 // gamesyncClaim is the 'gamesync' object a session token carries.
 //
-// Field for field the shape a hardware capture of a working server shows
-// (NextendoNetwork/splatoon-3's capture of TrackGameSessionCreationTicket,
-// MatchedUserSession field 3). The two fields GRID0+ has no source for are
-// present and empty rather than absent or invented: 'team' is a Splatfest team,
-// which this server announces but does not assign, and 'attr'/'ltcy' are the
-// client's own attribute and latency JSON, which the capture shows as "{}" and
+// It has the shape a working server's session token has (MatchedUserSession
+// field 3 of a TrackGameSessionCreationTicket answer). The two fields GRID0+ has no
+// source for are present and empty rather than absent or invented: 'team' is a
+// Splatfest team, which this server announces but does not assign, and 'attr'
+// and 'ltcy' are the client's own attribute and latency JSON, which are "{}" and
 // {"latencies":{}} for a session that has not gathered either yet.
 // nplnRights is the 'npln' object a real access token's payload carries.
 //
-// Field for field a real Nintendo access token's payload, from a decrypted
-// MITM capture NextendoNetwork/splatoon-3 records taking on 2026-06-28 (facts
-// only, not its code):
+// Field for field a real Nintendo access token's payload:
 //
 //	"npln":{"aid":"a-…","app_id":"0100c2500fc20000",
 //	        "authorization":{"allow":["**"],"deny":[],"nso_restricted":false},
 //	        "ext_id":"…","ext_id_type":1,"tid":"t-dce9377b-lp1"}
 //
-// Their own write-up is explicit about why this matters more than it looks:
-// npl1 reads these claims to know what it may do, and a token it cannot
-// decode this way "finds no rights at all" -- which reproduces exactly the
-// class of symptom that motivated writing this down: authentication that
-// reports success, calls that return OK, and the client still behaving as
-// though it were offline. An access token that never carried this object at
-// all (GRID0+'s own case until this was found) is the same failure by
-// construction, not merely a risk of it.
+// This matters more than it looks: the client reads these claims to know what it
+// may do, and a token it can't decode this way "finds no rights at all". That
+// gives authentication that reports success, calls that return OK, and a client
+// that still behaves as though it were offline. An access token that never carried
+// this object is the same failure by construction.
 //
-// Authorization is the one field this project cannot get wrong by omission:
-// GRID0+ has no notion of a title-scoped rights system to report honestly,
-// so it grants the token every right (allow: ["**"]) rather than reporting
-// none -- the same shape the capture itself shows for an ordinary session,
-// and the opposite of what an absent claim leaves the client concluding on
-// its own. AID and ExtID echo this server's own identifiers (the caller's
-// user id and device account id) under the field names the capture uses,
-// not fabricated Nintendo internals -- the same reasoning IssuePrearrangedUserToken
-// already gives for echoing user_index back as ShortId.
+// Authorization is the one field that can't be got wrong by omission: GRID0+ has no
+// title-scoped rights system to report honestly, so it grants the token every right
+// (allow: ["**"]) rather than reporting none, which is the shape an ordinary session
+// has and the opposite of what an absent claim leaves the client concluding. AID and
+// ExtID echo this server's own identifiers (the caller's user id and device account
+// id) under the field names a real token uses, not fabricated Nintendo internals, the
+// same reasoning IssuePrearrangedUserToken gives for echoing user_index back as
+// ShortId.
 type nplnRights struct {
 	AID           string            `json:"aid"`
 	AppID         string            `json:"app_id"`
@@ -130,11 +123,8 @@ type nplnAuthorization struct {
 	NSORestricted bool     `json:"nso_restricted"`
 }
 
-// The block a working server sends, in its order, from GRID0+'s own decrypted
-// Ryujinx capture of Nextendo on 2026-09-30 (docs/CAPTURES/raw/
-// nextendo-ryujinx-match-20260930, nextendo-private-room-20260930). The
-// 2026-09-23 notes had only attr..usid; that source was second-hand and older.
-// friend_room is present, true, on every room token and absent on matched ones.
+// The block a working server sends, in its order. friend_room is present, and
+// true, on every room token and absent on matched ones.
 type gamesyncClaim struct {
 	Attr       string `json:"attr"`
 	FriendRoom bool   `json:"friend_room,omitempty"`
@@ -151,14 +141,13 @@ type gamesyncClaim struct {
 	USID       string `json:"usid"`
 }
 
-// sessionTokenPID fills the token's pid. Nextendo's is a 10-digit number that
-// is the same on every token for one user, NEX principal-id shaped.
+// sessionTokenPID fills the token's pid: a 10-digit number that is the same on
+// every token for one user, NEX principal-id shaped.
 //
-// TODO(capture-needed): what the client uses pid for. This is a stable
-// per-user value below 2^31, so it parses as any integer width and differs
-// between players; a capture of two players' tokens from a working server would
-// settle whether it must match anything else (the NEX PID, rendezvous'
-// PIDForUserID, which is 64-bit here).
+// UNCONFIRMED: what the client uses pid for. This is a stable per-user value below
+// 2^31, so it parses as any integer width and differs between players; two players'
+// tokens from a working server would settle whether it must match anything else (the
+// NEX PID, rendezvous' PIDForUserID, which is 64-bit here).
 func sessionTokenPID(userID string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(userID))
@@ -287,14 +276,14 @@ func (s *Server) authenticate(ctx context.Context, md callMetadata) (Caller, err
 
 // exchangeIDToken turns a BAAS id token into an NPLN session.
 //
-// This is the seam between phase 1 and phase 2. The game presents the id token
-// BAAS issued it — carried in the protobuf as ExternalIdToken.nsa_id_token —
+// This is the seam between the account layer and the game server. The game presents
+// the id token BAAS issued it, carried in the protobuf as ExternalIdToken.nsa_id_token,
 // and gets back an NPLN access token signed with a different key entirely.
 //
-// The id token is verified against GRID0+'s own BAAS id key, not accepted on
-// its face. That key is the one published at /1.0.0/certificates, which is
-// exactly the seam docs/ARCHITECTURE.md describes: a game server learns which
-// player is connecting without trusting anything the game told it.
+// The id token is verified against GRID0+'s own BAAS id key, not accepted on its
+// face. That key is the one published at /1.0.0/certificates, which is the seam
+// docs/ARCHITECTURE.md describes: a game server learns which player is connecting
+// without trusting anything the game told it.
 func (s *Server) exchangeIDToken(ctx context.Context, idToken string) (Caller, error) {
 	c, err := s.idTokens.Resolve(ctx, idToken)
 	if err != nil {
@@ -315,15 +304,11 @@ func (s *Server) resolveCaller(ctx context.Context, userID, deviceAccountID stri
 }
 
 // refreshTokenTTL is how long a minted refresh token stays valid before the
-// console must go back through BAAS for a fresh id token. Nextendo's own
-// deployed server hands a refresh token back on every IssueToken/
-// IssuePrearrangedUserToken response (confirmed by reading, not copying,
-// their newTokenPID helper); this server previously minted none at all. A
-// hardware crash right after IssuePrearrangedUserToken -- with no further
-// call ever logged, so the client never even got as far as asking for
-// anything else -- surfaced this as a real gap rather than a cosmetic one:
-// see docs/CAPTURES/README.md. Their server never expires it; GRID0+ gives
-// it a TTL instead, consistent with every other token this server issues.
+// console must go back through BAAS for a fresh id token. A working server hands a
+// refresh token back on every IssueToken/IssuePrearrangedUserToken response; a
+// server that mints none crashes the client right after IssuePrearrangedUserToken,
+// with no further call ever logged. A working server never expires the token;
+// GRID0+ gives it a TTL, consistent with every other token this server issues.
 const refreshTokenTTL = 30 * 24 * time.Hour
 
 // issueRefreshToken mints an opaque, self-verifying refresh token for c. It is
@@ -413,12 +398,11 @@ func (s *Server) issueAccessToken(c Caller, now time.Time) (string, time.Duratio
 const sessionTokenIssuer = "gss"
 
 // IssueGamesyncProbeToken tests whether Splatoon expects the access token
-// returned by Gamesync/IssueToken to be a signed JWT. Nextendo's working
-// server emits one with an NPLN rights block and a gss session binding;
-// GRID0+ has historically returned an opaque handle. This method is wired
-// in only by the VM diagnostic environment flag until a hardware test settles
-// whether the client actually reads it. The gamesync server still tracks the
-// exact returned token in its own session map.
+// returned by Gamesync/IssueToken to be a signed JWT. A working server emits one
+// with an NPLN rights block and a gss session binding, while GRID0+ has historically
+// returned an opaque handle. This method is wired in only by a diagnostic
+// environment flag until a hardware test settles whether the client reads it. The
+// gamesync server still tracks the exact returned token in its own session map.
 func (s *Server) IssueGamesyncProbeToken(userID, userSession string, expiresAt time.Time) (string, error) {
 	// The client may send a short or alias-form user-session name here. The
 	// ordinary gamesync path echoes it unchanged; the probe must not reject a
@@ -459,19 +443,17 @@ const sessionTokenTTL = time.Hour
 
 // issueSessionToken mints the token a match hands one player.
 //
-// Signed with the same ES256 key as every other NPLN token — gamesync verifies
-// it through VerifyMatchmakingIDToken — but shaped for the CONSOLE to read,
-// because the console is what reads it: npl1 takes gsid, usid, uid and tid out
-// of the 'gamesync' object here to build Gamesync/IssueToken and then
-// KeepUserSession. That is measured, not inferred, and so is the cost of
-// getting it wrong: with this token absent or shaped differently the console
-// opens TCP+TLS+h2 to the session host and never sends a HEADERS frame at all,
-// the connection drops after about a second, and the game reports 2321-4992 on
-// KeepUserSession with nothing in this server's log — because from this side
-// nothing was ever called. See docs/CAPTURES/npln-session-token-2026-09-23.md.
+// Signed with the same ES256 key as every other NPLN token (gamesync verifies it
+// through VerifyMatchmakingIDToken) but shaped for the CONSOLE to read, because the
+// console is what reads it: it takes gsid, usid, uid and tid out of the 'gamesync'
+// object here to build Gamesync/IssueToken and then KeepUserSession. With this token
+// absent or shaped differently, the console opens TCP+TLS+h2 to the session host and
+// never sends a HEADERS frame at all, the connection drops after about a second, and
+// the game reports 2321-4992 on KeepUserSession with nothing in this server's log,
+// because from this side nothing was ever called.
 //
-// The signature is what makes the ids trustworthy: a console cannot write its
-// own gsid, so a match cannot be joined by naming yourself into it.
+// The signature is what makes the ids trustworthy: a console cannot write its own
+// gsid, so a match cannot be joined by naming yourself into it.
 func (s *Server) issueSessionToken(userID, sessionID string) (string, error) {
 	return s.issueSessionTokenForDefinition(userID, sessionID, nil)
 }

@@ -246,7 +246,7 @@ communication error naming nothing.
   -assets   a directory with one subdirectory per pack: base, bh, wa, wb, wc.
             Files inside must ALREADY be in the game's own formats (.bfres,
             .byaml, .sarc.zs). Converting a PNG into a game-ready texture is
-            a separate and much larger problem — see TODO.md.
+            a separate and much larger problem.
   -out      where to write bcat-seed/. Copy it onto each console.
 
   -id        fest id (default: derived from the start time)

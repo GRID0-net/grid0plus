@@ -28,7 +28,7 @@ func TestAgainReopensTheSessionAndLocksItAfterTheGraceWindow(t *testing.T) {
 	boolean := func(b bool) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_BooleanValue{BooleanValue: b}}
 	}
-	// What each console writes when it presses "Again!" (loopback capture, 2026-10-04).
+	// What each console writes when it presses "Again!".
 	ops := []*syncpb.WriteOperation{{OperationType: &syncpb.WriteOperation_UpdateDocument{
 		UpdateDocument: &syncpb.UpdateDocumentRequest{
 			Document: &syncpb.Document{Name: "docs/__gs/m", Fields: &commonpb.MapValue{Fields: map[string]*commonpb.Value{

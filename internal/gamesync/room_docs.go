@@ -82,16 +82,14 @@ func (s *Server) roomDocument(caller *session, name string) (*syncpb.Document, b
 	mapValue := func(fields map[string]*commonpb.Value) *commonpb.Value {
 		return &commonpb.Value{ValueType: &commonpb.Value_MapValue{MapValue: &commonpb.MapValue{Fields: fields}}}
 	}
-	// All three room-creation modes in the working capture (private battle,
-	// join-room, and Coop private) publish the same Gamesync format capacity of
-	// eight, even though their NPLN tickets advertise 10/4/4 respectively.
-	// The game reads these documents after the ticket succeeds.
+	// All three room-creation modes (private battle, join-room, and Coop private)
+	// publish the same Gamesync format capacity of eight, even though their NPLN
+	// tickets advertise 10/4/4 respectively. The game reads these documents after the
+	// ticket succeeds.
 	//
-	// Nextendo's server has since changed for private battles: a Ryujinx
-	// private room on 2026-10-02 got maxu 10, mcn "private_match_config", and
-	// bfmax 7 (capacity minus three) / 10 in __stg, i.e. the room's real
-	// capacity and config name. Other modes keep the earlier shape until a
-	// capture shows them too.
+	// Private battles differ: the room's real capacity and config name go in, i.e.
+	// maxu 10, mcn "private_match_config", and bfmax 7 (capacity minus three) / 10 in
+	// __stg. Other modes keep the earlier shape.
 	wireCapacity, mcn := 8, ""
 	if isPrivateBattle(d) {
 		wireCapacity, mcn = d.Capacity, roomConfig(d)

@@ -10,24 +10,22 @@ import (
 )
 
 // presenceAttributes holds the game-defined presence attributes each player
-// publishes over PresenceService.KeepAlive, so SubscribePresences can hand
-// them to that player's friends.
+// publishes over PresenceService.KeepAlive, so SubscribePresences can hand them to
+// that player's friends.
 //
-// Settled by a real Nintendo capture, recorded in NextendoNetwork/splatoon-3's
-// own notes (2026-08-15; facts only, their code is not used here): a
-// Splatoon 3 friend's presence carries thirteen attributes, and two of them
-// drive the in-game friend list. GameStatus=1 with an empty SessionId is "just
-// online"; GameStatus=2 with a non-empty SessionId is "in a room", which is
-// what makes "Join" appear -- and that SessionId is the game session the
-// joiner then passes to JoinGameSession. Without these, a friend who is
-// playing reads as merely online, which is the bug this type exists for.
+// A Splatoon 3 friend's presence carries thirteen attributes, and two of them drive
+// the in-game friend list. GameStatus=1 with an empty SessionId is "just online";
+// GameStatus=2 with a non-empty SessionId is "in a room", which is what makes "Join"
+// appear, and that SessionId is the game session the joiner then passes to
+// JoinGameSession. Without these, a friend who is playing reads as merely online,
+// which is the bug this type exists for.
 //
-// Separate from db.Presence on purpose. That row has one writer, BAAS's
-// console presence report, and the resolver's TTL rules are built around it;
-// these attributes are NPLN's own, only mean anything to the title that wrote
-// them, and live exactly as long as the KeepAlive stream that carries them.
-// In memory for the same reason matchmaking's queue is: a restart ends every
-// stream, and every console republishes on reconnect.
+// Separate from db.Presence on purpose. That row has one writer, BAAS's console
+// presence report, and the resolver's TTL rules are built around it; these
+// attributes are NPLN's own, only mean anything to the title that wrote them, and
+// live exactly as long as the KeepAlive stream that carries them. They are kept in
+// memory for the same reason matchmaking's queue is: a restart ends every stream,
+// and every console republishes on reconnect.
 type presenceAttributes struct {
 	mu       sync.Mutex
 	byUser   map[string]map[string]*commonpb.Value

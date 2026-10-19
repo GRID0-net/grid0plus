@@ -64,10 +64,9 @@ func TestAnUnissuedCodeIsNotFound(t *testing.T) {
 	}
 }
 
-// TestASharedScenarioCodeResolvesToTheJob: the code another player types
-// in, with dashes and in lower case, hands back the job document that was
-// registered. Unimplemented, the console showed an error at the end of
-// sharing (2026-10-08).
+// TestASharedScenarioCodeResolvesToTheJob: the code another player types in,
+// with dashes and in lower case, hands back the job document that was
+// registered. Unimplemented, the console shows an error at the end of sharing.
 func TestASharedScenarioCodeResolvesToTheJob(t *testing.T) {
 	svc, _ := newService(t, time.Now())
 	svc.docs = ugcstore.NewService(ugcstore.Options{

@@ -22,20 +22,16 @@ import (
 //
 // Reimplementing that chain in Go would be a large piece of work whose failure
 // mode is the worst available: a texture that LOADS and renders as garbage. Not
-// a build error, not a refusal — noise on screen, on a console, with nothing on
+// a build error, not a refusal -- noise on screen, on a console, with nothing on
 // the server to look at. Switch Toolbox and the BinaryTextureLibrary /
 // Syroot.NintenTools family already do this correctly, and they exist because it
 // is hard.
 //
 // So GRID0+ does not convert. It defines where conversion happens, invokes
-// whatever the operator points it at, checks that something came out, and — most
-// importantly — **refuses to build a pack containing a file the game cannot
-// read**. That last part is the change that matters: before it, a PNG left in an
-// assets directory went straight into the archive and the fest failed on the
-// console with nothing pointing at the file.
-//
-// TODO.md §2.1 has the rest: what a native implementation would need, and why
-// vendoring an existing converter is likely to beat writing one.
+// whatever the operator points it at, checks that something came out, and --
+// most importantly -- **refuses to build a pack containing a file the game cannot
+// read**. A PNG left in an assets directory would otherwise go straight into the
+// archive and the fest would fail on the console with nothing pointing at the file.
 
 // SourceSuffix is the extension that marks a file as needing conversion.
 //
@@ -62,24 +58,21 @@ var SourceSuffix = map[string]string{
 //
 // # Why this exists
 //
-// A real custom pack read during this project's research had every file inside
-// named for the fest it was DERIVED from, not the fest it announces:
+// A custom pack can name every file inside it for the fest it was derived from
+// rather than the fest it announces:
 //
 //	Mals/Msg_EUde.Fest_JUEA-DUMPLING_Bh.sarc.zs
 //	RSDB/Tag.Fest_JUEA-DUMPLING.dev.rstbl.byml.zs
 //
-// while its summary.yml announced JUEA-00210. **Nobody has established what the
-// game keys on.** If it resolves assets by the announced fest id, a
-// from-scratch fest needs every internal path renamed consistently; if it only
-// reads the pack it was handed, the names are inert.
+// while its summary.yml announces JUEA-00210. It is not established what the game
+// keys on. If it resolves assets by the announced fest id, a from-scratch fest
+// needs every internal path renamed consistently; if it only reads the pack it was
+// handed, the names are inert.
 //
-// This placeholder is that decision in ONE place. An operator who writes
-// `Mals/Msg_EUen.Fest_{FEST}_Bh.sarc.zs` gets consistent naming for free; one
-// who writes a literal name gets it left alone. Whichever way the question is
-// answered, acting on the answer is a change to Naming.Apply and nothing else.
-//
-// The experiment, and the assumption being proceeded on, are recorded in
-// docs/QUESTIONS.md. It needs a console.
+// This placeholder keeps that decision in one place. An operator who writes
+// `Mals/Msg_EUen.Fest_{FEST}_Bh.sarc.zs` gets consistent naming for free; one who
+// writes a literal name gets it left alone. Changing the behaviour is a change to
+// Naming.Apply and nothing else.
 const FestPlaceholder = "{FEST}"
 
 // Naming decides the path an asset gets inside a pack.

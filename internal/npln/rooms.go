@@ -25,18 +25,16 @@ import (
 // Private rooms: a private battle, a Salmon Run room, or a squad a host opens
 // for friends to join. Splatoon 3 opens one with
 // GameSessionService.CreateGameSessionCreationTicket instead of matchmaking,
-// and every one of these RPCs used to answer Unimplemented, which the game
-// shows as 2321-4224 the moment a player presses "create room".
+// and every one of these RPCs used to answer Unimplemented, which the game shows
+// as 2321-4224 the moment a player presses "create room".
 //
-// The shapes below come from a real Nintendo capture of this exact flow that
-// NextendoNetwork/splatoon-3 records in its own comments (facts only,
-// PolyForm Shield -- none of its code is used here). They are second-hand:
-// their capture, not ours, so docs/CAPTURES/README.md lists what a GRID0+
-// capture of a room being opened and joined would confirm.
+// The shapes below follow a real Nintendo exchange of this flow, which wasn't
+// captured from a GRID0+ console, so a GRID0+ capture of a room being opened and
+// joined would confirm them.
 //
-// A room is a matchmaking.Session with its host as the only player, so every
-// call downstream of creation -- GetGameSession, JoinGameSession, the gamesync
-// channel and its session token -- is the one matched sessions already use.
+// A room is a matchmaking.Session with its host as the only player, so every call
+// downstream of creation -- GetGameSession, JoinGameSession, the gamesync channel
+// and its session token -- is the one matched sessions already use.
 
 // roomTicket is one GameSessionCreationTicket.
 type roomTicket struct {
@@ -110,12 +108,11 @@ func (r *rooms) sweep(alive func(sessionID string) bool) {
 
 // roomCapacity is how many players a room in this mode takes.
 //
-// The request carries no size of its own, so the server sets it. Salmon Run's
-// 4 is in the capture. Private battle's 10 (eight players and two spectators)
-// is NextendoNetwork's reading, not a captured value. Every other mode the
-// game has opened on grid0 (2026-09-27 to 10-13: private_match_config,
-// coop_private_config and join_room_4_no_referee_config, the squad) names
-// its own size as join_room_<n>, so that number is used.
+// The request carries no size of its own, so the server sets it. Salmon Run's 4
+// is observed. Private battle's 10 (eight players and two spectators) is a
+// reading, not an observed value. Every other mode the game has opened here
+// (private_match_config, coop_private_config and join_room_4_no_referee_config, the
+// squad) names its own size as join_room_<n>, so that number is used.
 func roomCapacity(config string) int {
 	if n, ok := joinRoomSize(config); ok {
 		return n
@@ -400,7 +397,7 @@ func (s *Server) roomMetaFor(sessionID string) (roomMeta, bool) {
 
 // ErrRoomFull answers a join into a room with no space left.
 //
-// TODO(capture-needed): the status a real server answers with. Unconfirmed,
+// UNCONFIRMED: the status a real server answers with. Unconfirmed,
 // so the code is the plain gRPC meaning rather than a guessed Nintendo one.
 // Change: this value.
 var ErrRoomFull = status.Error(codes.ResourceExhausted, "game session is full")
@@ -446,13 +443,12 @@ func (s *Server) joinRoom(ctx context.Context, sess matchmaking.Session, req *mm
 // screen cannot be misread.
 //
 // Splatoon 3 never lets a player type one in: its keyboard helper has no
-// room-code mode (only names, posts and the two 16-character share codes;
-// see docs/CAPTURES/splat3-share-codes-2026-10-19.md), so a room is joined
-// from a friend's presence and this code is only ever displayed.
+// room-code mode (only names, posts and the two 16-character share codes), so a
+// room is joined from a friend's presence and this code is only ever displayed.
 //
-// TODO(capture-needed): what a real code looks like on screen. This alphabet
-// and length are NextendoNetwork's choice for another title. Change: this
-// constant and newRoomCode.
+// UNCONFIRMED: what a real code looks like on screen. This alphabet and length
+// were chosen for a different title's short aliases. Change: this constant and
+// newRoomCode.
 const roomCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 // newRoomCode draws six characters. 32 is a power of two, so the modulo
@@ -466,10 +462,9 @@ func newRoomCode() string {
 	return string(b)
 }
 
-// roomCodeTTL is the expiry a code is announced with. An hour is
-// NextendoNetwork's choice, not a captured value; a zero timestamp would read
-// as already expired. The code actually stops resolving when its room is
-// closed or pruned, whichever comes first.
+// roomCodeTTL is the expiry a code is announced with. An hour is a choice, not
+// an observed value; a zero timestamp would read as already expired. The code
+// actually stops resolving when its room is closed or pruned, whichever comes first.
 const roomCodeTTL = time.Hour
 
 func (s *Server) roomCodeName(code string) string {

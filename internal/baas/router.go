@@ -239,9 +239,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /1.0.0/users/{uid}/blocks/{other}", s.authenticated(s.removeBlock))
 
 	mux.Handle("POST /1.0.0/image_upload", s.authenticated(s.uploadImage))
-	// A 2026-09-19 capture shows the console requests images from the root of
-	// the cdn-image host as '/1/<etag>' and '/2/<etag>', not '/images/<name>'
-	// -- see images.go's imageURLs doc comment.
+	// The console requests images from the root of the cdn-image host as
+	// '/1/<etag>' and '/2/<etag>', not '/images/<name>' -- see images.go's imageURLs
+	// doc comment.
 	mux.Handle("GET /1/{name}", http.StripPrefix("/1/", s.imageFileServer()))
 	mux.Handle("GET /2/{name}", http.StripPrefix("/2/", s.imageFileServer()))
 
@@ -259,29 +259,23 @@ func (s *Server) Handler() http.Handler {
 	s.registerEmulatorRoutes(mux)
 
 	// ---- endpoints answered but not implemented ----
-	// The console calls these and treats a failure as a fault. None of them
-	// affects accounts or friends, so an empty success is the correct answer —
-	// but it is logged, so an operator can see what is being asked for.
+	// The console calls these and treats a failure as a fault. None of them affects
+	// accounts or friends, so an empty success is the correct answer -- but it is logged,
+	// so an operator can see what is being asked for.
 	//
-	// push_channels and devices/snapshot used to be routed here too, both
-	// answering a bare 204 on the same "no real content, so empty success is
-	// correct" reasoning as the two below -- reconciled against a real,
-	// working Nextendo capture (2026-08-27) into devices.go's own handlers
-	// instead, once that capture showed a real server answers 200 with an
-	// actual JSON body for both, not empty. See devices.go for what changed
-	// and why "no real content" undersold what these needed.
+	// push_channels and devices/snapshot are not routed here: a real server answers them with
+	// an actual JSON body, not an empty one. See devices.go.
 	mux.Handle("POST /1.0.0/devices/me/delete", s.authenticated(s.acknowledge))
 	mux.Handle("GET /1.0.0/users/{uid}/device_histories", s.authenticated(s.acknowledge))
 
 	mux.Handle("PUT /1.0.0/push_channels/{uid}/{daid}", s.authenticated(s.updatePushChannel))
 	// devices/snapshot has no {uid} in its path, unlike every genuinely
-	// user-scoped endpoint above, and a real capture confirms why: the
-	// console calls it with the anonymous device-level token straight from
-	// /1.0.0/application/token (bs:grt=1), never a logged-in user's. Gating
-	// it behind s.authenticated meant every console with a linked account
-	// got a hard 403 on this periodic check instead of the no-op success
-	// the comment above intends — surfacing as a "needs to be verified
-	// online" error on the console, found 2026-08-28.
+	// user-scoped endpoint above: the console calls it with the anonymous
+	// device-level token straight from /1.0.0/application/token (bs:grt=1), never a
+	// logged-in user's. Gating it behind s.authenticated would give every console
+	// with a linked account a hard 403 on this periodic check instead of the no-op
+	// success the comment above intends, surfacing as a "needs to be verified
+	// online" error on the console.
 	mux.Handle("POST /1.0.0/devices/snapshot", s.anonymous(s.devicesSnapshot))
 
 	// An unrouted path must still answer in BAAS's error shape.
@@ -583,8 +577,8 @@ func (s *Server) notify(ctx context.Context, userID, typ string, payload any) {
 
 // publishPresence sends a presence change to the bus.
 //
-// A failure is logged and swallowed: the bus feeds the dashboard and the phase 2
-// NPLN server, and neither is worth failing a console's request for.
+// A failure is logged and swallowed: the bus feeds the dashboard and the NPLN server,
+// and neither is worth failing a console's request for.
 func (s *Server) publishPresence(ctx context.Context, e presencebus.Event) {
 	if s.bus == nil {
 		return

@@ -1,10 +1,9 @@
 // Package presencebus fans out presence changes to whatever wants them.
 //
 // It exists so that "user X started playing title Y" reaches the interested
-// parties as an event rather than by polling the database. Phase 1 has one
-// publisher (the BAAS server) and no subscriber; phase 2 adds the NPLN server
-// and the dashboard, which needs a live "online now" list without hammering
-// Postgres once a second per open browser tab.
+// parties as an event rather than by polling the database. BAAS publishes;
+// the NPLN server and the dashboard subscribe, and the dashboard needs a live
+// "online now" list without hammering Postgres once a second per open browser tab.
 package presencebus
 
 import (

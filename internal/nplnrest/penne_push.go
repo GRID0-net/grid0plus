@@ -18,24 +18,23 @@ import (
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
-// Push notifications, as npns receives them (docs/CAPTURES/
-// npns-sysmodule-decompile.md):
+// Push notifications, as npns receives them:
 //
 //   - npns asks god.hac.*.penne for a notification token per local account
 //     (POST /v1/accounts/<Uid>/notification_tokens, {"penne_id",
-//     "application_id"}); the account sysmodule registers that token with
-//     BAAS as the user's push channel.
-//   - the frontline connection belongs to a penne id, through the login
-//     ticket it presents.
+//     "application_id"}); the account sysmodule registers that token with BAAS
+//     as the user's push channel.
+//   - the frontline connection belongs to a penne id, through the login ticket it
+//     presents.
 //   - a notification is a PutRecord whose record (kind 1) names a topic
-//     ("0x<program id>" reaches whoever called npns ListenTo with it), the
-//     local account Uid, and a payload npns hands over unchanged.
+//     ("0x<program id>" reaches whoever called npns ListenTo with it), the local
+//     account Uid, and a payload npns hands over unchanged.
 //
-// So a push to a user walks user -> push channels -> tokens -> (penne id,
-// Uid) -> that penne id's open frontlines.
+// So a push to a user walks user -> push channels -> tokens -> (penne id, Uid) ->
+// that penne id's open frontlines.
 
 // friendsTopic reaches the friends sysmodule, which listens on its own program
-// id (friends FUN_001eab80(0x010000000000000e)).
+// id (0x010000000000000e).
 const friendsTopic = "0x010000000000000e"
 
 // godPenne answers god.hac.*.penne.srv.nintendo.net.
@@ -98,8 +97,8 @@ func (s *Server) penneNotificationToken(w http.ResponseWriter, r *http.Request, 
 // ---- connections ----------------------------------------------------------
 
 // frontlineConn is one console's open frontline. npns holds at most one
-// PutRecord at a time and aborts on a second before acknowledging the first
-// (FUN_71000dfbb0), so records queue here until the console's Ack.
+// PutRecord at a time and aborts on a second before acknowledging the first, so
+// records queue here until the console's Ack.
 type frontlineConn struct {
 	penneID string
 	send    func([]byte) error
@@ -293,11 +292,10 @@ func (s *Server) clock() time.Time {
 
 // notificationFrame is a PutRecord carrying one notification record.
 //
-// Record: { kind ubyte = 1, body union = Notification }. Notification fields
-// (FUN_71000d69f0): 0 id string (<= 47), 1 u16 kind (not 2: 2 is a per-NSA
-// notification whose target comes from the id), 2 a table of {1 topic list,
-// 2 Uid as 32 hex digits, 4 target string}, 4 payload (<= 4095), 7 expiry
-// as Unix seconds.
+// Record: { kind ubyte = 1, body union = Notification }. Notification fields:
+// 0 id string (<= 47), 1 u16 kind (not 2: 2 is a per-NSA notification whose
+// target comes from the id), 2 a table of {1 topic list, 2 Uid as 32 hex digits,
+// 4 target string}, 4 payload (<= 4095), 7 expiry as Unix seconds.
 func notificationFrame(now time.Time, topic, account string, payload []byte) []byte {
 	id := make([]byte, 16)
 	_, _ = rand.Read(id)
@@ -372,8 +370,7 @@ func (s *Server) notifyPresence(ctx context.Context, e presencebus.Event) {
 }
 
 // presenceUpdated is the friends sysmodule's "presence_updated" notification
-// (friends FUN_001a15c0 dispatches on $.type; FUN_001a7510/FUN_001a7670 read
-// the value): the same presence object the friend list carries.
+// (dispatched on $.type): the same presence object the friend list carries.
 func presenceUpdated(e presencebus.Event) map[string]any {
 	friends := map[string]any{}
 	if e.State == db.StatePlaying {
@@ -396,20 +393,18 @@ func presenceUpdated(e presencebus.Event) map[string]any {
 	return map[string]any{"type": "presence_updated", "createdAt": e.At.Unix(), "value": value}
 }
 
-// presenceModeFrame is npns's own control record: payload "presence:nxbaas"
-// on topic "penne" (FUN_71000d64c0 recognises the topic, FUN_71000d6070 the
-// payload) sets its presence mode to BAAS. In the other mode, "penne", the
-// friends sysmodule hands its presence to npns to send up the frontline
-// (friends FUN_001bf220) instead of PATCHing /1.0.0/users/<id>
-// (FUN_001bf3c0), and the BAAS path is the one GRID0+ stores, resolves and
-// shows on the dashboard.
+// presenceModeFrame is npns's own control record: payload "presence:nxbaas" on
+// topic "penne" sets its presence mode to BAAS. In the other mode, "penne", the
+// friends sysmodule hands its presence to npns to send up the frontline instead
+// of PATCHing /1.0.0/users/<id>, and the BAAS path is the one GRID0+ stores,
+// resolves and shows on the dashboard.
 func presenceModeFrame(now time.Time) []byte {
 	return notificationFrame(now, "penne", "", []byte("presence:nxbaas"))
 }
 
 // watchNotifications forwards BAAS's notifications to the recipient's
-// consoles, on the friends topic: every type BAAS sends today is one the
-// friends sysmodule dispatches (FUN_001a15c0).
+// consoles, on the friends topic: every type BAAS sends is one the friends
+// sysmodule dispatches.
 func (s *Server) watchNotifications(ctx context.Context) {
 	events, err := s.notify.Subscribe(ctx)
 	if err != nil {

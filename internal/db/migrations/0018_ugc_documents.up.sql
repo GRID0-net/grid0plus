@@ -2,8 +2,7 @@
 -- its own per-player records here right after signing in -- the GameRecord
 -- VsUserAttribute/CoopUserAttribute documents among them -- and reads back
 -- what it wrote, so writes have to outlive a restart: a document the game
--- believes it created and then cannot find crashes it (see
--- docs/CAPTURES/npln-gamerecord-attributes-2026-09-23.md).
+-- believes it created and then cannot find crashes it.
 --
 -- name is the canonical resource name ("tenants/<tenant>/documents/<rest>").
 -- fields is the document's nn.npln.common.MapValue, protobuf-encoded, so

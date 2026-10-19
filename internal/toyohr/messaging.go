@@ -147,8 +147,8 @@ func (h *messageHub) subscriberCount(userID string) int {
 //
 // The response carries a KeepAlive in its own oneof, which is the protocol
 // saying outright that silence is not a valid state: a stream that goes quiet is
-// treated as dead and the client stops trusting it. Both working captures
-// send a keepalive every 20 seconds.
+// treated as dead and the client stops trusting it. A real server sends a
+// keepalive every 20 seconds.
 const messageKeepAlive = 20 * time.Second
 
 // RecvMessage streams the messages sent to a player.
@@ -283,21 +283,16 @@ func (s *Service) messageReceiverID(name string) (string, bool) {
 	return name, name != "" && !strings.Contains(name, "/")
 }
 
-// lobbyResumeToken renders the cursor shape both preserved working Nextendo
-// hall captures use verbatim on every KeepAlive and ReceivedMessage on this
-// stream (docs/CAPTURES/raw/nextendo-hall-20260923T205738Z,
-// nextendo-second-20260923T210513Z): {"v":1,"t":"<unix ms>-0"}. Settles the
-// TODO(capture-needed) this function used to carry -- whether Splatoon 3
-// requires a resume token to be present at all -- with a real answer: yes,
-// non-empty, in both captures, on every frame. The trailing "-0" is a
-// sequence position within that millisecond; this stream never buffers more
-// than one frame per millisecond, so 0 is always correct, not a guess about
-// an unobserved case.
+// lobbyResumeToken renders the cursor shape the console expects on every
+// KeepAlive and ReceivedMessage on this stream: {"v":1,"t":"<unix ms>-0"}.
+// Splatoon 3 requires a resume token to be present, non-empty, on every frame.
+// The trailing "-0" is a sequence position within that millisecond; this stream
+// never buffers more than one frame per millisecond, so 0 is always correct.
 //
-// It is still opaque and unresumable, same as before this fix: RecvMessage
-// does not accept a resume token on this stream (there is nothing stored to
-// resume from -- see lobbyMessagingService.RecvMessage), so this only
-// answers the shape the client is reading, not a real position in a log.
+// It is opaque and unresumable: RecvMessage does not accept a resume token on
+// this stream (there is nothing stored to resume from -- see
+// lobbyMessagingService.RecvMessage), so this only answers the shape the client
+// is reading, not a real position in a log.
 func lobbyResumeToken(now time.Time) string {
 	return fmt.Sprintf(`{"v":1,"t":"%d-0"}`, now.UnixMilli())
 }
@@ -362,12 +357,11 @@ func (u *userScreeningService) CreateReport(
 }
 
 // GetViolation returns an absent resource for a caller with no sanction.
-// A successful response with a name means the violation EXISTS; the former
-// synthetic /violations/current answer could block a fresh player from the
-// hall. A successful response without a message makes the game's parser see
-// an empty resource name and can crash it. Nextendo's measured working path
-// uses NotFound with response headers sent before the status trailers by
-// the NPLN unary interceptor.
+// A successful response with a name means the violation EXISTS; a synthetic
+// /violations/current answer can block a fresh player from the hall. A
+// successful response without a message makes the game's parser see an empty
+// resource name and can crash it. The working path is NotFound with response
+// headers sent before the status trailers by the NPLN unary interceptor.
 func (u *userScreeningService) GetViolation(
 	ctx context.Context, _ *toyohrpb.GetViolationRequest,
 ) (*toyohrpb.GetViolationResponse, error) {

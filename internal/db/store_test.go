@@ -1209,12 +1209,10 @@ func testSaveDataArchives(t *testing.T, s Store) {
 	a := SaveDataArchive{
 		ID: "aa00000000000001", NSAID: u.ID, ApplicationID: "0100abcd00010000",
 		DeviceID: "dev0000000000001", DataSize: 0, Status: "uploading",
-		// A real value observed on real hardware 2026-09-24
-		// (12237957226414712540, which by itself exceeds int64's own
-		// maximum -- SeriesID is stored as its exact decimal digit string
-		// for exactly this reason, not any fixed-width integer type;
-		// migrations 0019/0020 record the two overflows found on the way
-		// to that).
+		// A real value (12237957226414712540, which by itself exceeds int64's own
+		// maximum -- SeriesID is stored as its exact decimal digit string for exactly
+		// this reason, not any fixed-width integer type; migrations 0019/0020 record
+		// the two overflows found on the way to that).
 		SeriesID: "12237957226414712540",
 		SavedAt:  now,
 	}

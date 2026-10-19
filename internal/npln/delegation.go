@@ -20,22 +20,20 @@ const delegationTokenIssuer = "npln-delegation"
 const delegationTokenTTL = time.Hour
 
 // IssueUserDelegationToken lets the caller authorise a teammate to act for
-// them in matchmaking -- the delegator names a mandatary, and the answer is a
+// them in matchmaking: the delegator names a mandatary, and the answer is a
 // signed token saying so.
 //
-// Splatoon 3 links and calls it: NextendoNetwork/splatoon-3 records a real
-// capture (2026-08-07; facts only, none of its code used) of a squad queuing
-// together, where the request carries delegator "tenants/current/users/current",
-// a concrete mandatary and match attributes, and the answer echoes them in a
-// UserDelegationDetail with a signed token and a TTL. Answered Unimplemented,
-// the squad's matchmaking failed outright.
+// Splatoon 3 links and calls it when a squad queues together. The request carries
+// delegator "tenants/current/users/current", a concrete mandatary and match
+// attributes, and the answer echoes them in a UserDelegationDetail with a signed
+// token and a TTL. Answered Unimplemented, the squad's matchmaking fails outright.
 //
-// The delegator is always the authenticated caller, whatever the request
-// names: a delegation is the caller vouching for itself, never for somebody
-// else. The mandatary must be a real account.
+// The delegator is always the authenticated caller, whatever the request names: a
+// delegation is the caller vouching for itself, never for somebody else. The
+// mandatary must be a real account.
 //
-// The leader's ticket then carries the token (squadMembers). The token is
-// this server's own format; nothing shows the client reading inside it.
+// The leader's ticket then carries the token (squadMembers). The token is this
+// server's own format; nothing shows the client reading inside it.
 func (g *gameSessionService) IssueUserDelegationToken(
 	ctx context.Context, req *mmpb.IssueUserDelegationTokenRequest,
 ) (*mmpb.IssueUserDelegationTokenResponse, error) {
@@ -87,10 +85,10 @@ func (g *gameSessionService) IssueUserDelegationToken(
 // leader: one per delegation token that this server signed, that is still
 // valid, and that a member issued naming leader as its mandatary.
 // IssueUserDelegationToken signs the member as subject and the leader as
-// audience, and a member calls it before the leader creates the ticket
-// (hardware, 2026-10-03: a Salmon Run room's guest delegated to its host,
-// whose ticket then carried the token). Anything else is dropped rather than
-// failing the ticket: the leader still queues, alone.
+// audience, and a member calls it before the leader creates the ticket (a Salmon
+// Run room's guest delegates to its host, whose ticket then carries the token).
+// Anything else is dropped rather than failing the ticket: the leader still
+// queues, alone.
 func (s *Server) squadMembers(leader string, tokens []string) []string {
 	var out []string
 	seen := map[string]bool{leader: true}
@@ -117,18 +115,15 @@ func (s *Server) squadMembers(leader string, tokens []string) []string {
 //
 // Fail-closed on identity, as everywhere else: every user named must be the
 // caller, or a teammate who delegated to the caller with a token this server
-// signed (squadMembers); and every one of them must already be a player of
-// the session. Anything else refuses the whole request, rather than issuing a
-// partial set -- the half-filled lobby matchedUserSessions' comment
-// describes.
+// signed (squadMembers); and every one of them must already be a player of the
+// session. Anything else refuses the whole request, rather than issuing a partial
+// set -- the half-filled lobby matchedUserSessions' comment describes.
 //
-// TODO(capture-needed): when Splatoon 3 calls this. The game links the stub
-// (GameSessionService ctor at 0x71005ec2d0, method at 0x71005f0164) but no
-// hardware session has called it yet (grid0's logs, 2026-09-27 to 10-11:
-// turf, private, fest, Anarchy and Salmon Run sessions, not one call), and nothing shows whether it expects
-// entries for include_id_token_users only or for every user. This answers
-// include_id_token_users when given, otherwise every user. Change: this
-// function.
+// UNCONFIRMED: when Splatoon 3 calls this. The game links the stub but no session
+// has called it yet (turf, private, fest, Anarchy and Salmon Run sessions all
+// completed without it), and nothing shows whether it expects entries for
+// include_id_token_users only or for every user. This answers include_id_token_users
+// when given, otherwise every user. Change: this function.
 func (g *gameSessionService) IssueMatchmakingIdToken(
 	ctx context.Context, req *mmpb.IssueMatchmakingIdTokenRequest,
 ) (*mmpb.IssueMatchmakingIdTokenResponse, error) {

@@ -195,14 +195,11 @@ func (s *Server) roomPeerForDocument(caller *session, name string) *session {
 //
 // docs/__pgn/All/__stu/<usid> is that user session's Pia *inbox*: a peer writes
 // its packet into the recipient's document and stamps suid/susid/suscid/sussid
-// with its own identity (Nextendo capture: session 63790481 writes into
-// __stu/b55e6b1f with its own susid, and the server delivers it as written). An
-// earlier reading treated it as the writer's outbox and renamed every peer's
-// document onto the caller's inbox. A peer's inbox holds the caller's own
-// outgoing packets, so the caller got its own Pia packets back stamped "from
-// the peer", and from then on addressed its packets to itself: the private
-// room's ready step timed out with a communication error
-// (docs/CAPTURES/raw/grid0-private-ready-analysis-20261002.md).
+// with its own identity, and the server delivers it as written. Treating it as the
+// writer's outbox and renaming every peer's document onto the caller's inbox makes
+// the caller get its own Pia packets back stamped "from the peer", after which it
+// addresses its packets to itself and the private room's ready step times out with
+// a communication error.
 func (s *Server) watchedDocuments(caller *session, names []string) []*syncpb.Document {
 	var docs []*syncpb.Document
 	seen := map[string]bool{}
@@ -250,10 +247,9 @@ func (s *Server) syntheticSessionDocument(caller *session, name string) (*syncpb
 		}
 	case "docs/__pgn/All/__stu/" + id:
 		if isPrivateBattle(caller.details) {
-			// A Ryujinx private room on Nextendo, 2026-10-02: empty pl bytes,
-			// integer ids, the private connection-id namespace (10000 + rank),
-			// and no mp. Splatoon's Pia closed its session 0.3 s after reading
-			// the older map-typed shape below, before the room was created.
+			// A private room: empty pl bytes, integer ids, the private connection-id
+			// namespace (10000 + rank), and no mp. Splatoon's Pia closes its session 0.3 s
+			// after reading the older map-typed shape below, before the room is created.
 			rank := participantRank(caller)
 			fields = map[string]*commonpb.Value{
 				"pl":     {ValueType: &commonpb.Value_BytesValue{BytesValue: []byte{}}},
@@ -311,17 +307,12 @@ func (s *Server) docsFor(caller *session) *store { return s.docs.in(scopeOf(call
 // its rank in the game session.
 //
 // Each console joins the session by writing its __pus document and then
-// transforming upcsid: load the global __upcsidn, maximum 20000, increment
-// 1, store the global back. It keeps the increment's result as its own
-// upcsid, and Pia then finds itself, and the host, among the __pus documents
-// by upcsid (the loop at 0x7100a33040 compares each player's upcsid with its
-// own and with the host's). grid0 delivers those documents with upcsid set
-// to the rank, as Nextendo's server does, but answered the increment with
-// the raw counter, 20001 and up. No console found itself, and each one
-// hosted a mesh of its own: across networks that is SessionAlone.
-// Nextendo's server answers the same increment with 1 (capture of
-// 2026-09-30), so the result is the rank, the same number the documents
-// carry.
+// transforming upcsid: load the global __upcsidn, maximum 20000, increment 1,
+// store the global back. It keeps the increment's result as its own upcsid, and
+// Pia then finds itself, and the host, among the __pus documents by upcsid.
+// Those documents are delivered with upcsid set to the rank, so the increment
+// must answer with the rank too, not the raw counter: otherwise no console finds
+// itself, each hosts a mesh of its own, and across networks that is SessionAlone.
 func rankSessionCounter(caller *session, ops []*syncpb.WriteOperation, results []*syncpb.WriteResult) {
 	if caller == nil || caller.details == nil || caller.details.SessionID == "" {
 		return
@@ -345,13 +336,11 @@ func rankSessionCounter(caller *session, ops []*syncpb.WriteOperation, results [
 // matchedPlayerDocuments lists every matched player's session document,
 // including players whose console has not connected to gamesync yet.
 //
-// Pia picks the host the moment it has a player list: the lowest upcsid among
-// the __pus documents it holds (FUN_7100a32b10), compared with its own
-// (0x7100a32fb8). Caught with the debugger on hardware, 2026-10-03: the
-// faster console received only its own __pus, made itself host, and the
-// other player's document arrived after the decision. The slower console
-// did the same, so both hosted and, across networks, each ended up alone.
-// The match's players and their user-session ids are known when it forms,
+// Pia picks the host the moment it has a player list: the lowest upcsid among the
+// __pus documents it holds. If the faster console receives only its own __pus it
+// makes itself host, and the other player's document arrives after the decision;
+// the slower console does the same, both host and, across networks, each ends up
+// alone. The match's players and their user-session ids are known when it forms,
 // so every player is listed from the first snapshot with its rank.
 func (s *Server) matchedPlayerDocuments(caller *session, collection string) []*syncpb.Document {
 	if collection != "docs/__us" && collection != "docs/__pgn/All/__pus" {
@@ -361,17 +350,14 @@ func (s *Server) matchedPlayerDocuments(caller *session, collection string) []*s
 	if d == nil || d.SessionID == "" || len(d.PlayerSessions) == 0 {
 		return nil
 	}
-	// A public host can start the battle as soon as its user-session list
-	// (__us) shows every player, without waiting for them to connect: on
-	// 2026-10-11 it started 0.4 s after joining, before the third console
-	// had joined, and the two others loaded in ten seconds later to a host
-	// that had already dropped. Big Run showed the same premature host start
-	// on 2026-10-14. Only the host election list (__pus) names players ahead
-	// of time, so a single host is still chosen.
-	// Keep __pus complete for host election, but do not advertise a matched
-	// console as connected in __us until its authenticated session exists.
-	// TODO(capture-needed): verify Big Run's __us early-close behavior with
-	// both host directions; see splat3-public-startup-group-2026-10-14.md.
+	// A public host can start the battle as soon as its user-session list (__us)
+	// shows every player, without waiting for them to connect: it started 0.4 s
+	// after joining, before the third console had joined, and the two others
+	// loaded in ten seconds later to a host that had already dropped. Only the
+	// host election list (__pus) names players ahead of time, so a single host is
+	// still chosen. Keep __pus complete for host election, but don't advertise a
+	// matched console as connected in __us until its authenticated session exists.
+	// UNCONFIRMED: Big Run's __us early-close behavior with both host directions.
 	var out []*syncpb.Document
 	for _, userID := range d.Players {
 		usid := d.PlayerSessions[userID]

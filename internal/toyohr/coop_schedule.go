@@ -92,8 +92,8 @@ type CoopShift struct {
 	// Rewards are a Big Run or Team Contest's scale-tier reward values
 	// (CoopSchedule_BigRun.Rewards / CoopSchedule_TeamContest.Rewards). Empty
 	// for CoopShiftNormal, which has no such field on the wire. Their exact
-	// meaning is unconfirmed -- see docs/QUESTIONS.md -- so nothing here
-	// validates their contents, only that a Normal shift has none.
+	// meaning is unconfirmed, so nothing here validates their contents, only that
+	// a Normal shift has none.
 	Rewards []int64
 
 	// RewardBorders are a Big Run's gold, silver and bronze high-score
@@ -356,25 +356,17 @@ func coopShiftFromRow(r db.CoopShift) CoopShift {
 //
 // A shift with no operator-selected reward uses one real gear pair from
 // CoopRewardGears, picked at random but stable per slot. Every Normal entry
-// in both working captures includes reward_type (Head, Clothes, or Shoes)
-// and a nonzero reward_gear_id. This is GRID0+'s own reward rotation,
-// not a reconstruction of Nintendo's selection policy.
+// includes reward_type (Head, Clothes, or Shoes) and a nonzero reward_gear_id.
+// This is GRID0+'s own reward rotation, not a reconstruction of Nintendo's
+// selection policy.
 //
-// Name is NOT just a cosmetic mismatch if it is wrong, unlike the claim this
-// comment used to make. A 2026-09-24 decompile of Splatoon 3 v11.3.0 (real
-// hardware, this project's own console) found the client's resource-name
-// parser for a CoopSchedule (main.nso, the function this response's Name
-// reaches) requires the literal shape
-// "tenants/<t>/targets/<target>/coopSchedules/<rest>" -- checked with a
-// hard memcmp against "targets" and "coopSchedules" as the third and fifth
-// path segments -- and hard-aborts (User Break, nn.npln.Worker) when a name
-// does not parse that way. The previous shape here,
-// "tenants/<t>/coopSchedules/<id>", omits the "targets/<target>" segment
-// entirely and reproduced this crash on real hardware the same day, with
-// four real coop shifts seeded. Both 2026-09-23 successful Nextendo
-// captures use the last segment of the request Target ("default") in this
-// position. The old shift.Kind value passed the path parser but named a
-// different target than the one the console requested.
+// Name must be exact: the client's resource-name parser for a CoopSchedule
+// requires the literal shape "tenants/<t>/targets/<target>/coopSchedules/<rest>"
+// -- checked with a hard memcmp against "targets" and "coopSchedules" as the
+// third and fifth path segments -- and hard-aborts (User Break, nn.npln.Worker)
+// when a name does not parse that way. The last segment of the request Target
+// ("default") goes in the target position; using the shift's Kind there parses
+// but names a different target than the one the console requested.
 func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.CoopSchedule {
 	name := s.tenantPath() + "/targets/" + target + "/coopSchedules/" + r.ID
 	// Both working hall captures use one schedule-set id for the whole
@@ -439,24 +431,18 @@ func (s *Service) coopScheduleProto(r db.CoopShift, target string) *toyohrpb.Coo
 }
 
 // coopKumaWeaponsAttribute builds a shift's attributes MapValue with the two
-// keys both preserved working Nextendo hall captures always carry:
+// keys a real schedule always carries:
 //
-//   - "KumaWeapons": the shift's Grizzco weapon, as an array_value -- not
-//     the CoopSchedule_Normal/BigRun/TeamContest.kuma_weapon scalar field
-//     this project previously set. Every observed working capture entry's
-//     kuma_weapon field is absent, not merely zero, which is why it is
-//     dropped here entirely rather than sent alongside the attribute.
-//     One captured entry carried eight IDs while the others carried one.
-//     The captures establish that variation, but not the selection rule, so
-//     GRID0+ advertises the one weapon already selected for each generated
-//     shift rather than inventing a wildcard policy.
+//   - "KumaWeapons": the shift's Grizzco weapon, as an array_value -- not the
+//     CoopSchedule_Normal/BigRun/TeamContest.kuma_weapon scalar field, which is
+//     absent, not merely zero, on a real entry and so is not sent at all. A real
+//     entry may carry one ID or eight; the selection rule is not known, so GRID0+
+//     advertises the one weapon already selected for each generated shift rather
+//     than inventing a wildcard policy.
 //
-//   - "CoopUsedRewardGears": the capture-derived gear pairs from
-//     coop_reward_gears.go -- present on every populated CoopSchedule in
-//     both captures. The
-//     hall investigation found the console never attempts the
-//     GameRecord-document-read phase that follows a schedule fetch in both
-//     working captures; its absence was a candidate for why. Per-shift
+//   - "CoopUsedRewardGears": the gear pairs from coop_reward_gears.go, present on
+//     every populated CoopSchedule. Without them the console never attempts the
+//     GameRecord-document-read phase that follows a schedule fetch. Per-shift
 //     variation remains unmodelled.
 func coopKumaWeaponsAttribute(kumaWeaponID int64, weapons []int64) *common.MapValue {
 	kuma := []*common.Value{{ValueType: &common.Value_IntegerValue{IntegerValue: kumaWeaponID}}}

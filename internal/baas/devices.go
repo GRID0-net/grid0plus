@@ -20,22 +20,18 @@ type pushChannelRequest struct {
 
 // updatePushChannel answers PUT /1.0.0/push_channels/{uid}/{daid}.
 //
-// Previously routed to acknowledge (a bare 204, on the reasoning that push
-// notifications do not touch accounts or friends). A real, working Nextendo
-// capture (2026-08-27) shows this is not what a real server sends back: 200,
-// with a JSON body echoing every field the console just PUT plus
-// createdAt/updatedAt/userId/deviceAccountId, and one key present in the
-// response that was never in the request -- userAttributes: {}, always
-// empty in the capture. Matching that shape rather than the previous
-// empty-success guess, the same "match what a real server actually does"
-// reasoning that fixed naUsersMe's own partial-response bug -- an assumed-
-// harmless placeholder is not the same as a verified one.
+// A bare 204 is not what a real server sends back: it answers 200 with a JSON body
+// echoing every field the console just PUT plus createdAt/updatedAt/userId/deviceAccountId,
+// and one key that was never in the request -- userAttributes: {}, always empty.
+// Matching that shape rather than an empty-success guess follows the same "match what
+// a real server actually does" reasoning as naUsersMe: an assumed-harmless placeholder
+// is not the same as a verified one.
 //
-// This does not persist the push channel anywhere: nothing in GRID0+
-// sends push notifications, so there is nothing yet to deliver to. The
-// response is real-shaped so a client that reads it back does not choke on
-// a shape it has never seen from a working server; it is not, on its own,
-// evidence the console needs the value to be REMEMBERED across requests.
+// This does not persist the push channel anywhere: nothing in GRID0+ sends push
+// notifications through this route, so there is nothing yet to deliver to. The response
+// is real-shaped so a client that reads it back does not choke on a shape it has never
+// seen from a working server; it is not, on its own, evidence the console needs the
+// value to be REMEMBERED across requests.
 func (s *Server) updatePushChannel(w http.ResponseWriter, r *http.Request, c *caller) {
 	uid := r.PathValue("uid")
 	daid := r.PathValue("daid")
@@ -92,19 +88,15 @@ type devicesSnapshotRequest struct {
 
 // devicesSnapshot answers POST /1.0.0/devices/snapshot.
 //
-// Previously routed to acknowledge (a bare 204). A real, working Nextendo
-// capture (2026-08-27) shows a real server answers 200 with
-// {"deletedUserIds": [...], "persistentUserIds": [...]} -- splitting the
-// requested ids by whether each still names a real, non-deleted user. That
-// split is not a guess: it is exactly what this store can already answer
-// for itself (GetUser, and db.User.Deleted -- see CLAUDE.md's note on why
-// that flag exists), so implementing it for real costs nothing extra and
-// risks nothing invented.
+// A real server answers 200 with {"deletedUserIds": [...], "persistentUserIds": [...]},
+// splitting the requested ids by whether each still names a real, non-deleted user. That
+// split is exactly what this store can already answer for itself (GetUser, and
+// db.User.Deleted), so implementing it for real costs nothing extra and risks nothing
+// invented.
 //
-// Called with the anonymous application-level token (bs:grt=1, confirmed
-// against the same capture -- see router.go's own note on this route), so
-// there is no caller identity to scope this to; any set of ids can be asked
-// about, the same as before this handler existed.
+// Called with the anonymous application-level token (bs:grt=1; see router.go's own
+// note on this route), so there is no caller identity to scope this to; any set of ids
+// can be asked about.
 func (s *Server) devicesSnapshot(w http.ResponseWriter, r *http.Request, _ *caller) {
 	var body devicesSnapshotRequest
 	if err := decodeJSONBody(r, &body); err != nil {

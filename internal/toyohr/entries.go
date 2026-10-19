@@ -60,10 +60,10 @@ func (s *Service) CreateFestEntry(
 		return nil, status.Error(codes.NotFound, "no such fest")
 	case PhaseAnnounced, PhaseFirstHalf, PhaseSecondHalf:
 		// Splatoon 3 lets a player who skipped the announcement pick a team
-		// when they first open the game during the fest, and Nextendo's server
-		// accepts entries through both halves; a refusal here is a
-		// communication error that locks them out of the whole fest. The late
-		// vote does move the vote ratio, which is the lesser harm.
+		// when they first open the game during the fest, and accepts entries
+		// through both halves; a refusal here is a communication error that locks
+		// them out of the whole fest. The late vote does move the vote ratio,
+		// which is the lesser harm.
 	default:
 		existing, err := s.store.GetFestEntry(ctx, festID, userID)
 		if err == nil {
@@ -163,10 +163,9 @@ func (s *Service) GetFestResult(
 
 	festID := festIDFromResourceName(req.GetName())
 	if festID == "" {
-		// Nextendo's measured behavior for an unrecognized result resource is a
-		// successful empty result carrying the requested name. The console uses
-		// GetFestResult while reconciling old local fest state; a parse failure
-		// must not turn that lookup into a hard RPC failure.
+		// An unrecognized result resource gets a successful empty result carrying the
+		// requested name. The console uses GetFestResult while reconciling old local fest
+		// state; a parse failure must not turn that lookup into a hard RPC failure.
 		return &toyohrpb.FestResult{Name: req.GetName()}, nil
 	}
 

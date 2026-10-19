@@ -74,10 +74,10 @@ type Options struct {
 	// Token, when set, is required as a bearer token or ?token= on every
 	// request.
 	//
-	// Nothing in phase 1 authenticates a person — every credential in the stack
-	// belongs to a console — so the dashboard has no user accounts to check
-	// against. A shared token is the honest minimum: it keeps the fest controls
-	// off the open network without pretending to be an identity system.
+	// No credential in the stack belongs to a person -- every one belongs to a
+	// console -- so the dashboard has no user accounts to check against. A shared
+	// token is the honest minimum: it keeps the fest controls off the open network
+	// without pretending to be an identity system.
 	Token string
 
 	// NPLNAdminURL and NPLNAdminToken reach cmd/npln's matchmaking controls.
@@ -1086,8 +1086,7 @@ func (s *Server) handleMatches(w http.ResponseWriter, r *http.Request) {
 //
 // Server-sent events rather than WebSockets: the traffic is one-way, SSE
 // reconnects on its own, and it survives an ordinary HTTP proxy without any
-// upgrade handling. ROADMAP §2.6 asks for one or the other; this is the one
-// that needs no client library.
+// upgrade handling.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {

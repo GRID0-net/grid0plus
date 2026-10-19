@@ -16,20 +16,18 @@ import (
 	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
-// This file is TODO.md §1.4's backlog: everything besides FestService,
-// Schedule, CloudSave.GetSaveRecord and LobbyMessaging/UserScreening
-// (service.go, schedule.go, cloud_save.go, messaging.go). Each service below
-// gets its own adapter type rather than being embedded on *Service directly
-// -- see Service's doc comment in service.go for why CanolaServer/LockerServer
-// and CoopScenarioServer/ReplayServer cannot both be satisfied by one type.
+// The rest of the toyohr services besides FestService, Schedule,
+// CloudSave.GetSaveRecord and LobbyMessaging/UserScreening (service.go,
+// schedule.go, cloud_save.go, messaging.go). Each service below gets its own
+// adapter type rather than being embedded on *Service directly -- see Service's
+// doc comment in service.go for why CanolaServer/LockerServer and
+// CoopScenarioServer/ReplayServer cannot both be satisfied by one type.
 //
-// The rule applied throughout: a lookup or a query answers honestly with
-// what GRID0+ actually has. A write with an unknown validation or
-// storage contract (CreateBankaraChallenge) is left to the embedded
-// Unimplemented default instead of guessed at -- the same boundary
-// CloudSave's own five unimplemented RPCs already draw, for the same
-// reason: implementing "write" convincingly would mean inventing a shape
-// nothing here can check against a capture.
+// The rule applied throughout: a lookup or a query answers honestly with what
+// GRID0+ actually has. A write with an unknown validation or storage contract
+// (CreateBankaraChallenge) is left to the embedded Unimplemented default instead
+// of guessed at: implementing "write" convincingly would mean inventing a shape
+// nothing here can check.
 
 // ---- nn.npln.toyohr.v1.Canola and nn.npln.toyohr.v1.Locker -----------------
 //
@@ -60,16 +58,14 @@ func (s canolaService) SelectDocuments(
 const plazaFestDrawings = plazaLockers
 
 // festDrawings answers the fest plaza's Canola request, type "Fest" with the
-// running fest's FestID (seen live on grid0, 2026-10-11): drawings players
-// posted during that fest. The game's drawing-post builder
-// (FUN_7103262dd0) writes them to canola/picturePosts with a Picture map
-// carrying PostType "Fest", FestID, FestTeam and IsHidden; before this the
-// request got card-game decks, the wrong kind of post. A drawing its player
-// hid is left out.
+// running fest's FestID: drawings players posted during that fest. The game's
+// drawing-post builder writes them to canola/picturePosts with a Picture map
+// carrying PostType "Fest", FestID, FestTeam and IsHidden; answering with
+// card-game decks instead is the wrong kind of post. A drawing its player hid is
+// left out.
 //
-// TODO(capture-needed): the count, the order, and whether Nintendo mixes in
-// the other teams' drawings or only the asker's region. See
-// docs/CAPTURES/README.md. Change: this function.
+// UNCONFIRMED: the count, the order, and whether Nintendo mixes in the other
+// teams' drawings or only the asker's region. Change: this function.
 func (s *Service) festDrawings(
 	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
@@ -94,11 +90,10 @@ func (s *Service) festDrawings(
 	return &toyohrpb.SelectDocumentsResponse{Documents: docs}, nil
 }
 
-// How many published posts the plaza is sent at once. NextendoNetwork/
-// splatoon-3 measured Nintendo's own answer at launch (facts only, none of
-// its code used): 31 locker posts and 6 card-game decks, each a document
-// under services/toyohr/interfaces/<service>/<collection>/<uuid> carrying
-// only what was published -- no identity.
+// How many published posts the plaza is sent at once: Nintendo's own answer at
+// launch is 31 locker posts and 6 card-game decks, each a document under
+// services/toyohr/interfaces/<service>/<collection>/<uuid> carrying only what was
+// published -- no identity.
 const (
 	plazaLockers = 31
 	plazaDecks   = 6
@@ -106,33 +101,30 @@ const (
 
 // plaza answers SelectDocuments with what players on this server have
 // published to collection: written through Ugcstore/CommitDocuments, then
-// announced by RegisterDocument. Before this, both services answered
-// nothing and the plaza showed no player's locker or deck.
+// announced by RegisterDocument. Without it, both services answer nothing and the
+// plaza shows no player's locker or deck.
 //
-// The same RPC also asks for specific players. The game's request builder
-// (FUN_71032920a0) sends type "Normal3" with params UIDs and UIDsInOrder,
-// lists of player ids, beside FestRegion; NextendoNetwork recorded Nintendo
-// answering such a request with those players' posts, which carry the name
-// plate, title and badges drawn beside a name (facts only, none of their
-// code used). Without them the game draws "?". The plain plaza request is
-// type "Normal" with FestRegion alone (Nextendo's captures). On grid0 the
-// ids arrive in UIDs as this server's user ids, with UIDsInOrder empty.
-// A third type, "Fest" with FestID, is the fest plaza: see festDrawings.
+// The same RPC also asks for specific players. The game's request builder sends
+// type "Normal3" with params UIDs and UIDsInOrder, lists of player ids, beside
+// FestRegion; Nintendo answers such a request with those players' posts, which
+// carry the name plate, title and badges drawn beside a name. Without them the
+// game draws "?". The plain plaza request is type "Normal" with FestRegion alone.
+// The ids arrive in UIDs as this server's user ids, with UIDsInOrder empty. A
+// third type, "Fest" with FestID, is the fest plaza: see festDrawings.
 //
-// For Locker the answer must hold one document per player, in order, with
-// an empty document for a player who has published none: the game's parser
-// (FUN_7103292c20) takes the first entry as the asking player's own locker
-// and marks its locker data ready only from that entry, empty or not; the
-// rest fill the lobby's 32 locker slots. The request's UIDs do not name the
-// asking player (grid0, 2026-10-19), so the caller's own entry is put first. An answer with no entries never sets it, and the lobby's
-// locker loader, the locker room door and the lobby's big screen all wait on
-// it forever (docs/CAPTURES/splat3-locker-select-2026-10-19.md). Canola's
-// name-plate requests still skip players with no post.
+// For Locker the answer holds one document per player, in order, with an empty
+// document for a player who has published none: the game's parser takes the
+// first entry as the asking player's own locker and marks its locker data ready
+// only from that entry, empty or not, and the rest fill the lobby's 32 locker
+// slots. The request's UIDs don't name the asking player, so the caller's own
+// entry goes first. An answer with no entries never sets it, and the lobby's
+// locker loader, the locker room door and the big screen all wait on it forever.
+// Canola's name-plate requests still skip players with no post.
 //
-// TODO(capture-needed): that Nintendo put the caller's own locker first
-// (read from the parser storing entry 0 apart, not seen in a capture);
-// whether Canola's name-plate answer wants the same placeholders, and whether UIDs and UIDsInOrder can differ. See
-// docs/CAPTURES/README.md. Change: this function.
+// UNCONFIRMED: that Nintendo puts the caller's own locker first (read from the
+// parser storing entry 0 apart, not seen in a capture), whether Canola's
+// name-plate answer wants the same placeholders, and whether UIDs and
+// UIDsInOrder can differ. Change: this function.
 func (s *Service) plaza(
 	ctx context.Context, collection string, limit int, placeholders bool, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
@@ -164,14 +156,12 @@ func (s *Service) plaza(
 
 // ikasu answers IkasuDocument: a player giving a plaza post a "fresh!"
 // (イカす, Splatoon's word for a like). Its response is an empty message, so
-// acknowledging a post that exists invents nothing; before the plaza showed
-// real posts this answered NotFound for everything, which a console showing
-// a real post would report as an error.
+// acknowledging a post that exists invents nothing; answering NotFound for
+// everything would be reported as an error by a console showing a real post.
 //
-// TODO(capture-needed): whether a like is ever shown back -- a count on the
-// post, a notice to its owner -- and so needs keeping. Nothing the game
-// reads back has been seen carrying one; this only logs it. See
-// docs/CAPTURES/README.md. Change: this function.
+// UNCONFIRMED: whether a like is ever shown back -- a count on the post, a notice
+// to its owner -- and so needs keeping. Nothing the game reads back has been seen
+// carrying one; this only logs it. Change: this function.
 func (s *Service) ikasu(
 	ctx context.Context, collection string, req *toyohrpb.IkasuDocumentRequest,
 ) (*toyohrpb.IkasuDocumentResponse, error) {
@@ -248,11 +238,9 @@ func (s lockerService) IkasuDocument(
 
 // RegisterDocument on Canola (a drawing) and Locker (a locker) is the last
 // step of publishing one: the console uploads the document to Ugcstore, then
-// registers it. Both answers are empty messages, and NextendoNetwork records
-// Nintendo's own answer to Canola's as exactly that, an empty payload (facts
-// only, none of their code used) -- so acknowledging invents nothing. Left
-// Unimplemented, the game reports a communication error at the end of
-// posting.
+// registers it. Both answers are empty messages, as Nintendo's own answer to
+// Canola's is, so acknowledging invents nothing. Left Unimplemented, the game
+// reports a communication error at the end of posting.
 //
 // This only acknowledges. The document itself is already stored by
 // Ugcstore/CommitDocuments, and SelectDocuments shows it to other players.
@@ -290,12 +278,11 @@ type coopScenarioService struct {
 // grid0/coopScenarioCodes/<code>, and ResolveCoopScenarioCode hands that
 // document back to whoever types the code in.
 //
-// The name shape is settled: the game builds tenants/<t>/coopScenarioCodes/
-// <code> itself from the 16 characters typed, unchanged (see
-// docs/CAPTURES/splat3-share-codes-2026-10-19.md).
+// The name shape is settled: the game builds tenants/<t>/coopScenarioCodes/<code>
+// itself from the 16 characters typed, unchanged.
 //
-// TODO(capture-needed): the code's alphabet, which is the system keyboard's
-// download-code preset and not in the game. Change: scenarioCodeAlphabet.
+// UNCONFIRMED: the code's alphabet, which is the system keyboard's download-code
+// preset and not in the game. Change: scenarioCodeAlphabet.
 func (s coopScenarioService) RegisterDocument(
 	ctx context.Context, req *toyohrpb.CoopScenarioRegisterDocumentRequest,
 ) (*toyohrpb.CoopScenarioRegisterDocumentResponse, error) {
@@ -401,11 +388,10 @@ type replayService struct {
 // segment beside "/coopScenarioCodes", and the two services' messages have
 // the same shape.
 //
-// Codes start with R like the codes players share; the name shape is
-// settled the same way as CoopScenario's.
+// Codes start with R like the codes players share; the name shape is settled the
+// same way as CoopScenario's.
 //
-// TODO(capture-needed): the alphabet, as for CoopScenario. Change:
-// scenarioCodeAlphabet.
+// UNCONFIRMED: the alphabet, as for CoopScenario. Change: scenarioCodeAlphabet.
 func (s replayService) RegisterDocument(
 	ctx context.Context, req *toyohrpb.ReplayRegisterDocumentRequest,
 ) (*toyohrpb.ReplayRegisterDocumentResponse, error) {
@@ -457,45 +443,16 @@ func (s replayService) FulfillReservations(
 
 // ---- nn.npln.toyohr.v1.GameRecord --------------------------------------------
 //
-// CreateBankaraChallenge is a write that reports real battle outcomes and
-// rank state -- deeply Nintendo-internal rating data with no defensible
-// default -- so it is left to the embedded Unimplemented default.
-// CreateFestPowerMeasurement is implemented (game_record.go) now that a
-// capture settles its shape. InitializeAttributes is implemented (game_record.go):
-// the game's own parser keeps its defaults for any absent key, so that answer
-// needs no invented value, only what the request itself carries.
-// InitializeTag, GetTag and SelectTags are also implemented (game_record.go):
-// unlike CreateBankaraChallenge, their response
-// messages are all "[UNKNOWN]" upstream and generate with zero fields, so
-// answering them invents nothing either.
+// The service's handlers live in game_record.go (InitializeAttributes,
+// InitializeTag/GetTag/SelectTags, CreateFestPowerMeasurement,
+// CreateBankaraChallenge) and game_record_prepare.go (the Prepare*/ResetUdemae
+// calls). This adapter only exists so those methods can sit on a type that is
+// separate from *Service; anything not implemented there is left to the embedded
+// Unimplemented default, which the gateway logs.
 //
-// The real GameRecord service has more RPCs than this file, this package's
-// proto, and kinnay's public NPLN-Protocols repo all know about. A
-// 2026-09-21 decompile of Splatoon 3 v11.3.0's GameRecord client-stub
-// constructor (the code that builds one method-descriptor slot per RPC the
-// service defines -- present regardless of which methods the game's own
-// logic goes on to call, so this proves the methods are real, not that
-// Splatoon 3 invokes all of them) recovered five more full method paths,
-// none of them documented anywhere before tonight:
-//
-//	/nn.npln.toyohr.v1.GameRecord/PrepareTag                       (kinnay's proto already has this as a commented-out "rpc PrepareTag(?) returns (?);" placeholder -- the name was suspected, now confirmed real)
-//	/nn.npln.toyohr.v1.GameRecord/ResetUdemae
-//	/nn.npln.toyohr.v1.GameRecord/PrepareBankaraPowerMeasurement
-//	/nn.npln.toyohr.v1.GameRecord/PrepareWeaponPowerMeasurement
-//	/nn.npln.toyohr.v1.GameRecord/PrepareLeaguePowerMeasurement
-//
-// The "Prepare<Mode>PowerMeasurement" naming, alongside the already-known
-// CreateFestPowerMeasurement, suggests a Prepare-then-Create pattern per
-// game mode (Fest, Bankara/Anarchy, Weapon, League) -- but only Fest's
-// Create-side method path was found, so whether Bankara/Weapon/League
-// finalize through CreateBankaraChallenge, a not-yet-found method, or no
-// separate finalize call at all is still unknown. ResetUdemae plausibly
-// fires on a rank reset/season boundary. None of this settles field-level
-// request/response shapes -- LITE_RUNTIME strips the descriptor metadata
-// that would give those directly, unlike the method path itself, which has
-// to survive because gRPC dispatches over it at the HTTP/2 transport
-// level. Same CLAUDE.md rule as above applies just as hard to these: real
-// names, not real defaults to implement against.
+// Where a request's wire shape is known but the real server's answer is not, the
+// handler answers with only what the request itself carries and logs the whole
+// request, rather than inventing a Nintendo-internal rating or rank value.
 type gameRecordService struct {
 	*Service
 	toyohrpb.UnimplementedGameRecordServer

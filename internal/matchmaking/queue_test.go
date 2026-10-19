@@ -121,9 +121,9 @@ func TestAFestSquadOfThreeFillsWithItsOwnTeamAndIsNeverSplit(t *testing.T) {
 	t.Fatalf("formed %v without the squad", formed)
 }
 
-// TestTwoPerTeamPlaysAsTwoPairedLobbies is the 2 v 2 that failed on
-// 2026-10-10 as one mixed lobby: after the wait it is a pair of one-team
-// lobbies of 2, which then meet in direct_pair.
+// TestTwoPerTeamPlaysAsTwoPairedLobbies is the 2 v 2 that must not form as one
+// mixed lobby: after the wait it is a pair of one-team lobbies of 2, which then
+// meet in direct_pair.
 func TestTwoPerTeamPlaysAsTwoPairedLobbies(t *testing.T) {
 	q, clock := testQueue(t, 8)
 	q.cfg.VersusGracePeriod = 20 * time.Second
@@ -933,9 +933,8 @@ func TestASquadIsNeverSplitAcrossMatches(t *testing.T) {
 }
 
 // TestATricolorMatchIsFourDefendersAgainstTwoPairs: the midterm leader
-// defends with four, the two other teams attack with two each, each team in
-// its own slot (an official Tricolor battle's shape, per NextendoNetwork's
-// capture notes).
+// defends with four, the two other teams attack with two each, each team in its
+// own slot (an official Tricolor battle's shape).
 func TestATricolorMatchIsFourDefendersAgainstTwoPairs(t *testing.T) {
 	q, _ := testQueue(t, 8)
 	mode := "fest_match_tricolor_oneshot_config"

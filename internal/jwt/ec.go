@@ -2,16 +2,14 @@ package jwt
 
 // ES256 signing, for NPLN.
 //
-// NPLN access tokens are the only ES256 tokens in the stack — every other token
-// the Switch's auth chain issues is RS256 (see ROADMAP.md §2.2). That is not a
-// preference of ours, it is what the game's own gRPC stack expects, so the
-// algorithm is fixed rather than configurable.
+// NPLN access tokens are the only ES256 tokens in the stack -- every other token
+// the Switch's auth chain issues is RS256. That is what the game's own gRPC stack
+// expects, so the algorithm is fixed rather than configurable.
 //
-// This lives alongside the RSA path rather than replacing it. Making Key
-// generic over the algorithm would touch dauth, aauth and baas — all of them
-// verified working — to no benefit, since no issuer ever needs to be told which
-// algorithm it uses: an issuer's algorithm is a property of the protocol it
-// serves, decided once, here.
+// This lives alongside the RSA path rather than replacing it. Making Key generic
+// over the algorithm would touch dauth, aauth and baas to no benefit, since no
+// issuer ever needs to be told which algorithm it uses: an issuer's algorithm is a
+// property of the protocol it serves, decided once, here.
 
 import (
 	"crypto/ecdsa"
@@ -148,17 +146,14 @@ func (i *ECIssuer) Sign(claims gojwt.Claims) (string, error) {
 // SignSessionToken signs claims with the header NPLN's session token carries:
 // {alg, kid} and nothing else.
 //
-// A two-member header where every other ES256 token here has four. The reason
-// is a capture, and the absence is the whole point: the response the console
-// takes its session token out of — NextendoNetwork/splatoon-3's hardware
-// capture of TrackGameSessionCreationTicket, MatchedUserSession field 3 — has a
-// header of exactly {"alg":"ES256","kid":"754fe17e-…"}. No 'jku', so a client
-// that compared this header against the shape it expects never sees a key-set
-// URL it has never heard of; no 'typ'.
+// A two-member header where every other ES256 token here has four: the response
+// the console takes its session token out of (TrackGameSessionCreationTicket,
+// MatchedUserSession field 3) has a header of exactly {"alg":"ES256","kid":...}.
+// No 'jku', so a client that compared this header against the shape it expects
+// never sees a key-set URL it has never heard of; no 'typ'.
 //
 // Whether the client looks at the header at all is unconfirmed. Emitting the
-// measured shape costs nothing and takes the question off the list — the same
-// reasoning NewECIssuer's own comment gives for seeing 'typ' everywhere else.
+// expected shape costs nothing.
 func (i *ECIssuer) SignSessionToken(claims gojwt.Claims) (string, error) {
 	return i.sign(map[string]any{
 		"alg": "ES256",

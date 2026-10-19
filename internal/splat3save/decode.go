@@ -1,7 +1,6 @@
 // Package splat3save turns a Splatoon 3 save.dat into the cloud save record
 // GRID0+'s CloudSave serves (toyohr's saveRecords), so a player can bring an
-// existing save to the server. The format is written up in
-// docs/CAPTURES/splat3-save-dat-format-2026-10-13.md.
+// existing save to the server.
 package splat3save
 
 import (
@@ -228,7 +227,7 @@ func (d *decoder) convertMap(n node, path string, idMap bool) (*common.MapValue,
 
 // convertValue keeps the save's MessagePack type.
 //
-// TODO(capture-needed): about 170 of the 551 path shapes a decoded save
+// UNCONFIRMED: about 170 of the 551 path shapes a decoded save
 // carries (most under Sdodr/Fsodr, MiniGame and the Shop histories) appear
 // in none of the 13 records grid0 holds, so their record type is inferred
 // from the wire type rather than seen. A record written by a console that

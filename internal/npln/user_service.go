@@ -10,12 +10,11 @@ import (
 
 // ---- nn.npln.auth.v1.UserService -------------------------------------------
 //
-// A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main confirms this
-// service is real and linked (the literal string "nn.npln.auth.v1.UserService"
-// appears in its .rodata), and that this server was answering nothing for it
-// at all before now -- not Unimplemented-with-a-log-line, the silent kind:
-// an RPC on an unregistered service, which register()'s own doc comment
-// already names as the worse of the two failure modes.
+// This service is real and linked (the literal string
+// "nn.npln.auth.v1.UserService" appears in Splatoon 3's binary). An RPC on an
+// unregistered service fails silently, which register()'s own doc comment names
+// as the worse of the two failure modes (the other being Unimplemented with a
+// log line).
 
 type userService struct {
 	authpb.UnimplementedUserServiceServer
@@ -34,7 +33,7 @@ type userService struct {
 // Fabricating any of the four would be inventing account state rather than
 // reporting it.
 //
-// TODO(capture-needed): whether a real client treats a User response with
+// UNCONFIRMED: whether a real client treats a User response with
 // these four fields absent as different from one where they carry real
 // values -- if some field is load-bearing, this needs a store column to
 // answer, not a bigger struct literal.
@@ -69,7 +68,7 @@ func (u *userService) GetUser(
 // directions answer the id itself -- but only for an account that exists
 // and is not deleted, so the call cannot be used to probe or invent ids.
 //
-// TODO(capture-needed): UserExternalId.name's format. This answers
+// UNCONFIRMED: UserExternalId.name's format. This answers
 // "<user>/externalIds/<type>"; no capture shows Nintendo's. Change: this
 // function.
 func (u *userService) QueryUserExternalIds(

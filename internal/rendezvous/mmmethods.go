@@ -116,9 +116,8 @@ func (m *Matchmaker) endParticipation(c *nex.Conn, req *nex.Request) *nex.Respon
 // participation: u32 gid -> nothing.
 //
 // Close is on Splatoon 2's normal path, not an edge case: it closes a lobby
-// as soon as it stops waiting for players and starts the match.
-// NextendoNetwork measured an unanswered CloseParticipation as the last call
-// before 2306-0103 (facts only).
+// as soon as it stops waiting for players and starts the match. Left
+// unanswered, the console fails with 2306-0103.
 func (m *Matchmaker) participation(open bool) Method {
 	return func(c *nex.Conn, req *nex.Request) *nex.Response {
 		gid, r := gidOf(req)
@@ -243,8 +242,8 @@ func (m *Matchmaker) joinWithParam(c *nex.Conn, req *nex.Request) *nex.Response 
 //
 // Splatoon 2's host restamps an attribute as the lobby locks for a match;
 // joiners read the attributes back, so it is applied, not just
-// acknowledged. Unanswered, NextendoNetwork measured 2306-0103 at exactly
-// that moment (facts only).
+// acknowledged. Left unanswered, the console fails with 2306-0103 at exactly
+// that moment.
 func (m *Matchmaker) modifyCurrentGameAttribute(c *nex.Conn, req *nex.Request) *nex.Response {
 	r := nex.NewReader(req.Body)
 	gid, index, value := r.U32(), r.U32(), r.U32()
@@ -330,9 +329,9 @@ func (m *Matchmaker) updateMatchmakeSession(c *nex.Conn, req *nex.Request) *nex.
 // the fields its modification flags name.
 //
 // Splatoon 2 sends it at the end of a Salmon Run shift, after the results
-// screen, and NextendoNetwork measured 2306-0103 there when it went
-// unanswered (facts only). Any participant may send it: whoever is left at
-// the end of a shift is not necessarily the owner any more.
+// screen, and fails with 2306-0103 there when it goes unanswered. Any
+// participant may send it: whoever is left at the end of a shift is not
+// necessarily the owner any more.
 func (m *Matchmaker) updateMatchmakeSessionPart(c *nex.Conn, req *nex.Request) *nex.Response {
 	r := nex.NewReader(req.Body)
 	u := readUpdateParam(r)
@@ -435,8 +434,7 @@ func (m *Matchmaker) updateSessionHost(withOwner bool) Method {
 // (36) answers Bool; (44) answers nothing.
 //
 // Splatfest team battles combine two teams by migrating a gathering's
-// ownership rather than by a plain join (NextendoNetwork's reading of
-// Kinnay's MatchMaking page, facts only), so this is on Splatoon 2's path
+// ownership rather than by a plain join, so this is on Splatoon 2's path
 // during a fest.
 func (m *Matchmaker) migrateOwnership(v1, hasParticipantsOnly bool) Method {
 	return func(c *nex.Conn, req *nex.Request) *nex.Response {
@@ -639,8 +637,8 @@ func (m *Matchmaker) getParticipantsURLsList(c *nex.Conn, req *nex.Request) *nex
 
 // replaceURLWait bounds how long a joiner's GetSessionURLs waits for the host
 // to re-report its station after its NAT check. The joiner routinely asks
-// about a second before the host sends it (NextendoNetwork's measurement,
-// facts only), and the stations from before it lack what a probe needs.
+// about a second before the host sends it, and the stations from before it
+// lack what a probe needs.
 const replaceURLWait = 2500 * time.Millisecond
 
 // getSessionURLs: u32 gid -> List<StationURL>: where the host is.

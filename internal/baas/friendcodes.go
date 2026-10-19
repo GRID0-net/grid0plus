@@ -101,21 +101,15 @@ func (s *Server) generateFriendCode(w http.ResponseWriter, r *http.Request, c *c
 // assignFriendCode generates and stores a fresh friend code for a user that
 // does not have one yet, retrying on a random collision.
 //
-// Every real account has a friend code from the moment it is created --
-// System Settings shows one immediately, with no Nintendo Account link
-// required -- but until 2026-09-21 this server only ever assigned one in
-// response to an explicit POST .../generate_code, and nothing calls that
-// automatically. A live mitmdump capture that night, taken against a
-// federation attempt that ended in the console's "couldn't be linked"
-// dialog, showed why that is a real bug and not just a cosmetic gap: the
-// console's own /1.0.0/login response was missing user.links.friendCode
-// entirely (diffed against a known-working reference capture), and the
-// console never called generate_code itself, or push_channels, or
-// GET users/{id} afterwards -- it silently abandoned the link instead of
-// asking for a code. So the console expects a friend code to already exist
-// by the time it reads the account back, not to be told to go create one.
-// This is called from every path that creates a brand-new user (registerUser,
-// ProvisionDeviceAccount, the website's self-registration), not just here.
+// Every real account has a friend code from the moment it is created -- System
+// Settings shows one immediately, with no Nintendo Account link required. A
+// console's /1.0.0/login response without user.links.friendCode makes it
+// silently abandon a federation attempt (the "couldn't be linked" dialog): it
+// never calls generate_code itself, push_channels, or GET users/{id} afterwards.
+// So the console expects a friend code to already exist by the time it reads the
+// account back, not to be told to go create one. This is called from every path
+// that creates a brand-new user (registerUser, ProvisionDeviceAccount, the
+// website's self-registration), not just here.
 func assignFriendCode(ctx context.Context, store db.Store, now time.Time, userID string, cooldown time.Duration) (db.FriendCode, error) {
 	for range friendCodeAttempts {
 		candidate, err := newFriendCode()
@@ -222,7 +216,7 @@ func (s *Server) listBlocks(w http.ResponseWriter, r *http.Request, c *caller) {
 
 // blockRequestBody is the POST body.
 //
-// TODO(capture-needed): undocumented. Both form and JSON encodings are accepted,
+// UNCONFIRMED: undocumented. Both form and JSON encodings are accepted,
 // keyed on either userId or nsaId, for the same reason as the friend request
 // body: which one the friends sysmodule sends is not documented.
 type blockRequestBody struct {

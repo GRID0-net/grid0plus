@@ -2,42 +2,37 @@ package toyohr
 
 // The real stage, weapon and boss ids Salmon Run's CoopSchedule content uses.
 //
-// Unlike the *shape* of nn.npln.toyohr.v1.CoopSchedule (known from its own
-// decompiled proto -- see coop_schedule.go), these numeric ids and codenames
-// are the game's *content*: which integer means "Wahoo World", which means
-// "Grizzco Blaster". Getting the shape wrong breaks the wire message; getting
-// one of these wrong means the console asks its own local asset tables for
-// something that is not there, which is a materially smaller failure -- CLAUDE.md
-// rule 6 is why this file exists rather than leaving these fields to be typed
-// in freehand, but a wrong id here is not the same risk class as an invented
-// FRES container (internal/bcat/README.md).
+// Unlike the *shape* of nn.npln.toyohr.v1.CoopSchedule (see coop_schedule.go),
+// these numeric ids and codenames are the game's *content*: which integer means
+// "Wahoo World", which means "Grizzco Blaster". Getting the shape wrong breaks
+// the wire message; getting one of these wrong means the console asks its own
+// local asset tables for something that is not there, which is a materially
+// smaller failure -- but a wrong id here is still not the same risk class as an
+// invented FRES container (internal/bcat/README.md).
 //
 // Every id and codename below was read directly out of the game's own shipped
-// parameter tables, not written down from memory or a wiki's prose: cloned
-// github.com/Leanny/splat3 (a public, actively-maintained community dump of
-// Splatoon 3's own data files, not a packet capture) and cross-referenced
-// three of its tables against each other --
+// parameter tables: github.com/Leanny/splat3 (a public community dump of
+// Splatoon 3's own data files) with three of its tables cross-referenced against
+// each other --
 //
-//	data/mush/930/WeaponInfoMain.json    Id, __RowId (e.g. "Blaster_Bear_Coop")
-//	data/mush/930/CoopSceneInfo.json     Id, __RowId, IsBigRun
-//	data/mush/930/CoopEnemyInfo.json     Type, Category
-//	data/language/USen.json              __RowId -> the display string
+// 	data/mush/930/WeaponInfoMain.json    Id, __RowId (e.g. "Blaster_Bear_Coop")
+// 	data/mush/930/CoopSceneInfo.json     Id, __RowId, IsBigRun
+// 	data/mush/930/CoopEnemyInfo.json     Type, Category
+// 	data/language/USen.json              __RowId -> the display string
 //
-// The stage list corroborates itself: every entry CoopSceneInfo marks
-// IsBigRun matches Inkipedia's independently-maintained "List of Big Runs in
-// Salmon Run Next Wave" (Wahoo World, Inkblot Art Academy, Undertow Spillway,
-// Um'ami Ruins, Barnacle & Dime, Eeltail Alley, Grand Splatlands Bowl) --
-// two independent sources agreeing is as much confidence as this project
-// gets without a console. The weapon list corroborates itself a different
-// way: every "_Coop" row's Id is its Versus counterpart's Id plus 20000,
-// exactly matching the "WmnG_Blaster_Bear_Coop..." naming this project has
-// already seen in the game's own asset paths (internal/bcat/README.md).
+// The stage list corroborates itself: every entry CoopSceneInfo marks IsBigRun
+// matches Inkipedia's independently-maintained "List of Big Runs in Salmon Run
+// Next Wave" (Wahoo World, Inkblot Art Academy, Undertow Spillway, Um'ami Ruins,
+// Barnacle & Dime, Eeltail Alley, Grand Splatlands Bowl). The weapon list
+// corroborates itself a different way: every "_Coop" row's Id is its Versus
+// counterpart's Id plus 20000, matching the "WmnG_Blaster_Bear_Coop..." naming in
+// the game's own asset paths (internal/bcat/README.md).
 //
-// What this table is NOT: a claim that every one of these ids is *currently*
-// live in Nintendo's own rotation, or that this is every id that exists --
-// only that each one is real. reward_gear_id has no table here at all (no
-// gear-id dump was pulled into this pass); CoopShift.Validate does not check
-// it, and RewardGearId is the operator's to set correctly or leave at 0.
+// What this table is NOT: a claim that every one of these ids is *currently* live
+// in Nintendo's own rotation, or that this is every id that exists -- only that
+// each one is real. reward_gear_id has no table here at all; CoopShift.Validate
+// does not check it, and RewardGearId is the operator's to set correctly or
+// leave at 0.
 
 // CoopStage is one Salmon Run map, real dimensions the console's own asset
 // tables key on.
@@ -181,11 +176,10 @@ var CoopKumaWeapons = []CoopWeapon{
 
 // Random main-weapon slots. A shift's main_weapons can hold these instead of
 // a weapon id, and the game deals each player a weapon when the job starts.
-// -1 is the green "?" (a capture of Nextendo's working server carries it as
-// ["20400","25000","24020","-1"], with that shift's KumaWeapons attribute
-// listing all eight Grizzco weapons); -2 is the gold "?", Grizzco weapons only.
-// Both shown on hardware on 2026-10-04. The game keeps the schedule it
-// loaded, so a change to a running shift only shows after a restart.
+// -1 is the green "?" (carried as ["20400","25000","24020","-1"], with that
+// shift's KumaWeapons attribute listing all eight Grizzco weapons); -2 is the
+// gold "?", Grizzco weapons only. The game keeps the schedule it loaded, so a
+// change to a running shift only shows after a restart.
 const (
 	CoopRandomWeapon        int64 = -1
 	CoopRandomGrizzcoWeapon int64 = -2

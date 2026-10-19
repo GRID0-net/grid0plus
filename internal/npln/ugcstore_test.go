@@ -272,10 +272,9 @@ func TestInitializeCurrentUserKeepsEachPlayersDocumentsSeparate(t *testing.T) {
 	}
 }
 
-// TestAPlayersAttributeDocumentsExistOnFirstRead: a console told it has a
-// cloud save reads CoopUserAttribute/Data and VsUserAttribute/Data and never
-// calls InitializeAttributes (Nextendo's measurement of real Nintendo);
-// NotFound there was followed by 2321-0384 on hardware on 2026-09-25.
+// TestAPlayersAttributeDocumentsExistOnFirstRead: a console told it has a cloud
+// save reads CoopUserAttribute/Data and VsUserAttribute/Data and never calls
+// InitializeAttributes; NotFound there was followed by 2321-0384 on hardware.
 func TestAPlayersAttributeDocumentsExistOnFirstRead(t *testing.T) {
 	_, ctx, c := ugcHarness(t)
 	base := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/"
@@ -300,8 +299,8 @@ func TestAPlayersAttributeDocumentsExistOnFirstRead(t *testing.T) {
 }
 
 // TestAnAbsentGameRecordDocumentIsNamedAndEmpty: WeaponPowerMeasurement/16
-// answered NotFound was followed by 2000-0000 on hardware; Nextendo's working
-// boot answers these with a named, empty document.
+// answered NotFound was followed by 2000-0000 on hardware; a working boot answers
+// these with a named, empty document.
 func TestAnAbsentGameRecordDocumentIsNamedAndEmpty(t *testing.T) {
 	_, ctx, c := ugcHarness(t)
 	name := "tenants/current/documents/services/GameRecord/users/ugc0000000000001/WeaponPowerMeasurement/16"
@@ -314,10 +313,10 @@ func TestAnAbsentGameRecordDocumentIsNamedAndEmpty(t *testing.T) {
 	}
 }
 
-// TestAFestPowerMeasurementIsReadableRightAfterItIsCreated is the Splatfest
-// loop NextendoNetwork measured: answered with nothing, the game re-read an
-// absent measurement and created it again, over a thousand times in two
-// minutes. The document it names has to be readable at once.
+// TestAFestPowerMeasurementIsReadableRightAfterItIsCreated is the Splatfest loop:
+// answered with nothing, the game re-read an absent measurement and created it
+// again, over a thousand times in two minutes. The document it names has to be
+// readable at once.
 func TestAFestPowerMeasurementIsReadableRightAfterItIsCreated(t *testing.T) {
 	h, ctx, c := ugcHarness(t)
 	gr := toyohrpb.NewGameRecordClient(h.conn)
@@ -365,8 +364,8 @@ func TestAFestPowerMeasurementIsReadableRightAfterItIsCreated(t *testing.T) {
 }
 
 // TestAnAnarchySeriesChallengeIsReadableRightAfterItIsCreated: the game reads
-// BankaraChallenges/<id> back after starting a series, and a missing name
-// there aborts it (2162-0001, per NextendoNetwork's notes).
+// BankaraChallenges/<id> back after starting a series, and a missing name there
+// aborts it (2162-0001).
 func TestAnAnarchySeriesChallengeIsReadableRightAfterItIsCreated(t *testing.T) {
 	h, ctx, c := ugcHarness(t)
 	gr := toyohrpb.NewGameRecordClient(h.conn)

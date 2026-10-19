@@ -17,12 +17,9 @@ import (
 // Splatfest plaza posts ("Coconut") and play logs.
 // https://github.com/kinnay/NintendoClients/wiki/Data-Store-Protocol-(Splatoon-2)
 //
-// This is the part NextendoNetwork's server leaves as a stub -- every method
-// answered with an empty success, which its README says is what keeps
-// matchmaking from being complete (facts only). Here the methods Kinnay
-// documents are answered in their documented shapes and what they upload is
-// kept; the empty success remains only as the fallback for the methods
-// nobody has documented, because that is the answer the game is known to
+// The methods Kinnay documents are answered in their documented shapes and what
+// they upload is kept; an empty success remains only as the fallback for the
+// methods nobody has documented, because that is the answer the game is known to
 // accept during its online bring-up.
 const ProtocolDataStore = 0x73
 
@@ -61,9 +58,8 @@ func (s *Server) registerDataStore() {
 }
 
 // dataStoreFallback answers an undocumented DataStore method with an empty
-// success, logged so that it can be implemented properly once a capture
-// shows what it is. NextendoNetwork's server answers every DataStore method
-// this way and Splatoon 2 proceeds through its bring-up (facts only);
+// success, logged so that it can be implemented properly once a capture shows
+// what it is. Splatoon 2 proceeds through its bring-up on an empty success;
 // NotImplemented is not known to be survivable.
 func (s *Server) dataStoreFallback(c *nex.Conn, req *nex.Request) *nex.Response {
 	s.log.Warn("s2: DataStore method answered with the empty-success fallback",
@@ -154,7 +150,7 @@ func (s *Server) GearOrderOf(pid uint64) (GearOrder, bool) {
 // getOrderedGear: no parameters -> OrderedInfo, or DataStore::NotFound when
 // nothing is on order.
 //
-// TODO(capture-needed): how Nintendo answered "nothing ordered". NotFound is
+// UNCONFIRMED: how Nintendo answered "nothing ordered". NotFound is
 // this protocol's documented "nothing here"; a capture of a player with no
 // order would settle it, and this function is the one to change.
 func (s *Server) getOrderedGear(c *nex.Conn, req *nex.Request) *nex.Response {
@@ -305,7 +301,7 @@ func (s *Server) coconutReport(c *nex.Conn, req *nex.Request) *nex.Response {
 // empty -- newest first. The get info points at this server, which serves
 // the post's own binary data back.
 //
-// TODO(capture-needed): what getType selects, and what the get info's URL
+// UNCONFIRMED: what getType selects, and what the get info's URL
 // is expected to serve (read here as the post's binary data). A capture of
 // a real answer settles both; this function and ServeHTTP are what change.
 func (s *Server) coconutGet(c *nex.Conn, req *nex.Request) *nex.Response {
@@ -419,7 +415,7 @@ func (s *Server) preparePostPlayLog(c *nex.Conn, req *nex.Request) *nex.Response
 // prepareGetPlayLog answers DataStore::NotFound: no play log is ever kept
 // to be read back.
 //
-// TODO(capture-needed): what the game asks for here and what it does with
+// UNCONFIRMED: what the game asks for here and what it does with
 // it (PlayLogPrepareGetParam's fields are unnamed on Kinnay's wiki).
 func (s *Server) prepareGetPlayLog(c *nex.Conn, req *nex.Request) *nex.Response {
 	return req.Error(nex.ResultDataStoreNotFound)

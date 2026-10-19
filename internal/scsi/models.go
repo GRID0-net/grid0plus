@@ -19,12 +19,11 @@ type archiveView struct {
 	DeviceSerial  string `json:"device_serial"`
 	DataSize      int64  `json:"data_size"`
 	Desc          string `json:"desc"`
-	// json.Number, not int64: a real value observed on real hardware
-	// 2026-09-24 (12237957226414712540) exceeds int64's own maximum. See
-	// db.SaveDataArchive.SeriesID's own comment. json.Number marshals as a
-	// bare JSON number, matching a real console's own response shape,
-	// while holding the exact digit string internally rather than losing
-	// precision to float64 or overflowing a fixed-width integer.
+	// json.Number, not int64: a real value (12237957226414712540) exceeds int64's
+	// own maximum. See db.SaveDataArchive.SeriesID's own comment. json.Number
+	// marshals as a bare JSON number, matching a real console's own response shape,
+	// while holding the exact digit string internally rather than losing precision to
+	// float64 or overflowing a fixed-width integer.
 	SeriesID                  json.Number     `json:"series_id"`
 	Datatype                  int             `json:"datatype"`
 	Status                    string          `json:"status"`

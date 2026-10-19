@@ -17,10 +17,10 @@ func strV(s string) *commonpb.Value {
 }
 
 // TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot is the round trip a
-// console needs to ever hold a resolved cloud save: an established console
-// told "nothing in the cloud" sends evt=Validate with the keys it is missing
-// (captured 2026-09-24), and the next boot's GetSaveRecord must return them
-// instead of the zero-message answer again.
+// console needs to ever hold a resolved cloud save: an established console told
+// "nothing in the cloud" sends evt=Validate with the keys it is missing, and the
+// next boot's GetSaveRecord must return them instead of the zero-message answer
+// again.
 func TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot(t *testing.T) {
 	const uid = "save000000000001"
 	h := newHarness(t)
@@ -29,8 +29,8 @@ func TestACloudSaveTheConsoleWroteComesBackOnTheNextBoot(t *testing.T) {
 	ctx := h.ctx(h.sessionFor(t, uid, "device-save-1"), "")
 	get := &toyohrpb.GetSaveRecordRequest{Name: "tenants/current/saveRecords/current"}
 
-	// An established console only writes after seeing an existing, empty
-	// record (2026-09-24 hardware); zero messages made it write nothing.
+	// An established console only writes after seeing an existing, empty record;
+	// zero messages make it write nothing.
 	var header metadata.MD
 	if empty, err := saves.GetSaveRecord(ctx, get, grpc.Header(&header)); err != nil || len(empty.GetSaveData().GetFields()) != 0 || empty.GetName() == "" {
 		t.Fatalf("first boot GetSaveRecord = %v, %v; want a named, empty record", empty, err)

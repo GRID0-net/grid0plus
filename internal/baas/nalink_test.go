@@ -73,8 +73,7 @@ func TestNAAuthorizePageRenders(t *testing.T) {
 	if !strings.Contains(string(body), "nintendo://lhub.nx.sys") {
 		t.Error("page does not echo redirect_uri back as a hidden field")
 	}
-	// A real capture of this exact page showed both present; missing prior to
-	// 2026-08-28.
+	// A real page has both present.
 	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want %q", got, "no-store")
 	}
@@ -103,10 +102,9 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 	defer resp.Body.Close()
 	requireStatus(t, resp, http.StatusFound)
 
-	// This redirect carries the code and id_token, so a real capture showed
-	// it with the same no-cache headers every JSON response gets -- missing
-	// prior to 2026-08-28, because this is the one response in nalink.go
-	// that bypasses writeJSON (no body, just a Location header).
+	// This redirect carries the code and id_token, so it has the same no-cache
+	// headers every JSON response gets -- this is the one response in nalink.go that
+	// bypasses writeJSON (no body, just a Location header).
 	if got := resp.Header.Get("Cache-Control"); got != "no-store, no-cache" {
 		t.Errorf("Cache-Control = %q, want %q", got, "no-store, no-cache")
 	}
@@ -148,9 +146,8 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 	}
 
 	// c_hash binds this id_token to the code alongside it, per the OIDC spec.
-	// nonce echoes what the console sent on the original authorize request.
-	// Both verified byte-for-byte against a real capture (oidcHash's doc
-	// comment); neither existed before 2026-08-27.
+	// nonce echoes what the console sent on the original authorize request. Both
+	// checked byte-for-byte (oidcHash's doc comment).
 	_, payload := decodeTokenParts(t, frag.Get("id_token"))
 	if got, want := payload["c_hash"], oidcHash(code); got != want {
 		t.Errorf("id_token c_hash = %v, want %v", got, want)
@@ -163,17 +160,12 @@ func TestNAAuthorizeCorrectCredentialsRedirectWithAToken(t *testing.T) {
 	}
 }
 
-// TestNAAuthorizeAlwaysIncludesIDTokenAndSessionState guards against
-// re-introducing a bug that shipped 2026-08-26 and cost a full day to find:
-// making id_token/session_state conditional on response_type, on the guess
-// that a plain response_type=code request wants a bare code and gets
-// confused by an unrequested id_token. A 2026-08-27 capture of a genuinely
-// successful link
-// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) proved that
-// guess wrong: response_type=code and response_type=code+id_token both got
-// back the identical four-field fragment (state, session_state, code,
-// id_token) from a real, working private server. Always include both,
-// regardless of response_type.
+// TestNAAuthorizeAlwaysIncludesIDTokenAndSessionState guards against making
+// id_token/session_state conditional on response_type, on the guess that a plain
+// response_type=code request wants a bare code and gets confused by an unrequested
+// id_token. That guess is wrong: response_type=code and response_type=code+id_token both
+// get back the identical four-field fragment (state, session_state, code, id_token) from
+// a working server. Always include both, regardless of response_type.
 func TestNAAuthorizeAlwaysIncludesIDTokenAndSessionState(t *testing.T) {
 	h := newHarness(t)
 	registerLoginUser(t, h, "alice", "hunter2222")
@@ -301,21 +293,18 @@ func TestNATokenExchangesACodeForAnAccessToken(t *testing.T) {
 	if body.AccessToken == "" {
 		t.Error("no access_token")
 	}
-	// A real console's first-time interactive link uses response_type=code
-	// only, so no id_token ever arrives via the redirect fragment — it has to
-	// come from here, or the console has an access token but no way to learn
-	// which account it belongs to (this was error 2124-3122 on real
-	// hardware, 2026-08-26, before id_token was added to this response).
+	// A real console's first-time interactive link uses response_type=code only, so
+	// no id_token ever arrives via the redirect fragment -- it has to come from
+	// here, or the console has an access token but no way to learn which account it
+	// belongs to (error 2124-3122).
 	if body.IDToken == "" {
 		t.Error("no id_token")
 	}
 	if body.RefreshToken == "" {
 		t.Error("no refresh_token")
 	}
-	// refresh_token must be opaque, not a JWT: a real working capture showed
-	// one 64 characters long with no dots, unlike every other token minted
-	// alongside it. Signing it as a JWT here shipped 2026-08-26 and was found
-	// and fixed 2026-08-27.
+	// refresh_token must be opaque, not a JWT: a real server's is 64 characters
+	// long with no dots, unlike every other token minted alongside it.
 	if strings.Count(body.RefreshToken, ".") == 2 {
 		t.Errorf("refresh_token looks like a JWT (%q), want an opaque string", body.RefreshToken)
 	}
@@ -329,12 +318,9 @@ func TestNATokenExchangesACodeForAnAccessToken(t *testing.T) {
 		t.Errorf("token_type = %q, want Bearer", body.TokenType)
 	}
 
-	// access_token and id_token must share a key: a real working capture
-	// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) showed both
-	// tokens from this exact endpoint published at the same kid, both under
-	// accounts.nintendo.com's own JWKS -- not the BAAS host's. Signing
-	// access_token with the wrong issuer's key here shipped 2026-08-26 and
-	// was found and fixed 2026-08-27.
+	// access_token and id_token must share a key: both tokens from this endpoint are
+	// published at the same kid, under accounts.nintendo.com's own JWKS, not the BAAS
+	// host's. Signing access_token with the wrong issuer's key breaks that.
 	accessHeader, accessPayload := decodeTokenParts(t, body.AccessToken)
 	idHeader, idPayload := decodeTokenParts(t, body.IDToken)
 	if accessHeader["kid"] != idHeader["kid"] {
@@ -351,10 +337,10 @@ func TestNATokenExchangesACodeForAnAccessToken(t *testing.T) {
 	if got, want := idPayload["at_hash"], oidcHash(body.AccessToken); got != want {
 		t.Errorf("id_token at_hash = %v, want %v", got, want)
 	}
-	// A real working capture's id_token from this exact endpoint has no 'typ'
-	// claim in its payload at all -- unlike a BAAS id_token, which always
-	// does. Reusing sjwt.BAASTokenClaims for both must not leak BAAS's shape
-	// onto this OIDC-flavoured token.
+	// A real id_token from this exact endpoint has no 'typ' claim in its payload at
+	// all -- unlike a BAAS id_token, which always does. Reusing
+	// sjwt.BAASTokenClaims for both must not leak BAAS's shape onto this
+	// OIDC-flavoured token.
 	if _, present := idPayload["typ"]; present {
 		t.Errorf("id_token payload carries typ = %v, want it entirely absent", idPayload["typ"])
 	}
@@ -380,15 +366,13 @@ func TestNATokenExchangesACodeForAnAccessToken(t *testing.T) {
 }
 
 // TestNAIDTokenAndBAASIDTokenUseDifferentKeys guards a real hardware failure
-// found 2026-08-26 (error 2124-0292): nalink.go's Nintendo Account link id
-// token (iss = "https://accounts.nintendo.com") and a login/federation
-// response's embedded id token (iss = the BAAS host) were signed with the
-// same key, both published at the same /1.0.0/certificates JWK set. Per a
-// real, working private server's own operational notes (Nextendo Network's
-// baas-jwks), the console links a token's kid to its iss and silently
-// rejects the whole Nintendo Account import the moment it sees one kid used
-// under two different issuers -- with no further network call, exactly the
-// symptom this bug produced. sjwt.IssuerNAID is the fix: a key of its own.
+// (error 2124-0292): the Nintendo Account link id token (iss =
+// "https://accounts.nintendo.com") and a login/federation response's embedded id token
+// (iss = the BAAS host) were signed with the same key, both published at the same
+// /1.0.0/certificates JWK set. The console links a token's kid to its iss and silently
+// rejects the whole Nintendo Account import the moment it sees one kid used under two
+// different issuers, with no further network call. sjwt.IssuerNAID is the fix: a key of
+// its own.
 func TestNAIDTokenAndBAASIDTokenUseDifferentKeys(t *testing.T) {
 	h := newHarness(t)
 	registerLoginUser(t, h, "alice", "hunter2222")
@@ -717,12 +701,11 @@ func TestNAUsersMeReturnsTheAuthenticatedPersonsProfile(t *testing.T) {
 	if body.Nickname != "carol" {
 		t.Errorf("nickname = %q, want carol", body.Nickname)
 	}
-	// registerLoginUser stores "0000-00-00" and an empty country -- BAAS's
-	// own sentinels for "unset" on a device profile (accounts.go,
-	// provision.go). Passing those straight through here produced a real
-	// hardware failure (2124-3122, 2026-08-26): a real Nintendo Account
-	// profile is expected to carry an actual date and a real ISO country
-	// code, not BAAS's placeholder values.
+	// registerLoginUser stores "0000-00-00" and an empty country -- BAAS's own
+	// sentinels for "unset" on a device profile (accounts.go, provision.go). Passing
+	// those straight through here produces a hardware failure (2124-3122): a real
+	// Nintendo Account profile is expected to carry an actual date and a real ISO
+	// country code, not BAAS's placeholder values.
 	if body.Birthday == "" || body.Birthday == "0000-00-00" {
 		t.Errorf("birthday = %q, want a real-looking date, not BAAS's unset sentinel", body.Birthday)
 	}
@@ -731,10 +714,9 @@ func TestNAUsersMeReturnsTheAuthenticatedPersonsProfile(t *testing.T) {
 	}
 }
 
-// TestNAUsersMeGivesAFreshPersonADefaultAvatar matches the operator's
-// 2026-08-26 description of real Nextendo: the "add this user to this
-// console" confirmation screen always has a picture to show, generated the
-// first time a person with no uploaded thumbnail is fetched, never blank.
+// TestNAUsersMeGivesAFreshPersonADefaultAvatar: the "add this user to this console"
+// confirmation screen always has a picture to show, generated the first time a person
+// with no uploaded thumbnail is fetched, never blank.
 func TestNAUsersMeGivesAFreshPersonADefaultAvatar(t *testing.T) {
 	h := newHarness(t)
 	registerLoginUser(t, h, "dana", "hunter2222")
@@ -811,12 +793,11 @@ func TestNATokenRefreshGrantIsRefusedNotCrashed(t *testing.T) {
 	}
 }
 
-// TestNATokenRefreshRestatesTheGrantedScopes pins what a working server's
-// refresh answer carries (2026-08-27 capture, the refresh right after
-// federation): the console's refresh request names no scope at all, and the
-// answer restates the original grant's scopes, with the matching ac:scp in
-// the access token. Echoing the request instead answered scope: [] and an
-// access token with no ac:scp.
+// TestNATokenRefreshRestatesTheGrantedScopes pins what a real refresh answer
+// carries: the console's refresh request names no scope at all, and the answer
+// restates the original grant's scopes, with the matching ac:scp in the access
+// token. Echoing the request instead answers scope: [] and an access token with
+// no ac:scp.
 func TestNATokenRefreshRestatesTheGrantedScopes(t *testing.T) {
 	h := newHarness(t)
 	registerLoginUser(t, h, "frank", "hunter2222")
@@ -891,11 +872,10 @@ func TestNATokenRefreshRestatesTheGrantedScopes(t *testing.T) {
 }
 
 // TestNARefreshTokenSurvivesARestart pins what a deploy used to break: the
-// console holds its Nintendo Account refresh token for days, and every
-// restart of this service used to forget every one of them, so the next
-// refresh answered 400 invalid_grant and the console showed the login page
-// again (2026-09-23, 08:10). A refresh issued before a restart has to work
-// after it.
+// console holds its Nintendo Account refresh token for days, and a restart of
+// this service that forgets them makes the next refresh answer 400 invalid_grant
+// and the console show the login page again. A refresh issued before a restart
+// has to work after it.
 func TestNARefreshTokenSurvivesARestart(t *testing.T) {
 	h := newHarness(t)
 	user := registerLoginUser(t, h, "grace", "hunter2222")

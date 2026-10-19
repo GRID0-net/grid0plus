@@ -18,13 +18,12 @@ import (
 // archiving it.
 //
 // Why a person wants this: the console plays from its local save and only
-// uploads what changes (2026-10-10, hardware: after a wipe it wrote 3 keys,
-// 95 bytes, not the whole save). Someone who puts a different save on their
-// console therefore gets its changes merged key by key into the old cloud
-// record, a mix of two saves that a restore would bring back. Wiping first
-// lets the cloud copy follow the new save alone. The game itself is
-// unaffected: told the record is empty, it keeps its local save (the hall,
-// news and gear change all worked after a wipe on 2026-10-10).
+// uploads what changes (after a wipe it writes a few keys, not the whole save).
+// Someone who puts a different save on their console therefore gets its changes
+// merged key by key into the old cloud record, a mix of two saves that a restore
+// would bring back. Wiping first lets the cloud copy follow the new save alone.
+// The game itself is unaffected: told the record is empty, it keeps its local
+// save (the hall, news and gear all work after a wipe).
 //
 // The archive is written before the delete, and a failed archive refuses the
 // wipe, so a save is never lost to this command.
@@ -106,18 +105,17 @@ func (b *botAPI) keepForReview(uid string, save []byte, info splat3save.Info) (s
 // its save into a 1 MiB buffer; real saves are about 80 KB.
 const maxSaveUpload = 2 << 20
 
-// importSplatoon3Save replaces the caller's Splatoon 3 cloud save record with
-// one decoded from an uploaded save.dat (internal/splat3save).
+// importSplatoon3Save replaces the caller's Splatoon 3 cloud save record with one
+// decoded from an uploaded save.dat (internal/splat3save).
 //
-// It replaces the record whole rather than merging: a console takes the
-// server's record over its own save on every boot (TODO.md §1.6), so the
-// uploaded save only reaches the game through the record, and a merge would
-// keep fields from the save being replaced. The old record is archived first
-// and a failed archive refuses the import, as for the wipe.
+// It replaces the record whole rather than merging: a console takes the server's
+// record over its own save on every boot, so the uploaded save only reaches the game
+// through the record, and a merge would keep fields from the save being replaced. The
+// old record is archived first and a failed archive refuses the import, as for the wipe.
 //
-// The console must not be running Splatoon 3 meanwhile: its next write
-// would carry the old save's version token and its own idea of the fields.
-// The bot says so before it calls this; nothing here can tell.
+// The console must not be running Splatoon 3 meanwhile: its next write would carry the
+// old save's version token and its own idea of the fields. The bot says so before it
+// calls this; nothing here can tell.
 func (b *botAPI) importSplatoon3Save(w http.ResponseWriter, r *http.Request, discordID string) {
 	if b.saveRecordPrefix == "" || b.saveBackupDir == "" || b.saveTable == nil {
 		writeBotError(w, http.StatusServiceUnavailable, "save_import_disabled", "cloud save import is not configured")

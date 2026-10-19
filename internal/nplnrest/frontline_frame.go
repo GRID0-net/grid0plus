@@ -5,13 +5,12 @@ import (
 	"time"
 )
 
-// frontlineOpeningFrame builds the size-prefixed FlatBuffer observed on three
-// working Nextendo connections (2026-09-23): discriminator 12, an empty payload,
-// sender "fro", and Unix seconds. Only the timestamp varied across those frames.
-// The table is constructed from its measured layout rather than replaying a
-// captured response. See docs/CAPTURES/nextendo-hall-bootstrap-2026-09-23.md.
-// TODO(capture-needed): the semantic name of type 12 and any later messages or
-// acknowledgements. This encoder covers only the observed connection opening.
+// frontlineOpeningFrame builds the size-prefixed FlatBuffer a console expects
+// as the first message on a frontline connection: discriminator 12, an empty
+// payload, sender "fro", and Unix seconds.
+//
+// UNCONFIRMED: the semantic name of type 12 and any later messages or
+// acknowledgements. This encoder covers only the connection opening.
 func frontlineOpeningFrame(now time.Time) []byte {
 	b := make([]byte, 68)
 	put16 := func(off int, v uint16) { binary.LittleEndian.PutUint16(b[off:], v) }

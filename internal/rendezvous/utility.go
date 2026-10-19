@@ -80,9 +80,8 @@ func random63() uint64 {
 // UniqueIdInfo with a password.
 //
 // A title only asks on a fresh account and then keeps the id in its save,
-// which is why a missing answer looks like "works for most people":
-// NextendoNetwork records Splatoon 2 calling the WithPassword form and
-// showing 2306-0103 when it went unanswered (facts only).
+// which is why a missing answer looks like "works for most people": Splatoon 2
+// calls the WithPassword form and shows 2306-0103 when it goes unanswered.
 func (s *Server) acquireUniqueID(withPassword bool) Method {
 	return func(c *nex.Conn, req *nex.Request) *nex.Response {
 		u := UniqueID{ID: random63()}
@@ -182,11 +181,10 @@ func (s *Server) getAssociatedUniqueIDs(list bool) Method {
 // getSettings answers GetIntegerSettings (Map<u16, s32>) and
 // GetStringSettings (Map<u16, String>) with an empty map.
 //
-// TODO(capture-needed): what Splatoon 2's settings groups contain. An empty
-// map is what NextendoNetwork's server answers every title that has not
-// been shown to need more (facts only), and nothing records Splatoon 2
-// reading one. A capture of the real answer would settle it; the single
-// function to change is this one.
+// UNCONFIRMED: what Splatoon 2's settings groups contain. An empty map is the
+// answer for any title not shown to need more, and nothing records Splatoon 2
+// reading one. A capture of the real answer would settle it; the single function
+// to change is this one.
 func (s *Server) getSettings(integer bool) Method {
 	return func(c *nex.Conn, req *nex.Request) *nex.Response {
 		index := nex.NewReader(req.Body).U32()

@@ -131,19 +131,12 @@ var Scopes = []string{ScopeSelf, ScopeFavoriteFriends, ScopeFriends, ScopeFOAF, 
 type ExtrasByScope map[string]map[string]any
 
 // EmptyExtras returns an extras block with all five scopes present, seeded
-// with the default keys a real working account's extras carry on every
-// scope, per a 2026-08-27 capture and reconfirmed 2026-09-21 via a live
-// mitmdump capture of GRID0+'s own federation response (which showed all
-// five scopes as literal empty '{}', diverging from the reference).
+// with the default keys a real working account's extras carry on every scope.
 //
-// This exact seeding was implemented once before (commit d61d206), deployed,
-// tested on real hardware, and reverted (b5b32ba) after it did not fix
-// 2124-0292 -- that investigation later found 2124-0292's real cause
-// elsewhere (nxAccountBlob's header, see accounts.go). Reapplying now since
-// it is a real, capture-confirmed content gap independent of that fix, not
-// a guess, and the earlier test only ruled it out for 2124-0292 specifically
-// -- it was never implicated in, or tested against, the new post-federation
-// symptom this capture was taken for.
+// Without the seeding the five scopes are literal empty '{}', diverging from a
+// real account. Seeding the defaults is a content-fidelity fix independent of
+// nxAccountBlob's header (see accounts.go), which is what error 2124-0292
+// actually depended on.
 func EmptyExtras() ExtrasByScope {
 	e := make(ExtrasByScope, len(Scopes))
 	for _, s := range Scopes {
@@ -719,13 +712,13 @@ type Stats struct {
 	SaveDataArchives      int
 }
 
-// SaveDataArchive is one OLSC cloud-save backup for a single title on a
-// single device (phase 4). Mirrors storage.hac.lp1.scsi.srv.nintendo.net's "save
-// data archive" object field-for-field where the shape is confirmed.
+// SaveDataArchive is one OLSC cloud-save backup for a single title on a single
+// device. Mirrors storage.hac.lp1.scsi.srv.nintendo.net's "save data archive"
+// object field-for-field where the shape is confirmed.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers#save-data-archive
-// See internal/scsi/README.md for which parts of this are confirmed from
-// that page and which are this project's own defensible reading.
+// See internal/scsi/README.md for which parts are confirmed from that page and
+// which are this project's own reading.
 type SaveDataArchive struct {
 	ID string
 
@@ -737,14 +730,12 @@ type SaveDataArchive struct {
 
 	DataSize    int64
 	Description string
-	// SeriesID is stored as its exact decimal digit string, not a fixed-
-	// width integer: a real value observed on real hardware 2026-09-24
-	// (12237957226414712540) exceeds int64's own maximum
-	// (9223372036854775807), so it is not signed 64-bit either -- BIGINT
-	// (migration 0019, which fixed a smaller INTEGER overflow first) still
-	// cannot hold it. Nothing here does arithmetic on it; it is an opaque
-	// identifier the console sends and reads back, the same treatment
-	// EncodedDigest already gets.
+	// SeriesID is stored as its exact decimal digit string, not a fixed-width
+	// integer: a real value (12237957226414712540) exceeds int64's own maximum
+	// (9223372036854775807), so it is not signed 64-bit either -- BIGINT (migration
+	// 0019, which fixed a smaller INTEGER overflow first) still cannot hold it.
+	// Nothing here does arithmetic on it; it is an opaque identifier the console
+	// sends and reads back, the same treatment EncodedDigest already gets.
 	SeriesID string
 	Datatype int
 
@@ -900,7 +891,7 @@ type Store interface {
 	ListAllDeviceAccounts(ctx context.Context, userID string) ([]DeviceAccount, error)
 	// DeleteDeviceAccount marks a device account deleted.
 	DeleteDeviceAccount(ctx context.Context, userID, id string) error
-	// ---- splatfests (phase 2) ----
+	// ---- splatfests ----
 
 	// UpsertFest creates or replaces a fest by id.
 	UpsertFest(ctx context.Context, f Fest) error
@@ -1005,7 +996,7 @@ type Store interface {
 	// created again since. A fest that never existed is not deleted.
 	FestDeleted(ctx context.Context, id string) (bool, error)
 
-	// ---- Salmon Run / Big Run schedule (phase 2) ----
+	// ---- Salmon Run / Big Run schedule ----
 
 	// UpsertCoopShift creates or replaces a coop shift by id.
 	UpsertCoopShift(ctx context.Context, c CoopShift) error
@@ -1017,7 +1008,7 @@ type Store interface {
 	// exist: the same idempotent-delete reasoning as DeleteFest.
 	DeleteCoopShift(ctx context.Context, id string) error
 
-	// ---- match history (phase 2) ----
+	// ---- match history ----
 
 	// CreateMatch records a formed game session. Called once, at formation —
 	// there is nothing to update afterward, since nothing tells this server
@@ -1180,7 +1171,7 @@ type Store interface {
 	// GetImage returns an image by id, or ErrNotFound.
 	GetImage(ctx context.Context, id string) (Image, error)
 
-	// ---- OLSC save data archives (phase 4) ----
+	// ---- OLSC save data archives ----
 
 	// CreateSaveDataArchive inserts a new archive, in "uploading" status if
 	// a.Status is left empty.

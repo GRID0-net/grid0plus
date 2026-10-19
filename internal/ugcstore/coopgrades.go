@@ -27,11 +27,11 @@ func ApplyCoopGrades(ctx context.Context, store db.Store, tenant, battleID, mode
 	if result == nil || wave == nil {
 		return nil
 	}
-	// grid0's 37 stored jobs (2026-10-11): result=0 always with final_wave=2
-	// (a clear; final_wave counts from 0), result=1 with final_wave 0, 1 or 2
-	// (failed in that wave). TODO(capture-needed): any other result value, a
-	// disconnect or a King Salmonid wave, has never been seen. Unknown results
-	// must not award or deduct grade. Change ApplyCoopGrades.
+	// Observed results: result=0 always with final_wave=2 (a clear; final_wave
+	// counts from 0), result=1 with final_wave 0, 1 or 2 (failed in that wave).
+	// UNCONFIRMED: any other result value, a disconnect or a King Salmonid wave, has
+	// never been seen. Unknown results must not award or deduct grade. Change
+	// ApplyCoopGrades.
 	if result.GetIntegerValue() < 0 || result.GetIntegerValue() > 1 || wave.GetIntegerValue() < 0 || wave.GetIntegerValue() > 3 {
 		return nil
 	}
@@ -96,10 +96,10 @@ func nextCoopGrade(before, delta int64) int64 {
 }
 
 // smellMax is a full Salmometer. The game sums every player's smell into the
-// job's scenario.smell_num (FUN_71032c0260, from each member's copy of
-// CoopUserAttribute.smell, read at FUN_710327ba70) and rolls the King
-// Salmonid at the end of wave 3 from that sum; Inkipedia's datamine notes
-// give the odds (0 up to a sum of 4, certain at 20 = four full meters).
+// job's scenario.smell_num (from each member's copy of CoopUserAttribute.smell)
+// and rolls the King Salmonid at the end of wave 3 from that sum; Inkipedia's
+// datamine notes give the odds (0 up to a sum of 4, certain at 20 = four full
+// meters).
 const smellMax = 5
 
 // nextSmell is one player's Salmometer after a job: up one per job without

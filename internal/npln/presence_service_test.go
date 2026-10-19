@@ -269,20 +269,18 @@ func TestKeepAliveTouchesPresenceLiveness(t *testing.T) {
 	}
 }
 
-// TestKeepAliveAcksAPingAfterTheOpeningReply is the regression test for
-// getting this backwards once already, in this same session: an earlier
-// version of this function answered on its own independent timer instead of
-// the client's pings, on the theory that acking immediately would cause a
-// runaway loop. NextendoNetwork/splatoon-3's own hardware measurement (facts
-// only, not its code) says a real Nintendo server does ack the client's
-// pings rather than ignoring them, and answering on a slower independent
-// clock is what killed real streams at 59.998s / 1m0.001s with "a
-// communication error has occurred" -- because the FIRST reply is what
-// announces the {interval, deadline} contract the client's own patience is
-// calibrated against, and the client got no reply to its very first ping.
+// TestKeepAliveAcksAPingAfterTheOpeningReply is the regression test for getting
+// this backwards once already: an earlier version of this function answered on its
+// own independent timer instead of the client's pings, on the theory that acking
+// immediately would cause a runaway loop. A real Nintendo server does ack the client's
+// pings rather than ignoring them, and answering on a slower independent clock is
+// what killed real streams at 59.998s / 1m0.001s with "a communication error has
+// occurred" -- because the FIRST reply is what announces the {interval, deadline}
+// contract the client's own patience is calibrated against, and the client got no reply
+// to its very first ping.
 //
-// This does not re-test "every ping instantly," which turned out to be
-// wrong the other direction -- see TestKeepAliveThrottlesARapidPingBurst.
+// This does not re-test "every ping instantly," which turned out to be wrong the other
+// direction -- see TestKeepAliveThrottlesARapidPingBurst.
 func TestKeepAliveAcksAPingAfterTheOpeningReply(t *testing.T) {
 	old := presenceKeepAlive
 	presenceKeepAlive = time.Hour // any tick firing would also pass a ping; keep it out of reach

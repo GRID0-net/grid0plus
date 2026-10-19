@@ -20,17 +20,15 @@ import (
 // Off unless configured; limited to the players the operator allows.
 //
 // One UDP port per PAIR of players, forwarding whatever arrives to the other
-// end without reading it. NextendoNetwork tried a single shared port first
-// on Splatoon 2 and found it cannot work: Pia's hole-punch probe is 16 bytes
-// carrying no identifier at all, so a shared port cannot tell whose it is,
-// and Pia refuses an answer that does not come from the peer (facts only).
-// With a port per pair, everything on the port belongs to that pair.
+// end without reading it. A single shared port cannot work on Splatoon 2:
+// Pia's hole-punch probe is 16 bytes carrying no identifier at all, so a shared
+// port cannot tell whose it is, and Pia refuses an answer that does not come from
+// the peer. With a port per pair, everything on the port belongs to that pair.
 //
 // Only a console's PUBLIC station is repointed at the relay. The LAN one is
 // left alone: it carries the connection id Pia needs to set the session up
 // after the punch, and repointing it too hands the peer two identical
-// candidates and loses that id -- the same source's explanation for most of
-// its failed relayed attempts.
+// candidates and loses that id.
 
 // RelayConfig configures the relay.
 type RelayConfig struct {
@@ -51,7 +49,7 @@ type RelayConfig struct {
 }
 
 // DefaultRelayIdle is two minutes: a match sends continuously, and a
-// loading screen does not last that long (NextendoNetwork's figure).
+// loading screen does not last that long.
 const DefaultRelayIdle = 2 * time.Minute
 
 // failedPunchesForRelay is how many hole-punch failures, with no success at
@@ -218,9 +216,9 @@ func (r *Relay) pair(a, b *nex.Conn) (*relayPair, error) {
 
 // sameNet24 reports whether two IPv4 addresses share a /24. A console under
 // carrier-grade NAT can send its UDP from a different address than its
-// WebSocket, in the same pool; NextendoNetwork measured exactly that
-// (facts only). The /24 keeps admission narrow -- the port is one pair's,
-// and closes after two minutes of silence -- without refusing those consoles.
+// WebSocket, in the same pool. The /24 keeps admission narrow -- the port is one
+// pair's, and closes after two minutes of silence -- without refusing those
+// consoles.
 func sameNet24(a, b string) bool {
 	x, y := net.ParseIP(a).To4(), net.ParseIP(b).To4()
 	return x != nil && y != nil && x[0] == y[0] && x[1] == y[1] && x[2] == y[2]

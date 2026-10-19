@@ -4,8 +4,7 @@
 // The game reads its GameRecord documents right after signing in and again on
 // entering the lobby, creates the ones that are missing through
 // GameRecord/InitializeAttributes (internal/toyohr, via Put below), and reads
-// them back. What that round trip needs, from
-// docs/CAPTURES/npln-gamerecord-attributes-2026-09-23.md:
+// them back. What that round trip needs:
 //
 //   - a document that does not exist is NotFound, sent as headers then a
 //     separate trailers frame through GetDocument's server-streaming transport
@@ -15,10 +14,9 @@
 //   - a name that does not parse is never stored.
 //
 // GetDocument, CommitDocuments and RunQuery are served. RunQuery lists stored
-// battle history and other matching documents; an empty query has the captured
-// read-time-only response. Bulk reads and attachments stay Unimplemented
-// until a console asks for them -- the gateway's "unimplemented" log is the
-// list.
+// battle history and other matching documents; an empty query has the read-time-
+// only response. Bulk reads and attachments stay Unimplemented until a console
+// asks for them -- the gateway's "unimplemented" log is the list.
 package ugcstore
 
 import (
@@ -103,8 +101,7 @@ func (s *Service) Register(srv grpc.ServiceRegistrar) {
 	// most one Document. This matters for an absent document: a stream can end
 	// without a protobuf message, while grpc-go's generated unary handler cannot
 	// represent that response. Keep the generated descriptor for every other
-	// method and override only this one, as observed in Nextendo's working S3
-	// implementation.
+	// method and override only this one.
 	desc := ugcpb.Ugcstore_ServiceDesc
 	methods := make([]grpc.MethodDesc, 0, len(desc.Methods))
 	for _, method := range desc.Methods {
@@ -136,11 +133,10 @@ func getDocumentStreamHandler(srv any, stream grpc.ServerStream) error {
 	}
 	doc, err := s.GetDocument(stream.Context(), req)
 	if err != nil {
-		// The captured response labels an absent document as Unary as well as
-		// ServerStreaming. Nintendo also sends Content-Length: 0, but this
-		// deployment's nginx grpc_pass treats that as the end of the response
-		// and drops the NotFound trailers. The console then sees UNKNOWN rather
-		// than NotFound, as measured on hardware on 2026-09-25.
+		// An absent document is labelled as Unary as well as ServerStreaming.
+		// Nintendo also sends Content-Length: 0, but this deployment's nginx grpc_pass
+		// treats that as the end of the response and drops the NotFound trailers. The
+		// console then sees UNKNOWN rather than NotFound.
 		if status.Code(err) == codes.NotFound {
 			_ = stream.SetHeader(metadata.Pairs("npln-grpc-type", "Unary"))
 		}
@@ -215,11 +211,10 @@ func (s *Service) GetDocument(ctx context.Context, req *ugcpb.GetDocumentRequest
 // comes back. It never writes those documents itself; the server does, after
 // each match (VsResultsDocument). Only documents directly in a named
 // collection are returned -- answering a battle query with the player's
-// VsUserAttribute document makes the console abort with 2162-0001
-// (NextendoNetwork/splatoon-3's measurement).
+// VsUserAttribute document makes the console abort with 2162-0001.
 //
-// With no match the answer keeps its captured empty shape: one message with
-// only read_time. A brand-new account depends on it.
+// With no match the answer keeps its empty shape: one message with only
+// read_time. A brand-new account depends on it.
 func (s *Service) RunQuery(
 	req *ugcpb.RunQueryRequest, stream grpc.ServerStreamingServer[ugcpb.RunQueryResponse],
 ) error {
@@ -384,9 +379,8 @@ func (s *Service) CommitDocuments(ctx context.Context, req *ugcpb.CommitDocument
 			}
 			p.deleted, p.dirty = false, true
 		case *ugcpb.WriteOperation_UnsetAttachment:
-			// Side Order sends this beside its users/<id>/sideOrder/stats
-			// writes (2026-10-10), usually for an attachment that was never
-			// set; refusing it threw the whole batch away.
+			// Side Order sends this beside its users/<id>/sideOrder/stats writes, usually
+			// for an attachment that was never set; refusing it throws the whole batch away.
 			p, err := load(w.UnsetAttachment.GetParent())
 			if err != nil {
 				return nil, err
@@ -589,23 +583,22 @@ func (s *Service) Put(ctx context.Context, uid, name string, attrs *commonpb.Map
 }
 
 // attributeSeason is the season GameRecord's Vs attributes start in: the
-// SeasonSchedule id both working hall captures carry (unk2/unk3 = 16), and
-// the season_id of the working capture's VsUserAttribute.
+// SeasonSchedule id (unk2/unk3 = 16), and the season_id of a real
+// VsUserAttribute.
 const attributeSeason = 16
 
 // startingAttributes answers whether key is one of the caller's own two
 // GameRecord attribute documents, and if so what it starts with.
 //
-// NextendoNetwork/splatoon-3 measured (facts only, not its code) two real
-// Nintendo sessions: a console whose GetSaveRecord returned a record reads
-// CoopUserAttribute/Data then VsUserAttribute/Data first and gets both --
-// it never calls InitializeAttributes; a console with no record gets both
-// empty and calls InitializeAttributes. GRID0+ always answers a record
-// (see internal/toyohr/cloud_save.go), so the console takes the first path,
-// and on 2026-09-25 a NotFound there was followed by 2321-0384. So the
-// documents are created on first read, with exactly what
-// GameRecord/InitializeAttributes would have stored: the season for Vs,
-// nothing for Coop. The game keeps its own default for every absent key.
+// A console whose GetSaveRecord returned a record reads CoopUserAttribute/Data
+// then VsUserAttribute/Data first and gets both -- it never calls
+// InitializeAttributes; a console with no record gets both empty and calls
+// InitializeAttributes. GRID0+ always answers a record (see
+// internal/toyohr/cloud_save.go), so the console takes the first path, and a
+// NotFound there is followed by 2321-0384. So the documents are created on
+// first read, with exactly what GameRecord/InitializeAttributes would have
+// stored: the season for Vs, nothing for Coop. The game keeps its own default
+// for every absent key.
 func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 	owner, ok := pathOwner(key)
 	if !ok || owner != uid {
@@ -625,18 +618,15 @@ func startingAttributes(key, uid string) (*commonpb.MapValue, bool) {
 
 // emptyWhenAbsent reports whether an absent document is answered as a named,
 // empty document instead of NotFound: only the caller's own
-// WeaponPowerMeasurement/<season>. A fresh account on 2026-09-25 re-read
-// every GameRecord document every five seconds while PointCard* were also
-// answered this way; Nextendo's notes have PointCardRegular absent until the
-// period is played. Everything else absent stays NotFound.
+// WeaponPowerMeasurement/<season>. A fresh account re-reads every GameRecord
+// document every five seconds if PointCard* are answered this way;
+// PointCardRegular is absent until the period is played. Everything else absent
+// stays NotFound.
 //
-// NextendoNetwork/splatoon-3's notes (facts only, not its code) record that
-// its working boot answers these families this way, and that NotFound on
-// WeaponPowerMeasurement/16 made the game loop re-reading it. On hardware on
-// 2026-09-25 the game read WeaponPowerMeasurement/16 twice, got NotFound,
-// and stopped with 2000-0000. Hammer documents keep NotFound, which the same
-// console already gets past. Nothing is stored: the document is not created,
-// only reported empty.
+// NotFound on WeaponPowerMeasurement/<season> makes the game loop re-reading it:
+// it reads the document twice, gets NotFound, and stops with 2000-0000. Hammer
+// documents keep NotFound, which the same console already gets past. Nothing is
+// stored: the document is not created, only reported empty.
 func emptyWhenAbsent(key, uid string) bool {
 	_, docPath, _ := strings.Cut(key, documentsSegment)
 	return strings.HasPrefix(docPath, "services/GameRecord/users/"+uid+"/WeaponPowerMeasurement/")
@@ -682,13 +672,13 @@ func (s *Service) PublishedMatching(
 	return out, nil
 }
 
-// PublishedBy lists, for each of uids in order, that player's newest
-// document under collection. A player is matched on the post's owner -- a
-// console asking for name plates on grid0 (2026-10-11) sent this server's own
-// user ids -- or on the post's top-level "UID" field, the id the console
-// writes into it, whose format on this server no post has shown yet. A
-// player with no post is skipped, or, with placeholders, answered with an
-// empty document so the answer stays one entry per requested player.
+// PublishedBy lists, for each of uids in order, that player's newest document
+// under collection. A player is matched on the post's owner -- a console asking
+// for name plates sends this server's own user ids -- or on the post's top-level
+// "UID" field, the id the console writes into it, whose format on this server no
+// post has shown yet. A player with no post is skipped, or, with placeholders,
+// answered with an empty document so the answer stays one entry per requested
+// player.
 func (s *Service) PublishedBy(ctx context.Context, collection string, uids []string, placeholders bool) ([]*ugcpb.Document, error) {
 	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
 	rows, err := s.store.ListUGCDocuments(ctx, prefix)

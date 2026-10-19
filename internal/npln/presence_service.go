@@ -46,16 +46,11 @@ type presenceService struct {
 	s *Server
 }
 
-// presenceHeartbeatDeadline is field 2 of a real Heartbeat message -- a
-// nested {1: 50} carrying the 50-second deadline the client actually uses,
-// alongside the documented field 1 (Interval, 30s). Neither this repository's
-// nor NextendoNetwork/splatoon-3's reconstructed .proto names field 2 (it is
-// genuinely undocumented -- switchbrew and kinnay's wiki have nothing for
-// it), but its raw bytes are a directly observable fact of the wire, not a
-// guess: NextendoNetwork/splatoon-3 records capturing exactly
-// `{2: {1: 50}}` from a real Nintendo server (facts only, its code not used
-// here -- this is reconstructed independently against the same confirmed
-// byte sequence, protoreflect.RawFields([]byte{0x12, 0x02, 0x08, 0x32})).
+// presenceHeartbeatDeadline is field 2 of a real Heartbeat message: a nested
+// {1: 50} carrying the 50-second deadline the client actually uses, alongside the
+// documented field 1 (Interval, 30s). Neither the published .proto nor this
+// repository's names field 2, but its raw bytes are a directly observable fact of
+// the wire: {2: {1: 50}}, protoreflect.RawFields([]byte{0x12, 0x02, 0x08, 0x32}).
 // Leaving it off is a likely reason a client would apply a shorter, internal
 // default deadline instead of the stated one.
 var presenceHeartbeatDeadline = protoreflect.RawFields([]byte{0x12, 0x02, 0x08, 0x32})
@@ -70,42 +65,35 @@ func presenceHeartbeat() *friendspb.Heartbeat {
 
 // KeepAlive is a bidirectional liveness stream.
 //
-// Answers every client ping with an immediate ack, on a real Nintendo
-// server's own confirmed behaviour: NextendoNetwork/splatoon-3 (facts only,
-// not its code) measured a real console sending 128, 34 and 77 pings across
-// three sessions and getting exactly one reply per ping, each. Their first
-// attempt at this RPC instead answered on its own independent 30s timer,
-// unrelated to the client's pings -- reasoning that acking immediately would
-// cause a runaway feedback loop -- and that was wrong: real KeepAlive
-// streams died at 59.998s / 1m0.001s with "a communication error has
-// occurred", because the FIRST reply is what announces the {30s, 50s}
-// contract (see presenceHeartbeat) the client times its own patience
-// against, and answering only every 30s left it waiting past its own
-// deadline for a reply to its very first ping.
+// Answers every client ping with an immediate ack, as a real Nintendo server does: a
+// real console sending 128, 34 and 77 pings across three sessions gets exactly one
+// reply per ping, each. Answering on an independent 30s timer instead, on the
+// theory that acking immediately would cause a runaway feedback loop, is wrong: real
+// KeepAlive streams died at 59.998s / 1m0.001s with "a communication error has
+// occurred", because the FIRST reply is what announces the {30s, 50s} contract (see
+// presenceHeartbeat) the client times its own patience against, and answering only
+// every 30s left it waiting past its own deadline for a reply to its very first ping.
 //
-// The first reply is sent immediately, before any ping has even arrived, for
-// the same reason: it is the one that sets the client's clock. Every
-// subsequent client message (ping or UpdatePresence) gets its own paced ack.
-// A ticker independently sends one on presenceStreamTick even if the
-// client falls silent, so the stream does not go quiet if the client's own
-// pings ever stop.
+// The first reply is sent immediately, before any ping has even arrived, for the
+// same reason: it is the one that sets the client's clock. Every subsequent client
+// message (ping or UpdatePresence) gets its own paced ack. A ticker independently
+// sends one on presenceStreamTick even if the client falls silent, so the stream
+// does not go quiet if the client's own pings ever stop.
 //
 // Splatoon 3 does send UpdatePresence here: its game-specific attributes
-// (GameStatus, SessionId, participant counts, ...) arrive on this stream and
-// are what its in-game friend list shows. They are kept in presenceAttributes
-// for SubscribePresences to hand out, not written to db.Presence: that row
-// stays BAAS's alone, for the same reason docs/ROADMAP.md#2.5 insists on one
-// friend graph rather than two. See presenceAttributes for the capture this
-// rests on.
+// (GameStatus, SessionId, participant counts, ...) arrive on this stream and are
+// what its in-game friend list shows. They are kept in presenceAttributes for
+// SubscribePresences to hand out, not written to db.Presence: that row stays
+// BAAS's alone, so there is one friend graph rather than two.
 
 // presenceKeepAliveAckMinInterval paces replies without dropping any ping.
-// A 2026-09-24 GRID0+ capture saw 101 ping/ack round trips in two seconds
-// (~50Hz), followed by a hall communication error. Dropping pings during a
-// one-second throttle was also wrong: the client waits for the reply before
-// sending its next ping, so it got only the opening response and abandoned
-// the stream before the next 20-second tick. Both working Nextendo captures
-// show essentially one reply per ping, about 20 per second. A 50ms floor
-// preserves that exchange while bounding the feedback loop.
+// Unthrottled, a console and this server exchanged 101 ping/ack round trips in two
+// seconds (~50Hz), followed by a hall communication error. Dropping pings during a
+// one-second throttle was also wrong: the client waits for the reply before sending
+// its next ping, so it got only the opening response and abandoned the stream before
+// the next 20-second tick. A working server shows essentially one reply per ping,
+// about 20 per second. A 50ms floor preserves that exchange while bounding the
+// feedback loop.
 const presenceKeepAliveAckMinInterval = 50 * time.Millisecond
 
 // Persist liveness at most every ten seconds, bounded by a quarter of the
@@ -280,9 +268,9 @@ func (p *presenceService) SubscribePresences(
 		})
 	}
 
-	// Both working captures send the heartbeat contract before the initial
-	// presence page. The game can then distinguish an open stream from a
-	// silent one while the page is still being assembled.
+	// The heartbeat contract is sent before the initial presence page. The game
+	// can then distinguish an open stream from a silent one while the page is still
+	// being assembled.
 	if err := stream.Send(&friendspb.SubscribePresencesResponse{
 		Response: &friendspb.SubscribePresencesResponse_Heartbeat{
 			Heartbeat: presenceHeartbeat(),
@@ -436,7 +424,7 @@ func (s *Server) watchablePresenceIDs(ctx context.Context, callerID string, name
 
 // presenceUserID takes the user id out of a presence resource name.
 //
-// TODO(capture-needed): the exact shape (see presenceProto's Name field for
+// UNCONFIRMED: the exact shape (see presenceProto's Name field for
 // what this server emits). Lenient on purpose, same reasoning as
 // matchmaking.go's lastSegment: this trims a trailing "/presence" singleton
 // segment if present, then takes whatever is left after the last "/", so a
@@ -448,9 +436,9 @@ func presenceUserID(name string) string {
 	return lastSegment(name)
 }
 
-// presenceResumeToken encodes the complete set being enumerated, not only
-// the latest changed presence. The working capture's token is base64 of a
-// repeated protobuf entry: each entry contains a user id and an empty cursor.
+// presenceResumeToken encodes the complete set being enumerated, not only the
+// latest changed presence. The token is base64 of a repeated protobuf entry:
+// each entry contains a user id and an empty cursor.
 func presenceResumeToken(presences []*friendspb.Presence) string {
 	ids := make([]string, 0, len(presences))
 	for _, p := range presences {

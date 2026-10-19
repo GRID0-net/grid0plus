@@ -24,8 +24,8 @@ const (
 
 // NotificationEvent is the Switch NotificationEvent, revision 0: PID source,
 // u32 type, three u64 parameters and a string -- and no map. The revision-1
-// map is not sent: NextendoNetwork records the Switch rejecting the
-// map-carrying and u32 variants outright (facts only).
+// map is not sent: the Switch rejects the map-carrying and u32 variants
+// outright.
 type NotificationEvent struct {
 	Source   uint64
 	Type     uint32

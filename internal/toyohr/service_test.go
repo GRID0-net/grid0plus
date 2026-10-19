@@ -212,7 +212,7 @@ func TestAnUpcomingDisabledFestIsNotAnnounced(t *testing.T) {
 }
 
 // The results phase is announced: the game shows the results from this
-// schedule, and dropping a closed fest hid them (2026-10-09, hardware).
+// schedule, and dropping a closed fest hides them.
 func TestAFestIsStillAnnouncedOnceItsResultsAreOut(t *testing.T) {
 	start := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	f := NewFest(start, nil)

@@ -13,10 +13,9 @@ import (
 	friendspb "github.com/n-popescu/grid0plus/proto/friends/v1"
 )
 
-// TestListFriendUsersSetsPresenceDeliverableAndReceivable is ROADMAP §2.5's
-// own warning: get these two flags wrong and the client neither shows a
-// friend's presence nor publishes its own, while the friend list itself
-// still looks perfectly healthy.
+// TestListFriendUsersSetsPresenceDeliverableAndReceivable: get these two flags wrong
+// and the client neither shows a friend's presence nor publishes its own, while the
+// friend list itself still looks perfectly healthy.
 func TestListFriendUsersSetsPresenceDeliverableAndReceivable(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("owner00000000001", "device-owner")

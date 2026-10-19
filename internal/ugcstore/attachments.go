@@ -23,26 +23,23 @@ import (
 // photo, a replay. Splatoon 3 never sends them through gRPC. It asks
 // IssueUploadUri for a URL, uploads to it over HTTPS, then names the upload
 // in CommitDocuments; another console asks IssueAttachmentUri for a URL to
-// download it from. NextendoNetwork's capture of a drawing being posted
-// (facts only, none of its code used) shows that order and a signed
-// storage.googleapis.com URL; Nintendo's storage is Google Cloud Storage.
+// download it from. Nintendo's storage is Google Cloud Storage and those URLs
+// are signed storage.googleapis.com ones.
 //
-// The game's uploader speaks GCS's resumable protocol (found in its main,
-// 2026-10-11): it PUTs chunks with "Content-Range: bytes a-b/total", checks
-// a session with "Content-Range: bytes */total", reads "Range: " from a 308
-// to resume, treats 200/201 as done and 404/410/499 as a session to restart
-// (status handling at 0x710065e0c4). The URL IssueUploadUri returns is the
-// session itself -- the binary has no x-goog-resumable initiation.
+// The game's uploader speaks GCS's resumable protocol: it PUTs chunks with
+// "Content-Range: bytes a-b/total", checks a session with "Content-Range:
+// bytes */total", reads "Range: " from a 308 to resume, treats 200/201 as done
+// and 404/410/499 as a session to restart. The URL IssueUploadUri returns is the
+// session itself -- there is no x-goog-resumable initiation.
 //
 // Here the URLs point at this server's own HTTP front end, on a host the
 // console already trusts, and the bytes live in the database.
 //
-// TODO(capture-needed): which write names the upload in the commit
-// (ImportAttachment with the URL, or the bytes inline in SetAttachment) and
-// what the final 200's body holds. Both writes are accepted and the body is
-// a minimal JSON object; the console's first post, logged as "ugcstore:
-// upload opened" / "attachment set", settles it. Change: serveUpload and
-// CommitDocuments' attachment cases.
+// UNCONFIRMED: which write names the upload in the commit (ImportAttachment with
+// the URL, or the bytes inline in SetAttachment) and what the final 200's body
+// holds. Both writes are accepted and the body is a minimal JSON object; the
+// console's first post, logged as "ugcstore: upload opened" / "attachment set",
+// settles it. Change: serveUpload and CommitDocuments' attachment cases.
 
 const (
 	uploadPath   = "/grid0/ugc/upload/"

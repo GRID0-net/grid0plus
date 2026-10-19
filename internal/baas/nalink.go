@@ -22,44 +22,35 @@ import (
 // oidcHash implements the OIDC 'at_hash'/'c_hash' claim: SHA-256 of the ASCII
 // value, left half, base64url without padding. Both id_tokens in this file
 // are always signed RS256, so SHA-256 (rather than the SHA-384/512 the spec
-// uses for other algs) is always the right hash here. Verified byte-for-byte
-// against a 2026-08-27 capture of a real working exchange.
+// uses for other algs) is always the right hash here.
 func oidcHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return base64.RawURLEncoding.EncodeToString(sum[:len(sum)/2])
 }
 
-// The Nintendo Account link stub: what accounts.nintendo.com becomes once it
-// is redirected here instead of null-routed.
+// The Nintendo Account link stub: what accounts.nintendo.com becomes once it is
+// redirected here instead of null-routed.
 //
-// This does not replicate Nintendo's real OAuth wire protocol — nobody has a
-// capture of the real thing, and CLAUDE.md's own rule is not to invent one.
-// What it replicates is Nextendo Network's approach, confirmed from a real,
-// decrypted capture of their working implementation on 2026-08-25: serve a
-// custom login page instead of Nintendo's, and redirect back through the
-// custom URI scheme the console's system software is listening on
-// (`nintendo://lhub.nx.sys`, observed directly in that capture) with a
-// self-issued id_token in the fragment. The console does not verify this
-// against anything Nintendo controls — it fetches the verification key from
-// whichever host the token's own `jku` claim names, and every Nintendo
-// hostname is already ours, so that resolves back to us regardless.
+// This does not replicate Nintendo's real OAuth wire protocol, which isn't published and
+// which this project won't invent. Instead it serves a custom login page in place of
+// Nintendo's, and redirects back through the custom URI scheme the console's system
+// software is listening on (`nintendo://lhub.nx.sys`) with a self-issued id_token in the
+// fragment. The console does not verify this against anything Nintendo controls: it
+// fetches the verification key from whichever host the token's own `jku` claim names,
+// and every Nintendo hostname is already ours, so that resolves back to us regardless.
 //
-// The login itself checks a person's own GRID0+ login credentials
-// (website.go), not a shared passphrase — this is meant to attach the link
-// to one persistent identity, not mint an anonymous one per attempt.
+// The login itself checks a person's own GRID0+ login credentials, not a shared
+// passphrase: this attaches the link to one persistent identity, not an anonymous one per
+// attempt.
 //
-// Both questions this paragraph used to leave open are now settled, by a
-// 2026-08-27 capture of a genuinely successful Nextendo link
-// (docs/CAPTURES/nintendo-account-link.md): yes, POST /1.0.0/users fires
-// automatically right after the redirect, driven by the nnAccount SDK, no
-// console-local confirmation step in between; and accounts.go's federation
-// handler DOES consume the token this file issues specially -- a successful
-// verification against naIDIssuer's own key (only ever true for a token
-// this file signed) is what tells completeLogin to reassign the fresh
-// device account to the existing person, rather than leaving it attached to
-// the disposable identity registerUser had to invent before any id token
-// existed. See federation's own doc comment in accounts.go for the real-
-// hardware failure that fix was found against.
+// POST /1.0.0/users fires automatically right after the redirect, driven by the
+// account SDK, with no console-local confirmation step in between. accounts.go's
+// federation handler consumes the token this file issues specially: a successful
+// verification against naIDIssuer's own key (only ever true for a token this file
+// signed) is what tells completeLogin to reassign the fresh device account to the
+// existing person, rather than leaving it attached to the disposable identity
+// registerUser had to invent before any id token existed. See federation's own doc
+// comment in accounts.go.
 
 // authCode is a short-lived, single-use authorization code minted by
 // naAuthorize and redeemed by naToken. In-memory and TTL'd: this is
@@ -78,14 +69,11 @@ const authCodeTTL = 5 * time.Minute
 // the BAAS host's (internal/baas/certificates.go), even though both currently
 // resolve to the same handler (the mux does not route on Host). Exported so
 // cmd/baas can hand it to the naIDIssuer it constructs, rather than that URL
-// existing as a second, independently-typed literal that could drift from
-// this one. A real, working private server's capture (2026-08-27) showed
-// exactly this: its accounts.nintendo.com id_token had
-// jku=https://accounts.nintendo.com/1.0.0/certificates, never the BAAS host's.
-// Before this, naIDIssuer (see sjwt.IssuerNAID) reused cfg.BAAS.IDTokenJWKSURL
-// -- a different key from the BAAS id_token (correct), published at the *BAAS
-// host's* URL regardless (wrong): an id_token whose iss names one host but
-// whose jku names a different one for where to verify it.
+// existing as a second, independently-typed literal that could drift from this
+// one. A real accounts.nintendo.com id_token has
+// jku=https://accounts.nintendo.com/1.0.0/certificates, never the BAAS host's:
+// an id_token whose iss names one host but whose jku names a different one for
+// where to verify it would be wrong.
 const (
 	naIssuer         = "https://accounts.nintendo.com"
 	NAIDTokenJWKSURL = naIssuer + "/1.0.0/certificates"
@@ -127,18 +115,16 @@ const naRefreshTokenTTL = 30 * 24 * time.Hour
 // storeNARefreshToken and consumeNARefreshToken keep naToken's refresh
 // tokens in the database.
 //
-// The token is a plain opaque string, not a JWT: a real working capture
-// (2026-08-27) showed refresh_token from this endpoint is 64 characters,
-// unlike every other token minted alongside it, so there is nothing in it to
-// verify and the server has to remember it. It used to be remembered in this
-// process's memory, which meant every restart or deploy logged every console
-// out of its Nintendo Account: the next refresh answered 400 invalid_grant
-// and the console showed the login page again (seen 2026-09-23). Only its
-// SHA-256 is stored.
+// The token is a plain opaque string, not a JWT: refresh_token from this
+// endpoint is 64 characters, unlike every other token minted alongside it, so
+// there is nothing in it to verify and the server has to remember it. Keeping
+// it in process memory would log every console out of its Nintendo Account on
+// every restart or deploy: the next refresh answers 400 invalid_grant and the
+// console shows the login page again. Only its SHA-256 is stored.
 //
 // A refresh token is multi-use (consuming one issues a new access token but
-// does not invalidate it, ordinary OAuth refresh semantics), so consuming
-// does not delete it.
+// does not invalidate it, ordinary OAuth refresh semantics), so consuming does
+// not delete it.
 func (s *Server) storeNARefreshToken(ctx context.Context, token, userID string, scope []string, now time.Time) error {
 	return s.store.CreateNARefreshToken(ctx, db.NARefreshToken{
 		TokenSHA256: naRefreshTokenHash(token),
@@ -173,64 +159,49 @@ func naRefreshTokenHash(token string) string {
 // naAuthorizePage renders the login form. GET /connect/1.0.0/authorize.
 //
 // client_id, redirect_uri, state, response_type and nonce are echoed back
-// verbatim as hidden fields — nonce so it can round-trip into the id_token's
-// own 'nonce' claim, matching the OIDC spec and a real capture (present, but
-// empty, when the console sent none). scope, prompt and theme are accepted
-// and discarded — nothing else changes what this page does. redirect_uri is
-// trusted as given rather than checked against an allowlist: this is a
-// private, operator-run server reachable only by consoles the operator
-// already controls DNS for, not a public OAuth provider guarding against
-// open-redirect abuse from arbitrary third parties.
+// verbatim as hidden fields -- nonce so it can round-trip into the id_token's
+// own 'nonce' claim, matching the OIDC spec (present, but empty, when the console
+// sent none). scope, prompt and theme are accepted and discarded -- nothing else
+// changes what this page does. redirect_uri is trusted as given rather than
+// checked against an allowlist: this is a private, operator-run server reachable
+// only by consoles the operator already controls DNS for, not a public OAuth
+// provider guarding against open-redirect abuse from arbitrary third parties.
 //
-// A 2026-09-20 decompile of the operator's own console's account sysmodule
-// found the complete set of authorize URLs it can construct, confirming
-// prompt/scope combinations beyond the ordinary link flow this file was
-// built around: prompt=login (plain re-auth), scope=phone_verification
-// with prompt=phone (2FA), and scope=transferNaToken with
-// prompt=email_transfer_upload/download (the account-email-transfer step
-// of console migration -- see internal/nintendo/hosts.go's migration.%.
-// scsi... entry for the rest of that flow). None of these change what this
-// page needs to do: scope/prompt are already accepted-and-discarded, and
-// nothing here observed depends on a specific prompt value rather than on
-// whether an Authorization header is present (see naAuthorizeSubmit's own
-// comment for why that is the one signal branched on). Recorded so a
-// future prompt value showing up on the wire is recognized rather than
-// mistaken for something new.
+// The console can construct other authorize URLs than the ordinary link flow:
+// prompt=login (plain re-auth), scope=phone_verification with prompt=phone
+// (2FA), and scope=transferNaToken with prompt=email_transfer_upload/download
+// (the account-email-transfer step of console migration -- see
+// internal/nintendo/hosts.go's migration.%.scsi... entry). None of these change
+// what this page needs to do: scope/prompt are already accepted-and-discarded,
+// and nothing depends on a specific prompt value rather than on whether an
+// Authorization header is present (see naAuthorizeSubmit's own comment for why
+// that is the one signal branched on).
 func (s *Server) naAuthorizePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	writeHTML(w, http.StatusOK, naAuthorizeHTML(q.Get("client_id"), q.Get("redirect_uri"), q.Get("state"), q.Get("response_type"), q.Get("nonce"), ""))
 }
 
-// naAuthorizeSubmit checks the submitted credentials and redirects through
-// the custom URI scheme.
+// naAuthorizeSubmit checks the submitted credentials and redirects through the custom
+// URI scheme.
 //
-// Always includes id_token and session_state in the fragment, regardless of
-// the requested response_type. This was made conditional on 2026-08-26,
-// guessing that a plain response_type=code request wants a bare code and
-// gets confused by an unrequested id_token -- a real, fully decrypted
-// capture of a genuinely working link (2026-08-27,
-// docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow) proved that
-// guess wrong: response_type=code and response_type=code+id_token both got
-// the identical four-field fragment (state, session_state, code, id_token)
-// back from a real, working private server. Reverted to unconditional.
-// through the code exchange at POST /connect/1.0.0/api/token either way.
+// It always includes id_token and session_state in the fragment, regardless of the
+// requested response_type: response_type=code and response_type=code+id_token both get
+// the identical four-field fragment (state, session_state, code, id_token) back from a
+// working server, and the code exchange at POST /connect/1.0.0/api/token happens either way.
 //
-// A SECOND shape reaches this same endpoint, found in the same capture and
-// not previously handled at all: a silent, credential-less re-authorization
-// for a DIFFERENT client_id (in the capture, one whose redirect_uri was
-// nintendo://e-license.nx.sys -- e-license, not the account-link client this
-// file was originally built around), carrying no username/password form
-// fields at all, only an `Authorization: Bearer <access_token>` header
-// (the same access_token naToken's authorization_code grant just minted)
-// and prompt=none, the OIDC standard value meaning "do not show any UI; if
-// the caller is not already authenticated, fail rather than prompt." Before
-// this pass, an empty username here reached GetUserByLoginUsername("") and
-// answered "Wrong username or password" -- a login PAGE's error, wrong for a
-// request whose whole point was never showing one. Branches on the
-// Authorization header's presence rather than on the literal string
-// "none" in prompt, since that is the one signal this project has actually
-// seen on the wire; a request bearing neither credentials nor a bearer
-// token still gets the credential path below, and correctly fails it.
+// A second shape reaches this same endpoint: a silent, credential-less
+// re-authorization for a DIFFERENT client_id (one whose redirect_uri is
+// nintendo://e-license.nx.sys, not the account-link client this file was built around),
+// carrying no username/password form fields at all, only an `Authorization: Bearer
+// <access_token>` header (the same access_token naToken's authorization_code grant just
+// minted) and prompt=none, the OIDC value meaning "do not show any UI; if the caller is
+// not already authenticated, fail rather than prompt." An empty username there would
+// reach GetUserByLoginUsername("") and answer "Wrong username or password", a login
+// PAGE's error, wrong for a request whose whole point was never showing one. So this
+// branches on the Authorization header's presence rather than on the literal string
+// "none" in prompt, since that is the one signal actually seen on the wire; a request
+// bearing neither credentials nor a bearer token still gets the credential path below,
+// and correctly fails it.
 //
 // POST /connect/1.0.0/authorize.
 func (s *Server) naAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
@@ -346,44 +317,34 @@ func bcryptOK(hash, password string) string {
 
 // naToken issues tokens for POST /connect/1.0.0/api/token.
 //
-// access_token, id_token and refresh_token here are all signed with
-// naIDIssuer's key, the same one naAuthorizeSubmit signs its id_token with —
-// not accessIssuer, the BAAS host's key. Found 2026-08-27 by decoding a real
-// working capture's response
-// (docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow): its
-// access_token and id_token from this exact endpoint share one kid, both
-// published at accounts.nintendo.com's own JWKS. Signing access_token with
-// accessIssuer gave it iss=accounts.nintendo.com but a jku pointing at the
-// BAAS host — the same iss/jku mismatch already found and fixed once for the
-// id_token (see NAIDTokenJWKSURL's doc comment), just missed on this sibling
-// field the first time.
+// access_token, id_token and refresh_token here are all signed with naIDIssuer's key,
+// the same one naAuthorizeSubmit signs its id_token with -- not accessIssuer, the BAAS
+// host's key. A real server's access_token and id_token from this exact endpoint share
+// one kid, both published at accounts.nintendo.com's own JWKS. Signing access_token with
+// accessIssuer gives it iss=accounts.nintendo.com but a jku pointing at the BAAS host,
+// the same iss/jku mismatch already fixed once for the id_token (see NAIDTokenJWKSURL's
+// doc comment).
 //
-// Two grant types, two different response shapes — both confirmed byte-for-
-// byte against a 2026-08-26 mitmproxy capture of a real first-time
-// interactive link against Nextendo (docs/CAPTURES has the full exchange):
+// Two grant types, two different response shapes:
 //
 //   - authorization_code: exchanges the code minted by naAuthorizeSubmit for
-//     access_token, id_token, refresh_token, session_token, expires_in,
-//     scope and token_type. The scope returned is whatever the request's own
-//     "scope" form field asked for (a space-separated OAuth2 scope string),
-//     not the "scope=nx" on the front-channel authorize call — those are two
-//     independent parameters in the real flow, confirmed by the capture
-//     showing a much longer scope list at this step than at authorize time.
-//     id_token is required here, not just on the front-channel redirect:
-//     LoginApplet's real first-time-link request uses response_type=code
-//     only, so no id_token ever arrives via the redirect fragment, and
-//     omitting it from this response produced error 2124-3122 on real
-//     hardware before this was fixed.
-//   - refresh_token: the captured response is deliberately smaller —
-//     access_token, expires_in, scope, token_type only, no new refresh_token
-//     or id_token. Looks the presented refresh_token up in naRefreshTokens
-//     rather than verifying a signature: refresh_token is a plain opaque
-//     string here (see naRefreshTokens' doc comment), not a JWT, so there is
-//     no signature to check.
+//     access_token, id_token, refresh_token, session_token, expires_in, scope and
+//     token_type. The scope returned is whatever the request's own "scope" form field
+//     asked for (a space-separated OAuth2 scope string), not the "scope=nx" on the
+//     front-channel authorize call: those are two independent parameters in the real
+//     flow. id_token is required here, not just on the front-channel redirect:
+//     LoginApplet's first-time-link request uses response_type=code only, so no
+//     id_token ever arrives via the redirect fragment, and omitting it from this
+//     response produced error 2124-3122.
+//   - refresh_token: the response is deliberately smaller -- access_token, expires_in,
+//     scope, token_type only, no new refresh_token or id_token. Looks the presented
+//     refresh_token up in naRefreshTokens rather than verifying a signature:
+//     refresh_token is a plain opaque string here (see naRefreshTokens' doc comment),
+//     not a JWT, so there is no signature to check.
 //
-// naScopeIDs maps an OAuth scope string to the numeric id accounts.nintendo.com
-// uses for it in an access_token's 'ac:scp' claim. See BAASTokenClaims.ACScopes
-// for where these came from and what is still unknown.
+// naScopeIDs maps an OAuth scope string to the numeric id accounts.nintendo.com uses for
+// it in an access_token's 'ac:scp' claim. See BAASTokenClaims.ACScopes for where these
+// came from and what is still unknown.
 var naScopeIDs = map[string]int{
 	"openid":             0,
 	"offline":            1,
@@ -444,7 +405,7 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			TokenID:  sjwt.NewTokenID(),
 			Type:     "token",
 			// 4 is the only value ever observed, for exactly this grant.
-			// TODO(capture-needed): what other grants map to.
+			// UNCONFIRMED: what other grants map to.
 			ACGrantType: 4,
 			ACScopes:    naScopeIDsFor(scope),
 		})
@@ -507,11 +468,10 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 			writeNAOAuthError(w, http.StatusBadRequest, "invalid_grant")
 			return
 		}
-		// The console's refresh request carries no scope at all, and a
-		// working server's answer (2026-08-27 capture, the refresh right
-		// after federation) restates the original grant's twelve scopes,
-		// with the matching ac:scp in the access token. Echoing the empty
-		// request answered scope: [] and an access token with no ac:scp.
+		// The console's refresh request carries no scope at all, and a real answer
+		// restates the original grant's twelve scopes, with the matching ac:scp in the
+		// access token. Echoing the empty request would answer scope: [] and an access
+		// token with no ac:scp.
 		if len(scope) == 0 && len(granted) > 0 {
 			scope = granted
 		}
@@ -547,30 +507,21 @@ func (s *Server) naToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // naUsersMe answers the profile fetch nnAccount makes immediately after the
-// token exchange. GET /2.0.0/users/me, on api.accounts.nintendo.com — a
-// different host from the rest of this file, not previously routed here at
-// all. Confirmed necessary and confirmed authenticated the same way as the
-// rest of BAAS (Authorization: Bearer <access_token>) by the 2026-08-26
-// mitmproxy capture.
+// token exchange. GET /2.0.0/users/me, on api.accounts.nintendo.com -- a different
+// host from the rest of this file. It is authenticated the same way as the rest
+// of BAAS (Authorization: Bearer <access_token>).
 //
-// A first version of this handler returned only the 6 fields GRID0+
-// actually tracks, on the theory that nothing had been observed to need the
-// rest. On real hardware that produced a 200 nginx logged as successful, but
-// the console still errored (2124-3122) and never made the further calls
-// (a second token refresh, another /2.0.0/users/me, then
-// /api/1.0.0/users/{id}/qrcode_param) that the same real capture showed
-// following a real 1407-byte response with ~20 fields. Matching the full
-// shape here is not a guess: every key below is one the capture actually
-// showed, not one reasoned about — it is what "the two hardest bugs in this
-// codebase were caused by trusting a partial response" would predict in
-// hindsight. Two fields specifically are substituted rather than passed
-// through: birthday and country. accounts.go/provision.go's "0000-00-00"
-// and "" are BAAS's own established sentinels for "unset" on a
-// console-registered device profile, correct there — but this is a
-// different, stricter API surface (a real Nintendo Account profile, not an
-// anonymous BAAS device profile), and those sentinels are exactly the kind
-// of value a parser expecting a real date and a real ISO country code would
-// reject.
+// The response must carry the full shape (~20 fields), not only the 6 fields
+// GRID0+ tracks: a partial response is a 200 that nginx logs as successful, but
+// the console still errors (2124-3122) and never makes the further calls that
+// follow a complete one (a second token refresh, another /2.0.0/users/me, then
+// /api/1.0.0/users/{id}/qrcode_param). Two fields specifically are substituted
+// rather than passed through: birthday and country. accounts.go/provision.go's
+// "0000-00-00" and "" are BAAS's own established sentinels for "unset" on a
+// console-registered device profile, correct there -- but this is a different,
+// stricter API surface (a real Nintendo Account profile, not an anonymous BAAS
+// device profile), and those sentinels are exactly the kind of value a parser
+// expecting a real date and a real ISO country code would reject.
 func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 	header := r.Header.Get("Authorization")
 	scheme, token, found := strings.Cut(header, " ")
@@ -625,13 +576,11 @@ func (s *Server) naUsersMe(w http.ResponseWriter, r *http.Request) {
 		"email":         "switchnet@example.com",
 		"emailVerified": true,
 		"loginId":       nil,
-		// The real capture's screenName was a masked email, "ne•••@e••••" for
-		// nextendo@example.com -- not the plain literal it looked like at a
-		// glance. Matching that shape here rather than a bare word, in case
-		// the console validates it as one before locally recording the link
-		// (real accounts persist isNnLinked and this profile data in
-		// _user.json, System Save Data 8000000000000010 -- a step our
-		// server-side response can influence but never observe failing).
+		// The screenName is a masked email, "ne•••@e••••", not a plain literal. Matching that
+		// shape here rather than a bare word, in case the console validates it as one before
+		// locally recording the link (real accounts persist isNnLinked and this profile data in
+		// _user.json, System Save Data 8000000000000010 -- a step our server-side response can
+		// influence but never observe failing).
 		"screenName": "sw•••@e••••",
 
 		"createdAt": createdAt,
@@ -679,33 +628,25 @@ func naPermissionBlock(updatedAt int64, permitted bool) map[string]any {
 	}
 }
 
-// naQRCodeParam answers GET /api/1.0.0/users/{id}/qrcode_param -- note the
-// path: /api/1.0.0/, not /1.0.0/, confirmed real by a 2026-08-27 capture of
-// a genuinely successful Nextendo link, not a typo carried over from
-// elsewhere in this file. nnAccount calls this right after naUsersMe,
-// exactly the "further call" this file's own naUsersMe comment predicted
-// once that handler's response matched the real shape -- this pass is what
-// confirms the prediction and closes it.
+// naQRCodeParam answers GET /api/1.0.0/users/{id}/qrcode_param. Note the path:
+// /api/1.0.0/, not /1.0.0/; that is real, not a typo carried over from elsewhere in
+// this file. The account SDK calls this right after naUsersMe.
 //
-// Real response shape, from that same capture: {"exp", "param", "userId"}.
-// exp is a real Unix timestamp 604800 seconds (exactly 7 days) after the
-// response's own issue time -- an exact duration, safe to reuse; "param" is
-// NOT an opaque blob the way nxAccount is. It decoded as plain text: a URL,
-// https://accounts.nintendo.com/qr_verify?sig=...&iat=...&aud=...&sub=...
-// &exp=..., evidently meant to become a QR code a second console scans to
-// add the same account without retyping credentials. The shape (which query
-// parameters, in what order) is real; "sig" is not -- it is presumably an
-// HMAC keyed with a secret only the account server holds, and CLAUDE.md's
-// second ground rule (never forge a Nintendo-issued credential) applies
-// exactly as much to Nextendo's own private signing key as to Nintendo's:
-// this project does not have it and does not invent a plausible-looking
-// stand-in for it. sig is left an honest opaque placeholder.
+// The real response shape is {"exp", "param", "userId"}. exp is a Unix timestamp
+// 604800 seconds (exactly 7 days) after the response's own issue time -- an exact
+// duration, safe to reuse. "param" is NOT an opaque blob the way nxAccount is: it is
+// plain text, a URL, https://accounts.nintendo.com/qr_verify?sig=...&iat=...&aud=...&sub=...
+// &exp=..., evidently meant to become a QR code a second console scans to add the same
+// account without retyping credentials. The shape (which query parameters, in what
+// order) is real; "sig" is not -- it is presumably an HMAC keyed with a secret only the
+// account server holds, and never forging a Nintendo-issued credential applies exactly as
+// much to a private signing key as to Nintendo's: this project does not have it and does
+// not invent a plausible-looking stand-in for it. sig is left an honest opaque
+// placeholder.
 //
-// TODO(capture-needed): whether anything ever calls qr_verify with this
-// value -- unconfirmed, since a single console's own capture cannot show a
-// SECOND console scanning its QR code. No qr_verify route exists here for
-// exactly that reason: building one to accept a signature this project can
-// never produce correctly would be answering a question with an invented
+// UNCONFIRMED: whether anything ever calls qr_verify with this value. No qr_verify
+// route exists here for exactly that reason: building one to accept a signature this
+// project can never produce correctly would be answering a question with an invented
 // fact, not a real capability.
 func (s *Server) naQRCodeParam(w http.ResponseWriter, r *http.Request) {
 	header := r.Header.Get("Authorization")

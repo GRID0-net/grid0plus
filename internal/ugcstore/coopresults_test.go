@@ -13,9 +13,8 @@ import (
 
 // TestAFinishedJobAppearsInEachPlayersJobHistory: Salmon Run's history reads
 // services/GameRecord/users/<uid>/CoopResults; with nothing there it is empty.
-// The reader (0x710383a0b0) takes the shift from the top level, the scenario
-// as one map, and each player's name and weapon from
-// personal_data[i].personal_profile.player_info.
+// The reader takes the shift from the top level, the scenario as one map, and
+// each player's name and weapon from personal_data[i].personal_profile.player_info.
 func TestAFinishedJobAppearsInEachPlayersJobHistory(t *testing.T) {
 	store := db.NewMemory()
 	ctx := context.Background()

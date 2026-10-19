@@ -77,9 +77,9 @@ func TestADelegationCannotBeIssuedInSomebodyElsesName(t *testing.T) {
 }
 
 // TestASquadQueuesOnItsLeadersTicketAndEveryMemberFollowsIt is the Salmon Run
-// room flow on hardware (2026-10-03): the guest delegates to the host, the
-// host's one ticket carries that token, and the guest follows the host's
-// ticket. Refusing the guest's Track was error 2321-1536.
+// room flow: the guest delegates to the host, the host's one ticket carries that
+// token, and the guest follows the host's ticket. Refusing the guest's Track is
+// error 2321-1536.
 func TestASquadQueuesOnItsLeadersTicketAndEveryMemberFollowsIt(t *testing.T) {
 	// Salmon Run: one side, so the squad alone is a match. In a versus mode
 	// a squad of two alone would be two against nobody.

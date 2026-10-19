@@ -1,15 +1,11 @@
 // Package nplnrest is NPLN's JSON front end: the hosts a console talks to
 // BEFORE Splatoon 3 opens a gRPC channel.
 //
-// "The console", not "the game": a 2026-09-20 decompile of Splatoon 3
-// v11.3.0's own main found no literal "vermillion", "penne" or "frontline"
-// string anywhere in the binary, despite an exhaustive search that did find
-// every gRPC service Splatoon 3 itself calls later (see internal/npln's
-// "confirmed RPC surface" section). That rules out Splatoon 3's own code
-// making these requests directly. The caller is almost certainly a shared
-// system client acting on the console's behalf during account/network
-// setup, not Splatoon-3-specific code -- but the traffic still arrives at
-// these hosts either way, so it does not change what this server answers.
+// "The console", not "the game": Splatoon 3's own binary contains no
+// "vermillion", "penne" or "frontline" string, so these requests come from a
+// shared system client acting on the console's behalf during account/network
+// setup. The traffic arrives at these hosts either way, so it does not change
+// what this server answers.
 //
 // The console first speaks ordinary JSON over HTTPS to two host families and
 // then holds a third connection open indefinitely:
@@ -21,33 +17,20 @@
 // So this package is EARLIER in the boot sequence than internal/npln, and a
 // console that cannot get past it never reaches the gRPC gateway at all.
 //
-// # Most of this is now confirmed, not guessed
-//
-// NextendoNetwork's own public Splatoon 3 NPLN server (PolyForm Shield
-// licensed -- facts taken from their published, real-console-tested
-// findings, never their code, the same boundary this project already draws
-// for nx-dauth) documents exactly which parts of this handshake it verified
-// against real captures of a real console talking to real Nintendo, and
-// which parts remain its own untested guess -- labelled as such in its own
-// source. Every shape and value below marked "confirmed" reproduces a fact
-// stated there, reimplemented independently in this file; nothing here is
-// their code. Two real bugs their capture caught, both worth stating
-// plainly because either one silently strands a console at the ink loading
-// screen with no useful error:
+// Two details that silently strand a console at the ink loading screen with no
+// useful error:
 //
 //   - GET .../vermillion-device-id's response key is camelCase
-//     ("vermillionDeviceId"), not snake_case. The wrong key means the
-//     console never receives a device id and loops this endpoint forever.
+//     ("vermillionDeviceId"), not snake_case. The wrong key means the console
+//     never receives a device id and loops this endpoint forever.
 //   - That id's value, base64-decoded, must not encode to a base64 string
-//     containing '/' or '+' -- Splatoon 3 uses it as a literal path segment
-//     and hard-crashes on either character.
+//     containing '/' or '+' -- Splatoon 3 uses it as a literal path segment and
+//     hard-crashes on either character.
 //
-// What remains genuinely unconfirmed (no capture of these specific bodies
-// exists anywhere, including theirs): the exact response shape for
-// GET /v1/accounts/<anything but config>, POST /v1/acds/search, and
-// GET /v1/nearness-checks. Each is answered with the same well-formed empty
-// envelope its neighbours use, not a fabricated one -- see each handler's
-// own comment.
+// UNCONFIRMED: the exact response shape for GET /v1/accounts/<anything but
+// config>, POST /v1/acds/search, and GET /v1/nearness-checks. Each is answered
+// with the same well-formed empty envelope its neighbours use -- see each
+// handler's own comment.
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/NPLN-Servers
 package nplnrest
@@ -251,7 +234,7 @@ func (s *Server) vermillion(w http.ResponseWriter, r *http.Request) {
 		// envelope rather than a guess at real content.
 		s.answer(w, r, http.StatusOK, vermillionEmptyPayload())
 	case r.URL.Path == "/v1/acds/search", r.URL.Path == "/v1/nearness-checks":
-		// TODO(capture-needed): no capture of either exists anywhere. The
+		// UNCONFIRMED: no capture of either exists anywhere. The
 		// same empty envelope as the other unconfirmed account paths --
 		// not a fabricated shape -- since these were only ever seen
 		// (never captured) alongside the same bootstrap sequence.

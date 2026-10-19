@@ -290,10 +290,9 @@ func TestClientCertificateGivesEachConsoleItsOwnDeviceID(t *testing.T) {
 }
 
 // TestX5tS256IsTheRealThumbprintOfTheClientCertificate exercises the
-// 'x5t#S256' claim added after a 2026-08-27 capture of a working Nextendo
-// device token showed it present. It must be a genuine SHA-256 digest of the
-// certificate nginx passed through — not a fingerprint of anything else, and
-// not present at all when no certificate was presented.
+// 'x5t#S256' claim. It must be a genuine SHA-256 digest of the certificate nginx
+// passed through -- not a fingerprint of anything else, and not present at all
+// when no certificate was presented.
 func TestX5tS256IsTheRealThumbprintOfTheClientCertificate(t *testing.T) {
 	h := newHarness(t)
 
@@ -356,12 +355,10 @@ func TestX5tS256IsTheRealThumbprintOfTheClientCertificate(t *testing.T) {
 
 // TestEsvIsFreshRandomPaddingPerToken exercises the 'esv' claim.
 //
-// 2026-09-04: NextendoNetwork/nx-dauth's real, running source (source-
-// available, PolyForm Shield) shows esv is base64url(33 random bytes),
-// freshly generated on every single token minted -- see DeviceInfo's package
-// comment. Two device tokens minted in the same /v8/device_auth_tokens
-// request must therefore carry different esv values, not the same one
-// reused across both, and each must be well-formed base64url.
+// esv is base64url(33 random bytes), freshly generated on every token minted --
+// see DeviceInfo's comment. Two device tokens minted in the same
+// /v8/device_auth_tokens request must therefore carry different esv values, and
+// each must be well-formed base64url.
 func TestEsvIsFreshRandomPaddingPerToken(t *testing.T) {
 	h := newHarness(t)
 

@@ -94,8 +94,8 @@ func safeName(name string) bool {
 }
 
 // BuildNativeList produces the known fixed fields of the BCAT list format.
-// The digest algorithm still needs a hardware capture; keeping it in one
-// function makes that uncertainty local to this format, not the HTTP path.
+// The digest algorithm is unconfirmed; keeping it in one function makes that
+// uncertainty local to this format, not the HTTP path.
 func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, error) {
 	if len(files) == 0 {
 		return nil, fmt.Errorf("bcat: empty seed for title %s", titleID)
@@ -139,10 +139,9 @@ func BuildNativeList(titleID, dataHost string, files []NativeFile) ([]byte, erro
 		w.str("data_list")
 		w.arrayLen(len(groups[dir]))
 		for i, file := range groups[dir] {
-			// The 22.5.0 parser requires all three bits at data_list entry close.
-			// Zero for each is accepted: from 2026-10-08 a real console's bcat
-			// module (User-Agent nnBcat) downloaded Splatoon 3's packs 138 times
-			// after reading this list, and the fest loaded from them.
+			// The 22.5.0 parser requires all three bits at data_list entry close. Zero for
+			// each is accepted: a real console's bcat module (User-Agent nnBcat) downloads
+			// Splatoon 3's packs after reading this list, and the fest loads from them.
 			w.mapLen(7)
 			w.str("data_id")
 			w.uint(uint64(i + 1))

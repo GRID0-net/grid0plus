@@ -227,7 +227,7 @@ func TestARefereeRequestForAnotherSessionDoesNotPublishAVerdict(t *testing.T) {
 }
 
 func TestTheRefereeTraceIDIsTheSessionIDWithoutDashes(t *testing.T) {
-	// The working Nextendo verdict for this battle carries exactly this trace_id.
+	// The verdict for this battle carries exactly this trace_id.
 	got := refereeTraceID("20260930T153234_bc0ffe09-6aa4-443b-aaeb-463be2e7e135")
 	if got != "bc0ffe096aa4443baaeb463be2e7e135" {
 		t.Fatalf("trace_id = %q", got)
@@ -309,8 +309,8 @@ func TestTheKickoffVerdictIsSentAgainAfterAConsoleWritesItsProfile(t *testing.T)
 	verdict("@@Profile", 0)
 }
 
-// Nextendo re-sends an unchanged verdict every refresh; a console that ignored
-// an earlier copy must get another without having to write anything.
+// The verdict is re-sent unchanged every refresh; a console that ignored an
+// earlier copy must get another without having to write anything.
 func TestAnUnchangedVerdictIsStillRefreshed(t *testing.T) {
 	h := newHarness(t)
 	h.srv.refreshEvery = 20 * time.Millisecond

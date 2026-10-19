@@ -7,9 +7,7 @@ import (
 
 // A minimal FlatBuffers writer and reader for the frontline's few message
 // shapes. Children are laid out after their parents, so every uoffset is
-// positive as the format requires, and each vtable sits just before its
-// table. Field types per message come from the npns verifiers listed in
-// docs/CAPTURES/npns-sysmodule-decompile.md.
+// positive as the format requires, and each vtable sits just before its table.
 
 type fbField struct {
 	scalar []byte // little-endian value, aligned to its own size

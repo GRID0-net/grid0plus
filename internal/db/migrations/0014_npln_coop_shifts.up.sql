@@ -1,7 +1,7 @@
 -- Salmon Run rotation shifts (Normal and Big Run), as the operator schedules
 -- them. See internal/toyohr's coop_schedule.go and coop_ids.go: the wire
 -- shape (nn.npln.toyohr.v1.CoopSchedule, with parallel Normal/BigRun/
--- TeamContest sub-messages) is already known from that proto's own decompiled
+-- TeamContest sub-messages) is already known from that proto's own
 -- descriptor, unlike a Vs rotation -- what was missing was an authoring path
 -- and a real stage/weapon/boss id table, both added alongside this table.
 CREATE TABLE npln_coop_shifts (
@@ -40,7 +40,7 @@ CREATE TABLE npln_coop_shifts (
 
     -- Real-valued int64 reward tiers for a Big Run's scale-based rewards
     -- (CoopSchedule_BigRun.Rewards); empty for a "normal" shift. Exact
-    -- meaning of the values is unconfirmed -- see docs/QUESTIONS.md.
+    -- meaning of the values is unconfirmed.
     rewards         BIGINT[]    NOT NULL DEFAULT '{}',
 
     -- Must land on a two-hour slot boundary, the same rule fest.go's

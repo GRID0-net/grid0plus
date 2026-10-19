@@ -408,10 +408,10 @@ func (q *Queue) EnqueueSquadTeams(userID string, members []string, mode, team st
 
 // duplicateTicketWindow is how soon after a ticket is matched a second ticket
 // from the same player, for the same mode, is taken as a repeat of the first.
-// A console sent CreateMatchmakingTicket twice 6 ms apart (grid0, 2026-10-14):
-// the first completed a four-player match on arrival, the second was queued as
-// a new player and given a match of its own, and the four-player job started
-// with its host alone.
+// A console can send CreateMatchmakingTicket twice 6 ms apart: the first
+// completes a four-player match on arrival, the second would be queued as a new
+// player and given a match of its own, and the four-player job would start with
+// its host alone.
 const duplicateTicketWindow = 5 * time.Second
 
 // justMatchedLocked returns userID's ticket for mode that was matched within
@@ -1099,12 +1099,11 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 
 	if isDirectPairMode(mode) && len(ids) >= 2 && q.oneSquadLocked(ids) &&
 		len(q.liveWaitingLocked(directPairOpenMode(mode))) == 0 {
-		// "Continue with this team" re-queues the lobby the players just
-		// shared, both fest teams in one squad. When nobody else is queued
-		// for Splatfest Open, nobody is coming for it, so waiting out the
-		// grace period only delays the match. When others are, it waits like
-		// any squad: starting it alone split six players into three 1v1s
-		// (2026-10-10).
+		// "Continue with this team" re-queues the lobby the players just shared, both
+		// fest teams in one squad. When nobody else is queued for Splatfest Open, nobody
+		// is coming for it, so waiting out the grace period only delays the match. When
+		// others are, it waits like any squad: starting it alone would split six players
+		// into three 1v1s.
 		q.cancelGraceLocked(mode)
 		return append(formed, q.formSessionLocked(mode, ids))
 	}
@@ -1161,14 +1160,12 @@ func tricolorSlot(team, defender string) string {
 
 // formTricolorTeamLocked forms fest_match_tricolor_team_config lobbies.
 //
-// That queue is not the match. Its lobby is a pair of one fest team, which
-// then re-queues together on fest_match_tricolor_oneshot_config to meet the
-// other two teams. The game waits until the lobby holds exactly two players
-// (check at 0x71038aac80: count == 2 for match kind 8; observed count 3 vs 2
-// on a three-team lobby, 2026-10-09), so a mixed lobby never starts. A pair
-// forms as soon as two players of one team wait; a player with no partner
-// gets a lobby alone, which a patched game accepts, once every team is
-// waiting and the grace period has passed.
+// That queue is not the match. Its lobby is a pair of one fest team, which then
+// re-queues together on fest_match_tricolor_oneshot_config to meet the other two
+// teams. The game waits until the lobby holds exactly two players (match kind 8),
+// so a mixed lobby never starts. A pair forms as soon as two players of one team
+// wait; a player with no partner gets a lobby alone, which a patched game accepts,
+// once every team is waiting and the grace period has passed.
 func (q *Queue) formTricolorTeamLocked(mode string) []Session {
 	var formed []Session
 	byTeam := map[string][]string{}
@@ -1283,16 +1280,14 @@ func (q *Queue) SetTricolorDefender(mode, team string) {
 	q.tricolorDefender[mode] = team
 }
 
-// selectTricolorPlayersLocked forms a Tricolor match: the defending team
-// against two attacking teams with half as many players each -- 4 v 2 v 2 when
-// full. NextendoNetwork/splatoon-3's notes on a capture of an official
-// Tricolor battle (2026-08-22/23, facts only) show four defenders, all of
-// the midterm winner's team, against two pairs, and team1/team2/team3 slots.
-// Below full size the same 2:1:1 ratio is kept so a small group can play, and
-// when even 2 v 1 v 1 is not possible but every team has a player, the match
-// forms 1 v 1 v 1: a group too small for the official shape should still get
-// to play Tricolor rather than wait forever. Result grouped defender first,
-// then each attacker.
+// selectTricolorPlayersLocked forms a Tricolor match: the defending team against
+// two attacking teams with half as many players each -- 4 v 2 v 2 when full. An
+// official Tricolor battle has four defenders, all of the midterm winner's team,
+// against two pairs, and team1/team2/team3 slots. Below full size the same 2:1:1
+// ratio is kept so a small group can play, and when even 2 v 1 v 1 is not possible
+// but every team has a player, the match forms 1 v 1 v 1: a group too small for the
+// official shape should still get to play Tricolor rather than wait forever. Result
+// grouped defender first, then each attacker.
 func (q *Queue) selectTricolorPlayersLocked(ids []string, size int) []string {
 	mode := q.modeOf(ids)
 	defender := q.tricolorDefender[mode]
@@ -1569,8 +1564,8 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 	s := q.newSessionLocked(mode, len(players), players, false)
 	if isTricolorMode(mode) && len(chosen) > 0 {
 		// Grouped defender first, then the two attackers in name order (see
-		// selectTricolorPlayersLocked). Which slot Nintendo gives the defender
-		// is not measured; team1 follows NextendoNetwork's reading.
+		// selectTricolorPlayersLocked). Which slot the defender takes is not measured;
+		// team1 is assumed.
 		defender := q.tricolorDefender[mode]
 		s.TeamSlots = map[string]string{}
 		for _, id := range chosen {
@@ -1831,9 +1826,8 @@ func isBankaraOpenMode(mode string) bool {
 }
 
 // formVersusSessionLocked forms a plain versus match. In Anarchy Open it
-// also puts each squad on one side, team1 or team2: NextendoNetwork's
-// server (facts only, none of its code used) assigns the sides there and in
-// Splatfest, and leaves Turf War's to the game, so only Open gets them.
+// also puts each squad on one side, team1 or team2. Splatfest assigns sides the
+// same way; Turf War's are left to the game, so only Open gets them.
 func (q *Queue) formVersusSessionLocked(mode string, chosen []string) Session {
 	var sides map[string]string
 	if isBankaraOpenMode(mode) {

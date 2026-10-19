@@ -9,10 +9,10 @@ import (
 	"os"
 )
 
-// Table is the 32-word table in Splatoon 3's main (0x71050b6dec in 11.3.0)
-// the save key is chosen from. It is the game's key material, so it is never
-// in this repository: the operator supplies it as a 128-byte little-endian
-// file, the way internal/bcat takes its IV table.
+// Table is the 32-word table in Splatoon 3's main executable the save key is
+// chosen from. It is the game's key material, so it is never in this repository:
+// the operator supplies it as a 128-byte little-endian file, the way
+// internal/bcat takes its IV table.
 type Table [32]uint32
 
 // LoadTable reads an operator's table file.
@@ -31,8 +31,8 @@ func LoadTable(path string) (*Table, error) {
 	return &t, nil
 }
 
-// keyIV is FUN_71011955dc: the key and IV are the top byte of 48 draws of
-// sead::Random seeded with the table word the file's seed selects.
+// keyIV derives the key and IV: the top byte of 48 draws of sead::Random seeded
+// with the table word the file's seed selects.
 func (t *Table) keyIV(seed uint32) (v uint32, key, iv []byte) {
 	v = t[newSeadRandom(seed).nextU32()>>27]
 	r := newSeadRandom(v)

@@ -19,7 +19,7 @@ func arrV(v ...*common.Value) *common.Value {
 var nullV = &common.Value{ValueType: &common.Value_NullValue{}}
 
 // TestASaveDeltaMergesTheWayNintendosServerDoes pins the four merge rules
-// NextendoNetwork/splatoon-3 reproduced against real Nintendo records.
+// described on mergeSaveDelta.
 func TestASaveDeltaMergesTheWayNintendosServerDoes(t *testing.T) {
 	stored := &common.MapValue{Fields: map[string]*common.Value{
 		"Money": intValue(100),

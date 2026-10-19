@@ -68,11 +68,9 @@ func TestConnectionTestAnswer(t *testing.T) {
 	}
 }
 
-// TestApplicationPolicyAnswerMatchesBothWorkingCaptures is the regression
-// test for a real 2026-09-24 finding: this host previously fell through to
-// the catch-all emptyObject ("{}"), while both preserved working Nextendo
-// hall captures answer application_policy with an identical, non-empty body
-// -- decoded directly from their raw flow files, not Nextendo's code.
+// TestApplicationPolicyAnswerMatchesTheExpectedBody is the regression test for
+// a host that used to fall through to the catch-all emptyObject ("{}") when a
+// console expects application_policy to answer with a specific non-empty body.
 func TestApplicationPolicyAnswerMatchesBothWorkingCaptures(t *testing.T) {
 	h := newTestHandler(t)
 
@@ -89,13 +87,11 @@ func TestApplicationPolicyAnswerMatchesBothWorkingCaptures(t *testing.T) {
 	}
 }
 
-// TestTelemetrySinkReadsAndAnswers200 is the regression test for a real,
-// hardware-documented hang: NextendoNetwork/Prelude's own commit history
-// (facts only, not its code) measured the NSO/friends applet
-// (0100000000000816) waiting synchronously for an HTTP response from these
-// two hosts before loading its own main module -- null-routed, the applet
-// never gets there at all. The fix reads the body and answers 200; nothing
-// about the content is stored or forwarded to real Nintendo.
+// TestTelemetrySinkReadsAndAnswers200 is the regression test for a real hang:
+// the NSO/friends applet (0100000000000816) waits synchronously for an HTTP
+// response from these two hosts before loading its own main module, and
+// null-routed it never gets there at all. The fix reads the body and answers 200;
+// nothing about the content is stored or forwarded to real Nintendo.
 func TestTelemetrySinkReadsAndAnswers200(t *testing.T) {
 	h := newTestHandler(t)
 
@@ -341,11 +337,10 @@ func TestLogBodiesDoesNotBreakTheResponse(t *testing.T) {
 }
 
 // TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants guards the
-// probe itself, reached directly (h.bcat), not through routing any more:
-// bcat-list-lp1 and bcat-data-lp1 answer 304 like bcat-topics-lp1 in normal
-// operation (TestBCATHostsAnswer304NotModified), and the probe is now
-// something an operator swaps in deliberately -- see newsTopics's own doc
-// comment for why, and TODO.md §2.4 for the open question it still serves.
+// probe itself, reached directly (h.bcat), not through routing: bcat-list-lp1
+// and bcat-data-lp1 answer 304 like bcat-topics-lp1 in normal operation
+// (TestBCATHostsAnswer304NotModified), and the probe is something an operator
+// swaps in deliberately. See newsTopics's own doc comment.
 func TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants(t *testing.T) {
 	h, err := New(Config{}, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -374,12 +369,10 @@ func TestTheBCATProbeAnswersWithoutClaimingToKnowWhatBCATWants(t *testing.T) {
 	}
 }
 
-// TestBCATHostsAnswer304NotModified is the regression test for a real,
-// documented hard failure: NextendoNetwork/Prelude's own commit history
-// (facts only, not its code) ties leaving bcat-list-lp1 unreachable
-// directly to Splatoon 3 raising 2122-2403 (module 122 = bcat). All three
-// bcat-* hosts answer the same unconditional 304 in normal routing now —
-// see newsTopics's own doc comment.
+// TestBCATHostsAnswer304NotModified is the regression test for a hard failure:
+// leaving bcat-list-lp1 unreachable makes Splatoon 3 raise 2122-2403 (module
+// 122 is bcat). All three bcat-* hosts answer the same unconditional 304 in
+// normal routing. See newsTopics's own doc comment.
 func TestBCATHostsAnswer304NotModified(t *testing.T) {
 	h := newTestHandler(t)
 
@@ -400,14 +393,13 @@ func TestBCATHostsAnswer304NotModified(t *testing.T) {
 }
 
 // TestNewsTopicsAnswers304NotModified is the regression test for a real
-// crash: bcat-topics-lp1.cdn.nintendo.net was null-routed, the console's
+// crash: with bcat-topics-lp1.cdn.nintendo.net null-routed, the console's
 // very first request of its own boot sequence failed outright, and "a
-// communication error has occurred" appeared instantly on opening the
-// hall. A real capture against Nextendo (facts only, not its code) shows
-// the real server answers 304 Not Modified with an empty body
-// unconditionally, with no conditional-GET header in the request to
-// justify it in the ordinary HTTP sense -- it is the endpoint's own
-// permanent "nothing new" answer. See newsTopics's own doc comment.
+// communication error has occurred" appeared instantly on opening the hall.
+// The real server answers 304 Not Modified with an empty body unconditionally,
+// with no conditional-GET header in the request to justify it in the ordinary
+// HTTP sense: it is the endpoint's own permanent "nothing new" answer. See
+// newsTopics's own doc comment.
 func TestNewsTopicsAnswers304NotModified(t *testing.T) {
 	h := newTestHandler(t)
 
@@ -489,9 +481,9 @@ func TestOp2MembershipsIsTheItemsEnvelopeTheAccountParserReads(t *testing.T) {
 	}
 }
 
-// TestBCATRequestsAreRecordedWhileStillAnswered304: stage 1 of TODO.md §2.4
-// runs on every boot when bcat_record_dir is set, and recording must not
-// change the answer -- anything but 304 risks the 2122-2403 hard error.
+// TestBCATRequestsAreRecordedWhileStillAnswered304: the recorder runs on every
+// boot when bcat_record_dir is set, and recording must not change the answer.
+// Anything but 304 risks the 2122-2403 hard error.
 func TestBCATRequestsAreRecordedWhileStillAnswered304(t *testing.T) {
 	dir := t.TempDir()
 	h := newHandler(t, Config{BCATRecordDir: dir})

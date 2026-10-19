@@ -112,15 +112,12 @@ const (
 	// servers verify. Published at /1.0.0/certificates.
 	IssuerBAASID = "baas_id"
 	// IssuerNAID signs the Nintendo Account link flow's id tokens (iss =
-	// "https://accounts.nintendo.com", internal_baas/nalink.go) -- a
-	// deliberately separate key from IssuerBAASID even though both are
-	// published in the same /1.0.0/certificates JWK set. Confirmed against a
-	// real, working private server's own operational notes (Nextendo
-	// Network's baas-jwks, 2026-08-26): reusing one kid across the accounts.
-	// and BAAS issuers makes the console reject the import silently, with no
-	// further network call, which matches GRID0+'s own error 2124-0292
-	// exactly. Before this key existed, nalink.go signed with IssuerBAASID's
-	// key by mistake.
+	// "https://accounts.nintendo.com", internal/baas/nalink.go) -- a deliberately
+	// separate key from IssuerBAASID even though both are published in the same
+	// /1.0.0/certificates JWK set. The console links a token's kid to its iss, and
+	// reusing one kid across the accounts. and BAAS issuers makes it reject the
+	// Nintendo Account import silently, with no further network call (error
+	// 2124-0292).
 	IssuerNAID = "na_id"
 )
 

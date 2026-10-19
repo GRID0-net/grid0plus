@@ -54,12 +54,12 @@ func rankedShares(shares map[string]float64) []*toyohrpb.FestTeamRatio {
 }
 
 // maxDisplayRatio keeps a share below 100%. Nintendo's published shares are
-// always near a third, shown as two digits and two decimals; with a handful
-// of players GRID0+ can produce a whole 1.0, and the halftime report then
-// showed 0% for every team (2026-10-09, hardware). The ranking is unchanged.
+// always near a third, shown as two digits and two decimals; with a handful of
+// players GRID0+ can produce a whole 1.0, and the halftime report then shows 0%
+// for every team. The ranking is unchanged.
 //
-// TODO(capture-needed): that the display really overflows at 100 rather than
-// rejecting the block for another reason. Change: displayRatio.
+// UNCONFIRMED: that the display really overflows at 100 rather than rejecting the
+// block for another reason. Change: displayRatio.
 const maxDisplayRatio = 0.9999
 
 func displayRatio(r float64) float64 { return min(r, maxDisplayRatio) }

@@ -11,12 +11,11 @@ import (
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 )
 
-// TestTwoUsersBecomeFriendsAndSeePresence is the phase 1.2 definition of done.
+// TestTwoUsersBecomeFriendsAndSeePresence is the definition of done for friends.
 //
-// User A sends a friend request, B accepts, A appears in B's friend list, A's
-// presence goes to PLAYING with a title id, and B's friend-list response
-// reflects it. This is the whole feature end to end, in the order a real console
-// performs it.
+// User A sends a friend request, B accepts, A appears in B's friend list, A's presence
+// goes to PLAYING with a title id, and B's friend-list response reflects it. This is the
+// whole feature end to end, in the order a real console performs it.
 func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	h := newHarness(t)
 
@@ -126,18 +125,17 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 		t.Errorf("B's inbox entry ids = %q/%q, want Alice/Bob",
 			inbox.Items[0].SenderID, inbox.Items[0].ReceiverID)
 	}
-	// The recipient's own side is filled too, not omitted: the decompiled
-	// parser reads receiver.nickname unconditionally (see
-	// FriendRequestResponse's own doc comment), so leaving it out was the
-	// leading suspect for 2121-0104/2124-0104 on the friend-requests screen.
+	// The recipient's own side is filled too, not omitted: the client's parser
+	// reads receiver.nickname unconditionally (see FriendRequestResponse's own doc
+	// comment), so leaving it out was the leading suspect for 2121-0104/2124-0104
+	// on the friend-requests screen.
 	if inbox.Items[0].Receiver == nil || inbox.Items[0].Receiver.ID != bob.UserID {
 		t.Errorf("B's inbox entry does not carry B's own receiver profile: %+v", inbox.Items[0].Receiver)
 	}
 	// channels/extras must be present, not omitted -- both are read
-	// unconditionally by the same decompiled parser, and an entirely
-	// missing key (as opposed to an empty array/object) is what a JSON
-	// consumer that skips a length check before indexing channels[0] would
-	// crash on.
+	// unconditionally by the same parser, and an entirely missing key (as opposed
+	// to an empty array/object) is what a JSON consumer that skips a length check
+	// before indexing channels[0] would crash on.
 	if inbox.Items[0].Channels == nil {
 		t.Errorf("B's inbox entry has no channels array at all, want an empty one")
 	}
@@ -244,8 +242,8 @@ func TestTwoUsersBecomeFriendsAndSeePresence(t *testing.T) {
 	}
 
 	// ---- and the change was published to the bus ----
-	// The bus is what the phase 2 dashboard and NPLN presence service consume,
-	// so a presence change that is stored but not published is only half done.
+	// The bus is what the dashboard and NPLN presence service consume, so a presence
+	// change that is stored but not published is only half done.
 	var found *presencebus.Event
 	for _, e := range h.bus.all() {
 		if e.UserID == alice.UserID && e.State == db.StatePlaying {
@@ -341,20 +339,19 @@ func TestFriendRequestByFormEncodedBody(t *testing.T) {
 }
 
 // TestFriendRequestByReceiverID is the regression test for a real,
-// reproducible bug on real hardware: sending a friend request by entering a
-// friend code returned 400/2121-2001 every time. The console does not repeat
-// the friend code on this call -- it already resolved the target through the
-// preceding GET /1.0.0/users and GET .../relationships/<id> calls (see the
-// GET side of that flow elsewhere in this file) -- and posts, byte for byte,
-// measured from a real console on 2026-09-24:
+// reproducible bug: sending a friend request by entering a friend code returned
+// 400/2121-2001 every time. The console does not repeat the friend code on this
+// call -- it already resolved the target through the preceding GET /1.0.0/users
+// and GET .../relationships/<id> calls (see the GET side of that flow elsewhere
+// in this file) -- and posts, byte for byte:
 //
 //	{"channels":["FRIEND_CODE"],"senderId":"<caller>","receiverId":"<target>",
 //	 "extras":{"sender":{"route:sender":"me"}}}
 //
-// This server only recognised friendCode/userId/nsaId, none of which this
-// body carries, so target resolution silently failed with invalid_params
-// every time -- the friend-request screen could show a resolved profile and
-// still refuse to ever send a request to it.
+// A server that only recognises friendCode/userId/nsaId, none of which this body
+// carries, fails target resolution with invalid_params every time -- the
+// friend-request screen shows a resolved profile and still refuses to ever send a
+// request to it.
 func TestFriendRequestByReceiverID(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
@@ -593,15 +590,11 @@ func TestFriendRequestAcceptsThePlainStateObjectBodyToo(t *testing.T) {
 	}
 }
 
-// TestFriendRequestAcceptsTheRealConsoleStateSpelling is the actual bug this
-// project shipped before a 2026-09-20 decompile of the operator's own
-// console's friends sysmodule found the real enum: the console spells these
-// AUTHORIZED/REJECTED/CANCELED, not the pre-capture guess of ACCEPTED/
-// DENIED/CANCELLED this test file's other cases still use (kept working as
-// an alias, but never what a real console would actually send). Before
-// requestStateFromWire existed, a real console accepting a friend request
-// would have gotten errInvalidParams back -- not a cosmetic mismatch, a
-// completely broken core feature.
+// TestFriendRequestAcceptsTheRealConsoleStateSpelling covers the console's
+// spelling of the request states: AUTHORIZED/REJECTED/CANCELED, not the
+// ACCEPTED/DENIED/CANCELLED this test file's other cases use (kept working as
+// an alias, but never what a real console sends). Without requestStateFromWire
+// a real console accepting a friend request would get errInvalidParams back.
 func TestFriendRequestAcceptsTheRealConsoleStateSpelling(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
@@ -790,16 +783,14 @@ func TestFriendListDoesNotLeakPrivateFields(t *testing.T) {
 	}
 }
 
-// TestRelationshipCarriesTheThreeFlagsTheClientReads asserts on the wire, not
-// on the Go struct.
+// TestRelationshipCarriesTheThreeFlagsTheClientReads asserts on the wire, not on the
+// Go struct.
 //
-// The friends sysmodule's response object for GET .../relationships/<id> is
-// built at FUN_001d5d60 with the vtable at 0x258558, which registers exactly two
-// field callbacks: one reading $.isFriend and $.isBlocking, one reading
-// $.sentFriendRequestIds[0]. GRID0+ used to send none of those three keys,
-// which the client reads as the all-false default -- a friend and a total
-// stranger were indistinguishable on screen. Decoding into RelationshipResponse
-// would not catch a wrong json tag here, so this decodes into a map.
+// The friends module's response object for GET .../relationships/<id> reads exactly
+// two things: $.isFriend and $.isBlocking, and $.sentFriendRequestIds[0]. Sending none
+// of those three keys reads as the all-false default, so a friend and a total stranger
+// were indistinguishable on screen. Decoding into RelationshipResponse would not catch
+// a wrong json tag here, so this decodes into a map.
 func TestRelationshipCarriesTheThreeFlagsTheClientReads(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()
@@ -894,10 +885,9 @@ func (h *harness) relationship(t *testing.T, self account, other string) Relatio
 }
 
 // TestPatchingAFriendsExtrasSticksAndIsOneDirectional pins what the console
-// actually sends after showing a new friend: PATCH
-// .../friends/<id> with /extras/self/isConfirmed. That was answered 400 until
-// 2026-09-23. It has to be accepted, handed back on the patcher's friend
-// list, and stay out of the other direction. Asserted on the wire.
+// sends after showing a new friend: PATCH .../friends/<id> with
+// /extras/self/isConfirmed. It has to be accepted, handed back on the patcher's
+// friend list, and stay out of the other direction. Asserted on the wire.
 func TestPatchingAFriendsExtrasSticksAndIsOneDirectional(t *testing.T) {
 	h := newHarness(t)
 	a := h.newAccount()

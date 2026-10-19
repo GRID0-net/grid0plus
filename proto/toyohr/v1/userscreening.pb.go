@@ -119,12 +119,12 @@ func (x *GetViolationRequest) GetName() string {
 
 type GetViolationResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// NextendoNetwork/splatoon-3 measured (facts only, not its code) that
 	// Splatoon 3's own client parses this response's own resource name and
-	// requires it to end in a "violations" segment -- an empty response
-	// (this field absent, field 1 defaulting to "") crashes the client at a
-	// hard abort in its resource-path parser. See
-	// internal/toyohr/messaging.go's GetViolation.
+	// requires it to end in a "violations" segment -- an empty response (this
+	// field absent, field 1 defaulting to "") crashes the client at a hard abort
+	// in its resource-path parser. See internal/toyohr/messaging.go's
+	// GetViolation.
+	//
 	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

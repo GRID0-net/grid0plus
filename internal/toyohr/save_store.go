@@ -22,8 +22,7 @@ import (
 
 // saveLocks serializes the read-merge-write of one player's record. The
 // console sends its writes concurrently (two identical Validate writes 150 ms
-// apart in the 2026-09-24 loopback capture), and a lost update here is lost
-// progression.
+// apart), and a lost update here is lost progression.
 var saveLocks sync.Map // uid -> *sync.Mutex
 
 func lockSave(uid string) func() {
@@ -114,9 +113,8 @@ func clearOnlinePlayPenalty(data *common.MapValue) {
 }
 
 // mergeSaveDelta applies a WriteSaveRecord delta to stored save_data, using
-// the four rules NextendoNetwork/splatoon-3 documents as reproduced against
-// real Nintendo (replaying 24 captured deltas onto one served record yields
-// the next served record exactly):
+// four rules that reproduce Nintendo's behaviour (replaying 24 captured deltas
+// onto one served record yields the next served record exactly):
 //
 //   - a map merges into an existing map key by key, recursively;
 //   - an explicit null deletes the key from its parent map;

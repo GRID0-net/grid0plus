@@ -180,9 +180,8 @@ func newSessionKey() []byte {
 // The server owns the id, the owner and host, the session key, the start
 // time and the password flags; everything else is the console's. Two
 // parameters are added to MatchmakeParam: @SR=true and @GIR=3. Pretendo's
-// matchmaking sets both on every session it creates, and NextendoNetwork
-// records a session without them being rejected by the console (facts
-// only). What they mean is not documented.
+// matchmaking sets both on every session it creates, and the console does not
+// reject a session without them. What they mean is not documented.
 func (m *Matchmaker) create(pid uint64, tmpl *MatchmakeSession, now time.Time) *gathering {
 	s := *tmpl
 	s.ID = m.nextGID
@@ -235,13 +234,12 @@ func (g *gathering) add(pids []uint64, message string) []uint64 {
 // without the mutex, with a snapshot).
 //
 // Every participant -- the joiner included -- is told about each newcomer,
-// and each newcomer is told about everyone already there. That is the shape
-// NextendoNetwork measured Splatoon 2's proven server sending (facts only),
-// and both halves are load-bearing: a host alone in a new lobby waits for
-// its OWN Participate before Pia moves on, and a joiner that is never told
-// who was already there never builds the mesh ("A communication error has
-// occurred"). Pretendo sends the same events when a gathering's flags ask
-// for verbose participation; Splatoon 2 needs them either way.
+// and each newcomer is told about everyone already there. Both halves are
+// load-bearing: a host alone in a new lobby waits for its OWN Participate
+// before Pia moves on, and a joiner that is never told who was already there
+// never builds the mesh ("A communication error has occurred"). Pretendo
+// sends the same events when a gathering's flags ask for verbose
+// participation; Splatoon 2 needs them either way.
 //
 // Players added by someone else (a squad joining together) are also told
 // which gathering they were put in (122000, "switch gathering").

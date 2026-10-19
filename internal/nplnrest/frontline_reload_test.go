@@ -9,8 +9,7 @@ import (
 )
 
 // TestAReloadLinkIsAckedWithItsOwnId: npns waits 10 s for an Ack naming the
-// "reload_link-<hex>" it sent and drops the connection otherwise. The frame
-// is one a console sent grid0 on 2026-10-11.
+// "reload_link-<hex>" it sent and drops the connection otherwise.
 func TestAReloadLinkIsAckedWithItsOwnId(t *testing.T) {
 	frame, _ := hex.DecodeString("180000000000000000000e002400070008000c00100018000e0000000000001e2c000000180000009b94cb6a00000000aba2cb6a0000000000000000020000004e580000000006000800040006000000040000001400000072656c6f61645f6c696e6b2d323432393266366400000000")
 	s, err := New(Options{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), FrontlineHost: frontlineHost,

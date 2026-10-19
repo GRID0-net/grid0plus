@@ -14,12 +14,12 @@ import (
 	sjwt "github.com/n-popescu/grid0plus/internal/jwt"
 )
 
-// TestFullAuthChain is the phase 1.1 definition of done: a client walks the whole
-// chain — device token, application token, anonymous BAAS token, register, log in
-// — and every JWT is checked for the right claims and signature.
+// TestFullAuthChain is the definition of done for the account layer: a client walks
+// the whole chain -- device token, application token, anonymous BAAS token, register,
+// log in -- and every JWT is checked for the right claims and signature.
 //
-// The chain matters because each step's output is the next step's input, so a
-// wrong claim anywhere fails several steps later with an unrelated-looking error.
+// The chain matters because each step's output is the next step's input, so a wrong
+// claim anywhere fails several steps later with an unrelated-looking error.
 func TestFullAuthChain(t *testing.T) {
 	h := newHarness(t)
 
@@ -87,11 +87,10 @@ func TestFullAuthChain(t *testing.T) {
 	if created.Birthday != "0000-00-00" {
 		t.Errorf("birthday = %q, want the literal 0000-00-00 for 'not set'", created.Birthday)
 	}
-	// A 2026-08-27 capture of a real registerUser response has no 'presence'
-	// key at all -- only a friend-visible read of someone else's user object
-	// does. Nickname is blank at registration (the console sets it later), so
-	// 'nicknameUpdatedAt' is absent too, the same "not set yet" treatment as
-	// Birthday's sentinel.
+	// A real registerUser response has no 'presence' key at all -- only a
+	// friend-visible read of someone else's user object does. Nickname is blank at
+	// registration (the console sets it later), so 'nicknameUpdatedAt' is absent
+	// too, the same "not set yet" treatment as Birthday's sentinel.
 	if created.Presence != nil {
 		t.Errorf("a freshly registered user's own view carries a presence block: %+v", created.Presence)
 	}
@@ -158,12 +157,11 @@ func TestFullAuthChain(t *testing.T) {
 			t.Error("login returned the device account password; it is sent only at creation")
 		}
 	}
-	// A 2026-08-27 capture of a real /1.0.0/login response has no 'presence'
-	// key in its own self-view user object at all -- only a friend-visible
-	// read of someone else's does. Whether logging in actually marks the user
-	// online for a friend is presence_test.go's job
-	// (TestAnIdleConsoleReadsAsOnlineNotOffline and friends); this is only
-	// about the response shape.
+	// A real /1.0.0/login response has no 'presence' key in its own self-view user
+	// object at all -- only a friend-visible read of someone else's does. Whether
+	// logging in actually marks the user online for a friend is presence_test.go's
+	// job (TestAnIdleConsoleReadsAsOnlineNotOffline and friends); this is only about
+	// the response shape.
 	if login.User.Presence != nil {
 		t.Errorf("login's own user object carries a presence block: %+v", login.User.Presence)
 	}
@@ -275,13 +273,12 @@ func TestFreePolicyDoesNotClaimMembership(t *testing.T) {
 }
 
 // TestFederationRecordsAndReturnsTheLinkedNintendoAccount guards against a
-// real bug found on real hardware 2026-08-26: recordNintendoAccountLink
-// stored the linked id in extras, but userResponse never read it back into
-// Links.NintendoAccount, so a console that just federated with a real id
-// token got a 200 whose links object was still completely empty. The
-// console gave up right there (error 2124-3121) without ever calling
-// /1.0.0/users/{id}/link, because nothing in the response confirmed the
-// federation it had just done actually took effect.
+// real bug: recordNintendoAccountLink stored the linked id in extras, but
+// userResponse never read it back into Links.NintendoAccount, so a console that
+// just federated with a real id token got a 200 whose links object was still
+// completely empty. The console gave up right there (error 2124-3121) without
+// ever calling /1.0.0/users/{id}/link, because nothing in the response confirmed
+// the federation it had just done actually took effect.
 func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 	h := newHarness(t)
 	a := h.register()
@@ -314,10 +311,9 @@ func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 
 	var body loginResponse
 	decode(t, resp, &body)
-	// A 2026-08-27 capture of a real working federation response has no
-	// 'presence' key in its own embedded user object at all -- GRID0+ used
-	// to always include one. Sending it anyway is an extra key the console's
-	// reader has not been confirmed to tolerate.
+	// A real federation response has no 'presence' key in its own embedded user
+	// object at all. Sending it anyway is an extra key the console's reader has not
+	// been confirmed to tolerate.
 	if body.User.Presence != nil {
 		t.Errorf("federation's own embedded user object carries a presence block: %+v", body.User.Presence)
 	}
@@ -336,10 +332,10 @@ func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 		t.Error("a later /1.0.0/login lost the recorded Nintendo Account link")
 	}
 
-	// registerUser's own defaults ("0000-00-00", "") are for an anonymous
-	// device profile, not a person who just federated with a real Nintendo
-	// Account id. Sending those straight through in this same response
-	// produced a real, undocumented hardware failure (2124-0292, 2026-08-26).
+	// registerUser's own defaults ("0000-00-00", "") are for an anonymous device
+	// profile, not a person who just federated with a real Nintendo Account id.
+	// Sending those straight through in this same response produces a hardware
+	// failure (2124-0292).
 	if body.User.Birthday == "" || body.User.Birthday == "0000-00-00" {
 		t.Errorf("federation's own embedded user.birthday = %q, want a real-looking date", body.User.Birthday)
 	}
@@ -349,7 +345,7 @@ func TestFederationRecordsAndReturnsTheLinkedNintendoAccount(t *testing.T) {
 
 	// A real working account's federation response always carries both
 	// thumbnail sizes and a non-empty extras.self.nxAccount -- see
-	// recordNintendoAccountLink's TODO(capture-needed) comment for what is
+	// recordNintendoAccountLink's UNCONFIRMED comment for what is
 	// and is not known about the latter.
 	if body.User.Thumbnail2URL == "" {
 		t.Error("federation's own embedded user.thumbnail2Url is empty")
@@ -385,10 +381,9 @@ func TestNicknameUpdatedAtAppearsOnlyOnceANicknameIsSet(t *testing.T) {
 }
 
 // TestFederationBackfillsCountryFromTheRequestNotAHardcodedDefault guards a
-// real gap found 2026-08-27: recordNintendoAccountLink always backfilled
-// "US" regardless of the naCountry the console actually sent in the request
-// -- silently wrong for anyone not in the US, and a real capture of a
-// working account showed a French naCountry ("FR") end to end.
+// real gap: recordNintendoAccountLink always backfilled "US" regardless of the
+// naCountry the console actually sent in the request -- silently wrong for anyone
+// not in the US.
 func TestFederationBackfillsCountryFromTheRequestNotAHardcodedDefault(t *testing.T) {
 	h := newHarness(t)
 	a := h.register()
@@ -428,15 +423,13 @@ func TestFederationBackfillsCountryFromTheRequestNotAHardcodedDefault(t *testing
 	}
 }
 
-// TestFederationTreatsTheLiteralUnknownCountryAsAbsent guards a real gap
-// found 2026-09-22 by decompiling account_main.nso: the console's own
-// federation request builder (FUN_71000cd6d0) sends the literal string
-// "Unknown" for naCountry whenever it has no real value to report --
-// unconditionally true for a first-time link, the exact case this field
-// exists to backfill. Before this fix, "Unknown" was not empty, so it
-// passed straight through and got stored verbatim -- not a valid ISO
-// country code, and never corrected afterward since recordNintendoAccountLink
-// only backfills when the stored value is empty.
+// TestFederationTreatsTheLiteralUnknownCountryAsAbsent guards a real gap: the
+// console's own federation request builder sends the literal string "Unknown" for
+// naCountry whenever it has no real value to report, which is always the case for a
+// first-time link, the exact case this field exists to backfill. "Unknown" is not
+// empty, so it used to pass straight through and get stored verbatim: not a valid ISO
+// country code, and never corrected afterward since recordNintendoAccountLink only
+// backfills when the stored value is empty.
 func TestFederationTreatsTheLiteralUnknownCountryAsAbsent(t *testing.T) {
 	h := newHarness(t)
 	a := h.register()
@@ -547,16 +540,15 @@ func TestFederationBackfillsBirthdayAndCountryEvenWhenTheLinkAlreadyExisted(t *t
 	}
 }
 
-// TestFederationDoesNotStompTheConsolesOwnNxAccountPatch guards a real gap
-// described 2026-09-22 by a developer on another Nintendo-account-server
-// project: a real console PATCHes its own version of extras.self.nxAccount
-// back to /1.0.0/users/{id} once, shortly after the first successful link.
-// The server is expected to store that value and echo it back from then on
-// -- recordNintendoAccountLink used to recompute and reassign nxAccountBlob
-// on every single federation call regardless of what was already stored,
-// which would silently stomp the console's own pushed value the very next
-// time the same person's device (or a second device) federated, and the
-// console would keep trying to reconcile a value the server kept undoing.
+// TestFederationDoesNotStompTheConsolesOwnNxAccountPatch guards a real gap: a
+// real console PATCHes its own version of extras.self.nxAccount back to
+// /1.0.0/users/{id} once, shortly after the first successful link. The server is
+// expected to store that value and echo it back from then on --
+// recordNintendoAccountLink must not recompute and reassign nxAccountBlob on every
+// federation call regardless of what was already stored, which would silently
+// stomp the console's own pushed value the next time the same person's device (or
+// a second device) federated, and the console would keep trying to reconcile a
+// value the server kept undoing.
 func TestFederationDoesNotStompTheConsolesOwnNxAccountPatch(t *testing.T) {
 	h := newHarness(t)
 	person := h.register()
@@ -625,15 +617,14 @@ func TestFederationDoesNotStompTheConsolesOwnNxAccountPatch(t *testing.T) {
 }
 
 // TestFederationAttachesAFreshDeviceAccountToAnExistingPerson is the design
-// this whole reassignment mechanism exists for, described by the operator
-// 2026-08-26 after real hardware showed the gap: signing in on the Nintendo
+// this whole reassignment mechanism exists for: signing in on the Nintendo
 // Account link page is signing in as an existing person (here: someone who
-// registered on the website), not minting a new one. Before this, the
-// console's "Transfer" flow registered a brand new, empty GRID0+ user for
-// every console it ran on and merely labelled it with the real person's id —
-// no friend code, no history, nothing carried over. This asserts the device
-// account /1.0.0/users just created ends up truly owned by the person who
-// signed in, not just decorated with their id.
+// registered on the website), not minting a new one. Otherwise the console's
+// "Transfer" flow would register a brand new, empty GRID0+ user for every console
+// it ran on and merely label it with the real person's id -- no friend code, no
+// history, nothing carried over. This asserts the device account /1.0.0/users
+// just created ends up truly owned by the person who signed in, not just
+// decorated with their id.
 func TestFederationAttachesAFreshDeviceAccountToAnExistingPerson(t *testing.T) {
 	h := newHarness(t)
 
@@ -1337,8 +1328,8 @@ func TestJWKSetsAreServedWithoutATokenAndUseDistinctKeys(t *testing.T) {
 	}
 }
 
-// TestPublishedIDTokenKeyVerifiesARealIDToken is what a phase 2 game server
-// does: fetch /1.0.0/certificates and verify the token the console handed it.
+// TestPublishedIDTokenKeyVerifiesARealIDToken is what a game server does: fetch
+// /1.0.0/certificates and verify the token the console handed it.
 func TestPublishedIDTokenKeyVerifiesARealIDToken(t *testing.T) {
 	h := newHarness(t)
 	a := h.register()
@@ -1385,11 +1376,10 @@ func TestUnroutedPathReturnsABAASShapedError(t *testing.T) {
 	requireError(t, resp, 404, "resource_is_not_found")
 }
 
-// TestNxAccountBlobMatchesTheRealCapturedShape pins the one thing a
-// 2026-09-04 real capture actually settled about extras.self.nxAccount:
-// length (174 bytes) and encoding (base64, so 232 characters with no
-// padding) -- not its interior content, which nxAccountBlob's own comment
-// is explicit about not attempting to reproduce.
+// TestNxAccountBlobMatchesTheRealCapturedShape pins the one thing known about
+// extras.self.nxAccount: length (174 bytes) and encoding (base64, so 232
+// characters with no padding) -- not its interior content, which nxAccountBlob's
+// own comment is explicit about not attempting to reproduce.
 func TestNxAccountBlobMatchesTheRealCapturedShape(t *testing.T) {
 	got := nxAccountBlob("d63e6ad0809131f2")
 	if len(got) != 232 {
@@ -1405,11 +1395,9 @@ func TestNxAccountBlobMatchesTheRealCapturedShape(t *testing.T) {
 }
 
 // TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks pins the 6-byte
-// header at offset 0. A 2026-09-21 attempt to "correct" this to an 8-byte
-// ASCII header at offset 0x21 (matching a same-night decompile finding) was
-// deployed and directly regressed 2124-0292 on real hardware -- reverted.
-// See nxAccountBlob's own comment for the full writeup. Do not change this
-// without a fresh hardware confirmation.
+// header at offset 0. Moving it to an 8-byte ASCII header at offset 0x21 was
+// tried and regressed 2124-0292 on real hardware. See nxAccountBlob's own
+// comment. Do not change this without a fresh hardware confirmation.
 func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
@@ -1421,23 +1409,14 @@ func TestNxAccountBlobBeginsWithTheHeaderTheConsoleChecks(t *testing.T) {
 	}
 }
 
-// TestNxAccountBlobZeroesTheRangesRealBlobsShowZero pins the payload's zero
-// ranges and its marker, which a 2026-09-22 decompile of the builder
-// (FUN_71000f0ee0) and the 2026-09-13 capture diff agree on: payload 24-39
-// is two zero quads the builder writes itself, payload 40-43 is the
-// 01 00 01 01 marker both captured values carry, and everything from
-// payload 44 on is zero. The previous implementation ran repeated SHA-256
-// output out to byte 83 -- it passed FUN_71000f0960's narrow non-zero check
-// the same as this version does, but was high-entropy noise in ranges every
-// real sample of this field has shown to be zero.
+// TestNxAccountBlobZeroesTheRangesRealBlobsShowZero pins the payload's zero ranges
+// and its marker: payload 24-39 is two zero quads, payload 40-43 is the 01 00 01 01
+// marker, and everything from payload 44 on is zero. Filling those ranges with noise
+// would pass the console's one narrow check the same as this version does, but real
+// blobs are zero there.
 //
-// Bytes 22-25 are in this list on the strength of a SECOND account's samples
-// (the 2026-08-26 Nextendo login capture), which is what the 2026-09-13
-// diff alone could not supply: one account's capture shows what is fixed
-// within that account, not what is fixed across accounts. The pair of
-// samples agrees with the first account on every fixed range, this one
-// included, which makes payload 16-19 the zero high half of the builder's
-// third big-endian u64 rather than a range nobody writes.
+// Bytes 22-25 are in this list because every sample agrees on them, which makes payload
+// 16-19 the zero high half of a big-endian u64 rather than a range nobody writes.
 func TestNxAccountBlobZeroesTheRangesRealBlobsShowZero(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
@@ -1466,16 +1445,13 @@ func TestNxAccountBlobZeroesTheRangesRealBlobsShowZero(t *testing.T) {
 	}
 }
 
-// TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960 pins the only thing
-// the console's real consumer checks about this field: FUN_71000f0960
-// base64-decodes the 224 characters after the header, requires exactly 168
-// bytes back, and requires at least one non-zero byte in the first 16 of
-// them -- payload 0-15, blob bytes 6-21. It reaches that by byte-swapping
-// two 8-byte words, which preserves which bytes are zero, so the range is
-// the whole claim. An all-zero range there is the one way this placeholder
-// can raise 2124-0292 on its own, which is why the assertion is on blob
-// bytes 6-21 rather than on the 24 bytes written: asserting the wider range
-// would pass on a value the console would refuse.
+// TestNxAccountBlobKeepsItsHeadNonZero pins the only thing the console checks about
+// this field: it base64-decodes the 224 characters after the header, requires exactly
+// 168 bytes back, and requires at least one non-zero byte in the first 16 of them --
+// payload 0-15, blob bytes 6-21. An all-zero range there is the one way this
+// placeholder can raise 2124-0292 on its own, which is why the assertion is on blob
+// bytes 6-21 rather than on the 24 bytes written: asserting the wider range would pass
+// on a value the console would refuse.
 func TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(nxAccountBlob("d63e6ad0809131f2"))
 	if err != nil {
@@ -1486,7 +1462,7 @@ func TestNxAccountBlobKeepsItsHeadNonZeroForFUN71000f0960(t *testing.T) {
 			return
 		}
 	}
-	t.Error("nxAccountBlob's first 16 payload bytes (blob bytes 6-21) are all zero, which is what FUN_71000f0960 rejects")
+	t.Error("nxAccountBlob's first 16 payload bytes (blob bytes 6-21) are all zero, which the console rejects")
 }
 
 func TestNxAccountBlobIsStablePerAccountAndDistinctAcrossAccounts(t *testing.T) {
@@ -1536,10 +1512,9 @@ func TestFederationNxAccountHasTheRealShapeNotTheOldPlaceholder(t *testing.T) {
 	}
 }
 
-// Linking a console to a real person's GRID0+ account used to leave the
-// user registerUser invented behind forever, counted as a player with no
-// console (ROADMAP 5.1). The placeholder is deleted when its only device
-// account moves to the person.
+// Linking a console to a real person's GRID0+ account used to leave the user
+// registerUser invented behind forever, counted as a player with no console. The
+// placeholder is deleted when its only device account moves to the person.
 func TestLinkingAConsoleLeavesNoThrowawayUserBehind(t *testing.T) {
 	h := newHarness(t)
 	a := h.register()

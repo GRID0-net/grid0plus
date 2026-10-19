@@ -76,8 +76,7 @@ func (s *Server) applicationToken(w http.ResponseWriter, r *http.Request) {
 			DeviceID:     device.Subject,
 			SerialNumber: device.Nintendo.SerialNumber,
 			IsT:          ist,
-			// Echoed from the device token unchanged, matching a 2026-08-27
-			// capture of a working Nextendo application/token response. See
+			// Echoed from the device token unchanged, as a working server does. See
 			// DeviceInfo.X5tS256.
 			X5tS256: device.Nintendo.X5tS256,
 			// Esv likewise: this endpoint copies the device token's block
@@ -139,13 +138,10 @@ func (s *Server) registerUser(w http.ResponseWriter, r *http.Request, c *caller)
 		Birthday:    "0000-00-00",
 		Permissions: db.DefaultPermissions(now),
 		Extras:      db.EmptyExtras(),
-		// A live capture of a working account (2026-08-27) always carried a
-		// real thumbnailUploadedAt; a self-registered GRID0+ account never
-		// goes through an "upload a thumbnail" step, so it stayed nil forever
-		// otherwise -- the one structural gap left after everything else about
-		// the federation/login response was confirmed byte-identical to that
-		// capture. Real accounts have a thumbnail (even the default one) from
-		// the moment they exist, same reasoning as EmptyExtras' defaults.
+		// A real account always carries a thumbnailUploadedAt; a self-registered
+		// GRID0+ account never goes through an "upload a thumbnail" step, so it would
+		// stay nil forever otherwise. Real accounts have a thumbnail (even the default
+		// one) from the moment they exist, same reasoning as EmptyExtras' defaults.
 		ThumbnailUploadedAt: &now,
 		// This console's placeholder until it links to a real person's
 		// account, which deletes it (db.Store.ReassignDeviceAccount).
@@ -362,25 +358,22 @@ func (s *Server) deviceAccountForLogin(ctx context.Context, userID string) (db.D
 //
 // Reference: https://github.com/kinnay/NintendoClients/wiki/BAAS-Server#post-100federation
 //
-// A REAL Nintendo Account id token cannot be verified here — GRID0+ does
-// not have Nintendo's key — so in general this is treated as a label, not a
-// credential: its subject is recorded as a linked account id (see
-// recordNintendoAccountLink) and grants nothing on its own. Authentication is
-// still the device account id and password, exactly as in /1.0.0/login.
+// A REAL Nintendo Account id token cannot be verified here, because GRID0+ does
+// not have Nintendo's key, so in general it is treated as a label, not a credential:
+// its subject is recorded as a linked account id (see recordNintendoAccountLink) and
+// grants nothing on its own. Authentication is still the device account id and
+// password, exactly as in /1.0.0/login.
 //
-// One case is different: a token that verifies against GRID0+'s own
-// idIssuer key can only exist because nalink.go minted it, for the person who
-// just signed in on the Nintendo Account link page. Its subject is a real,
-// existing GRID0+ user id — not an opaque label — and this is the only
-// place that reassigns the device account /1.0.0/users just created to that
-// person, rather than leaving the console permanently attached to the fresh,
-// empty, unreachable-by-username identity registerUser had to invent because
-// it runs before any id token exists. See completeLogin's use of
-// idVerifier. Found on real hardware 2026-08-26: without this, the console
-// federates successfully, but the "logged in" identity it ends up with is
-// not the one whose credentials it just typed into the login page, and it
-// gives up soon after (undocumented error 2124-0292) with nothing further
-// logged — see docs/CAPTURES for the session write-up.
+// One case is different: a token that verifies against GRID0+'s own idIssuer key can
+// only exist because nalink.go minted it, for the person who just signed in on the
+// Nintendo Account link page. Its subject is a real, existing GRID0+ user id, not an
+// opaque label, and this is the only place that reassigns the device account
+// /1.0.0/users just created to that person, rather than leaving the console
+// permanently attached to the fresh, empty identity registerUser had to invent because
+// it runs before any id token exists. See completeLogin's use of idVerifier. Without
+// this, the console federates successfully, but the "logged in" identity it ends up
+// with is not the one whose credentials it just typed into the login page, and it gives
+// up soon after (error 2124-0292) with nothing further logged.
 func (s *Server) federation(w http.ResponseWriter, r *http.Request, _ *caller) {
 	form, err := parseForm(r)
 	if err != nil {
@@ -547,16 +540,13 @@ func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form f
 		}
 	}
 
-	// The console checks this response against ids it cached from earlier
-	// responses in the same session, and refuses the login -- with a generic
-	// message the server never sees a request for -- when they disagree:
-	// a user id that is not the one it logged in with, or a
-	// links.nintendoAccount.id that is missing, or is not the NA account id
-	// it holds. See docs/CAPTURES/account-sysmodule-decompile.md, where
-	// those three rules come from FUN_71000ccaf0's own branches. Logging
-	// the three ids is what makes a failed session diagnosable from the
-	// server side at all, since a rejection at that gate is followed by no
-	// further request to identify it by.
+	// The console checks this response against ids it cached from earlier responses in
+	// the same session, and refuses the login -- with a generic message the server never
+	// sees a request for -- when they disagree: a user id that is not the one it logged in
+	// with, or a links.nintendoAccount.id that is missing, or is not the NA account id it
+	// holds. Logging the three ids is what makes a failed session diagnosable from the
+	// server side at all, since a rejection at that gate is followed by no further request
+	// to identify it by.
 	s.log.Info("baas: login issued tokens",
 		"user", user.ID, "device_account", da.ID, "nintendo_account", nintendoAccountID)
 
@@ -647,43 +637,31 @@ func (s *Server) issueLoginTokens(w http.ResponseWriter, r *http.Request, form f
 
 // recordNintendoAccountLink stores a Nintendo Account id against a user.
 //
-// It lives in the 'self' extras rather than in a column because GRID0+ does
-// nothing with it: it exists so the console's "linked account" screen has
-// something to show, and so a capture round-trips.
+// It lives in the 'self' extras rather than in a column because GRID0+ does nothing
+// with it: it exists so the console's "linked account" screen has something to show.
 //
-// Also backfills Birthday/Country if either is still BAAS's own "unset"
-// sentinel ("0000-00-00", ""). Those are the right defaults for an anonymous
-// device profile (registerUser, provision.go), which is what every user is
-// until this function runs — but the very response this call is part of
-// embeds the full user object (userResponse, in loginResponse.User), and a
-// console that just did a real Nintendo Account federation is looking at a
-// profile that claims to belong to a real, named person. Suspected once
-// (2026-08-26) of being the cause of an undocumented error (2124-0292) —
-// that suspicion did not hold up: a 2026-08-27 capture of a real, working
-// account showed birthday and country left at their own sentinels the whole
-// time. Backfilling real-looking values here is kept anyway, since it is
-// still more correct than an anonymous device profile's placeholders for a
-// person who just proved a real Nintendo Account, but it is not, on its
-// own, what makes federation succeed.
+// Also backfills Birthday/Country if either is still BAAS's own "unset" sentinel
+// ("0000-00-00", ""). Those are the right defaults for an anonymous device profile
+// (registerUser, provision.go), which is what every user is until this function runs,
+// but the very response this call is part of embeds the full user object
+// (userResponse, in loginResponse.User), and a console that just did a real Nintendo
+// Account federation is looking at a profile that claims to belong to a real, named
+// person. Backfilling real-looking values is more correct than an anonymous device
+// profile's placeholders for a person who just proved a real Nintendo Account, though
+// it is not what makes federation succeed.
 //
-// naCountryUnknown is the literal string account_main.nso's own federation
-// request builder falls back to for the naCountry form field when it has
-// nothing real to report -- confirmed 2026-09-22 by decompiling
-// FUN_71000cd6d0 (the /1.0.0/federation request constructor): the
-// "%s"-formatted naCountry value defaults to the literal C string "Unknown"
-// whenever a console-side flag (whether this profile has a previously
-// linked Nintendo Account) is unset, which is unconditionally the case on a
-// first-time link -- exactly the scenario this field exists to handle.
-// Treated identically to an absent naCountry below, or a real console's
-// first link permanently stores "Unknown" as the country: not a valid ISO
-// code, and never corrected afterward since recordNintendoAccountLink only
-// backfills an empty value.
+// naCountryUnknown is the literal string the console's federation request falls back
+// to for the naCountry form field when it has nothing real to report: the
+// "%s"-formatted value defaults to "Unknown" whenever a console-side flag (whether this
+// profile has a previously linked Nintendo Account) is unset, which is always the case
+// on a first-time link. It is treated identically to an absent naCountry below, or a real
+// console's first link would permanently store "Unknown" as the country: not a valid ISO
+// code, and never corrected afterward since recordNintendoAccountLink only backfills an
+// empty value.
 const naCountryUnknown = "Unknown"
 
 // naCountry is the console's own hint (the request's naCountry form field)
-// for which country to backfill, used in preference to a hardcoded one --
-// found 2026-08-27 that this was previously always "US" regardless of what
-// the console actually sent.
+// for which country to backfill, used in preference to a hardcoded one.
 func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, naID, naCountry string) error {
 	patch := db.UserPatch{}
 
@@ -698,21 +676,20 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 		extras[db.ScopeSelf]["nintendoAccountId"] = naID
 		patch.Extras = &extras
 	}
-	// TODO(capture-needed): what nxAccountBlob's context-keyed head bytes
-	// *mean*. Not whether they matter, which the 2026-09-22 round-trip
-	// decompile settled: the head is rendered from the console's own profile
-	// cache and that cache is filled from the last response, so a working
-	// server is choosing these bytes too and the client can only ever echo
-	// its own copy of them -- see nxAccountBlob's comment. What is left is a
-	// server-side choice no capture of this client can decode.
+	// UNCONFIRMED: what nxAccountBlob's context-keyed head bytes *mean*. Not
+	// whether they matter: the head is rendered from the console's own profile
+	// cache and that cache is filled from the last response, so a working server is
+	// choosing these bytes too and the client can only ever echo its own copy of
+	// them -- see nxAccountBlob's comment. What is left is a server-side choice no
+	// capture of this client can decode.
 	//
-	// Set only once, never overwritten on a later call: a real console PATCHes
-	// its own version of this blob back to /1.0.0/users/{id} after the first
-	// profile change (patchUser's /extras/self/nxAccount path already stores
-	// that correctly). Recomputing and reassigning it here on every
-	// subsequent login/federation -- as this used to do -- would stomp
-	// whatever the console just pushed back to our own placeholder, and the
-	// console keeps retrying to reconcile a value the server keeps undoing.
+	// Set only once, never overwritten on a later call: a real console PATCHes its
+	// own version of this blob back to /1.0.0/users/{id} after the first profile
+	// change (patchUser's /extras/self/nxAccount path already stores that
+	// correctly). Recomputing and reassigning it here on every subsequent
+	// login/federation would stomp whatever the console just pushed back with our
+	// own placeholder, and the console keeps retrying to reconcile a value the
+	// server keeps undoing.
 	if existing, ok := extras[db.ScopeSelf]["nxAccount"].(string); !ok || existing == "" {
 		extras[db.ScopeSelf]["nxAccount"] = nxAccountBlob(naID)
 		patch.Extras = &extras
@@ -745,171 +722,37 @@ func (s *Server) recordNintendoAccountLink(ctx context.Context, user *db.User, n
 // nxAccountBlob derives extras.self.nxAccount's value: a fixed-length,
 // correctly-shaped placeholder, not a copy or a forgery of a real one.
 //
-// Real shape confirmed 2026-09-04, from a genuine, decrypted, working
-// Nextendo federation response the operator captured and supplied directly
-// (a mitmproxy `.flow`, read with the real `mitmproxy` library rather than
-// eyeballed): a fixed 174-byte binary structure, base64-encoded to exactly
-// 232 characters with no padding (174 is exactly divisible by 3, so base64
-// needs none). That corrects this comment's own earlier, unverified guess
-// -- "a non-base64 alphabet" -- written before any real sample existed to
-// check it against; decoded, it is ordinary base64 of opaque bytes.
+// The value is a fixed 174-byte binary structure, base64-encoded to exactly 232
+// characters with no padding (174 is divisible by 3). Its layout, as far as GRID0+
+// reproduces it:
 //
-// The interior byte layout was reanalyzed 2026-09-13, from the same capture
-// re-read start to finish rather than just the one federation response: the
-// field turns out to appear five times in that single file, for the same
-// account, across `federation`/`login`(x2)/`GET users/{id}`(x2) -- three
-// login-shaped calls share one 174-byte value, both profile reads share a
-// different one. Diffing those two values (see
-// docs/CAPTURES/nintendo-account-link.md, "nxAccount's interior bytes --
-// partial structure recovered") gives real within-account structure without
-// a second account's capture:
-//   - fixed in both:      offsets 0-5, 12, 22-25, 30-61 (includes a
-//     `01 00 01 01` marker at 46-49), 66-71, and a
-//     96-byte zero tail at 78-173
-//   - varies with call:   offsets 6-11 and 13-21 (split around the fixed
-//     byte at 12), and offsets 26-29
-//   - login-only, zero on a plain profile read: offsets 62-65 and 72-77
+//   - bytes 0-5 are a fixed 6-byte header, the decoded form of the base64 text
+//     "01606150". The console checks it before anything else when a federation
+//     completes, so it must stay at offset 0, and its content must not change.
+//   - bytes 6-21 (payload 0-15) are the varying head. A real console renders them
+//     from its own cached profile record. GRID0+ has no such record, so these are
+//     derived from naID alone. They are the only range a console insists on: at least
+//     one non-zero byte in them, and exactly 168 payload bytes after the header.
+//   - bytes 22-29 vary with the call and are three big-endian words rendered from
+//     the cached profile; GRID0+ derives them from naID too.
+//   - a `01 00 01 01` marker sits at 46-49, and bytes 62-65 and 72-77 hold account
+//     state that only login-shaped responses carry. They are left zero here.
+//   - bytes 78-173 are a 96-byte zero tail.
 //
-// 2026-08-26: a SECOND account's samples arrived -- a full Nextendo login
-// capture (their own server, a different account, a different server build,
-// console SDK 22.2.0). It has the same five appearances and the same two
-// values, and every range the diff above calls "fixed in both" is
-// byte-identical there, 0x10 at offset 12 included. It also re-confirms the
-// login-only pair at the same two offsets (62-65, 72-77) with entirely
-// different values, so those stay account state and stay zero here. What
-// that settles is the one range the list above could not: offsets 22-25
-// reading zero is protocol-wide structure, not one account's profile
-// record, and this now reproduces it.
+// The console has no derivation of its own to compare against: it renders whatever the
+// last response told it to cache, which is why a working server gives the same account
+// two different heads from federation/login and from a profile read.
 //
-// None of that is confirmed protocol-wide yet -- one account's captures can
-// only show what's fixed *within* that account, not what's fixed *across*
-// accounts, and CLAUDE.md's rule against inventing a plausible-looking
-// Nintendo internal still means the varying, call-context-keyed regions are
-// not reproduced here (nothing visible to GRID0+ explains what selects
-// them). What changed from the original placeholder (the bare Nintendo
-// Account id, ~16 characters) began as only the parts confirmed real --
-// length and encoding -- and now also carries the skeleton the builder
-// decompile and the capture diff agree on; see the third 2026-09-22 note
-// below. A 16-character hex string sitting where a console has only
-// ever seen a 232-character value was a mismatch nothing about "content
-// unconfirmed" excused -- matching a confirmed length costs nothing and is
-// never a worse guess than visibly not even trying to.
+// This is deliberately not derived from anything Nintendo-secret and not a captured
+// value (that belongs to one specific real account and isn't this project's to
+// redistribute): just naID, which is GRID0+'s own data, hashed into the bytes the head
+// needs. It is stable per account, so it doesn't change on every login, but it is a
+// placeholder shape, never a claim about what the real bytes encode. Don't move the
+// header off offset 0 or change its content without a hardware confirmation first: an
+// earlier attempt to do so regressed federation to 2124-0292.
 //
-// Deliberately not derived from anything Nintendo-secret and not the
-// captured value itself (that value belongs to one specific real Nintendo
-// Account and is not this project's to redistribute, even reshaped): just
-// naID, which is GRID0+'s own data, hashed once into the 24 bytes the
-// head needs. Stable per account, so it does not change on every login, but
-// it is a placeholder shape, never a claim about what the real bytes
-// encode.
-//
-// 2026-09-20: offsets 0-5 are no longer just an inferred-fixed range. The
-// operator dumped their own console's `account` sysmodule (title
-// 010000000000001e, decrypted with their own prod.keys, off their own
-// hardware -- not redistributed) and reverse-engineered it. The function
-// that gates a successful federation (raising 0x2487c, i.e. 2124-0292, on
-// failure) checks exactly these 6 bytes before anything else:
-//
-//	if *(long *)(param_1 + 0x21) != 0x3035313630363130 { return false }
-//
-// 0x3035313630363130 read little-endian as ASCII is "01606150" -- the same
-// 6-byte header every capture has ever shown, but now confirmed as something
-// the console itself checks, not just a pattern across samples. See
-// docs/CAPTURES for the full decompile writeup (function addresses,
-// caller graph).
-//
-// 2026-09-21, on real hardware: the operator got a console past 2124-0292
-// for the first time. Immediately after, a NEW failure appeared -- "account
-// couldn't be linked" as a generic dialog with no error code, after every
-// server request in the sequence (federation included) had already
-// returned success. That shape (nothing left to send the server that could
-// reveal the failure) reads as a check the console runs locally -- which
-// prompted a same-night attempt to "correct" this header to an 8-byte ASCII
-// value at offset 0x21, reasoned from a fresh decompile of a DIFFERENT
-// function (FUN_71000f0ee0) that appeared, on inspection, to build a
-// similarly-shaped structure at that same offset.
-//
-// That attempt was deployed and DIRECTLY REGRESSED 2124-0292 on the same
-// hardware, in the same test session, minutes after this exact header (at
-// offset 0, this exact 6-byte content) had been confirmed working. That is
-// not "still unconfirmed" -- it is a live regression, reverted the same
-// night. FUN_71000f0ee0 either builds something other than this field, or
-// this file's reading of its offsets was wrong; either way, do not move
-// this header off offset 0, and do not change its content to the ASCII
-// "01606150" reading, without a fresh hardware confirmation first. The
-// ASCII math above is still believed accurate for whatever
-// *param_1 + 0x21* actually points at in the gate-check function itself --
-// what's disproven is that nxAccountBlob's own offset 0 is that same
-// location.
-//
-// 2026-09-22, resolving that regression: FUN_71000f0ee0 builds a 265-byte
-// internal RECORD, not the wire value on its own -- a 33-byte naID at
-// +0x00, then this field's own value, all 232 base64 characters, at +0x21.
-// The ASCII "01606150" that the same-night attempt moved to offset 0 is the
-// record's copy of the header's base64 text; the wire value's offset 0 is
-// that same text *decoded*, the 6 bytes above. Both readings were correct
-// about their own structure, which is exactly why the wire value keeps the
-// decoded form at offset 0 and the ASCII form appears nowhere in it.
-//
-// TODO(capture-needed): what the context-keyed head bytes encode, and
-// whether anything past FUN_71000f0960's single check reads any of this.
-// A second account's samples would at least separate protocol-wide
-// structure from one account's own values. See
-// docs/CAPTURES/nintendo-account-link.md for the full writeup, including
-// the 2124-0292 regression this header survived.
-//
-// 2026-09-22, from a full decompile of account_main.nso (not this file's
-// earlier reasoning from a single function in isolation): found the actual
-// consumer, FUN_71000f0960, called from the federation success path right
-// before a local user profile is marked complete. It checks two things
-// about this exact field, in order: the base64 text starts with "01606150"
-// (already true here -- that is the header's own base64 encoding, not a
-// separate literal, and was never the problem); then it base64-decodes
-// everything after those first 8 characters (which is everything after the
-// 6-byte header), requires exactly 168 bytes back, and then requires at
-// least one non-zero byte in the first 16 of them -- payload 0-15 below,
-// blob bytes 6-21 -- and asks nothing else about the rest. Two byte-swapped
-// 8-byte words are the whole of that check; byte-swapping preserves which
-// bytes are zero, so "either word non-zero" and "not all zero" are the same
-// test. Which 16 bytes those are was settled by decompiling the decoder
-// itself (an_base64_decode at 0x137890 takes a length-out as its first
-// argument, so the decoded buffer starts at its second, not at the first).
-//
-// Same session, the builder: FUN_71000f0ee0, the function this field is
-// named after, assembles that same structure out of local profile state,
-// and its stack stores pin the payload's ranges. Payload 0-23: three
-// big-endian u64s rendered from the account's cached profile record
-// (offsets 0x18, 0x20 and 0x10 of it -- the same region the 2026-09-13 diff
-// below found varying between a login-shaped and a profile-shaped
-// response). Payload 24-39: sixteen literal zero bytes the builder writes
-// itself. Payload 40-167: sixteen u64s copied verbatim, little-endian and
-// unswapped, from profile offsets 0x48-0xC0. The `01 00 01 01` marker both
-// captured values carry at 46-49 is the low half of that first copied u64,
-// and the capture's 96-byte zero tail is the rest of the copied region
-// being zero. Capture and builder agree on that skeleton; the previous
-// version's repeated SHA-256 out to byte 83 agreed with neither.
-//
-//	// What this reproduces is that skeleton and nothing more: a non-zero head
-//
-// for the console's one check, the zero ranges and marker both accounts
-// agree on, and zeros where the copied profile region goes. The real blobs
-// only ever put account state in the copied region -- the ten login-only
-// bytes at 62-65 and 72-77, which sit in the same copied region as the
-// `01 00 01 01` at 46-49 and read as four booleans, so the region looks
-// like a user object's permissions block with those two pairs its
-// timestamps -- and a record that is genuinely empty is a more defensible
-// value than inventing plausible-looking Nintendo internals.
-//
-// The round trip is what makes an invented head safe, and it was found by
-// decompiling both ends 2026-09-22: an_profileCache_updateProfile_a/_b
-// (0x1f1640/0x1f1c40) write the selected slot's +0x10/+0x18/+0x20 from
-// their own param_3, an_profileCache_readSlotFields (0x1f32c0) copies that
-// region back out, and an_nxAccount_buildRecord (0x1f0ee0) renders those
-// three fields big-endian into bytes 6-29 right here. The console has no
-// derivation of its own to compare against -- it renders whatever the last
-// response told it to cache, which is exactly why the same account gets two
-// different heads from federation/login and from a profile read on a
-// working server.
+// UNCONFIRMED: what the context-keyed head bytes encode, and whether anything else
+// reads any of this.
 func nxAccountBlob(naID string) string {
 	const blobLen = 174
 
@@ -921,11 +764,10 @@ func nxAccountBlob(naID string) string {
 	out := make([]byte, blobLen)
 	copy(out, header)
 
-	// Bytes 6-21 -- payload 0-15 -- the varying head. A real console renders
-	// these from its own cached profile record; GRID0+ has no such record,
-	// so this stands in for it, derived from naID alone. It is also the only
-	// range a console insists on: FUN_71000f0960 requires these 16 payload
-	// bytes not to be all zero.
+	// Bytes 6-21 -- payload 0-15 -- the varying head. A real console renders these
+	// from its own cached profile record; GRID0+ has no such record, so this stands in
+	// for it, derived from naID alone. It is also the only range a console insists on:
+	// these 16 payload bytes must not be all zero.
 	seed := sha256.Sum256([]byte("nxAccount:" + naID))
 	copy(out[6:22], seed[:16])
 
@@ -937,12 +779,11 @@ func nxAccountBlob(naID string) string {
 	out[12] = 0x10
 
 	// Bytes 22-29 -- payload 16-23 -- are the third of the builder's three
-	// big-endian u64s, and the only one with a shape both known accounts agree
-	// on: its HIGH half (blob bytes 22-25) is zero and its low half (26-29) is
-	// not, i.e. the value is below 2^32 in every sample. Writing 24 hash bytes
-	// across 6-29 put entropy in 22-25 instead, which is a value no real sample
-	// has ever had -- see the 2026-08-26 note above for what settled it. Zero
-	// bytes 22-25 come free from make(); only the low half is written.
+	// big-endian u64s, and the only one with a shape known accounts agree on: its
+	// HIGH half (blob bytes 22-25) is zero and its low half (26-29) is not, i.e. the
+	// value is below 2^32 in every sample. Writing 24 hash bytes across 6-29 would put
+	// entropy in 22-25 instead, which is a value no real sample has. Zero bytes
+	// 22-25 come free from make(); only the low half is written.
 	v := binary.BigEndian.Uint32(seed[16:20])
 	if v == 0 {
 		// Not reachable in practice; kept so the "non-zero" reading stays
@@ -954,10 +795,10 @@ func nxAccountBlob(naID string) string {
 	// Bytes 30-45 -- payload 24-39 -- are the two zero quads the builder
 	// writes itself, and stay zero here (make() already left them so).
 
-	// Bytes 46-49 -- payload 40-43 -- the marker both values in the
-	// 2026-09-13 diff carry. It is the one part of the copied profile region
-	// identical between a login-shaped and a profile-shaped response, which
-	// makes it structure rather than that account's own data.
+	// Bytes 46-49 -- payload 40-43 -- the marker every sample carries. It is the one
+	// part of the copied profile region identical between a login-shaped and a
+	// profile-shaped response, which makes it structure rather than that account's
+	// own data.
 	copy(out[46:50], []byte{0x01, 0x00, 0x01, 0x01})
 
 	// Bytes 50-173 -- the rest of the copied profile region -- stay zero;
@@ -1009,16 +850,11 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 
 // findUsers looks a user up by friend code or nickname.
 //
-// The real query parameter for a friend code, confirmed by a 2026-09-20
-// decompile of the operator's own console's friends sysmodule, is a
-// MongoDB-style filter: "filter.links.friendCode.id.$in=<code>" -- not the
-// plain "friendCode=<code>" this endpoint originally guessed. The response
-// shape guess needed no correction: the same decompile's JSONPath constants
-// ("$.links.friendCode.id", "$.links.friendCode.regenerableAt") match
-// UserResponse.Links.FriendCode's existing ID/RegenerableAt fields exactly.
-// "friendCode" is kept as an accepted alias -- cheap to support, and
-// tooling/future callers may already use it -- but the real console sends
-// the filter form.
+// The console's real query parameter for a friend code is a MongoDB-style filter:
+// "filter.links.friendCode.id.$in=<code>", not the plain "friendCode=<code>" this
+// endpoint originally guessed. "friendCode" is kept as an accepted alias, since it is
+// cheap to support and tooling may already use it, but the real console sends the
+// filter form.
 //
 //	GET /1.0.0/users?filter.links.friendCode.id.$in=7779-8151-4794  (real)
 //	GET /1.0.0/users?filter.id.$in=<16hex>[,<16hex>...]             (real)
@@ -1028,18 +864,15 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request, c *caller) {
 //
 // and returns an envelope of stranger-visibility user objects.
 //
-// The id form was settled 2026-09-22 by decompiling the friends sysmodule.
-// Its builder (`FUN_001d40b0`, and its `0x1d57d0` twin) de-duplicates the id
-// list, formats a prefix of "https://%s/1.0.0/users?filter.id.$in=" and then
-// appends "%016llx" per id with a ',' between them -- so the ids are
-// comma-separated 16-hex-digit strings, and this endpoint used to refuse the
-// whole call as unfiltered. The response parsers next to it (`0x1d4880`,
-// `0x1d4d20`) read $.items[*], $.items[*].id, .nickname, .thumbnailUrl and
-// .extras.*.playLog: an envelope, like every other list here.
+// For the id form, the console de-duplicates the id list and builds
+// "https://%s/1.0.0/users?filter.id.$in=" followed by "%016llx" per id with a ','
+// between them, so the ids are comma-separated 16-hex-digit strings (an endpoint that
+// refuses these as unfiltered fails the whole call). The response is read as
+// $.items[*], $.items[*].id, .nickname, .thumbnailUrl and .extras.*.playLog: an
+// envelope, like every other list here.
 //
-// TODO(capture-needed): whether nickname also goes through the filter.*
-// convention rather than its own plain query key -- this pass only found
-// evidence for the friend-code and id forms.
+// UNCONFIRMED: whether nickname also goes through the filter.* convention rather
+// than its own plain query key; only the friend-code and id forms are known.
 func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 	friendCode := r.URL.Query().Get("filter.links.friendCode.id.$in")
 	if friendCode == "" {
@@ -1050,8 +883,8 @@ func (s *Server) findUsers(w http.ResponseWriter, r *http.Request, c *caller) {
 		Nickname:   r.URL.Query().Get("nickname"),
 		Limit:      50,
 	}
-	// The console's real id lookup: "filter.id.$in=<id>,<id>,...", built by
-	// FUN_001d40b0. "ids" stays as this server's own alias.
+	// The console's real id lookup: "filter.id.$in=<id>,<id>,...". "ids" stays as
+	// this server's own alias.
 	idsParam := r.URL.Query().Get("filter.id.$in")
 	if idsParam == "" {
 		idsParam = r.URL.Query().Get("ids")

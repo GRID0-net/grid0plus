@@ -6,11 +6,10 @@
  *
  * WHY THIS EXISTS
  *
- * GRID0+ builds the delivery cache rather than speaking BCAT's delivery
- * protocol, because that protocol's `list` response body is undocumented and no
- * public implementation exists (see internal/bcat's README, and TODO.md §2.4 for
- * the experiment that may change it). So the files have to reach the console
- * some other way. Doing it by hand works and does not survive the second fest.
+ * This is the fallback for a console that does not use GRID0+'s native BCAT
+ * serving (see internal/bcat's README and docs/SPLATFESTS.md): the delivery
+ * cache is built by the server and the files have to reach the console some
+ * other way. Doing it by hand works and does not survive the second fest.
  *
  * NOT COMPILED OR TESTED. There is no devkitPro toolchain in the environment
  * this was written in — no DEVKITPRO, no aarch64-none-elf-gcc — so this is

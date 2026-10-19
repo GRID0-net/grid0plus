@@ -43,13 +43,13 @@ type matchmakerService struct {
 // any authenticated console queue as anybody else, which is the same class of
 // bug as the device-account fallback internal/baas is shaped around.
 //
-// A squad queues on one ticket. Seen on hardware on 2026-10-03 (a Salmon Run
-// room, host and one guest): the guest calls IssueUserDelegationToken naming
-// the host, the host's CreateMatchmakingTicket carries that token in
-// user_delegation_tokens, and the guest then tracks the HOST's ticket. Each
-// valid delegation made to the caller adds its delegator to the ticket
-// (squadMembers); the queue keeps the squad whole, and every member may
-// track and cancel the ticket. Refusing the guest's Track was 2321-1536.
+// A squad queues on one ticket. In a Salmon Run room (host and one guest) the
+// guest calls IssueUserDelegationToken naming the host, the host's
+// CreateMatchmakingTicket carries that token in user_delegation_tokens, and the
+// guest then tracks the HOST's ticket. Each valid delegation made to the caller
+// adds its delegator to the ticket (squadMembers); the queue keeps the squad
+// whole, and every member may track and cancel the ticket. Refusing the guest's
+// Track is 2321-1536.
 func (m *matchmakerService) CreateMatchmakingTicket(
 	ctx context.Context, req *mmpb.CreateMatchmakingTicketRequest,
 ) (*mmpb.MatchmakingTicket, error) {
@@ -67,13 +67,11 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 	m.s.log.Info("npln: matchmaking ticket requested", "user", caller.UserID,
 		"request", protojson.Format(req))
 	if bf := req.GetMatchmakingTicket().GetBackfill(); bf.GetGameSession() != "" {
-		// TODO(capture-needed): a backfill ticket asks for players to be added
-		// to an existing session. The game sends one from lobby state 21
-		// (State::ActivateBackFill, FUN_710389df10) when its lobby holds fewer
-		// than the match kind requires; nothing has sent one to GRID0+ yet, so
-		// it is queued like any other ticket. A logged one settles whether to
-		// fill bf.game_session instead. Change: this function and
-		// matchmaking.Queue.
+		// UNCONFIRMED: a backfill ticket asks for players to be added to an existing
+		// session. The game sends one from its lobby's backfill state when the lobby
+		// holds fewer than the match kind requires; nothing has sent one to GRID0+ yet, so
+		// it is queued like any other ticket. A logged one would settle whether to fill
+		// bf.game_session instead. Change: this function and matchmaking.Queue.
 		m.s.log.Warn("npln: backfill ticket queued as a new ticket",
 			"user", caller.UserID, "game_session", bf.GetGameSession(), "mode", mode)
 	}
@@ -95,9 +93,9 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		}
 		var selectedStart time.Time
 		for _, row := range fests {
-			// The operator's end of play counts: the schedule the game is served
-			// already uses it, and a fest extended past 48 h refused every ticket
-			// (2321-1536) on 2026-10-11 while the game still showed it running.
+			// The operator's end of play counts: the schedule the game is served already
+			// uses it, and a fest extended past 48 h would otherwise refuse every ticket
+			// (2321-1536) while the game still shows it running.
 			phase := (toyohr.Fest{Start: row.StartAt, End: row.EndAt}).PhaseAt(m.s.now())
 			if !row.Enabled || (phase != toyohr.PhaseFirstHalf && phase != toyohr.PhaseSecondHalf) {
 				continue
@@ -168,13 +166,13 @@ func (m *matchmakerService) CreateMatchmakingTicket(
 		m.s.recordMatch(ctx, sess, false)
 	}
 
-	// Always answer SEARCHING, with no session, even when this ticket completed a match on
-	// arrival. The console reads its result from TrackMatchmakingTicket, which it only opens
-	// after a SEARCHING answer: given SUCCEEDED here (2026-09-27 hardware, the second of two
-	// players) it never tracked the ticket, never called AllocateIceServerSet, and the match
-	// never started. Nintendo's CreateMatchmakingTicket answers SEARCHING and the result
-	// arrives on Track (NextendoNetwork's capture notes, facts only). Track starts with the
-	// ticket's current state, so a ticket matched here is SUCCEEDED on its first frame.
+	// Always answer SEARCHING, with no session, even when this ticket completed a
+	// match on arrival. The console reads its result from TrackMatchmakingTicket,
+	// which it only opens after a SEARCHING answer: given SUCCEEDED here, the second
+	// of two players never tracked the ticket, never called AllocateIceServerSet, and
+	// the match never started. Nintendo's CreateMatchmakingTicket answers SEARCHING
+	// and the result arrives on Track. Track starts with the ticket's current state,
+	// so a ticket matched here is SUCCEEDED on its first frame.
 	searching := ticket
 	searching.State = matchmaking.StateSearching
 	searching.SessionID = ""
@@ -233,10 +231,9 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 	defer stop()
 	trackOpenedAt := time.Now()
 
-	// Nintendo's stream always runs SEARCHING, PLACING, SUCCEEDED (NextendoNetwork's
-	// capture notes, facts only). A ticket that matched inside Create would otherwise
-	// open on SUCCEEDED; given that (2026-09-27 hardware, both consoles) the game took
-	// the session and did nothing with it.
+	// Nintendo's stream always runs SEARCHING, PLACING, SUCCEEDED. A ticket that
+	// matched inside Create would otherwise open on SUCCEEDED; given that, the game
+	// took the session and did nothing with it.
 	sent := matchmaking.StateSearching
 	started := false
 	send := func(t matchmaking.Ticket) error {
@@ -294,16 +291,12 @@ func (m *matchmakerService) TrackMatchmakingTicket(
 				return err
 			}
 			if t.State == matchmaking.StateSucceeded {
-				// End the stream with OK shortly after SUCCEEDED. The console
-				// waits for that close before it calls gamesync IssueToken: in
-				// all six rounds of the Nextendo regular-match capture
-				// (2026-09-30) the server closed the stream with grpc-status 0
-				// and IssueToken followed 30-50 ms later. Holding it open
-				// until the console hung up (the previous behaviour, from an
-				// earlier reading of a 2026-08-13 Nextendo note) left regular
-				// matches searching forever with the cancel button still up.
-				// Closing a moment after SUCCEEDED rather than instantly keeps
-				// that note's concern about racing the console's transport.
+				// End the stream with OK shortly after SUCCEEDED. The console waits for that
+				// close before it calls gamesync IssueToken: a working server closes the stream
+				// with grpc-status 0 and IssueToken follows 30-50 ms later. Holding it open until
+				// the console hangs up leaves regular matches searching forever with the cancel
+				// button still up. Closing a moment after SUCCEEDED rather than instantly avoids
+				// racing the console's transport.
 				select {
 				case <-time.After(m.s.succeededCloseAfter):
 					return nil
@@ -388,18 +381,15 @@ func (g *gameSessionService) GetGameSession(
 
 // BatchGetGameSessions is GetGameSession, batched.
 //
-// Confirmed real and linked by the same 2026-09-20 Splatoon 3 v11.3.0
-// decompile as every other RPC in this file's "confirmed RPC surface"
-// section (see internal/npln/README.md); unlike most of that list, this one
-// needs no new server-side concept to answer -- it is exactly
-// GetGameSession's own authorization and lookup, once per requested name.
+// Needs no new server-side concept to answer: it is exactly GetGameSession's
+// own authorization and lookup, once per requested name.
 //
-// A name the caller cannot see (wrong session, or one that does not exist)
-// is silently omitted rather than failing the whole batch: the same
-// "partial visibility is not an error" reasoning ListFriendUsers already
-// applies when a friendship names a since-deleted user. Request.View is
-// ignored -- nothing here distinguishes detail levels, so every session
-// already comes back at full detail regardless of what a caller asked for.
+// A name the caller cannot see (wrong session, or one that does not exist) is
+// silently omitted rather than failing the whole batch: the same "partial
+// visibility is not an error" reasoning ListFriendUsers already applies when a
+// friendship names a since-deleted user. Request.View is ignored -- nothing here
+// distinguishes detail levels, so every session already comes back at full
+// detail regardless of what a caller asked for.
 func (g *gameSessionService) BatchGetGameSessions(
 	ctx context.Context, req *mmpb.BatchGetGameSessionsRequest,
 ) (*mmpb.BatchGetGameSessionsResponse, error) {
@@ -425,20 +415,20 @@ func (g *gameSessionService) BatchGetGameSessions(
 
 // QueryGameSessions answers a browse-style search for public sessions.
 //
-// Always empty. Matches are never public, and a room -- though marked
-// public, as a real server marks even a private one -- is reached by its code
-// or through a friend's presence, never by browsing, as far as anything shows
-// Splatoon 3 doing. An empty page rather than leaving this Unimplemented
-// still matters: a real NPLN client that calls it at all reads Unimplemented as
-// a hard failure of whatever screen triggered the call, where an empty result
-// set reads as "nothing to show" -- which is always true here.
+// Always empty. Matches are never public, and a room -- though marked public, as
+// a real server marks even a private one -- is reached by its code or through a
+// friend's presence, never by browsing, as far as anything shows Splatoon 3
+// doing. An empty page rather than leaving this Unimplemented still matters: a
+// real NPLN client that calls it at all reads Unimplemented as a hard failure of
+// whatever screen triggered the call, where an empty result set reads as
+// "nothing to show" -- which is always true here.
 //
-// TODO(capture-needed): whether Splatoon 3 ever calls QueryGameSessions, and
-// for what -- a private-battle room browser is the plausible candidate, since
-// ticket-based matchmaking never needs one. grid0's logs from 2026-09-27
-// to 10-11, private battles included, show no call at all, so the answer is
-// likely "never"; a capture of an untried flow would settle it. Change: this function, and sessionProto's IsPublic if the answer
-// is that some GRID0+-formed sessions should be browsable after all.
+// UNCONFIRMED: whether Splatoon 3 ever calls QueryGameSessions, and for what -- a
+// private-battle room browser is the plausible candidate, since ticket-based
+// matchmaking never needs one. It has not been seen to be called, private battles
+// included, so the answer is likely "never"; a capture of an untried flow would
+// settle it. Change: this function, and sessionProto's IsPublic if the answer is
+// that some GRID0+-formed sessions should be browsable after all.
 func (g *gameSessionService) QueryGameSessions(
 	ctx context.Context, _ *mmpb.QueryGameSessionsRequest,
 ) (*mmpb.QueryGameSessionsResponse, error) {
@@ -492,38 +482,29 @@ func (g *gameSessionService) JoinGameSession(
 // matched player -- host or joiner -- reads the session's current
 // participants back.
 //
-// TODO(capture-needed): whether Splatoon 3 dials GameSession.Port directly at
-// all. Gameplay is peer-to-peer over ICE (see AllocateIceServerSet), and a
-// real client that connects entirely through negotiated ICE candidates may
-// never read this field. Persisting and returning whatever the host sends is
-// the defensible reading either way -- a field the client ignores costs
-// nothing, where refusing to store it risks dropping something a real client
-// does depend on -- but nothing here confirms which. A capture of a match
-// actually connecting would settle it. Change: this function and
-// matchmaking.Session's HostPort field.
-//
-// A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main leans further
-// toward "never": every other GameSessionService RPC this server implements
-// appears as a literal path string in the binary (proof this client links
-// against it), but "/nn.npln.matchmaking.v1.GameSessionService/SyncGameSession"
-// does not, despite SyncGameSession being defined in the same upstream proto
-// set as the rest of the service. That is evidence this specific game never
-// calls it, not proof the RPC itself is fictional or wrong -- other NPLN
-// titles may use it, and a string absent from .rodata is consistent with but
-// does not prove "never linked, never called". Still short of a capture.
+// UNCONFIRMED: whether Splatoon 3 dials GameSession.Port directly at all.
+// Gameplay is peer-to-peer over ICE (see AllocateIceServerSet), and a real client
+// that connects entirely through negotiated ICE candidates may never read this
+// field. Persisting and returning whatever the host sends is the defensible
+// reading either way -- a field the client ignores costs nothing, where refusing
+// to store it risks dropping something a real client does depend on. Splatoon 3's
+// binary does not reference this RPC's path, unlike every other GameSessionService
+// RPC this server implements, which suggests this game never calls it; other NPLN
+// titles may. A capture of a match actually connecting would settle it. Change:
+// this function and matchmaking.Session's HostPort field.
 //
 // Only the port moves through here. Everything else GameSession carries
-// (participant counts, state, who the host is) is already authoritative on
-// this server; a client-supplied value for any of those is ignored rather
-// than trusted, the same reasoning AllocateIceServerSet's doc comment gives
-// for ignoring the request's own tenant and user fields. A listening port is
-// different: it is the one piece of session state that genuinely lives on
-// the host's console and nowhere else, so this is the one field this server
-// has no other way to learn.
+// (participant counts, state, who the host is) is already authoritative on this
+// server; a client-supplied value for any of those is ignored rather than
+// trusted, the same reasoning AllocateIceServerSet's doc comment gives for
+// ignoring the request's own tenant and user fields. A listening port is
+// different: it is the one piece of session state that genuinely lives on the
+// host's console and nowhere else, so this is the one field this server has no
+// other way to learn.
 //
-// KeepAliveOnly is honoured as a read: any matched player may call this to
-// read the current session back without needing host privileges to do so --
-// useful for a joiner checking whether the host has published a port yet.
+// KeepAliveOnly is honoured as a read: any matched player may call this to read
+// the current session back without needing host privileges to do so -- useful
+// for a joiner checking whether the host has published a port yet.
 func (g *gameSessionService) SyncGameSession(
 	ctx context.Context, req *mmpb.SyncGameSessionRequest,
 ) (*mmpb.SyncGameSessionResponse, error) {
@@ -637,38 +618,23 @@ func turnCredentials(secret, user string, now time.Time) (string, string) {
 }
 
 // ListLatencyMeasurementServers hands the console what it pings, before
-// matchmaking even starts, to pick which of several server regions to
-// search in.
+// matchmaking even starts, to pick which of several server regions to search in.
 //
-// Splatoon 3 calls this right after IssuePrearrangedUserToken -- confirmed by
-// a hardware capture of a real console (2026-09-23), where it was the very
-// next RPC and the one this server did not yet implement, refused
-// Unimplemented, and the console read that as a communication error and
-// retried the hall forever rather than surfacing a Nintendo error code.
-// NextendoNetwork/splatoon-3's own hardware capture (facts only, not its
-// code) confirms the shape of the fix: the console needs a NON-EMPTY list to
-// proceed past this screen at all -- an empty one aborts earlier than a
-// list whose pings simply time out, which the console tolerates fine. So,
-// unlike AllocateIceServerSet just above (where an empty ICE set is a valid
-// answer for a LAN-only deployment), this answers with the operator's own
-// configured ICE servers reused as latency targets rather than an empty
-// list: real addresses this deployment already advertises as reachable from
-// a console, not an invented Nintendo region table.
+// Splatoon 3 calls this right after IssuePrearrangedUserToken. Refused as
+// Unimplemented, the console reads it as a communication error and retries the
+// hall forever instead of surfacing a Nintendo error code. The console needs a
+// NON-EMPTY list to proceed past this screen at all: an empty one aborts earlier
+// than a list whose pings simply time out, which the console tolerates fine. So,
+// unlike AllocateIceServerSet just above (where an empty ICE set is a valid answer
+// for a LAN-only deployment), this answers with the operator's own configured ICE
+// servers reused as latency targets rather than an empty list: real addresses this
+// deployment already advertises as reachable from a console, not an invented
+// Nintendo region table.
 //
-// TODO(capture-needed): whether the console actually requires a *successful*
-// ping to at least one server, rather than merely a non-empty list. If it
-// does, an operator with no ice_servers configured (the LAN-only default)
-// would need a real answer here too -- change this function.
-//
-// Corroborating (not resolving) evidence: this project's own Nextendo-vs-
-// GRID0+ comparison pass found Nextendo's own handler comment states a
-// non-empty list is what lets the console proceed, and that the pings
-// themselves timing out does not stop it -- only an empty list aborts
-// early. That is Nextendo's own testing note, not a decoded wire capture of
-// Nintendo's real server, so it does not on its own meet this project's own
-// bar for removing this TODO (see CLAUDE.md rule 6) -- but it is a second,
-// independent signal the current non-empty-list answer is already correct
-// and this function likely needs no change.
+// UNCONFIRMED: whether the console actually requires a *successful* ping to at
+// least one server, rather than merely a non-empty list. If it does, an operator
+// with no ice_servers configured (the LAN-only default) would need a real answer
+// here too -- change this function.
 func (g *gameSessionService) ListLatencyMeasurementServers(
 	ctx context.Context, _ *mmpb.ListLatencyMeasurementServersRequest,
 ) (*mmpb.ListLatencyMeasurementServersResponse, error) {
@@ -778,13 +744,11 @@ func latencyProtocol(name string) mmpb.LatencyMeasurementServer_Protocol {
 // session -- the same list GetGameSession already embeds in
 // GameSession.UserSessions, as its own paginated resource.
 //
-// Confirmed real and linked by the same Splatoon 3 v11.3.0 decompile as
-// BatchGetGameSessions above. Pagination is not implemented: a game session
-// here is exactly as large as its match size (GRID0+'s own
-// matchmaking.Session), which is small enough that a second page never
-// exists to ask for. PageSize/PageToken are accepted and ignored rather than
-// answered with an error, the same reasoning ListFriendUsers gives for
-// capping at one page instead of refusing a request for more.
+// Pagination is not implemented: a game session here is exactly as large as its
+// match size (GRID0+'s own matchmaking.Session), which is small enough that a
+// second page never exists to ask for. PageSize/PageToken are accepted and
+// ignored rather than answered with an error, the same reasoning ListFriendUsers
+// gives for capping at one page instead of refusing a request for more.
 func (g *gameSessionService) ListUserSessions(
 	ctx context.Context, req *mmpb.ListUserSessionsRequest,
 ) (*mmpb.ListUserSessionsResponse, error) {
@@ -806,9 +770,9 @@ func (g *gameSessionService) ListUserSessions(
 
 // GetUserSession returns one matched player's session within a game session.
 //
-// Confirmed real and linked by the same decompile as ListUserSessions above.
-// Built from the same userSessions() list rather than a separate lookup, so
-// the two RPCs can never disagree about one player's session.
+// Built from the same userSessions() list as ListUserSessions rather than a
+// separate lookup, so the two RPCs can never disagree about one player's
+// session.
 func (g *gameSessionService) GetUserSession(
 	ctx context.Context, req *mmpb.GetUserSessionRequest,
 ) (*mmpb.UserSession, error) {
@@ -871,17 +835,13 @@ var ticketPlacedMark = protoreflect.RawFields{0x48, 0x01}
 
 // ticketProto renders a queue ticket as the wire message.
 //
-// The resource-name shape is confirmed, not guessed: a 2026-09-20 decompile
-// of Splatoon 3 v11.3.0 found the function that BUILDS a ticket resource
-// name (string-concatenating "tenants" + "/" + tenant + "/matchmakingTickets"
-// + "/" + id) and, separately, the function that PARSES one back apart
-// looking for that exact "tenants/<t>/matchmakingTickets/<id>" segment
-// sequence via literal comparison against "tenants" and "matchmakingTickets".
-// Round-trip agreement in the client's own code, not just one side of it.
-// The same evidence exists for "gameSessions" (see sessionProto). lastSegment
-// still parses leniently regardless, since a wrong prefix elsewhere in this
-// package would otherwise cost a cosmetic mismatch instead of a broken Track
-// or Cancel -- this confirmation does not change that defensive choice.
+// The resource-name shape is "tenants/<t>/matchmakingTickets/<id>": the client
+// builds a ticket resource name by string-concatenating "tenants" + "/" +
+// tenant + "/matchmakingTickets" + "/" + id and parses one back apart by literal
+// comparison against "tenants" and "matchmakingTickets". The same holds for
+// "gameSessions" (see sessionProto). lastSegment still parses leniently
+// regardless, since a wrong prefix elsewhere in this package would otherwise
+// cost a cosmetic mismatch instead of a broken Track or Cancel.
 func (s *Server) ticketProto(t matchmaking.Ticket) (*mmpb.MatchmakingTicket, error) {
 	players := append([]string{t.UserID}, t.Members...)
 	defs := make([]*mmpb.UserDefinition, len(players))
@@ -960,24 +920,18 @@ func (s *Server) sessionProto(sess matchmaking.Session) *mmpb.GameSession {
 		Name:                    s.tenantPath() + "/gameSessions/" + sess.ID,
 		MaxParticipantCount:     capacity,
 		CurrentParticipantCount: capacity,
-		// This project's own Nextendo-vs-GRID0+ comparison pass found
-		// Nextendo sets CanParticipate true on every GameSession it builds,
-		// with no exception for an already-full ticket match -- this used to
-		// be false here with no capture or comment backing that choice, an
-		// unexamined default rather than a considered one. Matching
-		// Nextendo's real-hardware-tested behaviour until a capture says
-		// otherwise.
+		// CanParticipate is true on every GameSession, with no exception for an
+		// already-full ticket match. It used to be false here with no evidence behind that
+		// choice; true is the behaviour that has worked on real hardware.
 		CanParticipate: true,
 		IsPublic:       true,
 		Properties:     roomProperties(sess.Mode, nil, ""),
 		State:          mmpb.GameSession_ACTIVE,
-		// Host and Port are the address each console opens its gamesync
-		// session to for this match -- a server, not a player. This used to
-		// name the host player ("users/<id>") with the port it published via
-		// SyncGameSession, a reading nothing on the wire supported; a console
-		// given a user name to dial opens no session and reports 2321-4992.
-		// The 2026-09-27 working Ryujinx capture announces a literal IP on
-		// :7575; an older console measurement preferred the tenant name on
+		// Host and Port are the address each console opens its gamesync session to for
+		// this match -- a server, not a player. Naming the host player ("users/<id>")
+		// with the port it published via SyncGameSession is wrong: a console given a user
+		// name to dial opens no session and reports 2321-4992. A real server announces a
+		// literal IP on :7575; an older console measurement preferred the tenant name on
 		// :443. See config.NPLN.SessionHost for the deployment choice.
 		Host:         s.sessionHost,
 		Port:         s.sessionPort,
@@ -1030,10 +984,9 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 			User:       s.userResourceName(userID),
 			State:      mmpb.UserSession_ACTIVE,
 			CreateTime: timestamppb.New(sess.CreatedAt),
-			// A Splatfest match's roster says which side each player is on, as
-			// the ticket already does. Empty for every other mode. Without it a
-			// fest match timed out waiting for members (MatchGsReadyTimeout);
-			// with it, fest battles have run on hardware since 2026-10-04.
+			// A Splatfest match's roster says which side each player is on, as the ticket
+			// already does. Empty for every other mode. Without it a fest match times out
+			// waiting for members (MatchGsReadyTimeout).
 			Team: sess.TeamSlots[userID],
 		})
 	}
@@ -1043,15 +996,12 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 // matchedUserSessions names each player's session in the match, and carries the
 // session token that player's console opens its gamesync channel with.
 //
-// The token was left empty here until 2026-09-23, on the reasoning that
-// GRID0+ verified no such token, so issuing one would only look like a
-// safeguard. That reasoning was wrong about who the reader is, and a real
-// console paid for it: the console reads gsid, usid, uid and tid out of the
-// token's 'gamesync' object to build Gamesync/IssueToken and then
-// KeepUserSession (see issueSessionToken), so with this field empty the console
-// opens its session channel to the session host and never sends a request at
-// all -- the connection dies after about a second and the game reports
-// 2321-4992.
+// The token must not be left empty, on the reasoning that GRID0+ verifies no such
+// token: the console reads gsid, usid, uid and tid out of the token's 'gamesync'
+// object to build Gamesync/IssueToken and then KeepUserSession (see
+// issueSessionToken), so with this field empty the console opens its session
+// channel to the session host and never sends a request at all -- the connection
+// dies after about a second and the game reports 2321-4992.
 //
 // One token per player rather than one per match, because each names its own
 // player as the subject: a shared token would let the first console that
@@ -1059,17 +1009,14 @@ func (s *Server) userSessions(sess matchmaking.Session) []*mmpb.UserSession {
 //
 // The whole set is minted before any of it is returned. A match where some
 // players can open their session and others cannot is the failure this codebase
-// is shaped around, one phase later: the ones who did get in sit in a lobby
-// that never fills.
+// is shaped around: the ones who did get in sit in a lobby that never fills.
 func (s *Server) matchedUserSessions(
 	sess matchmaking.Session, userID string, def *mmpb.UserDefinition,
 ) ([]*mmpb.MatchedUserSession, error) {
-	// Only the recipient's own entry. Across the seven Nintendo captures
-	// Nextendo measured, matched_user_sessions always has exactly as many
-	// entries as the ticket's user_definitions: the players find each other on
-	// the session host, never in the ticket. Handing every console every
-	// player's entry and token (as this did) left both idle after SUCCEEDED
-	// on 2026-09-27 hardware.
+	// Only the recipient's own entry. matched_user_sessions has exactly as many
+	// entries as the ticket's user_definitions: the players find each other on the
+	// session host, never in the ticket. Handing every console every player's entry and
+	// token left both idle after SUCCEEDED on hardware.
 	if def == nil {
 		def = &mmpb.UserDefinition{User: s.userResourceName(userID)}
 	}

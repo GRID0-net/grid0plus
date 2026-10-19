@@ -39,10 +39,9 @@ type store struct {
 // storeSet holds one store per game session.
 //
 // Every room's documents share names -- docs/MasterCollection/Session,
-// docs/__gs/f, docs/__pgn/All/__pus/... -- so one store for the whole server
-// let one room's writes land in another's documents. On 2026-10-03 an emulator
-// failing to open a private room disconnected every Switch in a different
-// room. Nextendo keys its store the same way (cleStore(gsid, name)).
+// docs/__gs/f, docs/__pgn/All/__pus/... -- so one store for the whole server lets
+// one room's writes land in another's documents: an emulator failing to open a
+// private room would disconnect every Switch in a different room.
 type storeSet struct {
 	now    func() time.Time
 	mu     sync.Mutex

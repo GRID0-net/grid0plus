@@ -17,12 +17,11 @@ import (
 
 // A minimal RFC 6455 server, just enough for NEX: binary messages, ping/pong
 // and close. Written here rather than imported for one reason that matters:
-// the console's upgrade request is not one a strict library accepts.
-// NextendoNetwork's server documents (facts only) that gorilla/websocket
-// refuses it on its Sec-WebSocket-Key, and that they switched library to get
-// past that. So this accepts any key it is given -- the key exists to stop a
-// cache replaying an old response, which is not a threat that applies to a
-// console on the operator's own network -- and otherwise follows the RFC.
+// the console's upgrade request is not one a strict library accepts
+// (gorilla/websocket refuses it on its Sec-WebSocket-Key). So this accepts any
+// key it is given -- the key exists to stop a cache replaying an old response,
+// which is not a threat that applies to a console on the operator's own network
+// -- and otherwise follows the RFC.
 
 const websocketGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 

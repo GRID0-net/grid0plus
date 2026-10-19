@@ -104,21 +104,19 @@ func (h *harness) mintUserToken(userID, deviceAccountID string) string {
 	return token
 }
 
-// TestEveryIssuedTokenCarriesTheJWTTypeHeader walks the whole Nintendo Account
-// link flow and checks the standard 'typ: JWT' header on every token the server
-// hands the console.
+// TestEveryIssuedTokenCarriesTheJWTTypeHeader walks the whole Nintendo Account link
+// flow and checks the standard 'typ: JWT' header on every token the server hands the
+// console.
 //
-// This is a regression test for a wrong asserted absence. CLAUDE.md used to
-// state "a BAAS token has no 'typ' header" as a convention, cmd/baas built all
-// three BAAS issuers with includeTyp=false because of it, and a test in
-// internal/jwt asserted the header was missing -- so the suite actively held
-// the behaviour in place. A 2026-08-28 sweep of every JWT in
-// docs/CAPTURES/raw/nextendo-working-nalink-2026-08-27.flow, the decrypted
-// capture of a server this console links against successfully, found all
-// twelve carrying 'typ: JWT', BAAS tokens included. The likely origin of the
-// mistake is the payload's own 'typ' claim ("token"/"id_token"), a different
-// field that really is absent from some tokens -- so this test checks the
-// header and the payload separately rather than treating them as one thing.
+// This is a regression test for a wrong asserted absence. A project convention once
+// stated "a BAAS token has no 'typ' header", cmd/baas built all three BAAS issuers with
+// includeTyp=false because of it, and a test in internal/jwt asserted the header was
+// missing, so the suite actively held the behaviour in place. Every JWT in a decrypted
+// capture of a server this console links against successfully carries 'typ: JWT',
+// BAAS tokens included. The likely origin of the mistake is the payload's own 'typ'
+// claim ("token"/"id_token"), a different field that really is absent from some tokens,
+// so this test checks the header and the payload separately rather than treating them as
+// one thing.
 func TestEveryIssuedTokenCarriesTheJWTTypeHeader(t *testing.T) {
 	h := newHarness(t)
 	registerLoginUser(t, h, "carol", "hunter2222")
@@ -174,9 +172,9 @@ func TestEveryIssuedTokenCarriesTheJWTTypeHeader(t *testing.T) {
 }
 
 // TestNAAccessTokenCarriesScopeIDs checks the 'ac:scp' claim, the numeric form
-// of the granted scopes. Absent entirely until 2026-08-28; a real working
-// capture carries it on every accounts.nintendo.com access_token. Unknown
-// scopes are dropped rather than guessed at -- see jwt.BAASTokenClaims.ACScopes.
+// of the granted scopes. Every accounts.nintendo.com access_token carries it.
+// Unknown scopes are dropped rather than guessed at -- see
+// jwt.BAASTokenClaims.ACScopes.
 func TestNAAccessTokenCarriesScopeIDs(t *testing.T) {
 	if got, want := naScopeIDsFor([]string{"openid", "offline", "user"}), []int{0, 1, 8}; len(got) != len(want) {
 		t.Fatalf("naScopeIDsFor = %v, want %v", got, want)

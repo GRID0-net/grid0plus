@@ -22,35 +22,26 @@ const DefaultCoopShiftDuration = 40 * time.Hour
 // per-slot chance a main weapon slot gets a Grizzco weapon (CoopKumaWeapons)
 // instead of an ordinary one (CoopWeapons).
 //
-// Splatnet3-types' own CoopSetting/CoopSupplyWeapon interfaces and a GitHub
-// code search for a "random weapon slot" wire representation
-// (nintendoapis/splatnet3-types' types.ts, Leanny/splat3's WeaponInfoMain.json)
-// turned up no documented mechanism, sentinel id, or frequency for Nintendo
+// Nothing public documents a mechanism, sentinel id, or frequency for Nintendo
 // mixing a Grizzco weapon into the normal four-slot rotation -- what a real
 // server does here, if anything, is not public.
 //
 // A real, separate mechanic does exist for one weapon slot: Nintendo's own
-// schedule sometimes marks a slot "?" (a wildcard, revealed only when the
-// match hands out weapons) and assigns one "rare weapon" a wildcard slot can
-// loan for that rotation -- confirmed publicly (Inkipedia's Salmon Run Next
-// Wave page; OatmealDome's 2022-09-30 post naming a Grizzco weapon as that
-// rotation's rare weapon). This is NOT what grizzcoWeaponChance implements:
-// no confirmed NPLN wire shape for a wildcard-slot flag or a per-rotation
-// rare-weapon field exists in this project's own decompiled CoopSchedule_Normal
-// (Stage/Boss/MainWeapons/KumaWeapon/RewardGearId only), so implementing the
-// real mechanic would mean inventing a shape CLAUDE.md rule 6 forbids.
+// schedule sometimes marks a slot "?" (a wildcard, revealed only when the match
+// hands out weapons) and assigns one "rare weapon" a wildcard slot can loan for
+// that rotation (Inkipedia's Salmon Run Next Wave page documents it). This is NOT
+// what grizzcoWeaponChance implements: there is no known NPLN wire shape for a
+// wildcard-slot flag or a per-rotation rare-weapon field in CoopSchedule_Normal
+// (Stage/Boss/MainWeapons/KumaWeapon/RewardGearId only), so implementing the real
+// mechanic would mean inventing a shape.
 //
-// Disabled (0.0), left in code rather than deleted: a 2026-09-24 hardware
-// test went silent -- no console request after the schedule RPCs answered,
-// no server-side error either -- while the live-generated shift active at
-// that exact moment (liveNormalCoopShifts, 2026-09-24T12:58:05Z) carried TWO
+// Disabled (0.0), left in code rather than deleted: a hardware test went silent
+// -- no console request after the schedule RPCs answered, no server-side error
+// either -- while the live-generated shift active at that moment carried TWO
 // Grizzco weapons in the four main slots at once (Grizzco Brella and Grizzco
-// Splatana). Correlation, not a confirmed root cause -- no capture exists of
-// what actually crashed -- but it is the newest, most speculative piece of
-// content in that response, and the operator's own standing instruction was
-// to remove this the moment it caused a problem. Re-enable only after a
-// capture or another hardware test clears it, or replaces it with a
-// confirmed shape.
+// Splatana). Correlation, not a confirmed root cause, but it is the newest, most
+// speculative piece of content in that response. Re-enable only after another
+// hardware test clears it, or it is replaced with a confirmed shape.
 const grizzcoWeaponChance = 0.0
 
 // normalCoopStages is CoopStages with BigRun entries excluded -- the pool

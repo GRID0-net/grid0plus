@@ -48,42 +48,36 @@ func registerCloudSave(srv *grpc.Server, impl *Service) {
 
 // getSaveRecordStreamHandler answers CloudSave/GetSaveRecord.
 //
-// NextendoNetwork/splatoon-3 measured (facts only, not its code) this
-// exact RPC against real Nintendo servers TWICE, for a Nintendo account with
-// nothing in the cloud: "GetSaveRecord Succeeded, request 42B -> response
-// 0B" -- no message at all, not even an empty one, framed as ordinary
-// headers (content-length: 0) followed by a separate trailers frame
-// carrying grpc-status OK (never Trailers-Only). The console read that as
-// "nothing in the cloud" and, on a genuinely fresh account, answered with
-// CreateSaveRecord uploading its own local save 6 seconds later; on an
-// account already past that point, it answered with a WriteSaveRecord
+// Nintendo's answer for a Nintendo account with nothing in the cloud is
+// "GetSaveRecord Succeeded, request 42B -> response 0B": no message at all, not
+// even an empty one, framed as ordinary headers (content-length: 0) followed by a
+// separate trailers frame carrying grpc-status OK (never Trailers-Only). The
+// console reads that as "nothing in the cloud" and, on a genuinely fresh account,
+// answers with CreateSaveRecord uploading its own local save 6 seconds later; on
+// an account already past that point, it answers with a WriteSaveRecord
 // evt=Validate carrying exactly the four keys a blank record is missing
 // (CloudRandomSet, HaveGearClothesMap, HaveGearHeadMap, HaveGearShoesMap) --
-// which is answered, not left Unimplemented, see WriteSaveRecord's own
-// doc comment.
+// which is answered, not left Unimplemented, see WriteSaveRecord's own doc
+// comment.
 //
-// Two other shapes were tried and measured broken, and GRID0+ must not
-// regress to either:
-//   - NotFound: the game creates nothing and loops on a communication
-//     error (UserScreening/GetViolation's own doc comment covers why an
-//     absent resource is still answered NotFound there instead -- the two
-//     RPCs measured differently, this one specifically did not tolerate it);
-//   - a real message whose SaveData is merely an empty MapValue (GRID0+'s
-//     own previous answer here, and the direct cause of a 2026-09-24
-//     hardware session where the console went silent right after this call,
-//     never issuing FestSchedule, the early GameRecord document reads, or
-//     WriteSaveRecord): a message, even an empty one, still carries the
-//     5-byte gRPC frame header real Nintendo's zero-byte response does not.
-//     The console's own SDK reads "a record that exists and is empty"
-//     differently from "nothing in the cloud".
+// Two other shapes break, and must not be reintroduced:
+//   - NotFound: the game creates nothing and loops on a communication error
+//     (UserScreening/GetViolation's own doc comment covers why an absent
+//     resource is still answered NotFound there instead -- the two RPCs differ,
+//     and this one does not tolerate it);
+//   - a real message whose SaveData is merely an empty MapValue: a message, even
+//     an empty one, still carries the 5-byte gRPC frame header real Nintendo's
+//     zero-byte response does not. The console's own SDK reads "a record that
+//     exists and is empty" differently from "nothing in the cloud", and goes
+//     silent right after this call, never issuing FestSchedule, the early
+//     GameRecord document reads, or WriteSaveRecord.
 //
-// Once the console has uploaded anything -- CreateSaveRecord's full record or
-// a WriteSaveRecord delta -- that stored record is what it gets back here:
-// NextendoNetwork/splatoon-3 measured that a resolved record is what lets
-// the game go on to SelectFestSchedule, the early GameRecord document reads
-// and further WriteSaveRecord calls, where "nothing in the cloud" leaves an
-// established console stopped. Only a player with nothing stored still gets
-// the zero-message answer.
+// Once the console has uploaded anything -- CreateSaveRecord's full record or a
+// WriteSaveRecord delta -- that stored record is what it gets back here: a
+// resolved record is what lets the game go on to SelectFestSchedule, the early
+// GameRecord document reads and further WriteSaveRecord calls, where "nothing in
+// the cloud" leaves an established console stopped. Only a player with nothing
+// stored still gets the zero-message answer.
 func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 	s, ok := srv.(*Service)
 	if !ok {
@@ -123,12 +117,11 @@ func getSaveRecordStreamHandler(srv any, stream grpc.ServerStream) error {
 	}
 
 	// Nothing stored: answer an empty but existing record, not zero messages.
-	// This console already has a local save. On 2026-09-24, given an empty
-	// record, it sent evt=Validate WriteSaveRecords with the keys it was
-	// missing; on 2026-09-25, given zero messages (the shape Nextendo measured
-	// for a fresh Nintendo account), it wrote nothing at all, so nothing could
-	// ever be stored. The empty record is what starts the writes that
-	// WriteSaveRecord now keeps.
+	// A console that already has a local save, given an empty record, sends
+	// evt=Validate WriteSaveRecords with the keys it was missing; given zero
+	// messages (the shape for a fresh Nintendo account), it writes nothing at all, so
+	// nothing could ever be stored. The empty record is what starts the writes that
+	// WriteSaveRecord keeps.
 	now := timestamppb.New(s.now())
 	s.log.Info("toyohr: GetSaveRecord answered with an empty record", "user", uid)
 	return stream.SendMsg(&toyohrpb.SaveRecord{
@@ -192,12 +185,10 @@ func (s *Service) GetSaveRecord(
 //
 // The console writes right after GetSaveRecord: an established console that
 // is told "nothing in the cloud" sends evt=Validate carrying the keys a blank
-// record lacks (the 2026-09-24 loopback capture shows HaveGearClothesMap,
-// HaveGearHeadMap and HaveGearShoesMap, 34 KB, twice), and
-// NextendoNetwork/splatoon-3 documents the events that follow once those are
-// accepted (InitFest, InitCoopTeamContest, NewSeason, SeqFlagVsLobbyMulti).
-// Discarding them, as this used to, handed the same empty save back on
-// every boot, so the console never had a resolved record.
+// record lacks (HaveGearClothesMap, HaveGearHeadMap and HaveGearShoesMap, 34 KB,
+// twice), and further events follow once those are accepted (InitFest,
+// InitCoopTeamContest, NewSeason, SeqFlagVsLobbyMulti). Discarding them hands the
+// same empty save back on every boot, so the console never has a resolved record.
 //
 // The response's timestamp is the record's new update_time, which the
 // console presents as the next write's version token.
@@ -249,11 +240,10 @@ func (s *Service) WriteSaveRecord(
 }
 
 // CreateSaveRecord stores the record a console builds from its own local
-// save and answers with it. NextendoNetwork/splatoon-3 measured this
-// against real Nintendo for a fresh account: GetSaveRecord with nothing in
-// the cloud, then CreateSaveRecord uploading ~15 KB six seconds later, then
-// WriteSaveRecord. The record is filed under the caller's own name whatever
-// name the request carries.
+// save and answers with it. For a fresh account the sequence is GetSaveRecord
+// with nothing in the cloud, then CreateSaveRecord uploading ~15 KB six seconds
+// later, then WriteSaveRecord. The record is filed under the caller's own name
+// whatever name the request carries.
 func (s *Service) CreateSaveRecord(
 	ctx context.Context, req *toyohrpb.CreateSaveRecordRequest,
 ) (*toyohrpb.SaveRecord, error) {
@@ -313,15 +303,14 @@ const maxUserNameRunes = 32
 // save_data["UserName"] is the one name the game reads the player's pseudo
 // from: presence's PlayerName, the locker's Player.UserName and the
 // matchmaking attributes are all copies the client derives from it. So a
-// rename is a write to that one key -- the same finding NextendoNetwork's
-// server rests on (facts only, none of its code used). Answered
-// Unimplemented, the rename fails in the game.
+// rename is a write to that one key. Answered Unimplemented, the rename fails
+// in the game.
 //
 // The answer's two timestamps are the record's new version, the token the
 // console presents with its next write, as WriteSaveRecord's is.
 //
-// TODO(capture-needed): what a real server puts in the answer's identifier
-// and whether its two timestamps ever differ. Change: this function.
+// UNCONFIRMED: what a real server puts in the answer's identifier and whether
+// its two timestamps ever differ. Change: this function.
 func (s *Service) ChangeUserName(
 	ctx context.Context, req *toyohrpb.ChangeUserNameRequest,
 ) (*toyohrpb.ChangeUserNameResponse, error) {

@@ -8,9 +8,8 @@ import (
 
 // FestDefender returns the team that defends in a fest's Tricolor Turf War:
 // the leader of the midterm ranking, the same ranking GetFestResult publishes
-// for the second half (Splatoon 3's rule; NextendoNetwork's notes on an
-// official Tricolor capture show the four defenders all on the midterm
-// winner's team). Empty when nobody has joined the fest.
+// for the second half (Splatoon 3's rule: the four defenders are all on the
+// midterm winner's team). Empty when nobody has joined the fest.
 func FestDefender(ctx context.Context, store db.Store, row db.Fest) (string, error) {
 	entries, err := store.ListFestEntries(ctx, row.ID)
 	if err != nil {

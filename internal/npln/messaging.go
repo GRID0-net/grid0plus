@@ -22,29 +22,24 @@ const maxMessageReceivers = 64
 // messagingKeepAlive is how often RecvMessage sends a keep-alive when nothing
 // is arriving.
 //
-// RecvMessageResponse carries a KeepAlive message in its own oneof, the
-// protocol saying outright that silence is not a valid state -- the same rule
-// SubscribeMaintenanceSchedules and the friends streams follow. See ROADMAP
-// §2.5 and internal/npln/README.md.
+// RecvMessageResponse carries a KeepAlive message in its own oneof, the protocol
+// saying outright that silence is not a valid state -- the same rule
+// SubscribeMaintenanceSchedules and the friends streams follow. See
+// internal/npln/README.md.
 const messagingKeepAlive = 30 * time.Second
 
 // ---- nn.npln.messaging.v1.Messaging ----------------------------------------
 //
-// A 2026-09-20 decompile of Splatoon 3 v11.3.0's own main found no
-// "nn.npln.messaging" string anywhere, despite finding every other service
-// this file's sibling files implement (Friends, PresenceService, gamesync's
-// Gamesync, auth's Auth) as literal, exhaustively-listed path strings. What
-// the same decompile DID find, under a completely different service name, is
-// "/nn.npln.toyohr.v1.LobbyMessaging/RecvMessage" -- matching
-// internal/toyohr/messaging.go's already-separate lobbyMessagingService,
-// which this project built independently and correctly keeps distinct from
-// this one. The honest reading is that Splatoon 3 may not use THIS service
-// at all for its invite mailbox, and instead does it entirely through
-// toyohr's LobbyMessaging. That is evidence, not proof -- an absent string
-// is consistent with "never linked" but the same caveats as elsewhere in
-// this decompile apply -- and it does not mean this service's shapes are
-// wrong for whatever other NPLN title or flow does call it. Change nothing
-// here without a capture; flagging this for whoever eventually gets one.
+// Splatoon 3's binary contains no "nn.npln.messaging" string, though it lists
+// every other service this file's sibling files implement (Friends,
+// PresenceService, gamesync's Gamesync, auth's Auth) as literal path strings.
+// It does contain "/nn.npln.toyohr.v1.LobbyMessaging/RecvMessage" -- matching
+// internal/toyohr/messaging.go's already-separate lobbyMessagingService, which
+// this project keeps distinct from this one. The honest reading is that Splatoon 3
+// may not use THIS service at all for its invite mailbox, and instead does it
+// entirely through toyohr's LobbyMessaging. That is evidence, not proof, and it
+// does not mean this service's shapes are wrong for whatever other NPLN title or
+// flow does call it. Change nothing here without a capture.
 
 type messagingService struct {
 	messagingpb.UnimplementedMessagingServer
@@ -118,7 +113,7 @@ func (m *messagingService) SendAck(
 // RecvMessage streams the caller's mailbox: everything retained since the
 // given resume tokens, then live as it arrives.
 //
-// TODO(capture-needed): whether an empty resume token really means "replay
+// UNCONFIRMED: whether an empty resume token really means "replay
 // everything retained" rather than "nothing before this call counts". This
 // is the invite mailbox internal/npln/README.md's boot-order notes describe
 // -- called early, before a session needs anything else -- and "replay

@@ -1,10 +1,9 @@
-// Command scsi is GRID0+'s OLSC (Online Save Cloud) server -- phase 4,
-// per-game cloud save backup.
+// Command scsi is GRID0+'s OLSC (Online Save Cloud) server: per-game cloud
+// save backup.
 //
 // It reimplements storage.lp1.scsi.srv.nintendo.net and
-// permission.lp1.sata.srv.nintendo.net. See internal/scsi for the endpoints
-// and for which parts of the shape are confirmed versus this project's own
-// defensible reading of an undocumented one.
+// permission.lp1.sata.srv.nintendo.net. See internal/scsi/README.md for the
+// endpoints and which parts of the shape are unconfirmed.
 package main
 
 import (
@@ -41,14 +40,11 @@ func main() {
 	defer func() { _ = store.Close() }()
 
 	keys := sjwt.NewKeyring(cfg.Keys.Dir, cfg.Keys.GenerateIfMissing)
-	// Verifies BAAS's own id tokens, not access tokens: a 2026-09-23 loopback
-	// capture of a real console's Authorization header showed 'jku' pointing
-	// at /1.0.0/certificates (the id-token JWKS) and the payload's own 'typ'
-	// as "id_token" -- the same credential internal/npln's exchangeIDToken
-	// verifies at its own phase-1/phase-2 seam, not the access token this
-	// server previously expected. Both processes must read the same
-	// keys.dir, the same reason aauth/dauth already document at their own
-	// key-loading call sites.
+	// Verifies BAAS's own id tokens, not access tokens: the console's Authorization
+	// header carries a 'jku' pointing at /1.0.0/certificates (the id-token JWKS) and a
+	// payload 'typ' of "id_token". internal/npln's exchangeIDToken verifies the same
+	// credential. Both processes must read the same keys.dir, for the same reason
+	// aauth and dauth document where they load their keys.
 	idKey, err := keys.Key(sjwt.IssuerBAASID)
 	if err != nil {
 		service.Fatal(log, "load BAAS id verification key", err)

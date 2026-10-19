@@ -12,16 +12,15 @@ import (
 
 // A console writes its own play activity, the list a friend sees on its
 // profile, as extras.everyone.playLog: a JSON string holding one entry per
-// game. An emulator has no system module that writes it, so its profile
-// showed no games at all. GRID0+ keeps that list for an emulator from the
-// presence it reports once a minute, in the console's own shape (read from a
-// stored console record on 2026-10-11):
+// game. An emulator has no system module that writes it, so its profile would
+// show no games at all. GRID0+ keeps that list for an emulator from the presence
+// it reports once a minute, in the console's own shape:
 //
-//	[{"appInfo:appId":"0100c2500fc20000","appInfo:presenceGroupId":"0100c2500fc20000",
-//	  "totalPlayCount":155,"totalPlayTime":1086,"firstPlayedAt":1790536430,"lastPlayedAt":1791739223}]
+// 	[{"appInfo:appId":"0100c2500fc20000","appInfo:presenceGroupId":"0100c2500fc20000",
+// 	  "totalPlayCount":155,"totalPlayTime":1086,"firstPlayedAt":1790536430,"lastPlayedAt":1791739223}]
 //
-// totalPlayTime is in minutes: 1086 across 155 sessions fits that, seconds
-// would be under ten minutes in total.
+// totalPlayTime is in minutes: 1086 across 155 sessions fits that, seconds would
+// be under ten minutes in total.
 
 // emulatorSessionGap is how long without a report ends a play session. The
 // forks report every 60 s; a missed report or two is still the same session.

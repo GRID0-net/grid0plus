@@ -294,11 +294,11 @@ func TestNoConfiguredRotationIsAnEmptyScheduleRatherThanAnError(t *testing.T) {
 }
 
 // TestLeagueAndVsParamsAnswerRatherThanUnimplemented is the regression test
-// for a real hardware finding (2026-09-23): neither RPC had a handler at
-// all, so the console got Unimplemented instead of the empty answer
-// documented as this project's policy for un-fabricatable game content --
-// right in the middle of the hall's own startup call sequence, immediately
-// before the game crashed at the Splatfest region prompt.
+// for a real finding: with no handler for either RPC the console gets
+// Unimplemented instead of the empty answer documented as this project's policy
+// for un-fabricatable game content -- right in the middle of the hall's own
+// startup call sequence, immediately before the game crashes at the Splatfest
+// region prompt.
 func TestLeagueAndVsParamsAnswerRatherThanUnimplemented(t *testing.T) {
 	at := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})
@@ -324,13 +324,11 @@ func TestLeagueAndVsParamsAnswerRatherThanUnimplemented(t *testing.T) {
 }
 
 // TestSelectVsParamsNeverAnswersEmptyOrStale is the regression test for a
-// real crash: NextendoNetwork/splatoon-3 measured (facts only, not its code)
-// that a real server never sends VsParams with nil `params`, and separately
-// that its two timestamps must ride the current rotation rather than
-// whatever fixed values a capture happened to record -- stale ones leave the
-// client unable to tie the current rotation to its parameters. Reproduced on
-// GRID0+'s own hardware on 2026-09-24: the console called this RPC and
-// then went silent before ever calling PresenceService/SubscribePresences.
+// real crash: VsParams with nil `params` is wrong, and its two timestamps must
+// ride the current rotation rather than whatever fixed values were recorded --
+// stale ones leave the client unable to tie the current rotation to its
+// parameters. The console called this RPC and then went silent before ever
+// calling PresenceService/SubscribePresences.
 func TestSelectVsParamsNeverAnswersEmptyOrStale(t *testing.T) {
 	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})
@@ -423,17 +421,14 @@ func TestVsParamsWindowCoversEveryReturnedVsSchedule(t *testing.T) {
 }
 
 // TestSelectVsParamsNameCarriesTheRequestsOwnTarget is the regression test
-// for a second and third real crash on the same RPC: a 2026-09-24 decompile
-// of Splatoon 3 v11.3.0's own main.nso found the client's resource-name
-// parser for a VsParams requires the literal shape
-// "tenants/<t>/targets/<target>/vsParams/<rest>". The first fix answered
-// "tenants/<t>/vsParams/<id>", missing that segment. The second fix echoed
-// the request's Target field back whole -- but a VM-side loopback capture
-// caught its real value, "tenants/current/targets/default", a full
-// resource path using the same "current" alias convention this package
-// resolves elsewhere, not a bare id; echoing it whole built a name with two
-// nested "targets" segments and reproduced the identical crash address a
-// third time. Only the target's own last segment belongs in the response.
+// for a crash on this RPC: the client's resource-name parser for a VsParams
+// requires the literal shape "tenants/<t>/targets/<target>/vsParams/<rest>".
+// Answering "tenants/<t>/vsParams/<id>" misses that segment. Echoing the
+// request's Target field back whole is wrong too: its value is
+// "tenants/current/targets/default", a full resource path using the same
+// "current" alias convention this package resolves elsewhere, not a bare id, so
+// echoing it builds a name with two nested "targets" segments and crashes the
+// same way. Only the target's own last segment belongs in the response.
 func TestSelectVsParamsNameCarriesTheRequestsOwnTarget(t *testing.T) {
 	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})
@@ -450,10 +445,10 @@ func TestSelectVsParamsNameCarriesTheRequestsOwnTarget(t *testing.T) {
 	}
 }
 
-// TestSelectVsParamsAttributesMatchBothWorkingCaptures is the regression
-// test for the ten VsParams.Attributes keys both preserved working
-// Nextendo hall captures agree on byte-for-byte (see vsParamsAttributes'
-// own doc comment) -- GRID0+ used to send an empty Attributes map.
+// TestSelectVsParamsAttributesMatchTheFixedTuningValues is the regression
+// test for the ten VsParams.Attributes keys a real server sends (see
+// vsParamsAttributes' own doc comment) -- GRID0+ used to send an empty
+// Attributes map.
 func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
 	at := time.Date(2026, 9, 5, 13, 37, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})
@@ -532,10 +527,9 @@ func TestSeasonScheduleCarriesTheCapturedLeaderboardFixTime(t *testing.T) {
 }
 
 // TestSeasonScheduleCarriesTheTargetField is the regression test for a real
-// gap: both preserved working hall captures carry an eighth field on every
-// SeasonSchedule entry -- decoding to "default" -- entirely absent from
-// upstream's own reconstructed proto (which stops at field 7) as well as
-// from what GRID0+ was sending. See README.md's own section on this.
+// gap: a real server carries an eighth field on every SeasonSchedule entry --
+// decoding to "default" -- absent from upstream's own reconstructed proto (which
+// stops at field 7). See README.md's own section on this.
 func TestSeasonScheduleCarriesTheTargetField(t *testing.T) {
 	at := time.Date(2026, 9, 24, 18, 0, 0, 0, time.UTC)
 	sc := scheduleServiceFor(t, at, Rotation{})

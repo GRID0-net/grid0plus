@@ -132,13 +132,12 @@ func NewService(opts Options) *Service {
 //
 // **All of them, including the ones with no handlers yet**, and that is the
 // point. An RPC on a registered service answers Unimplemented and
-// internal/npln's interceptor logs it once; an RPC on a service that was
-// never registered fails the same way with no log line. ROADMAP §2.4 says to
-// let the console drive the order of this backlog -- which only works if the
-// console's asking is recorded. See backlog.go's package comment for what is
-// and is not implemented there, and Service's own doc comment above for why
-// several of these get their own adapter type instead of being embedded here
-// directly.
+// internal/npln's interceptor logs it once; an RPC on a service that was never
+// registered fails the same way with no log line. Letting the console drive the
+// order of the backlog only works if the console's asking is recorded. See
+// backlog.go's file comment for what is and is not implemented there, and
+// Service's own doc comment above for why several of these get their own adapter
+// type instead of being embedded here directly.
 func (s *Service) Register(srv *grpc.Server) {
 	registerFestService(srv, s)
 	registerCloudSave(srv, s)
@@ -183,11 +182,8 @@ func (s *Service) tenantPath() string { return "tenants/" + s.tenant }
 // game asks BCAT for a resource digest it cannot find and reports BcatInvalid,
 // which reaches the player as a generic communication error.
 //
-// Both preserved working hall captures answer with an empty protobuf when no
-// fest is configured. A one-account hardware probe of that response also
-// eliminated the BCAT 2122-1058 boot error without changing the console.
-// An earlier empty-response crash happened with an older set of responses and
-// does not establish that the empty no-fest response itself caused it.
+// With no fest configured the answer is an empty protobuf, which does not cause
+// the BCAT 2122-1058 boot error.
 func (s *Service) SelectFestSchedule(
 	ctx context.Context, req *toyohrpb.SelectFestScheduleRequest,
 ) (*toyohrpb.SelectFestScheduleResponse, error) {
@@ -289,10 +285,10 @@ func (s *Service) GetFestDecryptionKey(
 	outcomeKeys := map[string]string{
 		"Alpha": out.TeamAlphaKey, "Bravo": out.TeamBravoKey, "Charlie": out.TeamCharlieKey,
 	}
-	// Nextendo's working active-fest capture carries only name, notice and
-	// start (fields 1-3). Publishing the stored team keys on an ordinary
-	// request added fields 5-7 before the result phase. Keep those optional
-	// slots for explicit show_all_keys requests after results, not game startup.
+	// The active-fest answer carries only name, notice and start (fields 1-3).
+	// Publishing the stored team keys on an ordinary request adds fields 5-7 before
+	// the result phase. Keep those optional slots for explicit show_all_keys
+	// requests after results, not game startup.
 	if !req.GetShowAllKeys() {
 		out.TeamAlphaKey = ""
 		out.TeamBravoKey = ""
@@ -425,9 +421,9 @@ func (s *Service) currentFest(ctx context.Context, region string) (Fest, bool, e
 		if region != "" && !f.publishedIn(region) {
 			continue
 		}
-		// A closed fest is one whose results are out, and the game shows them
-		// from this schedule, so it stays announced until its publish window
-		// ends. Dropping it at close hid the results entirely (2026-10-09).
+		// A closed fest is one whose results are out, and the game shows them from this
+		// schedule, so it stays announced until its publish window ends. Dropping it at
+		// close hides the results entirely.
 		if _, pubEnd := f.PublishWindow(); f.PhaseAt(now) == PhaseNone || !now.Before(pubEnd) {
 			continue
 		}

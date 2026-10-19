@@ -27,19 +27,19 @@ const (
 	ServiceStubs Service = "stubs"
 	// ServiceNATCheck is the UDP NAT-check responder. It is not proxied by nginx.
 	ServiceNATCheck Service = "natcheck"
-	// ServiceNPLN is the NPLN gRPC gateway (phase 2).
+	// ServiceNPLN is the NPLN gRPC gateway.
 	ServiceNPLN Service = "npln"
-	// ServiceGamesync is NPLN's document/watch service (phase 2).
+	// ServiceGamesync is NPLN's document/watch service.
 	//
 	// Separate from ServiceNPLN for one reason that matters: the console reaches
 	// it on PORT 7575, not 443. Grouping it with the tenant host would emit one
-	// nginx block on the edge port that grpc_passes both to the gateway --
-	// which answers, wrongly, with a service that does not implement gamesync's
-	// RPCs. That failure looks like the game being unhappy with our gamesync
+	// nginx block on the edge port that grpc_passes both to the gateway, which
+	// answers, wrongly, with a service that does not implement gamesync's RPCs.
+	// That failure looks like the game being unhappy with our gamesync
 	// implementation rather than like a routing mistake.
 	ServiceGamesync Service = "gamesync"
-	// ServiceNPLNRest is NPLN's JSON front end (phase 2): the hosts Splatoon 3
-	// talks to over ordinary HTTPS *before* it opens a gRPC channel.
+	// ServiceNPLNRest is NPLN's JSON front end: the hosts Splatoon 3 talks to over
+	// ordinary HTTPS *before* it opens a gRPC channel.
 	//
 	// Separate from ServiceNPLN because the two need different nginx: gRPC
 	// needs grpc_pass and HTTP/2, this needs proxy_pass and HTTP/1.1. Routing
@@ -53,11 +53,11 @@ const (
 	// the console a TLS CertificateRequest.
 	ServiceNEX Service = "nex"
 	// ServiceEShop is the eShop: the storefront, the commerce API, the eLicense
-	// server and the content server (phase 3).
+	// server and the content server. GRID0+ doesn't implement it.
 	ServiceEShop Service = "eshop"
-	// ServiceSCSI is the OLSC (Online Save Cloud) cloud-save server (phase 4):
+	// ServiceSCSI is the OLSC (Online Save Cloud) cloud-save server:
 	// storage.hac.lp1.scsi.srv.nintendo.net's save data archives and
-	// permission.lp1.sata.srv.nintendo.net's save data sets / key package.
+	// permission.lp1.sata.srv.nintendo.net's save data sets and key package.
 	ServiceSCSI Service = "scsi"
 	// ServiceBlackhole means the host should be null-routed on the console
 	// rather than answered. Used for telemetry.
@@ -105,33 +105,29 @@ type Host struct {
 	TLSNames []string
 
 	// NoClientCertRequest is true for a host nginx must not send a TLS
-	// CertificateRequest to. Two hosts need it, for two different clients
-	// that fail on one: accounts.nintendo.com (the browser applet, below) and
-	// the friends host (the friends sysmodule, see its entry). Captured 2026-08-25: with ssl_verify_client
-	// optional_no_ca (needed by dauth/aauth/baas to read the console's device
-	// certificate), the TLS handshake for accounts.nintendo.com negotiated
-	// fine up through the server's certificate flight, then the console's
-	// browser-applet client went silent and closed the connection after
-	// ~600ms without ever sending its Finished message — the "loads forever"
-	// symptom on the Nintendo Account link page. The curl-based device-auth
-	// clients (dauth, aauth, the rest of baas) handle the same
-	// CertificateRequest fine by answering with an empty certificate; the
-	// system browser's separate TLS stack does not. accounts.nintendo.com is
-	// only ever reached by that browser, never by a device-auth client, so it
-	// gets its own nginx server block with no client-cert request at all.
+	// CertificateRequest to. Two hosts need it, for two different clients that fail
+	// on one: accounts.nintendo.com (the browser applet, below) and the friends host
+	// (the friends sysmodule, see its entry). With ssl_verify_client optional_no_ca
+	// (needed by dauth/aauth/baas to read the console's device certificate), the TLS
+	// handshake for accounts.nintendo.com negotiates fine up through the server's
+	// certificate flight, then the console's browser-applet client goes silent and
+	// closes the connection after ~600ms without ever sending its Finished message --
+	// the "loads forever" symptom on the Nintendo Account link page. The curl-based
+	// device-auth clients (dauth, aauth, the rest of baas) handle the same
+	// CertificateRequest fine by answering with an empty certificate; the system
+	// browser's separate TLS stack does not. accounts.nintendo.com is only ever reached
+	// by that browser, never by a device-auth client, so it gets its own nginx server
+	// block with no client-cert request at all.
 	NoClientCertRequest bool
 
-	// NoHTTP2 is true for a host nginx must not offer HTTP/2 to, independent
-	// of NoClientCertRequest — m-lp1.baas.nintendo.com needs the client-cert
-	// request (it is real device-auth traffic, "system-level account state
-	// synchronization", not the browser applet) but shows the exact same
-	// signature that led to disabling HTTP/2 for accounts.nintendo.com:
-	// a real, sizeable, bidirectional TLS exchange that nginx never logs as
-	// a completed HTTP request. Observed 2026-08-26 only against real nginx
-	// (http2 on by default here), never once across three separate decrypted
-	// captures taken through a hand-rolled mitmproxy stand-in that never
-	// offered HTTP/2 at all — the strongest evidence yet that this
-	// connection is the same HTTP/2 interop failure, on a different host.
+	// NoHTTP2 is true for a host nginx must not offer HTTP/2 to, independent of
+	// NoClientCertRequest -- m-lp1.baas.nintendo.com needs the client-cert request (it
+	// is real device-auth traffic, "system-level account state synchronization", not
+	// the browser applet) but shows the same signature that led to disabling HTTP/2
+	// for accounts.nintendo.com: a real, sizeable, bidirectional TLS exchange that
+	// nginx never logs as a completed HTTP request. It shows only against real nginx
+	// (http2 on by default), never through a mitmproxy stand-in that does not offer
+	// HTTP/2 at all -- the same HTTP/2 interop failure, on a different host.
 	NoHTTP2 bool
 }
 
@@ -139,8 +135,7 @@ type Host struct {
 // console's hosts file.
 //
 // Ordering matters: Atmosphère's DNS-MITM resolver applies the LAST matching
-// line, so broad wildcards come first and specific overrides come last. This
-// ordering rule is the one Prelude-Nro relies on in production.
+// line, so broad wildcards come first and specific overrides come last.
 var Hosts = []Host{
 	// ---- Device and application authentication --------------------------
 	{
@@ -176,16 +171,14 @@ var Hosts = []Host{
 
 	// ---- Accounts and friends -------------------------------------------
 	{
-		// No client-cert request: this is the friends sysmodule's host, and
-		// friends does not cope with one the way nnAccount does. A 2026-09-23
-		// tcpdump of a friend-list refresh showed a clean TLS 1.3 handshake
-		// to this SNI, then the console aborting in its own final flight --
-		// nginx: "client closed connection while waiting for request" -- and
-		// the applet showing 2121-1058. The friends binary's curl-error table
-		// (0x121608) maps 2121-1058 to CURLE_SSL_CERTPROBLEM: asked for a
-		// certificate, friends tries to present one and cannot. Nothing on
-		// this host reads a client certificate (only dauth does), so there is
-		// nothing to lose by not asking. Implies HTTP/1.1, see NoHTTP2.
+		// No client-cert request: this is the friends sysmodule's host, and friends does
+		// not cope with one the way nnAccount does. A friend-list refresh shows a clean
+		// TLS 1.3 handshake to this SNI, then the console aborting in its own final
+		// flight -- nginx: "client closed connection while waiting for request" -- and
+		// the applet showing 2121-1058, which friends maps to CURLE_SSL_CERTPROBLEM: asked
+		// for a certificate, friends tries to present one and cannot. Nothing on this host
+		// reads a client certificate (only dauth does), so there is nothing to lose by not
+		// asking. Implies HTTP/1.1, see NoHTTP2.
 		Pattern: "e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
 		Service: ServiceBAAS, TLS: true, NoClientCertRequest: true,
 		Comment: "BAAS lp1 — accounts and friends",
@@ -198,19 +191,15 @@ var Hosts = []Host{
 	{
 		Pattern: "cdn-image-e0d67c509fb203858ebcb2fe3f88c2aa.baas.nintendo.com",
 		Service: ServiceBAAS, TLS: true, NoHTTP2: true, NoClientCertRequest: true,
-		// No client-cert request for the same reason as the friends host
-		// above: the friends sysmodule downloads the thumbnails, tries to
-		// answer the CertificateRequest and aborts its own handshake. No
-		// console fetch of /1/<image> ever reached nginx while emulators,
-		// which ignore the request, fetched every one. Nothing here reads
-		// a client certificate.
+		// No client-cert request for the same reason as the friends host above: the
+		// friends sysmodule downloads the thumbnails, tries to answer the
+		// CertificateRequest and aborts its own handshake. Emulators ignore the request
+		// and fetch every image; a console never reaches nginx with one. Nothing here
+		// reads a client certificate.
 		//
-		// Never individually verified against a real capture until
-		// 2026-08-28: it was running nginx's default HTTP/2-on variant, the
-		// exact configuration m-lp1.baas.nintendo.com needed NoHTTP2 for. The
-		// console's image fetch is system-level account-data traffic, not
-		// the browser applet, so it gets that host's treatment, not
-		// accounts.nintendo.com's.
+		// HTTP/2 is off too: the console's image fetch is system-level account-data
+		// traffic, not the browser applet, so it gets m-lp1.baas.nintendo.com's
+		// treatment (NoHTTP2), not accounts.nintendo.com's.
 		Comment: "BAAS profile image CDN",
 	},
 	{
@@ -222,19 +211,14 @@ var Hosts = []Host{
 	{
 		Pattern: "api.accounts.nintendo.com",
 		Service: ServiceBAAS, TLS: true,
-		Comment: "GET /2.0.0/users/me -- called by nnAccount (libcurl) right after the " +
-			"NA-link token exchange, not by the browser, so it keeps the usual " +
-			"optional_no_ca client-cert request. Missing entirely until a " +
-			"2026-08-26 mitmproxy capture of a real first-time link against " +
-			"Nextendo showed the console calling it and expecting a real profile " +
-			"body back. See internal/baas/nalink.go",
+		Comment: "Nintendo Account profile API (GET /2.0.0/users/me), called right after the link token exchange. See internal/baas/nalink.go",
 	},
 
 	// ---- NAT check ------------------------------------------------------
 	// Pia requires nncs1 and nncs2 to be two DISTINCT addresses. If they
 	// resolve to the same IP the console de-duplicates the probe, never sends
-	// the second one, and NAT detection never completes. Prelude-Nro hit this
-	// as Mario Kart 8 error 2618-201.
+	// the second one, and NAT detection never completes. It shows up as Mario
+	// Kart 8 error 2618-201.
 	{
 		Pattern: "nncs1-lp1.n.n.srv.nintendo.net",
 		Service: ServiceNATCheck,
@@ -246,40 +230,33 @@ var Hosts = []Host{
 		Comment: "NAT check, secondary — MUST be a different IP from nncs1",
 	},
 
-	// ---- Found 2026-09-20: Pia game-session host, previously invisible --
-	// A decompile of Splatoon 3 v11.3.0 found a second host family neither
-	// this file nor any capture had named: "g2122d301.<region>.p.srv."
-	// nintendo.net", built from Splatoon 3's own Pia game code
-	// ("g2122d301", the literal fallback in the function that constructs
-	// this string) rather than a shared prefix like nncs1/nncs2's. It was
-	// not leaking anywhere -- isNintendoOwnedDomain's catch-all already
-	// blackholed it like any unlisted *.nintendo.net host -- but it had no
-	// name here, so a real console reaching it would have produced no log
-	// line to find it by, the same invisibility problem the sect/sata/
-	// sprofile hosts had before their own entries were added.
+	// ---- The Pia game-session host ----------------------------------------
+	// A second host family exists besides nncs1/nncs2:
+	// "g2122d301.<region>.p.srv.nintendo.net", built from Splatoon 3's own Pia game
+	// code ("g2122d301", the literal fallback in the function that constructs this
+	// string) rather than a shared prefix. isNintendoOwnedDomain's catch-all would
+	// blackhole it like any unlisted *.nintendo.net host, but then a console reaching
+	// it would leave no log line to find it by, the same invisibility problem the
+	// sect/sata/sprofile hosts had before their own entries were added.
 	//
-	// AllocateIceServerSet's own doc comment already establishes gameplay
-	// itself is ICE-based, not Pia-hosted, so this is unlikely to be on the
-	// connection-critical path -- but "unlikely" is a reading of one other
-	// function's behavior, not confirmation this host is dead. Stubbed
-	// rather than blackholed specifically, so if a console does reach it,
-	// what it asks for gets recorded instead of silently discarded.
+	// Gameplay itself is ICE-based, not Pia-hosted (see AllocateIceServerSet's doc
+	// comment), so this is unlikely to be on the connection-critical path -- but
+	// that is a reading of one other function's behavior, not confirmation this host
+	// is dead. Stubbed rather than blackholed specifically, so if a console does
+	// reach it, what it asks for gets recorded instead of silently discarded.
 	{
 		Pattern: "%.p.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
 		Comment: "Splatoon 3's own Pia game-session host (game code " +
 			"g2122d301) — purpose and whether it is ever actually reached " +
-			"are both TODO(capture-needed)",
+			"are both UNCONFIRMED",
 	},
 
-	// ---- Found 2026-09-20: parental controls (nsd's own decompile) --------
-	// nsd (title 010000000000002E, the OS's own Network Server Discovery
-	// resolver) references exactly two hosts in its own code: this one and
-	// moon.nintendo.com below. Out of scope for a personal/private-network
-	// deployment the same way Phase 3's eShop is -- nobody is enforcing
-	// parental restrictions against themselves -- but both were previously
-	// invisible on the generic catch-all, same reasoning as the Pia entry
-	// above.
+	// ---- Parental controls ------------------------------------------------
+	// The system's network server discovery resolver references exactly two hosts
+	// in its own code: this one and moon.nintendo.com below. Parental controls are
+	// out of scope for a private network (nobody enforces restrictions against
+	// themselves), but both are stubbed so they never reach real Nintendo.
 	{
 		Pattern: "%.pctl.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
@@ -292,31 +269,21 @@ var Hosts = []Host{
 			"(public codename \"moon\")",
 	},
 
-	// ---- Found 2026-09-20: a second, unrelated "vermillion" ---------------
-	// A decompile of nim.nso (the system update/install module) found
-	// "vermillionDeviceId" used throughout a local nearby-console-discovery
-	// mechanism -- $.candidates[*].vermillionDeviceIds[*], $.nearnessChecks[*]
-	// .srcDevice.vermillionDeviceId, /v1/devices/vermillion-device-id -- for
-	// what reads as console-to-console data transfer during setup, not
-	// anything NPLN-related. Nintendo reused the "vermillion" codename for
-	// two unrelated systems: this one, and internal/nplnrest's
-	// gw.hac.lp1.vermillion.srv.nintendo.net device-init host. They are NOT
-	// the same thing, and this decompile settles nothing about nplnrest's
-	// own vermillion TODO -- flagging the collision here specifically so a
-	// future reader does not conflate the two.
+	// ---- A second, unrelated "vermillion" -------------------------------
+	// The system update/install module uses "vermillionDeviceId" throughout a local
+	// nearby-console-discovery mechanism (console-to-console data transfer during
+	// setup), which has nothing to do with NPLN. Nintendo reused the "vermillion"
+	// codename for two unrelated systems: this one, and internal/nplnrest's
+	// gw.hac.lp1.vermillion.srv.nintendo.net device-init host. Don't conflate them.
 	//
-	// The one concretely new fact: nim.nso reports failures from this
-	// mechanism to a host neither this file nor any capture had named
-	// ("vermillion-app-call-failed" is one of the literal error strings
-	// alongside it). Out of Phase 1/2 scope (console-to-console transfer,
-	// not accounts or Splatoon 3), stubbed for visibility rather than left
-	// invisible on the generic catch-all like the Pia host above.
+	// That module reports failures from this mechanism to a host nothing else here
+	// named ("vermillion-app-call-failed" is one of its error strings). It is out of
+	// scope (console-to-console transfer, not accounts or Splatoon 3), so it is
+	// stubbed instead of left on the generic catch-all.
 	{
 		Pattern: "problem-details.ennovate.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "nim's nearby-device-transfer error reporting (path seen: " +
-			"/vermillion-gw/) — unrelated to NPLN despite the shared codename; " +
-			"see the comment above this entry",
+		Comment: "error reporting for nearby-device transfer (path seen: /vermillion-gw/); unrelated to NPLN despite the shared codename",
 	},
 
 	// ---- Connection test ------------------------------------------------
@@ -366,41 +333,25 @@ var Hosts = []Host{
 		Comment: "eLicense JWK set",
 	},
 	{
-		// Phase 4: OLSC's real save-data-archive API. Full field-level shape
-		// confirmed at https://github.com/kinnay/NintendoClients/wiki/
-		// OLSC-Servers -- "GET /api/nx/v2/save_data_archives" and its
-		// siblings (start_upload, finish_upload, generate_key_seed_package,
-		// extend_upload_timeout) are all documented there, the same wiki
-		// this project already leans on for BAAS/dAuth/aAuth. See
-		// internal/scsi/README.md for exactly which endpoints are that
-		// confirmed versus this project's own defensible reading of an
-		// undocumented one.
+		// OLSC's save-data-archive API. The field-level shape is documented at
+		// https://github.com/kinnay/NintendoClients/wiki/OLSC-Servers ("GET
+		// /api/nx/v2/save_data_archives" and its siblings: start_upload,
+		// finish_upload, generate_key_seed_package, extend_upload_timeout). See
+		// internal/scsi/README.md for which endpoints are confirmed and which are a
+		// defensible reading of an undocumented one.
 		Pattern: "storage.hac.lp1.scsi.srv.nintendo.net",
 		Service: ServiceSCSI, TLS: true,
-		Comment: "OLSC save data archives (phase 4)",
+		Comment: "OLSC save data archives",
 	},
 	{
 		Pattern: "%.scsi.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "found 2026-09-20, decompiling title 010000000000003A (nifm, " +
-			"\"nn::nifm::\" -- Network Interface Manager, not anything scsi/" +
-			"storage-related despite the host name): " +
-			"\"migration.%.scsi.srv.nintendo.net/api/nx/v1/account_migrations/" +
-			"{gen_key,get_key}\" -- Nintendo's console-to-console account " +
-			"migration flow. Genuinely account-adjacent (unlike Pia/pctl/moon " +
-			"above), but implementing real migration is a different, much " +
-			"larger feature than anything Phase 1 currently attempts; stubbed " +
-			"for visibility only. Overlaps storage.lp1.scsi... above only in " +
-			"domain, not host -- covered by the wildcard rather than folded into " +
-			"that entry since the subdomain differs.",
+		Comment: "console-to-console account migration (migration.%.scsi...). Stubbed so it never reaches real Nintendo; building real migration is out of scope",
 	},
 	{
 		Pattern: "god.hac.lp1.penne.srv.nintendo.net",
 		Service: ServiceNPLNRest, TLS: true,
-		Comment: "push notifications (Penne) accounts. npns registers here for " +
-			"its penne id and the notification token the Nintendo Account link " +
-			"then PUTs to /1.0.0/push_channels; internal/nplnrest remembers whose " +
-			"token it is, which is what lets a push reach the console's frontline",
+		Comment: "push notification accounts (Penne): the push service registers here for its penne id and the notification token the Nintendo Account link later PUTs to /1.0.0/push_channels; internal/nplnrest remembers whose token it is, which is what lets a push reach the console's frontline",
 	},
 	{
 		Pattern: "consumer.lp1.npns.srv.nintendo.net",
@@ -410,32 +361,12 @@ var Hosts = []Host{
 	{
 		Pattern: "beach.hac.lp1.eshop.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "A 2026-08-25 capture showed the Nintendo Account link flow reaches " +
-			"this host before accounts.nintendo.com; a real working private server " +
-			"passes it through to real Nintendo, which this deployment's policy " +
-			"rules out, so it is stubbed instead. A second, unrelated purpose: " +
-			"NextendoNetwork's own public Splatoon 3 NPLN server (facts taken from " +
-			"their published findings, never their code -- see " +
-			"internal/nplnrest.go's package doc comment) documents this host also " +
-			"receiving \"POST /v1/devices/<id>/penne_id/register\" during NPLN's " +
-			"vermillion/penne bootstrap, which their real-console capture found " +
-			"had to succeed before the console would ever attempt a penne login. " +
-			"The generic empty-object answer every unmatched host on this server " +
-			"already gives (internal/stubs's default case) happens to match their " +
-			"own -- independently arrived at -- answer for this exact path, so no " +
-			"code change was needed, only this note that the path is real and " +
-			"already handled correctly.",
+		Comment: "eShop device registration. The Nintendo Account link flow reaches it before accounts.nintendo.com, and Splatoon 3's NPLN bootstrap POSTs /v1/devices/<id>/penne_id/register here, which has to succeed before the console tries a penne login. The generic empty-object stub answer is what both expect",
 	},
 	{
 		Pattern: "bvc-hac-lp1.cdn.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "vulnerable system version list. nim (FW 22.5.0, " +
-			"SafeSystemVersionTask) asks for /<major>-<minor>-<micro>: a file " +
-			"there means \"this firmware is vulnerable\" and blocks Nintendo " +
-			"Account linking, the eShop and NSO behind \"A system update is " +
-			"required before you can proceed.\" Nintendo started listing 22.5.0 " +
-			"around 2026-10-13. Unlisted, this host went to Nintendo's real CDN; " +
-			"the stub answers 404 (safe) for every version.",
+		Comment: "browser version check: a file at /<major>-<minor>-<micro> means that firmware must update, which blocks Nintendo Account linking, the eShop and Switch Online. The stub answers 404 for every version",
 	},
 	{
 		Pattern: "service-status-lp1.cdn.nintendo.net",
@@ -445,72 +376,31 @@ var Hosts = []Host{
 	{
 		Pattern: "api-lp1.znc.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "smartphone app API (Coral). A 2026-09-20 decompile of " +
-			"Splatoon 3 v11.3.0 confirms the game itself constructs " +
-			"api-<region>.znc.srv.nintendo.net URLs directly, not just the " +
-			"phone app. A separate decompile of a system NSO-companion applet " +
-			"found a distinct \"web-%.znc.srv.nintendo.net\" host (below) -- " +
-			"likely the actual SplatNet 3 web-view backend, with this api- " +
-			"host doing structured API calls instead. Request shape for both " +
-			"is unconfirmed.",
+		Comment: "smartphone app API (Coral). Splatoon 3 also builds URLs on this host itself. Request shape unconfirmed",
 	},
 	{
 		Pattern: "%.znc.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "web- prefix confirmed by decompile (see api-lp1.znc above); " +
-			"wildcarded rather than a literal web-lp1 entry since the region " +
-			"code was seen as \"%\" (unsubstituted) in the binary, not a " +
-			"specific literal",
+		Comment: "web view backend for the smartphone app (wildcard, since the region code is a placeholder in the binary)",
 	},
 
-	// ---- Found 2026-09-20: not previously listed at all -----------------
-	// A full sweep of every system title's decrypted executable (not just
-	// the account/friends/npns modules phase 1 already needed) for
-	// *.nintendo.net/*.nintendo.com strings turned up three hosts with no
-	// entry anywhere in this file. None leaked to real Nintendo regardless
-	// -- isNintendoOwnedDomain's catch-all already blackholes any unlisted
-	// *.nintendo.net host -- but they were invisible to anyone reading this
-	// list, and the catch-all doesn't answer requests, only refuses
-	// connections. Stubbed rather than left to the catch-all for the same
-	// reason as every other purpose-unconfirmed host here: an answer risks
-	// less than a refusal does. Purpose unconfirmed for all three; no
-	// capture.
+	// ---- Hosts that were not listed ---------------------------------------
+	// Sweeping every system module for *.nintendo.net and *.nintendo.com strings
+	// turned up three hosts with no entry in this file. None leaked to real
+	// Nintendo regardless, because isNintendoOwnedDomain's catch-all blackholes
+	// any unlisted *.nintendo.net host, but they were invisible to anyone reading
+	// this list, and the catch-all refuses connections instead of answering them.
+	// They are stubbed for the same reason as every other host whose purpose is
+	// unconfirmed: an answer risks less than a refusal does.
 	{
 		Pattern: "api.sect.srv.nintendo.net",
 		Service: ServiceStubs, TLS: true,
-		Comment: "title 0100000000000012, decompiled 2026-09-20: implements " +
-			"nn::anif (\"Assigned Network Interface\" -- Assign/GetUserInfo/" +
-			"GetStateChangedEvent/AddSession), connected to dns:priv, nsd and " +
-			"ifcfg. Network interface/connection-profile assignment, not account " +
-			"settings sync as the bare path (/v1/setting) first suggested -- " +
-			"corrected after actually decompiling it rather than guessing from " +
-			"the endpoint name alone.",
+		Comment: "network interface assignment, not account settings sync as the bare path (/v1/setting) suggests",
 	},
 	{
 		Pattern: "%.sata.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "OLSC's own host family -- title 010000000000003E, decompiled " +
-			"2026-09-20, implements nn::olsc (\"Online Save Cloud\", the OS-level " +
-			"per-game save backup tied to a Nintendo Switch Online subscription -- " +
-			"system-wide, not the same thing as any one game's own cloud-save " +
-			"RPCs). Phase 4 (docs/ROADMAP.md) now implements the two specific " +
-			"hosts under this family with a confirmed shape -- see the literal " +
-			"permission.lp1.sata.srv.nintendo.net override just below, which MUST " +
-			"stay after this wildcard: Atmosphere applies the last matching line, " +
-			"and this broad entry would otherwise win back over it. Everything " +
-			"else under this wildcard remains stubbed, including a second, " +
-			"unrelated purpose found the same night in qlaunch's own decompile: " +
-			"\"pp.%.sata.srv.nintendo.net/noa/<locale>.html\" (\"pp\" almost " +
-			"certainly privacy policy; en_US/fr_CA/es_LA/pt_BR/de_DE/en_GB locale " +
-			"pages all referenced) -- matched generically by this same wildcard " +
-			"(matchesSuffix matches any subdomain depth), so no pattern change was " +
-			"needed for it, just this note that the family serves more than one " +
-			"purpose. Referenced as \"...hac.%.sata.srv.nintendo.net\"; the " +
-			"wildcard is Nintendo's own environment placeholder (compare " +
-			"receive-%.dg.srv.nintendo.net above), but there may be another " +
-			"variable segment before \"hac\" this pattern does not capture -- the " +
-			"DNS suffix match only needs the fixed tail, so a narrower prefix guess " +
-			"was not worth making.",
+		Comment: "OLSC's host family (cloud save backup). permission.lp1.sata.srv.nintendo.net just below is served by scsi and MUST stay after this wildcard, because Atmosphere applies the last matching line. Everything else under it is stubbed, including the privacy policy pages (pp.%.sata.srv.nintendo.net)",
 	},
 	{
 		// Same wiki page as storage.hac.lp1.scsi.srv.nintendo.net above: "SATA
@@ -524,55 +414,31 @@ var Hosts = []Host{
 		// above -- see that entry's own comment for why.
 		Pattern: "permission.lp1.sata.srv.nintendo.net",
 		Service: ServiceSCSI, TLS: true,
-		Comment: "OLSC save data sets / key package (phase 4)",
+		Comment: "OLSC save data sets / key package",
 	},
 	{
 		Pattern: "%.sprofile.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true,
-		Comment: "same title (010000000000003E) as sata above, which also implements " +
-			"nn::sprofile (ISProfileBgAgentForSystemProcess, IBgAgentContoller) " +
-			"alongside olsc. Full path referenced: /v1/device/metadata -- sounds " +
-			"like device-level analytics/telemetry given the adjacency to erpt's " +
-			"own sprofile interfaces (see erpt's own title), which would argue for " +
-			"null-routing like the telemetry hosts below instead of stubbing -- but " +
-			"that is still a guess, not a confirmed read, so it gets the same " +
-			"conservative default as sata and sect until a capture says otherwise.",
+		Comment: "device profile metadata (/v1/device/metadata), probably analytics. Stubbed conservatively, like sata and sect",
 	},
 
-	// ---- NPLN, the JSON front (phase 2) ---------------------------------
+	// ---- NPLN, the JSON front ---------------------------------------------
 	// Splatoon 3 does NOT open with gRPC. It first talks ordinary JSON over
 	// HTTPS to vermillion and penne, and only then opens the gRPC channel to
-	// the tenant host below. Establishing that reclassified three hosts that
-	// were listed here as push notifications and telemetry.
+	// the tenant host below.
 	//
 	// These are ServiceNPLNRest, not ServiceNPLN, because they need proxy_pass
-	// and HTTP/1.1 rather than grpc_pass and HTTP/2 -- see the ServiceNPLNRest
+	// and HTTP/1.1 rather than grpc_pass and HTTP/2; see the ServiceNPLNRest
 	// doc comment for what happens when the two are swapped.
 	{
 		Pattern: "gw.hac.lp1.vermillion.srv.nintendo.net",
 		Service: ServiceNPLNRest, TLS: true,
-		Comment: "NPLN device initialisation and account config. Was listed as " +
-			"'background game registration/telemetry, purpose unconfirmed' and " +
-			"stubbed. That also explains the open question recorded against it: a " +
-			"2026-08-27 tcpdump of a real, successful Nintendo Account import " +
-			"showed 16.5KB exchanged here mid-flow, 'not the negligible amount a " +
-			"background-only contact would suggest'. It is a device-init handshake " +
-			"that expects real answers, which is why a stub did not satisfy it. " +
-			"Request and response bodies are still TODO(capture-needed) -- see " +
-			"internal/nplnrest",
+		Comment: "NPLN device initialisation and account config. A device-init handshake that expects real answers, so a bare stub isn't enough. See internal/nplnrest",
 	},
 	{
 		Pattern: "val.hac.lp1.penne.srv.nintendo.net",
 		Service: ServiceNPLNRest, TLS: true,
-		Comment: "NPLN login tickets, and the frontline FQDN the console is told " +
-			"to open its persistent connection to. Was listed as 'push " +
-			"notifications (Penne) validation'. The path is very likely " +
-			"POST /v1/login_tickets: found 2026-09-20 in a decompile of the " +
-			"operator's own console's npns sysmodule, which shares this exact " +
-			"ticket-then-frontline mechanism (confirmed by the shared field names " +
-			"-- see internal/nplnrest.go's penne() for the full citation) but is " +
-			"not itself an NPLN host, so this is strong circumstantial evidence " +
-			"for the path here rather than a direct capture of it.",
+		Comment: "NPLN login tickets (POST /v1/login_tickets) and the frontline hostname the console is told to open its persistent connection to",
 	},
 	{
 		// fro-N is a family: the frontline host is whichever one penne names in
@@ -588,14 +454,10 @@ var Hosts = []Host{
 			"fro-3.hac.lp1.penne.srv.nintendo.net",
 			"fro-4.hac.lp1.penne.srv.nintendo.net",
 		},
-		Comment: "NPLN persistent frontline connection. The console holds this " +
-			"open and treats a close as a failure (2307-2103 on Splatoon 2, " +
-			"2321-* on Splatoon 3), so it is a long-lived streaming response, not " +
-			"a request/response endpoint. Was listed as 'push notifications " +
-			"(Penne), purpose unconfirmed'",
+		Comment: "NPLN persistent frontline connection. The console holds it open and treats a close as a failure (2307-2103 on Splatoon 2, 2321-* on Splatoon 3), so it is a long-lived streaming response, not a request/response endpoint",
 	},
 
-	// ---- NPLN, the gRPC tenant (phase 2) --------------------------------
+	// ---- NPLN, the gRPC tenant --------------------------------------------
 	// The tenant hostname is <tenant id>.lp1.t.npln.srv.nintendo.net. The
 	// Splatoon 3 tenant is t-dce9377b-lp1. gamesync.npln.nintendo.net does not
 	// end in srv.nintendo.net, so a *srv.nintendo.net wildcard misses it.
@@ -615,14 +477,13 @@ var Hosts = []Host{
 
 	// ---- NEX game servers ---------------------------------------------
 	// A Switch finds a NEX title's game server by DNS alone:
-	// g<game server id>-lp1.s.n.srv.nintendo.net, port 443, a WebSocket
-	// (Kinnay, NEX Overview). Both halves of the game server -- login and
-	// play -- are on this one name; see internal/rendezvous.
+	// g<game server id>-lp1.s.n.srv.nintendo.net, port 443, a WebSocket (see the
+	// NEX overview on Kinnay's wiki). Both halves of the game server, login and
+	// play, are on this one name; see internal/rendezvous.
 	//
-	// NoClientCertRequest and NoHTTP2 follow the only server Splatoon 2 is
-	// known to work against: NextendoNetwork's (facts only) never sends a
-	// CertificateRequest and offers only http/1.1 in ALPN, because a
-	// WebSocket upgrade is an HTTP/1.1 exchange.
+	// NoClientCertRequest and NoHTTP2 follow what Splatoon 2's server needs: it
+	// never sends a CertificateRequest and offers only http/1.1 in ALPN, because
+	// a WebSocket upgrade is an HTTP/1.1 exchange.
 	{
 		Pattern: "g2df33d01-lp1.s.n.srv.nintendo.net",
 		Service: ServiceNEX, TLS: true, NoClientCertRequest: true, NoHTTP2: true,
@@ -630,24 +491,15 @@ var Hosts = []Host{
 	},
 
 	// ---- Telemetry: redirected to a sink, not null-routed -----------------
-	// Used to be null-routed, reasoned as "tells Nintendo nothing either
-	// way, and this way it does not fill our logs" -- and reasoned, wrongly,
-	// that null-routing them is what Prelude-Nro does too. Checked against
-	// Prelude's actual current source rather than assumed: it does not.
-	// Prelude's own commit history (facts only, not its code) documents a
-	// real hardware measurement: the NSO/friends applet
-	// (0100000000000816) waits SYNCHRONOUSLY for an HTTP response from
-	// these two hosts before it loads its own main module (lp1.nso).
-	// Null-routed, the connection hangs until timeout and the applet gives
-	// up without ever reaching lp1.nso -- no profile icon handling, and
-	// plausibly more of the applet than that, never initialises. Their fix
-	// is a sink: redirect both hosts to a server that reads the body,
-	// discards it, and answers 200 immediately. Telemetry still never
-	// reaches real Nintendo -- only the synchronous wait the applet blocks
-	// on is satisfied. See internal/stubs.telemetrySink.
-	// A 2026-09-24 Ethernet trace showed receive-lp1.dg complete TLS then
-	// close before sending HTTP, matching bcat-topics below. Neither service
-	// uses a client certificate here, so nginx must not request one.
+	// These used to be null-routed, on the theory that it tells Nintendo nothing
+	// either way and keeps our logs quiet. But the Switch Online/friends applet
+	// (0100000000000816) waits SYNCHRONOUSLY for an HTTP answer from these two
+	// hosts before it loads its own main module, so a null route makes the connection
+	// hang until it times out and the applet gives up before it initialises. So both
+	// hosts are redirected to a server that reads the body, discards it and
+	// answers 200 immediately. Telemetry still never reaches real Nintendo; only
+	// the wait the applet blocks on is satisfied. See internal/stubs.telemetrySink.
+	// Neither host uses a client certificate, so nginx must not request one.
 	{
 		Pattern: "receive-%.dg.srv.nintendo.net",
 		Service: ServiceStubs, Wildcard: true, TLS: true, NoClientCertRequest: true,
@@ -662,37 +514,22 @@ var Hosts = []Host{
 	},
 
 	// ---- BCAT: answered with 304, never left unreachable -----------------
-	// Observed 2026-08-26 reaching a real Nintendo IP (88.221.83.x)
-	// during a real-hardware capture: it was not in this list at all, so with
-	// add_defaults_to_dns_hosts off it fell through to ordinary upstream DNS
-	// instead of being redirected or null-routed. That is a violation of this
-	// deployment's isolation policy (see CLAUDE.md and the
-	// emuMMC-never-talks-to-real-Nintendo rule).
+	// These three hosts must stay reachable. Null-routing them looks safe but
+	// isn't: Splatoon 3 raises 2122-2403 (module 122 is bcat) when bcat-list-lp1
+	// is unreachable, and a null-routed topics host fails the console's very
+	// first boot request. A generic 304 Not Modified on every request tells the
+	// console "your cache is current" and it falls back to whatever it already
+	// has locally. That sends no data; it only stops the absence from being a hard
+	// error. A host missing from this list entirely would fall through to ordinary
+	// upstream DNS and reach real Nintendo, which this deployment's isolation
+	// policy rules out.
 	//
-	// These three used to be null-routed, reasoned as the safe choice while
-	// GRID0+ cannot answer BCAT usefully. That reasoning turned out to be
-	// wrong: NextendoNetwork/Prelude's own commit history (facts only, not
-	// its code) documents a real, hard failure from exactly this choice --
-	// Splatoon 3 raised 2122-2403 (module 122 = bcat) when bcat-list-lp1 was
-	// unreachable, not silence. Their fix, applied to all three hosts, is a
-	// generic 304 Not Modified on every request: the console reads "your
-	// cache is current" and falls back to whatever it already has locally.
-	// This sends no data -- a player with nothing in their BCAT cache still
-	// gets nothing -- it only stops that absence from being a hard error.
-	// Reproduced independently on GRID0+'s own hardware on 2026-09-24 for
-	// bcat-topics-lp1 specifically (see internal/stubs.newsTopics): a real
-	// capture against Nextendo showed the identical 304-always shape, and
-	// null-routing it made the console's very first boot request fail
-	// outright. list/data get the same answer for the same reason, not
-	// because their own failure mode has been separately reproduced here.
+	// When bcat.seed_dir holds files for a title, list and data serve that
+	// content natively; internal/bcat.Probe is only a diagnostic an operator
+	// reaches for deliberately, not what these hosts answer with day to day.
 	//
-	// When bcat.seed_dir holds files for a title, list/data serve that
-	// content natively (TODO.md §2.4); internal/bcat.Probe is only a
-	// diagnostic an operator reaches for deliberately, not what these hosts
-	// answer with day to day.
-	// The 2026-09-24 Ethernet capture proved the topics host was reached but
-	// its TLS connection closed before HTTP; nginx had asked for a client
-	// certificate. Do not issue CertificateRequest on these CDN hosts.
+	// The CDN hosts must not request a client certificate: a TLS connection that
+	// is closed before any HTTP was sent is what a CertificateRequest causes here.
 	{
 		Pattern: "bcat-list-lp1.cdn.nintendo.net",
 		Service: ServiceStubs, TLS: true, NoClientCertRequest: true,
@@ -709,91 +546,82 @@ var Hosts = []Host{
 		Comment: "System news/topics feed -- confirmed real shape, 304, never null-routed",
 	},
 
-	// ---- eShop (phase 3) ------------------------------------------------
-	// Null-routed on purpose. Nothing exists behind these yet, and Phase 1 has
-	// no use for them at all, so there is no reason for a console pointed at
-	// GRID0+ to ever reach real Nintendo through them. Phase 3 flips these to
-	// ServiceEShop once the servers behind them exist. Having them here means
-	// the next person to work on phase 3 finds the list, and does not add
-	// `atumn` or `aqua` to it by mistake -- see the d4c note below, which is the
-	// one group in this file that stays different: those are used by background
-	// update checks today and must keep reaching real Nintendo, or the console
-	// ends up with a persistent broken-update flag that outlives switching back.
+	// ---- eShop ------------------------------------------------------------
+	// Null-routed on purpose. GRID0+ doesn't implement the eShop, so there is no
+	// reason for a console pointed at it to reach real Nintendo through these
+	// hosts. They are listed so the next person who builds it finds them, and so
+	// `atumn` or `aqua` aren't added to this group by mistake: see the d4c note
+	// below, which covers system updates and is a different group.
 	//
 	// If you want this console's eShop to keep working normally against real
-	// Nintendo while only Phase 1 is in use, switch these back to
-	// ServicePassthrough -- but that means this console's traffic for these
-	// hosts, including the Nintendo Account sign-in flow, goes to real Nintendo,
-	// not GRID0+.
+	// Nintendo, switch these back to ServicePassthrough. That means this console's
+	// traffic for these hosts, including the Nintendo Account sign-in flow, goes to
+	// real Nintendo, not GRID0+.
 	//
-	// The storefront is a WEBSITE: the applet loads bugyo/ashigaru and renders
-	// it, exposing system functions through a `window.nx` bridge. So phase 3 is
-	// a web app plus a commerce API, not a native UI.
+	// The storefront is a WEBSITE: the applet loads bugyo/ashigaru and renders it,
+	// exposing system functions through a `window.nx` bridge, so building it means a
+	// web app plus a commerce API, not a native UI.
 	// https://github.com/kinnay/NintendoClients/wiki/eShop-Applet-(Switch)
 	{
 		Pattern: "bugyo.hac.lp1.eshop.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: the eShop storefront (a website). Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: the eShop storefront (a website). Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "hac.lp1.savanna.srv.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: the newer eShop applet. Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: the newer eShop applet. Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "ecs-lp1.hac.shop.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: commerce (ECS). Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: commerce (ECS). Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "ias-lp1.hac.shop.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: commerce (IAS). Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: commerce (IAS). Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "atum.hac.lp1.d4c.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: GAME content, addressed by content id. NOT a system update host. Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: GAME content, addressed by content id. NOT a system update host. Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "tagaya.hac.lp1.eshop.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: latest version per title. Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: latest version per title. Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "idbe-hac.cdn.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "phase 3: title icons. Not built; null-routed rather than reaching real Nintendo",
+		Comment: "eShop: title icons. Not served by GRID0+; null-routed rather than reaching real Nintendo",
 	},
 	{
 		Pattern: "cdn.accounts.nintendo.com",
 		Service: ServiceBlackhole,
-		Comment: "static assets for the Nintendo Account sign-in page — observed in a " +
-			"2026-08-25 SNI capture, not previously listed. Not built; null-routed rather than reaching real Nintendo",
+		Comment: "static assets for the Nintendo Account sign-in page. Null-routed so it never reaches real Nintendo",
 	},
 
 	// ---- System updates: null-routed on this deployment -----------------
-	// The d4c hosts serve SYSTEM UPDATES: sun, atumn and aqua. The general
-	// advice for a console that moves back and forth between GRID0+ and
-	// real Nintendo is to leave these passthrough: the nim sysmodule stores a
-	// persistent flag when the update check fails, and that flag survives
-	// switching DNS back to Nintendo's servers, which is a genuinely
-	// expensive mistake on that kind of setup.
+	// The d4c hosts serve SYSTEM UPDATES: sun, atumn and aqua. The general advice
+	// for a console that moves back and forth between GRID0+ and real Nintendo is to
+	// leave these passthrough: the nim sysmodule stores a persistent flag when the
+	// update check fails, and that flag survives switching DNS back to Nintendo's
+	// servers, which is an expensive mistake on that kind of setup.
 	//
-	// It does not apply here. This host list is generated for an emuMMC that
-	// is permanently and exclusively GRID0+'s — it never points at real
-	// Nintendo again, so there is no "switching back" for the flag to
-	// survive into. Given that, passthrough only means one thing: real
-	// Nintendo traffic leaving this console for no benefit. Null-routed
-	// instead, consistent with every other host nothing is built for.
+	// It does not apply here. This host list is generated for an emuMMC that is
+	// permanently and exclusively GRID0+'s, so there is no "switching back" for the
+	// flag to survive into. Given that, passthrough would only mean real Nintendo
+	// traffic leaving this console for no benefit, so they are null-routed like every
+	// other host nothing is built for.
 	//
-	// If you ever reuse this host list for a console that DOES move back and
-	// forth between GRID0+ and real Nintendo, put these back to
-	// ServicePassthrough first — check TestSystemUpdateHostsAreNullRouted for
-	// the reasoning captured at the time this was changed.
+	// If you ever reuse this host list for a console that DOES move back and forth
+	// between GRID0+ and real Nintendo, put these back to ServicePassthrough first;
+	// TestSystemUpdateHostsAreNullRouted records the reasoning.
 	//
-	// Note the trap: `atum` (game content, phase 3, listed above) and `atumn`
-	// (system update content) differ by one letter and share the d4c domain.
+	// Note the trap: `atum` (game content, listed above) and `atumn` (system update
+	// content) differ by one letter and share the d4c domain.
 	{
 		Pattern: "sun.hac.lp1.d4c.nintendo.net",
 		Service: ServiceBlackhole,
@@ -814,16 +642,7 @@ var Hosts = []Host{
 	{
 		Pattern: "fw-api.lp1.nso.nintendo.net",
 		Service: ServiceBlackhole,
-		Comment: "the Nintendo Switch Online app's own backend (a friend/parental-control " +
-			"whitelist-style API, by name). Found missing entirely -- not passthrough, " +
-			"not blackholed, just absent -- in a 2026-09-24 Ethernet capture: the console " +
-			"resolved it via real DNS and completed a full real TLS handshake with real " +
-			"Nintendo's own infrastructure, exchanging application data, then closing " +
-			"cleanly. That closes cleanly and is unrelated to any other issue investigated " +
-			"that day (it completes well before the point where a separate, still-open " +
-			"Splatoon 3 hall issue stalls) -- but it is still a real breach of this " +
-			"deployment's own isolation rule: this emuMMC never talks to real Nintendo, " +
-			"for anything, ever. Null-routed like every other host nothing is built for.",
+		Comment: "the Switch Online app's own backend. Null-routed, because this console never talks to real Nintendo",
 	},
 }
 
@@ -979,14 +798,12 @@ func (h Host) dnsSuffix() (string, bool) {
 // nintendoOwnedDomains are domains Nintendo is known to operate, beyond the
 // specific hostnames explicitly listed in Hosts.
 //
-// Sourced from the community-maintained "block everything Nintendo" hosts
-// list (the kind Prelude/Nextendo-style tooling ships), not invented for this
-// project — that list has had many more consoles' worth of traffic to find
-// gaps in than this one has. A regional Nintendo domain not on this list is
-// still possible; the two hosts that prompted this fallback
-// (cdn.accounts.nintendo.com, fro-1.hac.lp1.penne.srv.nintendo.net) were
-// found by a live capture, not by reasoning about the domain in advance, and
-// more probably exist.
+// It comes from the community-maintained "block everything Nintendo" hosts lists,
+// not from guesswork: those lists have had far more consoles' worth of traffic to
+// find gaps in than this one has. A regional Nintendo domain not on this list is
+// still possible; the two hosts that prompted this fallback (cdn.accounts.nintendo.com,
+// fro-1.hac.lp1.penne.srv.nintendo.net) were found by watching real traffic, not by
+// reasoning about the domain in advance, and more probably exist.
 var nintendoOwnedDomains = []string{
 	"nintendo.com",
 	"nintendo.net",

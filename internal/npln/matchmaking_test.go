@@ -207,8 +207,8 @@ func TestTwoPlayersQueueAndBothReceiveTheSameSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchmakingTicket (two): %v", err)
 	}
-	// Even the ticket that completes a match is answered SEARCHING: the console only learns
-	// the result from Track (2026-09-27 hardware; see CreateMatchmakingTicket).
+	// Even the ticket that completes a match is answered SEARCHING: the console only
+	// learns the result from Track (see CreateMatchmakingTicket).
 	if second.GetState() != mmpb.MatchmakingTicket_SEARCHING {
 		t.Fatalf("the ticket that completes a match should answer SEARCHING from Create, got %v", second.GetState())
 	}
@@ -706,13 +706,12 @@ func TestAllocateIceServerSetReturnsWhatWasConfigured(t *testing.T) {
 }
 
 // TestListLatencyMeasurementServersFallsBackToPublicIPWhenUnconfigured is the
-// regression test for the crash-loop this RPC being Unimplemented caused on
-// real hardware (2026-09-23): the console called it right after
-// IssuePrearrangedUserToken, before matchmaking, and treated the refusal as a
-// communication error, reloading the hall forever. Unlike AllocateIceServerSet,
-// an empty answer here is not a valid "LAN only" default -- see the RPC's own
-// doc comment -- so an unconfigured deployment must still get a non-empty list
-// from network.public_ip.
+// regression test for the crash-loop this RPC being Unimplemented causes: the
+// console calls it right after IssuePrearrangedUserToken, before matchmaking, and
+// treats the refusal as a communication error, reloading the hall forever. Unlike
+// AllocateIceServerSet, an empty answer here is not a valid "LAN only" default --
+// see the RPC's own doc comment -- so an unconfigured deployment must still get a
+// non-empty list from network.public_ip.
 func TestListLatencyMeasurementServersFallsBackToPublicIPWhenUnconfigured(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("player", "device")
@@ -785,13 +784,12 @@ func TestRegionalLatencyServersMatchReferenceResourceNames(t *testing.T) {
 	}
 }
 
-// TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented is the regression
-// test for the failure NextendoNetwork/splatoon-3 measured on real hardware
-// against a different NPLN title: a client that calls this RPC at all reads
-// Unimplemented as a hard failure of whatever screen triggered the call, where
-// an empty page reads as "nothing to show" and lets the console carry on.
-// GRID0+ forms every session through matchmaking tickets and never has a
-// public one to list, so the empty answer is also simply true here.
+// TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented is the regression test
+// for a failure seen on real hardware: a client that calls this RPC at all reads
+// Unimplemented as a hard failure of whatever screen triggered the call, where an
+// empty page reads as "nothing to show" and lets the console carry on. GRID0+ forms
+// every session through matchmaking tickets and never has a public one to list, so
+// the empty answer is also simply true here.
 func TestQueryGameSessionsAnswersEmptyRatherThanUnimplemented(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("browser", "device-browser")
@@ -842,14 +840,13 @@ func ticketFor(mode string) *mmpb.CreateMatchmakingTicketRequest {
 // awaitSucceeded reads a ticket stream until the ticket succeeds.
 //
 // Bounded by the test's own deadline rather than looping forever: a stream that
-// never delivers is exactly the bug this is here to catch, and a hung test
-// reports it far less clearly than a failed one.
-// TestTrackMatchmakingTicketEndsWithOKShortlyAfterSucceeded pins what the
-// console waits for: Splatoon 3 only calls gamesync IssueToken once the server
-// has ended this stream with OK (Nextendo regular-match capture, 2026-09-30:
-// IssueToken 30-50 ms after every close). Held open, a regular match never
-// leaves the search screen. Not closed instantly either: a short hold keeps a
-// 2026-08-13 Nextendo note's concern about racing the console's transport.
+// never delivers is exactly the bug this is here to catch, and a hung test reports
+// it far less clearly than a failed one.
+// TestTrackMatchmakingTicketEndsWithOKShortlyAfterSucceeded pins what the console
+// waits for: Splatoon 3 only calls gamesync IssueToken once the server has ended this
+// stream with OK (IssueToken follows 30-50 ms after every close). Held open, a regular
+// match never leaves the search screen. Not closed instantly either: a short hold
+// avoids racing the console's transport.
 func TestTrackMatchmakingTicketEndsWithOKShortlyAfterSucceeded(t *testing.T) {
 	h := newHarness(t)
 	h.srv.succeededCloseAfter = 300 * time.Millisecond
@@ -980,8 +977,8 @@ func trackResult(
 
 // A ticket that completed its match inside Create must still stream the whole
 // SEARCHING, PLACING, SUCCEEDED sequence, with field 9 from PLACING on and the
-// config resolved off the tenants/current alias. Opening on SUCCEEDED left both
-// consoles holding a session they never used (2026-09-27 hardware).
+// config resolved off the tenants/current alias. Opening on SUCCEEDED leaves both
+// consoles holding a session they never used.
 func TestATicketMatchedOnCreateStreamsSearchingPlacingSucceeded(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("player-one", "device-one")
@@ -1026,8 +1023,8 @@ func TestATicketMatchedOnCreateStreamsSearchingPlacingSucceeded(t *testing.T) {
 }
 
 // A fest the operator extended past its standard 48 h still takes tickets:
-// on 2026-10-11 every fest ticket answered NotFound (2321-1536) after the
-// standard end, while the game showed the extended fest still running.
+// otherwise every fest ticket answers NotFound (2321-1536) after the standard end,
+// while the game shows the extended fest still running.
 func TestAnExtendedFestStillTakesTicketsAfterItsStandardEnd(t *testing.T) {
 	h := newHarness(t)
 	h.createUser("player", "device")

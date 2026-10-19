@@ -149,7 +149,7 @@ func Resolve(p db.Presence, now time.Time, reportTTL, consoleTTL time.Duration) 
 // Shared between BAAS's friend list (internal/baas/friends.go) and NPLN's
 // Friends service, which both need the same answer to "may X see Y online" --
 // the latter to set FriendUser.Relationship's presence_deliverable and
-// presence_receivable, per docs/ROADMAP.md#2.5.
+// presence_receivable.
 func Visible(ctx context.Context, store db.Store, owner db.User, viewerID string) bool {
 	switch owner.Permissions.Presence {
 	case "SELF":

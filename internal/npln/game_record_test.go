@@ -7,8 +7,8 @@ import (
 )
 
 // TestInitialVsMarksEveryModesRatingInitialised: without the
-// mmr_initialized_<mode> flags the console re-sent initial_vs forever from
-// the hall (2026-09-25 hardware).
+// mmr_initialized_<mode> flags the console re-sends initial_vs forever from the
+// hall.
 func TestInitialVsMarksEveryModesRatingInitialised(t *testing.T) {
 	const uid = "gr00000000000001"
 	h := newHarness(t)

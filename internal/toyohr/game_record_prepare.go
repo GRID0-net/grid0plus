@@ -12,12 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// The five GameRecord calls below had no known shape anywhere. Their wire
+// The five GameRecord calls below had no public documentation. Their wire
 // shapes -- field numbers and types, requests and responses -- were recovered
-// from the game's own generated parsers (Splatoon 3 28C4287A; see
-// docs/CAPTURES/README.md, "GameRecord calls recovered from the game's
-// parsers"). What a real server puts in each answer is not known: none has
-// ever been called on grid0, so every handler logs its full request.
+// from the game's own generated parsers. What a real server puts in each answer
+// is not known, so every handler logs its full request.
 
 // PrepareWeaponPowerMeasurement answers with the player's
 // WeaponPowerMeasurement document for one weapon, creating it empty if
@@ -25,7 +23,7 @@ import (
 // services/GameRecord/users/%s/WeaponPowerMeasurement/%d and already reads
 // them through ugcstore, answered named and empty.
 //
-// TODO(capture-needed): the fields a real server fills in, and whether field
+// UNCONFIRMED: the fields a real server fills in, and whether field
 // 2 of the request really is the weapon id. Change: this function.
 func (s gameRecordService) PrepareWeaponPowerMeasurement(
 	ctx context.Context, req *toyohrpb.PrepareWeaponPowerMeasurementRequest,
@@ -41,7 +39,7 @@ func (s gameRecordService) PrepareWeaponPowerMeasurement(
 // The game carries no document path for this kind; the name used here
 // mirrors the Weapon and Fest ones, keyed by the request's integer field.
 //
-// TODO(capture-needed): the document name, what request fields 2 and 3 are,
+// UNCONFIRMED: the document name, what request fields 2 and 3 are,
 // and the fields a real server fills in. Change: this function.
 func (s gameRecordService) PrepareBankaraPowerMeasurement(
 	ctx context.Context, req *toyohrpb.PrepareBankaraPowerMeasurementRequest,
@@ -55,7 +53,7 @@ func (s gameRecordService) PrepareBankaraPowerMeasurement(
 
 // PrepareLeaguePowerMeasurement answers like PrepareBankaraPowerMeasurement.
 //
-// TODO(capture-needed): as PrepareBankaraPowerMeasurement, plus what the
+// UNCONFIRMED: as PrepareBankaraPowerMeasurement, plus what the
 // oneof between request fields 1 and 4 selects. Change: this function.
 func (s gameRecordService) PrepareLeaguePowerMeasurement(
 	ctx context.Context, req *toyohrpb.PrepareLeaguePowerMeasurementRequest,
@@ -100,7 +98,7 @@ func (s gameRecordService) preparePowerMeasurement(
 
 // PrepareTag answers with an empty tag.
 //
-// TODO(capture-needed): what the three fields of the tag (string, repeated
+// UNCONFIRMED: what the three fields of the tag (string, repeated
 // string, string) hold. Change: this function.
 func (s gameRecordService) PrepareTag(
 	ctx context.Context, req *toyohrpb.PrepareTagRequest,
@@ -115,7 +113,7 @@ func (s gameRecordService) PrepareTag(
 
 // ResetUdemae answers with an empty response and changes nothing.
 //
-// TODO(capture-needed): what a real server resets, and what the response's
+// UNCONFIRMED: what a real server resets, and what the response's
 // integer, map and string carry. Change: this function.
 func (s gameRecordService) ResetUdemae(
 	ctx context.Context, req *toyohrpb.ResetUdemaeRequest,

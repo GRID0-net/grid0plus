@@ -7,24 +7,23 @@ import (
 
 // Splatfest Open is two matchmaking steps, the same shape as Tricolor's.
 //
-// Splatoon 3 picks the config in FUN_71032c1d20 (FestRegular = match kind 6):
-// a player or a squad of friends first queues fest_match_regular_normal_config,
-// a lobby that is ONE side, and the host then hands the whole lobby to
-// fest_match_regular_direct_pair_config, where it meets a lobby of the other
-// fest team. The lobby only proceeds at exactly 4 players, or exactly 2
-// (ready check at 0x71038aab34, FUN_71038a90a0); the delegated squad must be
-// 4 or 2 again (0x71038af140). Any other size waits in the lobby.
+// Splatoon 3 picks the config for FestRegular (match kind 6): a player or a squad
+// of friends first queues fest_match_regular_normal_config, a lobby that is ONE
+// side, and the host then hands the whole lobby to
+// fest_match_regular_direct_pair_config, where it meets a lobby of the other fest
+// team. The lobby only proceeds at exactly 4 players, or exactly 2; the delegated
+// squad must be 4 or 2 again. Any other size waits in the lobby.
 //
-// So this server forms regular_normal lobbies of one fest team, 4 or 2 in
-// size, and always in matched pairs: a lobby of 4 Bravo is only formed when
-// another team can form a lobby of 4 too, otherwise it would wait in
-// direct_pair for an opponent that may never come. A squad is never split,
-// so a squad of 3 waits for one more player of its team.
+// So this server forms regular_normal lobbies of one fest team, 4 or 2 in size,
+// and always in matched pairs: a lobby of 4 Bravo is only formed when another team
+// can form a lobby of 4 too, otherwise it would wait in direct_pair for an
+// opponent that may never come. A squad is never split, so a squad of 3 waits for
+// one more player of its team.
 //
-// One exception keeps the smallest games playable: when no team pair can
-// make even two-player lobbies, one solo of each of two teams share a mixed
-// lobby of 2, which the game accepts and re-queues as a lone squad; direct_pair
-// plays that squad alone with a fest-team slot each (1 v 1).
+// One exception keeps the smallest games playable: when no team pair can make even
+// two-player lobbies, one solo of each of two teams share a mixed lobby of 2, which
+// the game accepts and re-queues as a lone squad; direct_pair plays that squad
+// alone with a fest-team slot each (1 v 1).
 
 // festUnit is one ticket and its squad members: always matched whole.
 type festUnit struct {

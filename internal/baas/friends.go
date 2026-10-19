@@ -21,17 +21,14 @@ const defaultFriendCount = 300
 const maxFriendCount = 1000
 
 // defaultFriendRequestCount is the default page size for inbox and outbox.
-// Confirmed by the captures at docs/CAPTURES/raw/04-friend-requests-inbox.json
-// and 05-friend-requests-outbox.json.
 const defaultFriendRequestCount = 50
 
 // ---- GET /2.0.0/users/<id>/friends --------------------------------------
 
 // listFriends returns the caller's friend list with each friend's presence.
 //
-// Each entry is a relationship object wrapping the friend's profile. The
-// response is a CollectionEnvelope, confirmed by the capture at
-// docs/CAPTURES/raw/03-friends.json.
+// Each entry is a relationship object wrapping the friend's profile. The response is a
+// CollectionEnvelope.
 func (s *Server) listFriends(w http.ResponseWriter, r *http.Request, c *caller) {
 	if !s.requireSelf(w, r, c) {
 		return
@@ -130,10 +127,10 @@ func (s *Server) presenceVisibleTo(ctx context.Context, owner db.User, viewerID 
 // anything under /extras/<scope>/<key>.
 //
 // Both are per-direction: A marking B as a favourite, or as seen, says nothing
-// about what B sees. The extras paths are what the console itself sends -- a
-// 2026-09-23 hardware session showed it PATCH /extras/self/isConfirmed onto a
-// new friend, which this answered 400 until then. Their meaning is the
-// console's; this stores them and hands them back on the friend list.
+// about what B sees. The extras paths are what the console itself sends -- it
+// PATCHes /extras/self/isConfirmed onto a new friend, which must be accepted.
+// Their meaning is the console's; this stores them and hands them back on the
+// friend list.
 func (s *Server) patchFriend(w http.ResponseWriter, r *http.Request, c *caller) {
 	if !s.requireSelf(w, r, c) {
 		return
@@ -351,32 +348,29 @@ func (s *Server) getRelationship(w http.ResponseWriter, r *http.Request, c *call
 
 // createFriendRequestBody is the request body.
 //
-// TODO(capture-needed): undocumented. The friends applet can add a friend two
-// ways — by typing a friend code, and by picking somebody the console already
-// knows about — so both a code and a user id are accepted. Form encoding and
-// JSON are both accepted for the same reason: which one the sysmodule uses is
-// not documented, and refusing the wrong guess would be a dead end during
-// bring-up.
+// UNCONFIRMED: undocumented. The friends applet can add a friend two ways -- by
+// typing a friend code, and by picking somebody the console already knows about
+// -- so both a code and a user id are accepted. Form encoding and JSON are both
+// accepted for the same reason: which one the sysmodule uses is not documented,
+// and refusing the wrong guess would be a dead end during bring-up.
 //
-// ReceiverID is the shape actually measured from a real console on
-// 2026-09-24, sending by friend code: after the console resolves a friend
-// code to a profile itself (the preceding GET /1.0.0/users and
-// GET /2.0.0/users/<id>/relationships/<id> calls), the create POST names the
-// target directly, not by code, with the exact real body:
+// ReceiverID is the shape a real console sends when adding by friend code: after
+// the console resolves a friend code to a profile itself (the preceding GET
+// /1.0.0/users and GET /2.0.0/users/<id>/relationships/<id> calls), the create
+// POST names the target directly, not by code, with this body:
 //
 //	{"channels":["FRIEND_CODE"],"senderId":"<caller>","receiverId":"<target>",
 //	 "extras":{"sender":{"route:sender":"me"}}}
 //
-// i.e. the same senderId/receiverId/channels/extras shape
-// FriendRequestResponse itself carries, not a lookup payload. FriendCode/
-// UserID/NSAID were this server's own pre-capture guess at what a create
-// request would look like and were never confirmed; kept alongside
-// ReceiverID rather than removed, since nothing has shown they are wrong,
-// only that they are not what this particular flow (friend-code entry) uses.
-// senderId is read but not required to equal the caller: the caller's own
-// identity is what authorizes the request either way (requireSelf-style
-// fail-closed identity), so a mismatched senderId is not itself trusted for
-// anything, just present for symmetry with the response shape.
+// i.e. the same senderId/receiverId/channels/extras shape FriendRequestResponse
+// itself carries, not a lookup payload. FriendCode/UserID/NSAID were this
+// server's own guess at what a create request would look like; kept alongside
+// ReceiverID rather than removed, since nothing has shown they are wrong, only
+// that they are not what this particular flow (friend-code entry) uses. senderId
+// is read but not required to equal the caller: the caller's own identity is what
+// authorizes the request either way (requireSelf-style fail-closed identity), so
+// a mismatched senderId is not itself trusted for anything, just present for
+// symmetry with the response shape.
 type createFriendRequestBody struct {
 	// FriendCode is the twelve-digit code, with or without dashes and with or
 	// without the "SW-" prefix.
@@ -492,8 +486,7 @@ func (s *Server) sendFriendRequest(ctx context.Context, fromID string, target db
 		return db.FriendRequest{}, err
 	}
 	s.log.Info("baas: friend request sent", "from", fromID, "to", target.ID, "request", req.ID)
-	// friends FUN_001a1ad0 reads the request under $.value, in the inbox's
-	// own item shape.
+	// The friends module reads the request under $.value, in the inbox's own item shape.
 	s.notify(ctx, target.ID, "friend_request_received", map[string]any{
 		"type": "friend_request_received", "value": s.friendRequestResponse(ctx, req, target.ID),
 	})
@@ -579,7 +572,7 @@ func (s *Server) resolveTarget(w http.ResponseWriter, r *http.Request, body crea
 
 // resolveFriendRequest accepts, denies or cancels a request.
 //
-// TODO(capture-needed): the body is undocumented. Both a JSON patch on /state
+// UNCONFIRMED: the body is undocumented. Both a JSON patch on /state
 // and a plain {"state":"..."} object are accepted, because either is a plausible
 // shape for a PATCH and guessing wrong would stop friend requests working with
 // nothing in the log to explain it.
@@ -726,8 +719,8 @@ func (s *Server) acceptRequest(ctx context.Context, req db.FriendRequest) error 
 	if err := s.store.SetFriendRequestState(ctx, req.ID, db.RequestAccepted, now); err != nil {
 		return err
 	}
-	// The sender's console refreshes its friend list on this (friends
-	// FUN_001a1bb0 reads nothing but the type).
+	// The sender's console refreshes its friend list on this (the friends module reads
+	// nothing but the type).
 	s.notify(ctx, req.FromUserID, "friend_request_authorized", map[string]any{"type": "friend_request_authorized"})
 	return nil
 }
@@ -773,10 +766,8 @@ func parseRequestState(r *http.Request) (string, error) {
 // internal constant, translated to what the console's own parser actually
 // recognizes. Every place a FriendRequestResponse.State is set must go
 // through this -- sending "ACCEPTED" instead of "AUTHORIZED" would be as
-// unrecognizable to the console reading it as sending "AUTHORIZED" instead
-// of "ACCEPTED" used to be to this server's own PATCH parser before
-// requestStateFromWire existed. See that function's doc comment for the
-// decompile this is drawn from.
+// unrecognizable to the console as sending "AUTHORIZED" instead of "ACCEPTED"
+// would be to this server's own PATCH parser. See requestStateFromWire.
 func requestStateToWire(internal string) string {
 	switch internal {
 	case db.RequestAccepted:
@@ -793,23 +784,19 @@ func requestStateToWire(internal string) string {
 // requestStateFromWire translates the console's own spelling onto this
 // server's internal state constants.
 //
-// A 2026-09-20 decompile of the operator's own console's friends sysmodule
-// found the real enum this PATCH body's "state" value is drawn from --
-// PENDING, AUTHORIZED, REJECTED, CANCELED, EXPIRED -- and three of the four
-// non-PENDING values are spelled differently from what this project first
-// guessed before any capture existed: AUTHORIZED, not ACCEPTED; REJECTED,
-// not DENIED; CANCELED (one L), not CANCELLED. Without this translation, a
-// real console accepting or declining a friend request would send a value
-// this server's switch in resolveFriendRequest does not recognize, fail
-// with errInvalidParams, and accepting a friend request would not work at
-// all -- not a cosmetic mismatch, a broken core feature. Both spellings are
-// still accepted below: the real one so a genuine console works, the old
-// guess so nothing already relying on it (tests, tooling) breaks.
+// The enum the PATCH body's "state" value is drawn from is PENDING, AUTHORIZED,
+// REJECTED, CANCELED, EXPIRED: AUTHORIZED, not ACCEPTED; REJECTED, not DENIED;
+// CANCELED (one L), not CANCELLED. Without this translation, a real console
+// accepting or declining a friend request would send a value this server's
+// switch in resolveFriendRequest does not recognize, fail with
+// errInvalidParams, and accepting a friend request would not work at all. Both
+// spellings are still accepted below: the real one so a genuine console works,
+// the old one so nothing already relying on it (tests, tooling) breaks.
 //
-// EXPIRED is deliberately not mapped to anything: nothing in this server
-// ever assigns it, a client has no reason to PATCH a request into it, and
-// unlike the other four it reads as a state the SERVER would set after a
-// timeout this project does not implement, not one a client requests.
+// EXPIRED is deliberately not mapped to anything: nothing in this server ever
+// assigns it, a client has no reason to PATCH a request into it, and unlike the
+// other four it reads as a state the SERVER would set after a timeout this
+// project does not implement, not one a client requests.
 func requestStateFromWire(raw string) string {
 	switch raw {
 	case "AUTHORIZED":
@@ -902,17 +889,13 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request, c *caller,
 // friendRequestResponse builds the wire object for a request.
 //
 // Sender and Receiver are filled for BOTH parties, including the caller's own
-// side -- this used to omit whichever side was the caller ("a pending request
-// is not yet a friendship, and the caller does not need their own profile
-// read back to them"), on the reasoning that the client would not need it.
-// That reasoning was never confirmed: the decompiled parser field list this
-// type's own doc comment carries (`$.items[*].receiver.nickname`,
+// side: the client's parser (`$.items[*].receiver.nickname`,
 // `$.items[*].sender.nickname`, ...) reads both sides unconditionally, with
-// nothing in it suggesting either is ever skipped. Real 2124-0104 and
-// 2121-0104 (switchbrew: ResultUserUnqualified, the client's own generic
-// "response didn't have what I needed" code, raised inside the applet, not
-// from a bad HTTP status) on the friend-requests screen are consistent with
-// exactly this: a parser reading a field this server was leaving unset.
+// nothing suggesting either is ever skipped. 2124-0104 and 2121-0104
+// (switchbrew: ResultUserUnqualified, the client's own generic "response didn't
+// have what I needed" code, raised inside the applet, not from a bad HTTP
+// status) on the friend-requests screen are consistent with a parser reading a
+// field this server leaves unset.
 func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest, callerID string) FriendRequestResponse {
 	out := FriendRequestResponse{
 		ID:         wireRequestID(req.ID),
@@ -928,19 +911,17 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 		// FRIEND_CODE when it creates a request and this server stores no
 		// channel, so it is echoed back for every request.
 		Channels: []any{"FRIEND_CODE"},
-		// Extras' three scopes (receiver/sender/senderAndReceiver) are the
-		// ones the decompiled parser reads
-		// (extras.receiver.read, extras.sender.route:*,
-		// extras.senderAndReceiver.route:*) -- this server keeps no read
-		// state for a request and no route:* content for either scope, so
-		// sender and senderAndReceiver stay real, present, empty maps.
-		// receiver.read is set false (unread) as the more useful default
-		// for a pending request the receiver has not acted on yet --
-		// TODO(capture-needed): whether the client treats an absent key
-		// as unread or read was never actually settled, so this specific
-		// value is this server's own defensible choice, not a confirmed
-		// one. Change here once a capture shows a real client marking a
-		// request read.
+		// Extras' three scopes (receiver/sender/senderAndReceiver) are the ones the
+		// parser reads (extras.receiver.read, extras.sender.route:*,
+		// extras.senderAndReceiver.route:*) -- this server keeps no read state for a
+		// request and no route:* content for either scope, so sender and
+		// senderAndReceiver stay real, present, empty maps. receiver.read is set false
+		// (unread) as the more useful default for a pending request the receiver has not
+		// acted on yet.
+		//
+		// UNCONFIRMED: whether the client treats an absent key as unread or read, so this
+		// value is this server's own choice. Change here once a real client is seen
+		// marking a request read.
 		Extras: map[string]map[string]any{
 			"receiver":          {"read": false},
 			"sender":            {},
@@ -975,8 +956,8 @@ func (s *Server) friendRequestResponse(ctx context.Context, req db.FriendRequest
 	return out
 }
 
-// notifyFriendDeleted tells the other side's consoles to drop the friend
-// (friends FUN_001a1c60 reads nothing but the type).
+// notifyFriendDeleted tells the other side's consoles to drop the friend (the
+// friends module reads nothing but the type).
 func (s *Server) notifyFriendDeleted(ctx context.Context, userID string) {
 	s.notify(ctx, userID, "friend_deleted", map[string]any{"type": "friend_deleted"})
 }

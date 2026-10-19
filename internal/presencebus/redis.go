@@ -13,9 +13,9 @@ import (
 
 // Redis is a Bus backed by Redis pub/sub.
 //
-// Use it as soon as more than one process is involved: the phase 2 dashboard,
-// the NPLN server, or a second BAAS replica. Redis pub/sub is fire-and-forget,
-// which suits presence exactly — an event that arrives late is worthless, and a
+// Use it as soon as more than one process is involved: the dashboard, the NPLN
+// server, or a second BAAS replica. Redis pub/sub is fire-and-forget, which
+// suits presence exactly -- an event that arrives late is worthless, and a
 // subscriber that was not connected has nothing to catch up on because it will
 // read current state from Postgres when it starts.
 type Redis struct {

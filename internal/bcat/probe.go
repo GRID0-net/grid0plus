@@ -10,37 +10,13 @@ import (
 
 // Probe answers the three bcat-* hosts, logging everything the console asks for.
 //
-// # What this is for
+// GRID0+ serves BCAT natively (native.go). The probe stays as a diagnostic that
+// records what a console asks a bcat-* host, for a title or firmware not seen
+// before. With `stubs.bcat_record_dir` set, every request the stubs service
+// receives on those hosts is also recorded (Observe) and hexdumped, without
+// changing the answer, which stays 304.
 //
-// This was written when nobody knew BCAT's `list` response body or whether
-// the console checks the container signature, and GRID0+ built the delivery
-// cache directly instead of serving BCAT. Both have since been settled
-// (TODO.md §2.4) and GRID0+ serves BCAT natively (native.go); the probe stays
-// as the diagnostic that records what a console asks a bcat-* host, for a
-// title or firmware not seen before.
-//
-// Stage 1 of the experiment: **what does the console ask for?** The three
-// `bcat-*` hosts already reach the stubs service, which answers 304. With
-// `stubs.bcat_record_dir` set, every one of those requests is also recorded
-// here (Observe), hexdumped, without changing the answer. That transcript is
-// the first record anyone has of the list/data paths the console requests.
-//
-// Stage 2 — answering with a deliberately invalid signature, to find out
-// whether the console verifies one — was never built and no longer needs to
-// be: reading bcat.nso showed the signature is enforced, and a firmware patch
-// skips the check (TODO.md §2.4).
-//
-// The `/api/nx/v1/list/<name>` response body is now confirmed, not guessed:
-// predicted below (and in the git history of this comment) that settling it
-// would need decompiling `bcat.nso` directly rather than any single game,
-// since Splatoon 3 only calls the generic SDK
-// (`nn::bcat::MountDeliveryCacheStorage`, `RequestSyncDeliveryCache`,
-// `EnumerateDeliveryCacheDirectory`, `DeliveryCacheFile::Open`/`Read`) and
-// never anything resembling `/api/nx/v1/list` or a signature check -- that
-// whole exchange happens inside the OS's own `bcat` sysmodule. A 2026-09-20
-// decompile of `bcat.nso` itself (extracted from the SYSTEM partition of the
-// operator's own eMMC dump, title id `010000000000000C`) found the full
-// JSONPath field list its own response parser reads:
+// The `/api/nx/v1/list/<name>` response body is a JSON document with this shape:
 //
 //	{
 //	  "directories": [{
@@ -58,38 +34,14 @@ import (
 //	  }]
 //	}
 //
-// Field NAMES are confirmed; most field SEMANTICS are not, but
-// `deletion_priority` is a partial exception: the same decompile's System
-// News applet (which shares this delivery-cache mechanism -- see `news_id`
-// below) keeps its own local cache in a SQLite table with a
-// `deletion_priority` column, evicted `ORDER BY deletion_priority DESC,
-// received_at ASC` -- lower priority is evicted first, oldest-received
-// breaks ties. Whether Splatfest's own client-side cache eviction follows
-// the identical rule is not directly confirmed (News's schema is News's own
-// code, not bcat's), but it is the same field name feeding the same
-// mechanism, so this is a strong lead rather than a guess. `mode`'s values
-// and what `conditions.serial[*]` matches against are still fully open.
-// `news_id` appears alongside `data_list`'s other fields in the same
-// decompile because News shares this same string table -- not a
-// Splatfest-relevant field.
+// The list body is itself a `bcat` container whose decrypted payload is
+// MessagePack. The module verifies an RSA-2048 signature over each decrypted
+// container and refuses on failure, so serving GRID0+'s own containers needs a
+// firmware patch to skip the check (never a forged signature). See
+// docs/SPLATFESTS.md.
 //
-// The same decompile left two questions that a public client of the live
-// servers has since answered (TODO.md §2.4, 2026-09-26 update, from
-// BCAT-Manager): the list body is itself a `bcat` container whose decrypted
-// payload is MessagePack, which matches the local cache path
-// `bcat-dl:/applications/%016llx/list.msgpack.bafmeta`, and the container's
-// 0x120-byte header layout is written out in that section.
-//
-// The signature question that used to sit here is answered: a 2026-09-26
-// disassembly of bcat.nso (22.5.0) showed the module verifies an RSA-2048
-// signature over each decrypted container and refuses on failure, so serving
-// GRID0+'s own containers needs a bcat.nso patch (never a forged
-// signature). The full design for native serving, including this, is in
-// docs/BCAT_NATIVE.md; TODO.md §2.4 has the RE findings.
-//
-// TODO(capture-needed): field semantics above (what `mode`'s values mean,
-// what `conditions.serial` matches) and which hash the 16-byte `digest` is.
-// Change: this file.
+// UNCONFIRMED: what `mode`'s values mean, what `conditions.serial` matches, and
+// which hash the 16-byte `digest` is. Change: this file.
 type Probe struct {
 	log *slog.Logger
 	rec *wirelog.Recorder

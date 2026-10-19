@@ -14,14 +14,11 @@ import (
 // never reaches an unknown-service handler: grpc-go answers Unimplemented
 // itself, and the game treats that as a hard communication error.
 //
-// Nintendo's answer, as NextendoNetwork/splatoon-3 records from a real
-// console against Nintendo's servers during Splatfest JUEA-00107
-// (2026-08-22; facts only, not its code): one empty message, five bytes of
-// DATA -- a gRPC frame header with length zero. That is a message, not the
-// no-message answer GetSaveRecord gives, and the two are not interchangeable.
+// Nintendo's answer is one empty message, five bytes of DATA -- a gRPC frame
+// header with length zero. That is a message, not the no-message answer
+// GetSaveRecord gives, and the two are not interchangeable.
 //
-// TODO(capture-needed): the shape of a response that actually carries news.
-// The capture has none.
+// UNCONFIRMED: the shape of a response that actually carries news.
 func registerFestService(srv *grpc.Server, impl *Service) {
 	desc := toyohrpb.FestService_ServiceDesc // copy
 
