@@ -12,6 +12,7 @@ import (
 	"github.com/n-popescu/grid0plus/internal/ugcstore"
 	commonpb "github.com/n-popescu/grid0plus/proto/common"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
+	ugcpb "github.com/n-popescu/grid0plus/proto/ugcstore/v1"
 )
 
 // TestCanolaAndLockerSelectDocumentsAreEmpty covers the reasoning in
@@ -335,5 +336,58 @@ func TestASharedReplayCodeResolvesToTheReplay(t *testing.T) {
 	if _, err := (coopScenarioService{Service: svc}).ResolveCoopScenarioCode(ctx,
 		&toyohrpb.ResolveCoopScenarioCodeRequest{Name: code}); status.Code(err) != codes.NotFound {
 		t.Errorf("a replay code resolved as a scenario: %v", err)
+	}
+}
+
+// TestALockerRequestAnswersEveryPlayerEvenWithNoLockers: the lobby's locker
+// request must get the caller's own entry first and one entry per named
+// player, empty where nobody published. An empty answer leaves the game's
+// locker data unready, which keeps the locker room shut and the lobby's big
+// screen dark for everyone (2026-10-19).
+func TestALockerRequestAnswersEveryPlayerEvenWithNoLockers(t *testing.T) {
+	svc, _ := newService(t, time.Now())
+	svc.docs = ugcstore.NewService(ugcstore.Options{
+		Store: svc.store, Log: discardLogger(), Tenant: testTenant,
+		CallerID: func(context.Context) (string, bool) { return testCaller, true },
+	})
+	ctx := context.Background()
+	if _, err := svc.docs.Put(ctx, "bob", "tenants/current/documents/services/toyohr/interfaces/locker/lockerPosts/b1",
+		&commonpb.MapValue{Fields: map[string]*commonpb.Value{
+			"v": {ValueType: &commonpb.Value_IntegerValue{IntegerValue: 7}},
+		}}); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(v ...string) *commonpb.Value {
+		var out []*commonpb.Value
+		for _, id := range v {
+			out = append(out, &commonpb.Value{ValueType: &commonpb.Value_StringValue{StringValue: id}})
+		}
+		return &commonpb.Value{ValueType: &commonpb.Value_ArrayValue{ArrayValue: &commonpb.ArrayValue{Values: out}}}
+	}
+	ask := func(uids *commonpb.Value) []*ugcpb.Document {
+		t.Helper()
+		resp, err := (lockerService{Service: svc}).SelectDocuments(ctx, &toyohrpb.SelectDocumentsRequest{
+			Type:   "Normal3",
+			Params: &commonpb.MapValue{Fields: map[string]*commonpb.Value{"UIDs": uids, "UIDsInOrder": ids()}},
+		})
+		if err != nil {
+			t.Fatalf("SelectDocuments: %v", err)
+		}
+		return resp.GetDocuments()
+	}
+
+	got := ask(ids("alice", "bob", testCaller))
+	if len(got) != 3 {
+		t.Fatalf("got %d documents, want 3: the caller, alice, bob", len(got))
+	}
+	if got[0].GetFields() != nil || got[1].GetFields() != nil {
+		t.Errorf("the caller and alice have no locker, want empty documents, got %v, %v", got[0], got[1])
+	}
+	if got[2].GetFields().GetFields()["v"].GetIntegerValue() != 7 {
+		t.Errorf("third entry = %v, want bob's locker", got[2])
+	}
+
+	if got := ask(ids()); len(got) != 1 || got[0].GetFields() != nil {
+		t.Errorf("no named players = %v, want only the caller's empty entry", got)
 	}
 }

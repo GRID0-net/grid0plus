@@ -134,6 +134,13 @@ and nothing preserved shows one), and what `Rewards` must hold for the
 reward meter. A capture of `SelectCoopSchedules` during a real Big Run would
 settle both.
 
+### Locker answer order (`internal/toyohr/backlog.go`)
+
+An empty Locker `SelectDocuments` answer locks the lobby's locker room and
+big screen; see `splat3-locker-select-2026-10-19.md`. Still read, not seen:
+that Nintendo put the caller's own locker first, and whether Canola's
+name-plate answer wants the same empty placeholders.
+
 ### Smaller open markers, not written up further
 
 Each is a `TODO(capture-needed)` whose comment already says what would settle

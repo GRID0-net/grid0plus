@@ -687,8 +687,9 @@ func (s *Service) PublishedMatching(
 // console asking for name plates on grid0 (2026-10-11) sent this server's own
 // user ids -- or on the post's top-level "UID" field, the id the console
 // writes into it, whose format on this server no post has shown yet. A
-// player with no post is skipped.
-func (s *Service) PublishedBy(ctx context.Context, collection string, uids []string) ([]*ugcpb.Document, error) {
+// player with no post is skipped, or, with placeholders, answered with an
+// empty document so the answer stays one entry per requested player.
+func (s *Service) PublishedBy(ctx context.Context, collection string, uids []string, placeholders bool) ([]*ugcpb.Document, error) {
 	prefix := "tenants/" + s.tenant + documentsSegment + strings.Trim(collection, "/") + "/"
 	rows, err := s.store.ListUGCDocuments(ctx, prefix)
 	if err != nil {
@@ -711,6 +712,8 @@ func (s *Service) PublishedBy(ctx context.Context, collection string, uids []str
 	for _, uid := range uids {
 		if d, ok := newest[uid]; ok {
 			out = append(out, d)
+		} else if placeholders {
+			out = append(out, &ugcpb.Document{})
 		}
 	}
 	return out, nil

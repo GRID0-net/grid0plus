@@ -3,6 +3,7 @@ package toyohr
 import (
 	"context"
 	"crypto/rand"
+	"slices"
 	"strings"
 
 	"google.golang.org/grpc/codes"
@@ -51,7 +52,7 @@ func (s canolaService) SelectDocuments(
 	if req.GetType() == "Fest" {
 		return s.festDrawings(ctx, req)
 	}
-	return s.plaza(ctx, "canola/deckPosts", plazaDecks, req)
+	return s.plaza(ctx, "canola/deckPosts", plazaDecks, false, req)
 }
 
 // plazaFestDrawings is how many drawings a fest plaza is sent. Not measured:
@@ -118,20 +119,39 @@ const (
 // ids arrive in UIDs as this server's user ids, with UIDsInOrder empty.
 // A third type, "Fest" with FestID, is the fest plaza: see festDrawings.
 //
-// TODO(capture-needed): whether Nintendo answers a named player with no
-// post by leaving them out (done here) or with a placeholder, and whether
-// UIDs and UIDsInOrder can differ. See docs/CAPTURES/README.md. Change:
-// this function.
+// For Locker the answer must hold one document per player, in order, with
+// an empty document for a player who has published none: the game's parser
+// (FUN_7103292c20) takes the first entry as the asking player's own locker
+// and marks its locker data ready only from that entry, empty or not; the
+// rest fill the lobby's 32 locker slots. The request's UIDs do not name the
+// asking player (grid0, 2026-10-19), so the caller's own entry is put first. An answer with no entries never sets it, and the lobby's
+// locker loader, the locker room door and the lobby's big screen all wait on
+// it forever (docs/CAPTURES/splat3-locker-select-2026-10-19.md). Canola's
+// name-plate requests still skip players with no post.
+//
+// TODO(capture-needed): that Nintendo put the caller's own locker first
+// (read from the parser storing entry 0 apart, not seen in a capture);
+// whether Canola's name-plate answer wants the same placeholders, and whether UIDs and UIDsInOrder can differ. See
+// docs/CAPTURES/README.md. Change: this function.
 func (s *Service) plaza(
-	ctx context.Context, collection string, limit int, req *toyohrpb.SelectDocumentsRequest,
+	ctx context.Context, collection string, limit int, placeholders bool, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	if s.docs == nil {
 		return &toyohrpb.SelectDocumentsResponse{}, nil
 	}
 	var docs []*ugcpb.Document
 	var err error
-	if uids := requestedUIDs(req); len(uids) > 0 {
-		docs, err = s.docs.PublishedBy(ctx, "services/toyohr/interfaces/"+collection, uids)
+	uids := requestedUIDs(req)
+	_, named := req.GetParams().GetFields()["UIDs"]
+	if placeholders && (named || len(uids) > 0) {
+		uid, ok := s.caller(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "unauthenticated")
+		}
+		uids = append([]string{uid}, slices.DeleteFunc(uids, func(id string) bool { return id == uid })...)
+	}
+	if len(uids) > 0 {
+		docs, err = s.docs.PublishedBy(ctx, "services/toyohr/interfaces/"+collection, uids, placeholders)
 	} else {
 		docs, err = s.docs.Published(ctx, "services/toyohr/interfaces/"+collection, limit)
 	}
@@ -217,7 +237,7 @@ func (s lockerService) SelectDocuments(
 	ctx context.Context, req *toyohrpb.SelectDocumentsRequest,
 ) (*toyohrpb.SelectDocumentsResponse, error) {
 	s.logSelect("locker", req)
-	return s.plaza(ctx, "locker/lockerPosts", plazaLockers, req)
+	return s.plaza(ctx, "locker/lockerPosts", plazaLockers, true, req)
 }
 
 func (s lockerService) IkasuDocument(
