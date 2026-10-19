@@ -92,6 +92,16 @@ func (s *Server) recordDAPresence(ctx context.Context, frame []byte) (string, er
 	if da.DeletedAt != nil || da.UserID != d.UserID {
 		return "", fmt.Errorf("device account %s does not belong to %s", d.DeviceAccountID, d.UserID)
 	}
+	// A live device account is not a live user: a deleted account's console
+	// kept showing online to its friends, refreshed every minute by the
+	// presence keeper, for as long as its frontline stayed open.
+	user, err := s.store.GetUser(ctx, d.UserID)
+	if err != nil {
+		return "", fmt.Errorf("user %s: %w", d.UserID, err)
+	}
+	if user.Deleted {
+		return "", fmt.Errorf("user %s is deleted", d.UserID)
+	}
 	var state string
 	switch d.Status {
 	case 0:

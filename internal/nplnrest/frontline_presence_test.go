@@ -161,3 +161,30 @@ func TestAHardwareDAPresenceIsReadFieldForField(t *testing.T) {
 		t.Fatalf("json = %s", d.JSON)
 	}
 }
+
+// A deleted user's console kept reporting presence on its frontline, and
+// friends kept seeing it online.
+func TestADeletedUsersFrontlinePresenceIsRefused(t *testing.T) {
+	ctx := t.Context()
+	store := db.NewMemory()
+	now := time.Date(2026, 10, 19, 14, 0, 0, 0, time.UTC)
+	const id = "2a1a27dd90f47c89"
+	if err := store.CreateUser(ctx, db.User{ID: id, Nickname: "x", CreatedAt: now}, db.DeviceAccount{ID: "da" + id[2:]}); err != nil {
+		t.Fatal(err)
+	}
+	deleted := true
+	if _, err := store.UpdateUser(ctx, id, db.UserPatch{Deleted: &deleted}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(Options{
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), FrontlineHost: frontlineHost,
+		Now: func() time.Time { return now }, Store: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := daPresenceFrame(now, 1, `{"self":{},"favoriteFriends":{},"friends":{},"foaf":{},"everyone":{}}`, id, "da"+id[2:])
+	if _, err := s.recordDAPresence(ctx, frame[4:]); err == nil {
+		t.Fatal("a deleted user's presence was accepted")
+	}
+}
