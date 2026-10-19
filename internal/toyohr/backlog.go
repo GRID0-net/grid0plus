@@ -270,11 +270,12 @@ type coopScenarioService struct {
 // grid0/coopScenarioCodes/<code>, and ResolveCoopScenarioCode hands that
 // document back to whoever types the code in.
 //
-// TODO(capture-needed): the code's exact alphabet and the shape of
-// CoopScenarioCode.name. This answers tenants/<t>/coopScenarioCodes/<code>
-// (the game carries the "/coopScenarioCodes" segment) with a 16-character
-// code starting with S, like the codes players share. Change: newShareCode
-// and shareCodeFrom.
+// The name shape is settled: the game builds tenants/<t>/coopScenarioCodes/
+// <code> itself from the 16 characters typed, unchanged (see
+// docs/CAPTURES/splat3-share-codes-2026-10-19.md).
+//
+// TODO(capture-needed): the code's alphabet, which is the system keyboard's
+// download-code preset and not in the game. Change: scenarioCodeAlphabet.
 func (s coopScenarioService) RegisterDocument(
 	ctx context.Context, req *toyohrpb.CoopScenarioRegisterDocumentRequest,
 ) (*toyohrpb.CoopScenarioRegisterDocumentResponse, error) {
@@ -380,9 +381,11 @@ type replayService struct {
 // segment beside "/coopScenarioCodes", and the two services' messages have
 // the same shape.
 //
-// TODO(capture-needed): the replay code's exact alphabet and
-// ReplayCode.name. Same reading as CoopScenario's, with codes starting with
-// R like the codes players share. Change: newShareCode and shareCodeFrom.
+// Codes start with R like the codes players share; the name shape is
+// settled the same way as CoopScenario's.
+//
+// TODO(capture-needed): the alphabet, as for CoopScenario. Change:
+// scenarioCodeAlphabet.
 func (s replayService) RegisterDocument(
 	ctx context.Context, req *toyohrpb.ReplayRegisterDocumentRequest,
 ) (*toyohrpb.ReplayRegisterDocumentResponse, error) {
