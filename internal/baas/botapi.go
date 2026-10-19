@@ -197,7 +197,8 @@ var loginUsernamePattern = regexp.MustCompile(`^[a-z0-9_.]{2,32}$`)
 type registerRequest struct {
 	DiscordUserID string `json:"discordUserId"`
 	Username      string `json:"username"`
-	DisplayName   string `json:"displayName"`
+	// DisplayName is still sent by the bot but never used: see nicknameFrom.
+	DisplayName string `json:"displayName"`
 	// Additional is set when the person named this login themselves, which is
 	// the only way a Discord account that already has one may make another.
 	Additional bool `json:"additional"`
@@ -250,7 +251,7 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		b.internal(w, "generate password", err)
 		return
 	}
-	nickname := nicknameFrom(req.DisplayName, req.Username)
+	nickname := nicknameFrom(req.Username)
 	user, err := b.s.createLoginUser(r.Context(), req.Username, nickname, password, req.DiscordUserID, !hasMain)
 	switch {
 	case errors.Is(err, db.ErrConflict):
@@ -420,20 +421,19 @@ func newHumanPassword() (string, error) {
 	return string(out), nil
 }
 
-// nicknameFrom picks the Switch nickname: the Discord display name if it
-// fits the console's 10-character limit, else the username, cut to fit.
-func nicknameFrom(displayName, username string) string {
-	for _, n := range []string{strings.TrimSpace(displayName), username} {
-		if n == "" {
-			continue
-		}
-		runes := []rune(n)
-		if len(runes) > 10 {
-			runes = runes[:10]
-		}
-		return string(runes)
+// nicknameFrom picks the Switch nickname: the Discord username, cut to the
+// console's 10-character limit.
+//
+// Never the display name. Display names are free text -- decorative Unicode
+// letters, emoji, flags -- and grid0 shipped players named "☾ 𝓐𝓼𝓱𝓲𝓮 ☽" and
+// "𝐉𝐎𝐊𝐄𝐑" that way. A Discord username is lowercase letters, digits, "_"
+// and ".", which every console font renders.
+func nicknameFrom(username string) string {
+	runes := []rune(strings.TrimSpace(username))
+	if len(runes) > 10 {
+		runes = runes[:10]
 	}
-	return username
+	return string(runes)
 }
 
 // ---- profile -------------------------------------------------------------

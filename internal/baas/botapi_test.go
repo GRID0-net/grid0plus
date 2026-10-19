@@ -535,3 +535,23 @@ func TestBotPresenceCountIncludesIdleAndPlayingButExpiresAndRespectsPrivacy(t *t
 	b.advance(testPresenceTTL + testConsoleAliveTTL + time.Minute)
 	check(0, 0)
 }
+
+// A Discord display name is free text -- decorative Unicode, emoji -- that a
+// console font may not render; the username never is. grid0 shipped
+// "☾ 𝓐𝓼𝓱𝓲𝓮 ☽" as a Switch nickname before this.
+func TestANewAccountIsNamedAfterTheDiscordUsernameNotTheDisplayName(t *testing.T) {
+	b := newBotHarness(t)
+	resp, body := b.call("POST", "/bot/v1/register", "", map[string]string{
+		"discordUserId": aliceDiscord, "username": "alice_the_inkling", "displayName": "☾ 𝓐𝓵𝓲𝓬𝓮 ☽",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("register: status %d, body %v", resp.StatusCode, body)
+	}
+	u, err := b.store.GetUser(t.Context(), body["userId"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Nickname != "alice_the_" {
+		t.Errorf("nickname = %q, want the username cut to 10 characters, %q", u.Nickname, "alice_the_")
+	}
+}
