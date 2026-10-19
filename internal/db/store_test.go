@@ -70,6 +70,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"ugcBlobs":                  testUGCBlobs,
 		"nexRecords":                testNEXRecords,
 		"friendRequests":            testFriendRequests,
+		"acceptFriendRequest":       testAcceptFriendRequest,
 		"blocks":                    testBlocks,
 		"presence":                  testPresence,
 		"images":                    testImages,
@@ -2838,5 +2839,55 @@ func testSalmonJobs(t *testing.T, s Store) {
 	if got.Status != SalmonReported || got.Result == nil || got.Result.Wave != 2 || !got.HalfWin ||
 		len(got.Players) != 1 || got.Players[0].GradeBefore != 1150 || got.StageID != 4 {
 		t.Fatalf("round trip = %+v", got)
+	}
+}
+
+// Accepting writes the friendship and the state together; a request that
+// stopped being pending first -- cancelled at the same moment -- writes no
+// friendship at all.
+func testAcceptFriendRequest(t *testing.T, s Store) {
+	ctx := t.Context()
+	a := makeUser(t, s, "Ann")
+	b := makeUser(t, s, "Ben")
+	c := makeUser(t, s, "Cal")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	newReq := func(from, to User) FriendRequest {
+		r, err := s.CreateFriendRequest(ctx, FriendRequest{
+			ID: uuid.NewString(), FromUserID: from.ID, ToUserID: to.ID,
+			State: RequestPending, CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	friendsOf := func(u User) int {
+		fs, err := s.ListFriends(ctx, u.ID, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(fs)
+	}
+
+	ok := newReq(a, b)
+	if err := s.AcceptFriendRequest(ctx, ok.ID, now); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if got, _ := s.GetFriendRequest(ctx, ok.ID); got.State != RequestAccepted {
+		t.Errorf("state = %q, want ACCEPTED", got.State)
+	}
+	if friendsOf(a) != 1 || friendsOf(b) != 1 {
+		t.Errorf("friends after accept: a=%d b=%d, want 1 each", friendsOf(a), friendsOf(b))
+	}
+
+	withdrawn := newReq(c, a)
+	if err := s.SetFriendRequestState(ctx, withdrawn.ID, RequestCancelled, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AcceptFriendRequest(ctx, withdrawn.ID, now); !errors.Is(err, ErrNotFound) {
+		t.Errorf("accepting a cancelled request: err = %v, want ErrNotFound", err)
+	}
+	if friendsOf(c) != 0 {
+		t.Error("a cancelled request still made its users friends")
 	}
 }

@@ -1123,6 +1123,11 @@ type Store interface {
 	GetFriendRequest(ctx context.Context, id string) (FriendRequest, error)
 	// SetFriendRequestState resolves a request.
 	SetFriendRequestState(ctx context.Context, id, state string, at time.Time) error
+	// AcceptFriendRequest marks a pending request accepted and writes the
+	// friendship between its two users, in one transaction. ErrNotFound when
+	// the request is not pending any more -- cancelled, denied or accepted
+	// concurrently -- and then no friendship is written.
+	AcceptFriendRequest(ctx context.Context, id string, at time.Time) error
 	// ListFriendRequests returns a user's inbox (incoming) or outbox
 	// (outgoing). Only pending requests are returned when pendingOnly is set.
 	ListFriendRequests(ctx context.Context, userID string, incoming, pendingOnly bool) ([]FriendRequest, error)

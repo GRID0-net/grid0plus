@@ -1038,6 +1038,38 @@ func (p *Postgres) GetFriendRequest(ctx context.Context, id string) (FriendReque
 }
 
 // SetFriendRequestState resolves a request.
+func (p *Postgres) AcceptFriendRequest(ctx context.Context, id string, at time.Time) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var a, b string
+	err = tx.QueryRow(ctx, `
+		UPDATE friend_requests SET state = 'ACCEPTED', updated_at = $2
+		WHERE id = $1 AND state = 'PENDING'
+		RETURNING from_user_id, to_user_id`, id, at).Scan(&a, &b)
+	if err != nil {
+		return mapErr(err)
+	}
+	if a == b {
+		return fmt.Errorf("%w: a user cannot befriend themselves", ErrConflict)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO friendships (user_id, friend_id, became_friend_at)
+		VALUES ($1,$2,$3), ($2,$1,$3)
+		ON CONFLICT (user_id, friend_id) DO NOTHING`, a, b, at); err != nil {
+		return mapErr(err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET friends_updated_at = $2, updated_at = $2 WHERE id = ANY($1)`,
+		[]string{a, b}, at); err != nil {
+		return mapErr(err)
+	}
+	return tx.Commit(ctx)
+}
+
 func (p *Postgres) SetFriendRequestState(ctx context.Context, id, state string, at time.Time) error {
 	tag, err := p.pool.Exec(ctx, `
 		UPDATE friend_requests SET state = $2, updated_at = $3

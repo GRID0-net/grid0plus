@@ -970,6 +970,37 @@ func (m *Memory) GetFriendRequest(_ context.Context, id string) (FriendRequest, 
 }
 
 // SetFriendRequestState resolves a request.
+func (m *Memory) AcceptFriendRequest(_ context.Context, id string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	r, ok := m.friendRequests[id]
+	if !ok || r.State != RequestPending {
+		return ErrNotFound
+	}
+	a, b := r.FromUserID, r.ToUserID
+	if a == b {
+		return fmt.Errorf("%w: a user cannot befriend themselves", ErrConflict)
+	}
+	for _, uid := range []string{a, b} {
+		if _, ok := m.users[uid]; !ok {
+			return fmt.Errorf("%w: user %s", ErrNotFound, uid)
+		}
+	}
+	r.State = RequestAccepted
+	r.UpdatedAt = at
+	m.friendRequests[id] = r
+	m.addDirectionLocked(a, b, at)
+	m.addDirectionLocked(b, a, at)
+	for _, uid := range []string{a, b} {
+		u := m.users[uid]
+		u.FriendsUpdatedAt = at
+		u.UpdatedAt = at
+		m.users[uid] = u
+	}
+	return nil
+}
+
 func (m *Memory) SetFriendRequestState(_ context.Context, id, state string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

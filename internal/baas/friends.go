@@ -703,20 +703,13 @@ func (s *Server) settleFriendRequest(ctx context.Context, callerID, rid, state s
 	return req, nil
 }
 
-// acceptRequest marks a request accepted and creates the friendship.
-//
-// The friendship is written first. If the state update then failed, the two are
-// friends and a stale pending request remains, which the console shows as a
-// duplicate — annoying. If the state were written first and the friendship
-// failed, the request would look answered while nothing happened, which is
-// unrecoverable without an operator. Getting the order right is what decides
-// which of those a partial failure leaves behind.
+// acceptRequest marks a request accepted and creates the friendship, in
+// one transaction. Writing them separately raced a concurrent cancel or
+// block: the friendship was committed, then the state update found the
+// request no longer pending and the accept failed -- leaving two people
+// friends through a request that had been withdrawn.
 func (s *Server) acceptRequest(ctx context.Context, req db.FriendRequest) error {
-	now := s.now()
-	if err := s.store.AddFriendship(ctx, req.FromUserID, req.ToUserID, now); err != nil {
-		return err
-	}
-	if err := s.store.SetFriendRequestState(ctx, req.ID, db.RequestAccepted, now); err != nil {
+	if err := s.store.AcceptFriendRequest(ctx, req.ID, s.now()); err != nil {
 		return err
 	}
 	// The sender's console refreshes its friend list on this (the friends module reads
