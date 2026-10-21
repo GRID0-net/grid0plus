@@ -233,8 +233,9 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 			"a login is 2 to 32 characters: lowercase letters, digits, '_' and '.'")
 		return
 	}
-	hasMain, err := b.hasMainAccount(r.Context(), req.DiscordUserID)
-	if err != nil {
+	main, err := b.s.store.GetUserByDiscordID(r.Context(), req.DiscordUserID)
+	hasMain := err == nil
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
 		b.internal(w, "look up accounts for discord id", err)
 		return
 	}
@@ -261,7 +262,26 @@ func (b *botAPI) register(w http.ResponseWriter, r *http.Request) {
 		b.internal(w, "create user", err)
 		return
 	}
-	b.s.log.Info("botapi: registered", "user", user.ID, "login_username", user.LoginUsername, "main_account", !hasMain)
+	mainAccount := !hasMain
+	if hasMain {
+		// A main account no console has ever signed in to is one the person
+		// does not play on. The account they register next is the one they
+		// will put on a console, so it takes over as main; otherwise the bot
+		// keeps acting on an identity nobody uses (TST, 2026-10-21).
+		devices, err := b.s.store.ListDeviceAccounts(r.Context(), main.ID)
+		if err != nil {
+			b.internal(w, "list device accounts of main account", err)
+			return
+		}
+		if len(devices) == 0 {
+			if err := b.s.store.SetMainBotAccount(r.Context(), req.DiscordUserID, user.ID); err != nil {
+				b.internal(w, "make new account main", err)
+				return
+			}
+			mainAccount = true
+		}
+	}
+	b.s.log.Info("botapi: registered", "user", user.ID, "login_username", user.LoginUsername, "main_account", mainAccount)
 
 	fc, _ := b.s.store.GetFriendCode(r.Context(), user.ID)
 	writeJSON(w, http.StatusCreated, credentialsResponse{

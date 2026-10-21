@@ -313,6 +313,23 @@ func (m *Memory) LinkBotAccount(_ context.Context, discordUserID, userID string,
 	return nil
 }
 
+// SetMainBotAccount moves a Discord account's main flag to userID.
+func (m *Memory) SetMainBotAccount(_ context.Context, discordUserID, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	link, ok := m.botLinks[userID]
+	if discordUserID == "" || !ok || link.discordUserID != discordUserID {
+		return fmt.Errorf("%w: %s does not own user %s", ErrNotFound, discordUserID, userID)
+	}
+	for id, l := range m.botLinks {
+		if l.discordUserID == discordUserID {
+			l.primary = id == userID
+			m.botLinks[id] = l
+		}
+	}
+	return nil
+}
+
 // GetUser returns a user by id.
 func (m *Memory) GetUser(_ context.Context, id string) (User, error) {
 	m.mu.RLock()

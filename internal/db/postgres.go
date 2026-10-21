@@ -316,6 +316,35 @@ func (p *Postgres) GetUserByDiscordLogin(ctx context.Context, discordUserID, use
 		discordUserID, username))
 }
 
+// SetMainBotAccount moves a Discord account's main flag to userID. The
+// partial unique index allows one main per Discord account, so the old main
+// is demoted before the new one is promoted, in one transaction.
+func (p *Postgres) SetMainBotAccount(ctx context.Context, discordUserID, userID string) error {
+	if discordUserID == "" || userID == "" {
+		return ErrNotFound
+	}
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.Exec(ctx, `
+		UPDATE bot_account_links SET primary_account = false
+		 WHERE discord_user_id = $1 AND user_id <> $2 AND primary_account`, discordUserID, userID); err != nil {
+		return mapErr(err)
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE bot_account_links SET primary_account = true
+		 WHERE discord_user_id = $1 AND user_id = $2`, discordUserID, userID)
+	if err != nil {
+		return mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s does not own user %s", ErrNotFound, discordUserID, userID)
+	}
+	return tx.Commit(ctx)
+}
+
 // LinkBotAccount attaches an account to the Discord account that owns it.
 // Linking the same pair again is a no-op rather than an error, so running
 // /link twice does not fail -- and it can promote an account to main but never

@@ -277,6 +277,7 @@ func TestAnInGameVoteReachesTheBotStream(t *testing.T) {
 	b := &botHarness{harness: h, bot: bot}
 	id := b.newFest()
 	b.registerDiscord(aliceDiscord, "alice")
+	b.onConsole("alice")
 	resp, extra := b.call("POST", "/bot/v1/register", "", map[string]any{
 		"discordUserId": aliceDiscord, "username": "alice2", "additional": true})
 	if resp.StatusCode != http.StatusCreated {

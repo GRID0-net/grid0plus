@@ -853,6 +853,10 @@ type Store interface {
 	// ErrConflict if it already belongs to a different Discord account, or if
 	// primary and that Discord account already has a main account.
 	LinkBotAccount(ctx context.Context, discordUserID, userID string, primary bool) error
+	// SetMainBotAccount makes userID the main account of the Discord account
+	// that owns it, and every other account it owns an extra, atomically.
+	// ErrNotFound if that Discord account does not own userID.
+	SetMainBotAccount(ctx context.Context, discordUserID, userID string) error
 	// GetUser returns a user by id, or ErrNotFound.
 	GetUser(ctx context.Context, id string) (User, error)
 	// UpdateUser applies a patch and returns the updated user.

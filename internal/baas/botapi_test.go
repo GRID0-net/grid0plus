@@ -70,6 +70,19 @@ func (b *botHarness) registerDiscord(id, username string) map[string]any {
 	return body
 }
 
+// onConsole gives an account a device account, as signing in from a console
+// does. A main account without one gives way to the next /register.
+func (b *botHarness) onConsole(username string) {
+	b.t.Helper()
+	user, err := b.store.GetUserByLoginUsername(b.t.Context(), username)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	if err := b.store.CreateDeviceAccountForUser(b.t.Context(), db.DeviceAccount{ID: "device-account-" + username, UserID: user.ID}); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
 const (
 	aliceDiscord = "100000000000000001"
 	bobDiscord   = "100000000000000002"
@@ -332,6 +345,7 @@ func TestLinkClaimsAnExistingAccount(t *testing.T) {
 func TestOneDiscordAccountCanOwnSeveralGrid0Accounts(t *testing.T) {
 	b := newBotHarness(t)
 	b.registerDiscord(aliceDiscord, "alice")
+	b.onConsole("alice")
 
 	// Without a chosen login there is nothing to say "and another one".
 	resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
@@ -440,6 +454,7 @@ func TestAResetByLoginOnlyReachesTheCallersOwnAccounts(t *testing.T) {
 func TestABareResetPasswordMeansTheMainAccount(t *testing.T) {
 	b := newBotHarness(t)
 	b.registerDiscord(aliceDiscord, "alice")
+	b.onConsole("alice")
 	if resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
 		"discordUserId": aliceDiscord, "username": "alice.psn", "additional": true,
 	}); resp.StatusCode != http.StatusCreated {
@@ -553,5 +568,40 @@ func TestANewAccountIsNamedAfterTheDiscordUsernameNotTheDisplayName(t *testing.T
 	}
 	if u.Nickname != "alice_the_" {
 		t.Errorf("nickname = %q, want the username cut to 10 characters, %q", u.Nickname, "alice_the_")
+	}
+}
+
+// A main account no console ever signed in to is not the one the person
+// plays on: TST's web-created main stayed main while his console used the
+// account he registered next, so the bot acted on the wrong identity.
+func TestAMainAccountNoConsoleUsedGivesWayToTheNextRegistration(t *testing.T) {
+	b := newBotHarness(t)
+	b.registerDiscord(aliceDiscord, "alice")
+	if resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": aliceDiscord, "username": "alice.psn", "additional": true,
+	}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("second account: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := b.call("GET", "/bot/v1/me", aliceDiscord, nil); resp.StatusCode != http.StatusOK || body["username"] != "alice.psn" {
+		t.Errorf("me = %d %v, want the new account as main", resp.StatusCode, body)
+	}
+	resp, body := b.call("GET", "/bot/v1/accounts", aliceDiscord, nil)
+	list, _ := body["accounts"].([]any)
+	if resp.StatusCode != http.StatusOK || len(list) != 2 {
+		t.Fatalf("accounts: %d %v", resp.StatusCode, body)
+	}
+	if old, _ := list[1].(map[string]any); old["username"] != "alice" || old["primary"] != false {
+		t.Errorf("accounts = %v, want the old main demoted, not removed", list)
+	}
+
+	// Once the new main is on a console, a third account does not take over.
+	b.onConsole("alice.psn")
+	if resp, body := b.call("POST", "/bot/v1/register", "", map[string]any{
+		"discordUserId": aliceDiscord, "username": "alice.third", "additional": true,
+	}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("third account: %d %v", resp.StatusCode, body)
+	}
+	if resp, body := b.call("GET", "/bot/v1/me", aliceDiscord, nil); resp.StatusCode != http.StatusOK || body["username"] != "alice.psn" {
+		t.Errorf("me = %d %v, want the played account to stay main", resp.StatusCode, body)
 	}
 }

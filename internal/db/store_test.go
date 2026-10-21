@@ -2470,6 +2470,27 @@ func testDiscordUsers(t *testing.T, s Store) {
 		t.Errorf("linking with no Discord account: err = %v, want ErrNotFound", err)
 	}
 
+	// Moving the main account demotes the old one in the same step, and only
+	// an account the caller owns can become its main.
+	if err := s.SetMainBotAccount(ctx, aliceDiscord, aliceAlt.ID); err != nil {
+		t.Fatalf("SetMainBotAccount: %v", err)
+	}
+	if got, err := s.GetUserByDiscordID(ctx, aliceDiscord); err != nil || got.ID != aliceAlt.ID {
+		t.Errorf("after SetMainBotAccount the main is %+v, %v, want %s", got, err, aliceAlt.ID)
+	}
+	if owned, err := s.ListUsersByDiscordID(ctx, aliceDiscord); err != nil || len(owned) < 2 || owned[0].ID != aliceAlt.ID {
+		t.Errorf("after SetMainBotAccount ListUsersByDiscordID = %+v, %v", owned, err)
+	}
+	if err := s.SetMainBotAccount(ctx, bobDiscord, aliceAlt.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("promoting somebody else's account: err = %v, want ErrNotFound", err)
+	}
+	if got, err := s.GetUserByDiscordID(ctx, bobDiscord); err != nil || got.ID != bob.ID {
+		t.Errorf("a refused SetMainBotAccount changed bob's main: %+v, %v", got, err)
+	}
+	if err := s.SetMainBotAccount(ctx, aliceDiscord, alice.ID); err != nil {
+		t.Fatalf("SetMainBotAccount back: %v", err)
+	}
+
 	// The owner is joined in on every read, not just the Discord lookups.
 	if got, err := s.GetUser(ctx, aliceAlt.ID); err != nil || got.DiscordUserID != aliceDiscord {
 		t.Errorf("GetUser: DiscordUserID = %q, %v", got.DiscordUserID, err)
