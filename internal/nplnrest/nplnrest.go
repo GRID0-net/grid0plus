@@ -45,6 +45,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/n-popescu/grid0plus/internal/db"
+	"github.com/n-popescu/grid0plus/internal/presence"
 	"github.com/n-popescu/grid0plus/internal/presencebus"
 	"io"
 	"log/slog"
@@ -90,6 +91,11 @@ type Options struct {
 	// Notify carries BAAS's push notifications (friend requests and
 	// removals) for the recipient's consoles.
 	Notify presencebus.Bus
+
+	// PresenceTTL and ConsolePresenceTTL are BAAS's presence rules, so a
+	// state that lapses can be pushed as the state it lapsed to. Zero turns
+	// that sweep off.
+	PresenceTTL, ConsolePresenceTTL time.Duration
 }
 
 // Server serves the NPLN JSON front end.
@@ -107,6 +113,7 @@ type Server struct {
 	bus      presencebus.Bus
 	notify   presencebus.Bus
 	registry frontlineRegistry
+	resolver presence.Resolver
 }
 
 // New builds the front end.
@@ -151,6 +158,7 @@ func New(opts Options) (*Server, error) {
 		store:         opts.Store,
 		bus:           opts.Bus,
 		notify:        opts.Notify,
+		resolver:      presence.Resolver{Store: opts.Store, ReportTTL: opts.PresenceTTL, ConsoleTTL: opts.ConsolePresenceTTL},
 	}, nil
 }
 

@@ -336,6 +336,9 @@ func (s *Server) watchPresence(ctx context.Context) {
 		s.log.Warn("nplnrest: presence bus unavailable; no presence notifications", "error", err)
 		return
 	}
+	sent := map[string]string{}
+	tick := time.NewTicker(presenceSweepEvery)
+	defer tick.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -344,9 +347,60 @@ func (s *Server) watchPresence(ctx context.Context) {
 			if !ok {
 				return
 			}
+			sent[e.UserID] = e.State
 			s.notifyPresence(ctx, e)
+		case <-tick.C:
+			s.sweepLapsedPresence(ctx, sent)
 		}
 	}
+}
+
+// presenceSweepEvery is how often a pushed state is checked against the TTL
+// rules. A friend's console only changes what it shows when it is told, so a
+// state that lapsed without a report -- a console put to sleep or switched
+// off -- stayed "online" on every friend's list until they reopened it.
+const presenceSweepEvery = 30 * time.Second
+
+// sweepLapsedPresence pushes the state a user's last pushed state has
+// lapsed to, once, and forgets users who have lapsed to OFFLINE. It returns
+// what it pushed.
+func (s *Server) sweepLapsedPresence(ctx context.Context, sent map[string]string) []presencebus.Event {
+	if s.resolver.ReportTTL <= 0 || s.resolver.ConsoleTTL <= 0 || len(sent) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(sent))
+	for id := range sent {
+		ids = append(ids, id)
+	}
+	now := s.now()
+	effective, err := s.resolver.EffectiveMany(ctx, ids, now)
+	if err != nil {
+		s.log.Warn("nplnrest: presence sweep", "error", err)
+		return nil
+	}
+	var pushed []presencebus.Event
+	for _, id := range ids {
+		p, ok := effective[id]
+		if !ok || p.State == sent[id] {
+			if ok && p.State == db.StateOffline {
+				delete(sent, id)
+			}
+			continue
+		}
+		s.log.Info("nplnrest: presence lapsed", "user", id, "from", sent[id], "to", p.State)
+		e := presencebus.Event{
+			UserID: id, State: p.State, AppID: p.AppID, PresenceGroupID: p.PresenceGroupID,
+			AppField: p.AppField, At: now, Source: "sweep",
+		}
+		s.notifyPresence(ctx, e)
+		pushed = append(pushed, e)
+		if p.State == db.StateOffline {
+			delete(sent, id)
+		} else {
+			sent[id] = p.State
+		}
+	}
+	return pushed
 }
 
 func (s *Server) notifyPresence(ctx context.Context, e presencebus.Event) {

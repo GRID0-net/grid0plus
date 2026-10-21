@@ -175,6 +175,9 @@ func main() {
 		Store:         store,
 		Bus:           bus,
 		Notify:        notifyBus,
+
+		PresenceTTL:        time.Duration(cfg.BAAS.PresenceTTL) * time.Second,
+		ConsolePresenceTTL: time.Duration(cfg.BAAS.ConsolePresenceTTL) * time.Second,
 	})
 	if err != nil {
 		service.Fatal(log, "build json front end", err)

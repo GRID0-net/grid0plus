@@ -236,3 +236,43 @@ func TestAFriendRequestNotificationReachesTheRecipientsConsole(t *testing.T) {
 		}
 	}
 }
+
+// A console put to sleep reports nothing. Its friends' consoles only change
+// what they show when told, so a lapsed state has to be pushed or they kept
+// showing it "online" for hours.
+func TestALapsedPresenceIsPushedOnceAsTheStateItLapsedTo(t *testing.T) {
+	ctx := t.Context()
+	store := db.NewMemory()
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	if err := store.CreateUser(ctx, db.User{ID: "aaaaaaaaaaaaaaaa", CreatedAt: now}, db.DeviceAccount{ID: "da-a"}); err != nil {
+		t.Fatal(err)
+	}
+	reported, playing, app := now, db.StatePlaying, "0100c2500fc20000"
+	if _, err := store.UpdatePresence(ctx, "aaaaaaaaaaaaaaaa", db.PresencePatch{State: &playing, AppID: &app, ReportedAt: &reported}); err != nil {
+		t.Fatal(err)
+	}
+	clock := now
+	s, err := New(Options{
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), FrontlineHost: frontlineHost,
+		Now: func() time.Time { return clock }, Store: store, Bus: presencebus.NewLocal(),
+		PresenceTTL: 5 * time.Minute, ConsolePresenceTTL: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := map[string]string{"aaaaaaaaaaaaaaaa": db.StatePlaying}
+	if pushed := s.sweepLapsedPresence(ctx, sent); len(pushed) != 0 {
+		t.Fatalf("a fresh report was pushed again: %+v", pushed)
+	}
+	clock = now.Add(6 * time.Minute)
+	pushed := s.sweepLapsedPresence(ctx, sent)
+	if len(pushed) != 1 || pushed[0].State != db.StateOffline || pushed[0].AppID != "" {
+		t.Fatalf("lapsed push = %+v, want one OFFLINE with no app", pushed)
+	}
+	if _, still := sent["aaaaaaaaaaaaaaaa"]; still {
+		t.Error("an OFFLINE user is still being swept")
+	}
+	if again := s.sweepLapsedPresence(ctx, sent); len(again) != 0 {
+		t.Errorf("pushed twice: %+v", again)
+	}
+}
