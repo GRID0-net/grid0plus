@@ -2074,6 +2074,7 @@ function connect() {
 
 // ---- challenges -------------------------------------------------------------
 
+let challengeTypes = [];
 const CHALLENGE_RULES = ["Turf War", "Splat Zones", "Tower Control", "Rainmaker", "Clam Blitz"];
 
 async function loadChallengeReference() {
@@ -2088,6 +2089,25 @@ async function loadChallengeReference() {
       }));
     }
     if (ref.stages.length > 1) $("#challenge-stage1").selectedIndex = 1;
+    challengeTypes = ref.types || [];
+    if (challengeTypes.length) {
+      const sel = $("#challenge-type-select");
+      sel.replaceChildren(...challengeTypes.map((t) => {
+        const o = document.createElement("option");
+        o.value = t.id;
+        o.textContent = `${t.name} (${t.id})`;
+        return o;
+      }));
+      sel.hidden = false;
+      $("#challenge-type").hidden = true;
+      $("#challenge-type").required = false;
+      const describe = () => {
+        const t = challengeTypes.find((x) => x.id === sel.value);
+        $("#challenge-type-desc").textContent = t && t.subtitle ? t.subtitle : "";
+      };
+      sel.addEventListener("change", describe);
+      describe();
+    }
   } catch (err) {
     console.warn("challenge reference", err);
   }
@@ -2105,7 +2125,7 @@ function renderChallenges(rows) {
       const fmt = (t) => new Date(t).toISOString().replace("T", " ").slice(0, 16) + " UTC";
       card.innerHTML = `
         <div class="cols">
-          <div class="fid">${escape(c.eventTypeId)}
+          <div class="fid">${escape(c.eventName || c.eventTypeId)}
             <span class="pill">${escape(CHALLENGE_RULES[c.rule] || "Rule " + c.rule)}</span>
             <span class="pill ${pill}">${escape(c.status)}</span>
           </div>
@@ -2143,7 +2163,7 @@ $("#challenge-form").addEventListener("submit", async (e) => {
     await api("/api/challenges", {
       method: "POST",
       body: JSON.stringify({
-        eventTypeId: $("#challenge-type").value.trim(),
+        eventTypeId: challengeTypes.length ? $("#challenge-type-select").value : $("#challenge-type").value.trim(),
         rule: Number($("#challenge-rule").value),
         stages: [Number($("#challenge-stage0").value), Number($("#challenge-stage1").value)],
         slots,

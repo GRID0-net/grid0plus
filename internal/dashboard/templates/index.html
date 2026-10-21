@@ -554,7 +554,9 @@
       <form id="challenge-form" class="fest-form">
         <label>
           <span>Event type</span>
+          <select id="challenge-type-select" hidden></select>
           <input type="text" id="challenge-type" required pattern="[A-Za-z0-9_]{1,64}" autocapitalize="off" spellcheck="false" placeholder="the game's event id">
+          <small id="challenge-type-desc"></small>
           <small>One of the game's built-in Challenges, by its id in the game's LeagueTypeInfo table. Its special rules and its name and description come from the game; an id the game does not know will not show.</small>
         </label>
         <label>

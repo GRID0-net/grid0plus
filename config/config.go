@@ -629,6 +629,12 @@ type Dashboard struct {
 	// Splatoon 2 panel says it is not configured.
 	NEXAdminURL   string `yaml:"nex_admin_url"`
 	NEXAdminToken string `yaml:"nex_admin_token"`
+
+	// ChallengeTypesFile is an operator-local JSON list of the game's
+	// Challenge event types and their names, for the Challenges tab's
+	// dropdown. It is game data, so it is never shipped; empty means the tab
+	// takes a typed id.
+	ChallengeTypesFile string `yaml:"challenge_types_file"`
 }
 
 // Stubs configures the catch-all server.

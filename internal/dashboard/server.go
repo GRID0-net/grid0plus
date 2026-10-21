@@ -93,6 +93,9 @@ type Options struct {
 	NEXAdminURL   string
 	NEXAdminToken string
 
+	// ChallengeTypes is the operator-local event type list's path, or "".
+	ChallengeTypes string
+
 	// Addresses is where each service listens, for the health view. Taken from
 	// the same config the services themselves read, so a changed port cannot
 	// leave the page probing the old one.
@@ -103,6 +106,8 @@ type Options struct {
 
 // Server serves the dashboard.
 type Server struct {
+	challengeTypes []challengeType
+
 	store db.Store
 	bus   presencebus.Bus
 	log   *slog.Logger
@@ -168,13 +173,14 @@ func New(opts Options) (*Server, error) {
 			ReportTTL:  opts.PresenceTTL,
 			ConsoleTTL: opts.ConsolePresenceTTL,
 		},
-		token:       opts.Token,
-		now:         opts.Now,
-		matchmaking: newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
-		splatoon2:   newSplatoon2Client(opts.NEXAdminURL, opts.NEXAdminToken),
-		addresses:   opts.Addresses,
-		probeClient: &http.Client{Timeout: probeTimeout},
-		tmpl:        tmpl,
+		token:          opts.Token,
+		now:            opts.Now,
+		matchmaking:    newMatchmakingClient(opts.NPLNAdminURL, opts.NPLNAdminToken),
+		splatoon2:      newSplatoon2Client(opts.NEXAdminURL, opts.NEXAdminToken),
+		challengeTypes: loadChallengeTypes(opts.Log, opts.ChallengeTypes),
+		addresses:      opts.Addresses,
+		probeClient:    &http.Client{Timeout: probeTimeout},
+		tmpl:           tmpl,
 	}, nil
 }
 

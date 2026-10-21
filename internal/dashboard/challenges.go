@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"time"
@@ -25,6 +27,7 @@ const (
 type challengeRow struct {
 	ID          string          `json:"id"`
 	EventTypeID string          `json:"eventTypeId"`
+	EventName   string          `json:"eventName,omitempty"`
 	Rule        int32           `json:"rule"`
 	Stages      []challengeName `json:"stages"`
 	Slots       []db.LeagueSlot `json:"slots"`
@@ -46,6 +49,11 @@ func (s *Server) handleChallenges(w http.ResponseWriter, r *http.Request) {
 	rows := make([]challengeRow, 0, len(events))
 	for _, e := range events {
 		row := challengeRow{ID: e.ID, EventTypeID: e.EventTypeID, Rule: e.Rule, Slots: e.Slots, Status: "upcoming"}
+		for _, t := range s.challengeTypes {
+			if t.ID == e.EventTypeID {
+				row.EventName = t.Name
+			}
+		}
 		for _, id := range e.Stages {
 			st, _ := toyohr.VsStageByID(id)
 			row.Stages = append(row.Stages, challengeName{ID: id, Name: st.Name})
@@ -63,13 +71,48 @@ func (s *Server) handleChallenges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, rows)
 }
 
-// handleChallengeReference fills the form's stage list.
+// challengeType is one row of the operator-local event type list.
+type challengeType struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Subtitle string `json:"subtitle,omitempty"`
+}
+
+// loadChallengeTypes reads the operator's event type list. A missing or bad
+// file only costs the dropdown, so it is logged rather than fatal.
+func loadChallengeTypes(log *slog.Logger, path string) []challengeType {
+	if path == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	var types []challengeType
+	if err == nil {
+		err = json.Unmarshal(raw, &types)
+	}
+	if err != nil {
+		log.Warn("dashboard: challenge types unavailable; the tab takes a typed id", "file", path, "error", err)
+		return nil
+	}
+	valid := types[:0]
+	for _, t := range types {
+		if eventTypeIDPattern.MatchString(t.ID) {
+			valid = append(valid, t)
+		}
+	}
+	return valid
+}
+
+// handleChallengeReference fills the form's stage and event type lists.
 func (s *Server) handleChallengeReference(w http.ResponseWriter, _ *http.Request) {
 	stages := make([]challengeName, 0, len(toyohr.VsStages))
 	for _, st := range toyohr.VsStages {
 		stages = append(stages, challengeName{ID: st.ID, Name: st.Name})
 	}
-	writeJSON(w, map[string]any{"stages": stages})
+	types := s.challengeTypes
+	if types == nil {
+		types = []challengeType{}
+	}
+	writeJSON(w, map[string]any{"stages": stages, "types": types})
 }
 
 func (s *Server) handleCreateChallenge(w http.ResponseWriter, r *http.Request) {

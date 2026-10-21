@@ -320,6 +320,12 @@ dashboard:
   nex_admin_url: "127.0.0.1:8093"
   nex_admin_token: ""
 
+  # Optional: a JSON list of Splatoon 3's built-in Challenge types, for the
+  # Challenges tab's dropdown -- [{"id": "...", "name": "...", "subtitle": "..."}].
+  # It is the game's own data, so GRID0+ does not ship it; build it from your
+  # copy of the game. Empty means the tab takes a typed event id.
+  challenge_types_file: ""
+
   # A shared secret required on every request. Empty means NO authentication:
   # anyone who can reach this port can schedule and cancel Splatfests.
   token: ""

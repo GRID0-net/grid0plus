@@ -78,6 +78,7 @@ func main() {
 		NPLNAdminToken: cfg.Dashboard.NPLNAdminToken,
 		NEXAdminURL:    cfg.Dashboard.NEXAdminURL,
 		NEXAdminToken:  cfg.Dashboard.NEXAdminToken,
+		ChallengeTypes: cfg.Dashboard.ChallengeTypesFile,
 		Addresses:      dashboard.AddressesFrom(cfg),
 	})
 	if err != nil {

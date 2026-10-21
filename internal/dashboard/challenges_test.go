@@ -3,7 +3,10 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -47,5 +50,34 @@ func TestAChallengeIsScheduledOnTwoHourSlotsAndCanBeDeleted(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("DELETE", "/api/challenges/"+events[0].ID, nil))
 	if events, _ = store.ListLeagueEvents(t.Context()); rec.Code != 204 || len(events) != 0 {
 		t.Errorf("delete: %d, left %d", rec.Code, len(events))
+	}
+}
+
+// The event type list is the operator's own file; a bad id in it is dropped
+// and a missing file leaves the tab on a typed id rather than failing.
+func TestTheChallengeTypeListComesFromTheOperatorsFile(t *testing.T) {
+	path := t.TempDir() + "/types.json"
+	if err := os.WriteFile(path, []byte(`[{"id":"TestEvent","name":"Test Event","subtitle":"sub"},{"id":"bad id","name":"x"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	got := loadChallengeTypes(log, path)
+	if len(got) != 1 || got[0].ID != "TestEvent" || got[0].Name != "Test Event" {
+		t.Errorf("types = %+v", got)
+	}
+	if loadChallengeTypes(log, t.TempDir()+"/missing.json") != nil || loadChallengeTypes(log, "") != nil {
+		t.Error("a missing or unset file produced a list")
+	}
+
+	svc, _ := newTestServer(t, "", time.Now())
+	svc.challengeTypes = got
+	rec := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/challenge-reference", nil))
+	var ref struct {
+		Types  []challengeType `json:"types"`
+		Stages []challengeName `json:"stages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &ref); err != nil || len(ref.Types) != 1 || len(ref.Stages) == 0 {
+		t.Errorf("reference = %s", rec.Body)
 	}
 }
