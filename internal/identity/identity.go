@@ -106,7 +106,9 @@ func (t *IDTokens) Resolve(ctx context.Context, idToken string) (Caller, error) 
 	}
 	var claims sjwt.BAASTokenClaims
 	if err := t.verifier.Verify(idToken, &claims); err != nil {
-		t.log.Debug("identity: rejected id token", "error", err)
+		// Info, not Debug: Splatoon 3 sign-ins fail this way a few times a day
+		// and the reason is the only thing that tells expiry from a bad key.
+		t.log.Info("identity: rejected id token", "error", err)
 		return Caller{}, ErrUnauthenticated
 	}
 	if claims.Type != "id_token" {
