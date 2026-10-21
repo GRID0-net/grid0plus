@@ -116,7 +116,10 @@ async function api(path, options) {
     // -- so it is surfaced rather than replaced with a generic failure.
     throw new Error((await res.text()).trim() || `${res.status}`);
   }
-  return res.status === 204 ? null : res.json();
+  // A create answers 201 with no body; parsing that throws even though the
+  // write succeeded.
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 // ---- tabs -----------------------------------------------------------------
