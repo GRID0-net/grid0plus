@@ -1309,6 +1309,55 @@ func isFestMode(mode string) bool { return strings.Contains(strings.ToLower(mode
 // (fest_match_tricolor_oneshot_config, fest_match_tricolor_team_config).
 func isTricolorMode(mode string) bool { return strings.Contains(strings.ToLower(mode), "tricolor") }
 
+// isServerTeamedMode reports the solo-queue ranked configs whose tickets carry
+// no team: Anarchy Open, every Challenge and X Battle. Nextendo's server, which
+// ran Anarchy Open on real consoles, splits those players into team1 and team2
+// itself; left empty, every player is on one side and the host never starts
+// the battle (Anarchy Open on grid0, 2026-10-21). Turf War is not in the list:
+// its tickets also carry no team and it works without one.
+//
+// UNCONFIRMED for league_match and x_match: Nextendo only did this for
+// bankara_match_open. They share the oneshot ticket shape, which is the
+// reason they are included; a Challenge on hardware settles it.
+func isServerTeamedMode(mode string) bool {
+	m := strings.ToLower(mode)
+	return strings.Contains(m, "bankara_match_open") ||
+		strings.Contains(m, "league_match") ||
+		strings.Contains(m, "x_match")
+}
+
+// splitTeams puts each squad, whole, on whichever side has fewer players so
+// far, largest squads first, so the sides end up as even as squads allow.
+func splitTeams(tickets map[string]*Ticket, chosen []string) map[string]string {
+	squads := map[string][]string{}
+	var order []string
+	for _, id := range chosen {
+		t := tickets[id]
+		key := t.ID
+		if t.Party != "" {
+			key = t.Party
+		}
+		if _, ok := squads[key]; !ok {
+			order = append(order, key)
+		}
+		squads[key] = append(squads[key], t.UserID)
+	}
+	slices.SortStableFunc(order, func(a, b string) int { return len(squads[b]) - len(squads[a]) })
+	slots := map[string]string{}
+	sizes := map[string]int{}
+	for _, key := range order {
+		side := "team1"
+		if sizes["team2"] < sizes["team1"] {
+			side = "team2"
+		}
+		for _, u := range squads[key] {
+			slots[u] = side
+		}
+		sizes[side] += len(squads[key])
+	}
+	return slots
+}
+
 func (q *Queue) modeOf(ids []string) string {
 	if len(ids) == 0 {
 		return ""
@@ -1643,6 +1692,9 @@ func (q *Queue) formSessionLocked(mode string, chosen []string) Session {
 			}
 			s.TeamSlots[q.tickets[id].UserID] = slot
 		}
+		q.sessions[s.ID].TeamSlots = s.TeamSlots
+	} else if isServerTeamedMode(mode) && len(chosen) > 0 {
+		s.TeamSlots = splitTeams(q.tickets, chosen)
 		q.sessions[s.ID].TeamSlots = s.TeamSlots
 	}
 
