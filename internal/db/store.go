@@ -10,6 +10,7 @@ package db
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 )
 
@@ -620,6 +621,43 @@ type PushChannel struct {
 	UserID, DeviceAccountID, DeviceToken string
 }
 
+// LeagueEvent is a Challenge (Event Match) an operator scheduled.
+type LeagueEvent struct {
+	ID string
+	// EventTypeID names one of the game's built-in events (LeagueTypeInfo).
+	// The game owns what it means: its special rules and its text.
+	EventTypeID string
+	Rule        int32
+	Stages      []int32
+	// Slots are the two-hour windows the event is open, soonest first.
+	Slots     []LeagueSlot
+	CreatedAt time.Time
+}
+
+// sortLeagueEvents orders by first slot, id as the tiebreak, so both stores
+// agree.
+func sortLeagueEvents(es []LeagueEvent) {
+	first := func(e LeagueEvent) time.Time {
+		if len(e.Slots) == 0 {
+			return time.Time{}
+		}
+		return e.Slots[0].StartAt
+	}
+	sort.Slice(es, func(i, j int) bool {
+		a, b := first(es[i]), first(es[j])
+		if a.Equal(b) {
+			return es[i].ID < es[j].ID
+		}
+		return a.Before(b)
+	})
+}
+
+// LeagueSlot is one window of a LeagueEvent.
+type LeagueSlot struct {
+	StartAt time.Time `json:"startAt"`
+	EndAt   time.Time `json:"endAt"`
+}
+
 // CoopShift is one Salmon Run rotation slot, as the operator scheduled it.
 //
 // Only the mechanics, the same split Fest makes: when it runs and what real
@@ -1011,6 +1049,15 @@ type Store interface {
 	// DeleteCoopShift removes a coop shift. Not an error if it does not
 	// exist: the same idempotent-delete reasoning as DeleteFest.
 	DeleteCoopShift(ctx context.Context, id string) error
+
+	// ---- Challenges ----
+
+	// UpsertLeagueEvent creates or replaces a Challenge by id.
+	UpsertLeagueEvent(ctx context.Context, e LeagueEvent) error
+	// ListLeagueEvents returns every Challenge, by first slot, id as tiebreak.
+	ListLeagueEvents(ctx context.Context) ([]LeagueEvent, error)
+	// DeleteLeagueEvent removes a Challenge; not an error if it is absent.
+	DeleteLeagueEvent(ctx context.Context, id string) error
 
 	// ---- match history ----
 

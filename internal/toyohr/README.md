@@ -101,8 +101,12 @@ warning.
 ids in `vs_ids.go`): twelve two-hour slots starting with the previous one, one `schedule_set_id` for the window, Bankara, X and League settings on each slot, and
 quoted 24-character ETags. A rotation is a deterministic function of the clock and the stage list, so there is nothing to keep in sync, and the same request at the
 same time always gets the same answer, which is what makes the ETag meaningful. `SelectSeasonSchedules` carries the season id and a dedicated `target` field
-(added in `scripts/proto-patches/grid0plus.patch`, since upstream's proto stops at field 7). `SelectLeagueSchedules` answers empty, since GRID0+ has no authored
-League events.
+(added in `scripts/proto-patches/grid0plus.patch`, since upstream's proto stops at field 7). `SelectLeagueSchedules` answers the
+Challenges (Event Matches) the operator scheduled in the dashboard, in the shape
+of a captured working answer: one schedule per event, its built-in event named
+by `attributes.EventTypeId`, slots named `<id>_N`, a zero `timestamp`. The event
+type is a row of the game's own LeagueTypeInfo table, which owns the event's
+special rules and its text; a server cannot add new ones.
 
 What the package decides is the two-hour slot alignment, a twelve-slot horizon, back-to-back windows with no gaps, wrapping instead of running out, and an ETag over
 exactly the values a client acts on. What it doesn't decide is the stage and rule ids, which are Splatoon 3's own numbering and come from `npln.rotation` as strings,

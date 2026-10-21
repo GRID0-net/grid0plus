@@ -63,6 +63,7 @@
   <button role="tab" aria-selected="false" data-game="splatoon3" data-view="matches">Matches</button>
   <button role="tab" aria-selected="false" data-game="splatoon3" data-view="fests">Splatfests</button>
   <button role="tab" aria-selected="false" data-game="splatoon3" data-view="coop">Salmon Run</button>
+  <button role="tab" aria-selected="false" data-game="splatoon3" data-view="challenges">Challenges</button>
   <button role="tab" aria-selected="false" data-game="splatoon3" data-view="schedule">Schedule</button>
 
   <button role="tab" aria-selected="false" data-game="splatoon2" data-view="s2-overview">Overview</button>
@@ -543,6 +544,64 @@
         configured, a source file is a <em>build error</em> rather than a PNG
         packed into the archive.
       </p>
+    </div>
+  </section>
+
+  <!-- Challenges (Event Matches) -->
+  <section data-game="splatoon3" id="view-challenges" class="view">
+    <div class="panel">
+      <h2>Schedule a Challenge</h2>
+      <form id="challenge-form" class="fest-form">
+        <label>
+          <span>Event type</span>
+          <input type="text" id="challenge-type" required pattern="[A-Za-z0-9_]{1,64}" autocapitalize="off" spellcheck="false" placeholder="the game's event id">
+          <small>One of the game's built-in Challenges, by its id in the game's LeagueTypeInfo table. Its special rules and its name and description come from the game; an id the game does not know will not show.</small>
+        </label>
+        <label>
+          <span>Rule</span>
+          <select id="challenge-rule">
+            <option value="0">0 &middot; Turf War</option>
+            <option value="1">1 &middot; Splat Zones</option>
+            <option value="2">2 &middot; Tower Control</option>
+            <option value="3">3 &middot; Rainmaker</option>
+            <option value="4">4 &middot; Clam Blitz</option>
+          </select>
+        </label>
+        <label>
+          <span>Stages</span>
+          <div class="coop-weapon-row">
+            <select id="challenge-stage0"></select>
+            <select id="challenge-stage1"></select>
+          </div>
+        </label>
+        <label>
+          <span>First window (UTC)</span>
+          <input type="datetime-local" id="challenge-start" step="7200" required>
+          <small>On a two-hour boundary: 00:00, 02:00, ... UTC.</small>
+        </label>
+        <label>
+          <span>Windows</span>
+          <div class="coop-weapon-row">
+            <input type="number" id="challenge-count" min="1" max="24" value="6" title="How many two-hour windows">
+            <select id="challenge-gap" title="Time from one window's start to the next">
+              <option value="4" selected>every 4 hours (as Nintendo ran them)</option>
+              <option value="2">back to back</option>
+              <option value="24">once a day</option>
+            </select>
+          </div>
+          <small>Each window is two hours. Consoles may only see a new Challenge after restarting the game.</small>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Schedule</button>
+        </div>
+        <p class="form-error" id="challenge-error" hidden></p>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Scheduled</h2>
+      <div id="challenge-list" class="fest-list"></div>
+      <p class="empty" id="challenge-empty" hidden>Nothing scheduled.</p>
     </div>
   </section>
 

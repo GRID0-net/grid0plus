@@ -85,6 +85,7 @@ func runStoreContract(t *testing.T, open func(*testing.T) Store) {
 		"salmonJobs":                testSalmonJobs,
 		"penne":                     testPenne,
 		"coopShifts":                testCoopShifts,
+		"leagueEvents":              testLeagueEvents,
 		"matches":                   testMatches,
 		"ugcCompareAndPut":          testUGCCompareAndPut,
 		"saveDataArchives":          testSaveDataArchives,
@@ -2910,5 +2911,41 @@ func testAcceptFriendRequest(t *testing.T, s Store) {
 	}
 	if friendsOf(c) != 0 {
 		t.Error("a cancelled request still made its users friends")
+	}
+}
+
+func testLeagueEvents(t *testing.T, s Store) {
+	ctx := t.Context()
+	at := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	later := LeagueEvent{ID: "b", EventTypeID: "TestEvent", Rule: 2, Stages: []int32{3, 4},
+		Slots: []LeagueSlot{{StartAt: at.Add(24 * time.Hour), EndAt: at.Add(26 * time.Hour)}}}
+	sooner := LeagueEvent{ID: "a", EventTypeID: "OtherEvent", Rule: 0, Stages: []int32{1, 2},
+		Slots: []LeagueSlot{{StartAt: at, EndAt: at.Add(2 * time.Hour)}, {StartAt: at.Add(4 * time.Hour), EndAt: at.Add(6 * time.Hour)}}}
+	for _, e := range []LeagueEvent{later, sooner} {
+		if err := s.UpsertLeagueEvent(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ListLeagueEvents(ctx)
+	if err != nil || len(got) != 2 || got[0].ID != "a" || got[1].ID != "b" {
+		t.Fatalf("list = %+v, %v; want soonest first", got, err)
+	}
+	if g := got[0]; g.EventTypeID != "OtherEvent" || g.Rule != 0 || len(g.Stages) != 2 || len(g.Slots) != 2 ||
+		!g.Slots[1].StartAt.Equal(at.Add(4*time.Hour)) || g.CreatedAt.IsZero() {
+		t.Errorf("round trip = %+v", g)
+	}
+	later.Rule = 3
+	if err := s.UpsertLeagueEvent(ctx, later); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteLeagueEvent(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteLeagueEvent(ctx, "absent"); err != nil {
+		t.Errorf("deleting an absent event: %v", err)
+	}
+	got, err = s.ListLeagueEvents(ctx)
+	if err != nil || len(got) != 1 || got[0].Rule != 3 {
+		t.Errorf("after update and delete = %+v, %v", got, err)
 	}
 }

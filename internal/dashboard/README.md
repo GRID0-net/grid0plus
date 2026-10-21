@@ -97,6 +97,13 @@ name, and say so before you type. A revision that isn't 40 hex characters is ref
 it has to come from the pack's `summary.yml`. Validation errors are passed to the page verbatim, because "not on a two-hour slot
 boundary" is the explanation. The procedure is in [SPLATFESTS.md](../../docs/SPLATFESTS.md).
 
+## Challenges
+
+Schedules Splatoon 3's Challenges (Event Matches): one of the game's built-in
+event types, by its id, with a rule, two stages and two-hour windows. The
+event-type list is game data and is not shipped; type the id. Consoles may only
+see a new Challenge after restarting the game.
+
 ## Salmon Run
 
 The Salmon Run tab's dropdowns (`GET /api/coop-reference`, `coop.go`) come from `internal/toyohr/coop_ids.go`'s tables, the same ones

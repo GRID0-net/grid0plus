@@ -2012,6 +2012,60 @@ func (p *Postgres) DeleteCoopShift(ctx context.Context, id string) error {
 	return mapErr(err)
 }
 
+func (p *Postgres) UpsertLeagueEvent(ctx context.Context, e LeagueEvent) error {
+	if e.Stages == nil {
+		e.Stages = []int32{}
+	}
+	if e.Slots == nil {
+		e.Slots = []LeagueSlot{}
+	}
+	slots, err := json.Marshal(e.Slots)
+	if err != nil {
+		return err
+	}
+	_, err = p.pool.Exec(ctx,
+		`INSERT INTO npln_league_events (id, event_type_id, rule, stages, slots)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (id) DO UPDATE SET
+		     event_type_id = EXCLUDED.event_type_id,
+		     rule          = EXCLUDED.rule,
+		     stages        = EXCLUDED.stages,
+		     slots         = EXCLUDED.slots`,
+		e.ID, e.EventTypeID, e.Rule, e.Stages, slots)
+	return mapErr(err)
+}
+
+func (p *Postgres) ListLeagueEvents(ctx context.Context) ([]LeagueEvent, error) {
+	rows, err := p.pool.Query(ctx,
+		`SELECT id, event_type_id, rule, stages, slots, created_at FROM npln_league_events`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []LeagueEvent
+	for rows.Next() {
+		var e LeagueEvent
+		var slots []byte
+		if err := rows.Scan(&e.ID, &e.EventTypeID, &e.Rule, &e.Stages, &slots, &e.CreatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		if err := json.Unmarshal(slots, &e.Slots); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapErr(err)
+	}
+	sortLeagueEvents(out)
+	return out, nil
+}
+
+func (p *Postgres) DeleteLeagueEvent(ctx context.Context, id string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM npln_league_events WHERE id = $1`, id)
+	return mapErr(err)
+}
+
 func scanCoopShift(row interface{ Scan(...any) error }) (CoopShift, error) {
 	var c CoopShift
 	err := row.Scan(&c.ID, &c.Kind, &c.StageID, &c.Boss, &c.Weapons, &c.KumaWeaponID,

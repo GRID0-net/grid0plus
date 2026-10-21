@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/n-popescu/grid0plus/internal/db"
 	"github.com/n-popescu/grid0plus/proto/common"
 	toyohrpb "github.com/n-popescu/grid0plus/proto/toyohr/v1"
 )
@@ -272,15 +273,54 @@ func permuteRules(rules []int32, slot int64) []int32 {
 // first ground rule forbids. The console calls this RPC right after the
 // fest-region prompt appears, and Unimplemented is not an acceptable answer.
 func (sc *scheduleService) SelectLeagueSchedules(
-	ctx context.Context, _ *toyohrpb.SelectLeagueSchedulesRequest,
+	ctx context.Context, req *toyohrpb.SelectLeagueSchedulesRequest,
 ) (*toyohrpb.SelectLeagueSchedulesResponse, error) {
 	if _, ok := sc.s.caller(ctx); !ok {
 		return nil, status.Error(codes.Unauthenticated, "")
 	}
-	if resp, ok := leagueDiagnosticResponse(sc.s.now()); ok {
-		return resp, nil
+	events, err := sc.s.store.ListLeagueEvents(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "list challenges")
 	}
-	return &toyohrpb.SelectLeagueSchedulesResponse{}, nil
+	return &toyohrpb.SelectLeagueSchedulesResponse{
+		Schedules: sc.s.leagueSchedules(events, scheduleTarget(req.GetTarget()), sc.s.now()),
+	}, nil
+}
+
+// leagueSchedules renders the operator's Challenges that are not over yet,
+// in the shape of a captured working answer: one schedule per event, its
+// built-in event named by attributes.EventTypeId, slots named <id>_N, and a
+// zero timestamp. The game owns what an event type means -- its rules and
+// its text come from its own LeagueTypeInfo table, so an id it does not know
+// is the operator's mistake, not something to guess at here.
+func (s *Service) leagueSchedules(events []db.LeagueEvent, target string, now time.Time) []*toyohrpb.LeagueSchedule {
+	var out []*toyohrpb.LeagueSchedule
+	for _, e := range events {
+		if len(e.Slots) == 0 || !e.Slots[len(e.Slots)-1].EndAt.After(now) {
+			continue
+		}
+		ls := &toyohrpb.LeagueSchedule{
+			Name:   s.tenantPath() + "/targets/" + target + "/leagueSchedules/" + e.ID,
+			Rule:   e.Rule,
+			Stages: append([]int32(nil), e.Stages...),
+			Attributes: &common.MapValue{Fields: map[string]*common.Value{
+				"EventTypeId": {ValueType: &common.Value_StringValue{StringValue: e.EventTypeID}},
+			}},
+			ScheduleSetId: scheduleSetID(AlignToSlot(now)),
+			Timestamp:     timestamppb.New(time.Time{}),
+			StartTime:     timestamppb.New(e.Slots[0].StartAt),
+			EndTime:       timestamppb.New(e.Slots[len(e.Slots)-1].EndAt),
+		}
+		for i, slot := range e.Slots {
+			ls.Slots = append(ls.Slots, &toyohrpb.LeagueSchedule_Slot{
+				Name:      fmt.Sprintf("%s_%d", e.ID, i+1),
+				StartTime: timestamppb.New(slot.StartAt),
+				EndTime:   timestamppb.New(slot.EndAt),
+			})
+		}
+		out = append(out, ls)
+	}
+	return out
 }
 
 // SelectVsParams answers a real, non-nil VsParams, never a bare Etag with

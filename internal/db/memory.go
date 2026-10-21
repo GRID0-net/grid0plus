@@ -49,6 +49,7 @@ type Memory struct {
 	pushChannels map[string]PushChannel // user/device account
 	penneTickets map[string]penneTicket
 	coopShifts   map[string]CoopShift
+	leagueEvents map[string]LeagueEvent
 	// matches is append-only, ordered by insertion (which is creation order,
 	// since CreateMatch is the only writer and never rewrites an existing id).
 	matches []Match
@@ -87,6 +88,7 @@ func NewMemory() *Memory {
 		pushChannels:      map[string]PushChannel{},
 		penneTickets:      map[string]penneTicket{},
 		coopShifts:        map[string]CoopShift{},
+		leagueEvents:      map[string]LeagueEvent{},
 		friendships:       map[string]map[string]Friendship{},
 		friendRequests:    map[string]FriendRequest{},
 		blocks:            map[string]map[string]Block{},
@@ -2044,6 +2046,40 @@ func (m *Memory) DeleteCoopShift(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.coopShifts, id)
+	return nil
+}
+
+func (m *Memory) UpsertLeagueEvent(_ context.Context, e LeagueEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if old, ok := m.leagueEvents[e.ID]; ok {
+		e.CreatedAt = old.CreatedAt
+	} else {
+		e.CreatedAt = time.Now()
+	}
+	e.Stages = append([]int32{}, e.Stages...)
+	e.Slots = append([]LeagueSlot{}, e.Slots...)
+	m.leagueEvents[e.ID] = e
+	return nil
+}
+
+func (m *Memory) ListLeagueEvents(_ context.Context) ([]LeagueEvent, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]LeagueEvent, 0, len(m.leagueEvents))
+	for _, e := range m.leagueEvents {
+		e.Stages = append([]int32{}, e.Stages...)
+		e.Slots = append([]LeagueSlot{}, e.Slots...)
+		out = append(out, e)
+	}
+	sortLeagueEvents(out)
+	return out, nil
+}
+
+func (m *Memory) DeleteLeagueEvent(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.leagueEvents, id)
 	return nil
 }
 

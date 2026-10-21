@@ -2072,17 +2072,102 @@ function connect() {
   });
 }
 
+// ---- challenges -------------------------------------------------------------
+
+const CHALLENGE_RULES = ["Turf War", "Splat Zones", "Tower Control", "Rainmaker", "Clam Blitz"];
+
+async function loadChallengeReference() {
+  try {
+    const ref = await api("/api/challenge-reference");
+    for (const sel of [$("#challenge-stage0"), $("#challenge-stage1")]) {
+      sel.replaceChildren(...ref.stages.map((st) => {
+        const o = document.createElement("option");
+        o.value = st.id;
+        o.textContent = `${st.id} · ${st.name}`;
+        return o;
+      }));
+    }
+    if (ref.stages.length > 1) $("#challenge-stage1").selectedIndex = 1;
+  } catch (err) {
+    console.warn("challenge reference", err);
+  }
+  const next = new Date(Math.ceil(Date.now() / 7200000) * 7200000);
+  $("#challenge-start").value = next.toISOString().slice(0, 16);
+}
+
+function renderChallenges(rows) {
+  $("#challenge-empty").hidden = rows.length > 0;
+  $("#challenge-list").replaceChildren(
+    ...rows.map((c) => {
+      const card = document.createElement("div");
+      card.className = "fest-card" + (c.status === "live" ? " live" : "");
+      const pill = c.status === "live" ? "on" : c.status === "ended" ? "warn" : "";
+      const fmt = (t) => new Date(t).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+      card.innerHTML = `
+        <div class="cols">
+          <div class="fid">${escape(c.eventTypeId)}
+            <span class="pill">${escape(CHALLENGE_RULES[c.rule] || "Rule " + c.rule)}</span>
+            <span class="pill ${pill}">${escape(c.status)}</span>
+          </div>
+          <div>${c.stages.map((s) => escape(s.name || String(s.id))).join(" / ")}</div>
+          <div class="note">${c.slots.map((s) => fmt(s.startAt)).join("<br>")}</div>
+          <div class="form-actions"><button class="btn" data-delete-challenge="${escape(c.id)}">Delete</button></div>
+        </div>`;
+      return card;
+    }),
+  );
+}
+
+$("#challenge-list").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-delete-challenge]");
+  if (!del) return;
+  try {
+    if (!confirm("Delete this Challenge?")) return;
+    await api(`/api/challenges/${encodeURIComponent(del.dataset.deleteChallenge)}`, { method: "DELETE" });
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("#challenge-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("#challenge-error");
+  err.hidden = true;
+  const first = new Date($("#challenge-start").value + ":00Z").getTime();
+  const count = Number($("#challenge-count").value);
+  const gap = Number($("#challenge-gap").value) * 3600000;
+  const slots = [];
+  for (let i = 0; i < count; i++) slots.push(new Date(first + i * gap).toISOString().replace(".000Z", "Z"));
+  try {
+    await api("/api/challenges", {
+      method: "POST",
+      body: JSON.stringify({
+        eventTypeId: $("#challenge-type").value.trim(),
+        rule: Number($("#challenge-rule").value),
+        stages: [Number($("#challenge-stage0").value), Number($("#challenge-stage1").value)],
+        slots,
+      }),
+    });
+    await refresh();
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.hidden = false;
+  }
+});
+
 // ---- refresh --------------------------------------------------------------
 
 async function refresh() {
   try {
-    const [o, ps, fs, cs, ms, s3ms] = await Promise.all([
+    const [o, ps, fs, cs, ms, s3ms, chs] = await Promise.all([
       api("/api/overview"),
       api("/api/players"),
       api("/api/fests"),
       api("/api/coop-shifts"),
       api("/api/matches"),
       api("/api/matches?game=splatoon3"),
+      api("/api/challenges"),
     ]);
     if (!lastSeen.has("conn-ok")) setLive("live", "live");
     lastSeen.set("conn-ok", "1");
@@ -2094,6 +2179,7 @@ async function refresh() {
     if (playersChanged) renderPlayers();
     if (changed("fests", fs)) renderFests(fs);
     if (changed("coop", cs)) renderCoopShifts(cs);
+    if (changed("challenges", chs)) renderChallenges(chs);
     // After players, so a match's host/players can be shown by nickname
     // rather than by id.
     if (playersChanged || changed("matches", [ms, s3ms])) renderMatches();
@@ -2129,6 +2215,7 @@ async function refresh() {
 })();
 
 loadCoopReference();
+loadChallengeReference();
 loadBigRunEggs();
 refresh();
 
