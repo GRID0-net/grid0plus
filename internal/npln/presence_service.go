@@ -115,6 +115,27 @@ func (p *presenceService) touchHeartbeat(ctx context.Context, user string, last 
 		return
 	}
 	*last = at
+	p.keepSplatoonReportFresh(ctx, user)
+}
+
+// splatoon3AppID is the title the keep-alive stream itself proves is running.
+const splatoon3AppID = "0100c2500fc20000"
+
+// keepSplatoonReportFresh re-stamps a console's own "playing Splatoon 3"
+// report while the game's keep-alive stream is open. The console reports
+// PLAYING once, at launch; past the report TTL the resolver fell back to the
+// heartbeat branch and showed a player mid-match as merely online. Only a
+// report the console made is refreshed: nothing here sets a state it did not
+// send, and a console that closed the game has already reported ONLINE.
+func (p *presenceService) keepSplatoonReportFresh(ctx context.Context, user string) {
+	cur, err := p.s.store.GetPresence(ctx, user)
+	if err != nil || cur.State != db.StatePlaying || cur.AppID != splatoon3AppID {
+		return
+	}
+	now := p.s.now()
+	if _, err := p.s.store.UpdatePresence(ctx, user, db.PresencePatch{ReportedAt: &now}); err != nil && !callerGone(err) {
+		p.s.log.Warn("npln: refresh playing report", "user", user, "error", err)
+	}
 }
 
 func (p *presenceService) KeepAlive(

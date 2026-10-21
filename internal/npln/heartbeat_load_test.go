@@ -76,3 +76,33 @@ func TestHeartbeatWriteGateRespectsShortTTLAndRetriesFailures(t *testing.T) {
 		t.Fatalf("failed heartbeat suppressed retry: %d writes", got)
 	}
 }
+
+// Ash read as merely online mid-match: the console reports PLAYING once, at
+// launch, and the report went stale while the game kept its stream open.
+func TestTheKeepAliveKeepsAPlayingSplatoonReportFreshButNeverInventsOne(t *testing.T) {
+	h := newHarness(t)
+	h.createUser("heartbeat000003", "device-heartbeat3")
+	h.createUser("heartbeat000004", "device-heartbeat4")
+	ctx := context.Background()
+	old := h.srv.now().Add(-time.Hour)
+	playing, online, app := db.StatePlaying, db.StateOnline, splatoon3AppID
+	if _, err := h.srv.store.UpdatePresence(ctx, "heartbeat000003", db.PresencePatch{State: &playing, AppID: &app, ReportedAt: &old}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.store.UpdatePresence(ctx, "heartbeat000004", db.PresencePatch{State: &online, ReportedAt: &old}); err != nil {
+		t.Fatal(err)
+	}
+	p := &presenceService{s: h.srv}
+	var a, b time.Time
+	p.touchHeartbeat(ctx, "heartbeat000003", &a, time.Now())
+	p.touchHeartbeat(ctx, "heartbeat000004", &b, time.Now())
+
+	got, err := h.srv.presence.Effective(ctx, "heartbeat000003", h.srv.now())
+	if err != nil || got.State != db.StatePlaying || got.AppID != splatoon3AppID {
+		t.Errorf("a player in Splatoon 3 reads %q %q, %v; want PLAYING it", got.State, got.AppID, err)
+	}
+	stored, err := h.srv.store.GetPresence(ctx, "heartbeat000004")
+	if err != nil || stored.State != db.StateOnline || !stored.ReportedAt.Equal(old) {
+		t.Errorf("an ONLINE report was rewritten: %q at %v, %v", stored.State, stored.ReportedAt, err)
+	}
+}
