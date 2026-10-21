@@ -469,8 +469,9 @@ func TestSelectVsParamsAttributesMatchBothWorkingCaptures(t *testing.T) {
 		}
 	}
 	wantBool := map[string]bool{
-		"IsAbleToSendImageWithoutSns": true, "IsClampDownActive": true,
-		"IsMemHackKickActive": true, "IsOnlinePenaltyActive": true,
+		"IsAbleToSendImageWithoutSns": true, "IsClampDownActive": false,
+		"IsMemHackKickActive": false, "IsOnlinePenaltyActive": false,
+		"IsHashCheckActive": false, "IsHashKickActive": false,
 	}
 	for k, want := range wantBool {
 		if got := fields[k].GetBooleanValue(); got != want {

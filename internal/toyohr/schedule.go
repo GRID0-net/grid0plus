@@ -422,11 +422,18 @@ func vsParamsAttributes() *common.MapValue {
 		"DivideXRateAtlantic":         intVal(500),
 		"DivideXRatePacific":          intVal(2000),
 		"IsAbleToSendImageWithoutSns": boolVal(true),
-		"IsClampDownActive":           boolVal(true),
-		"IsMemHackKickActive":         boolVal(true),
-		"IsOnlinePenaltyActive":       boolVal(true),
-		"P2PKeepAliveSec":             intVal(8),
-		"PlazaFixedTimestamp":         intVal(1726452000),
+		// The game's anti-cheat kicks and the early-leave penalty, all off.
+		// This is a private server: a player whose save holds gear the game
+		// considers illegal is kicked mid-match with everyone else, and an
+		// actual cheater is banned by the operator on report instead. The two
+		// hash flags default to on when absent, so they are sent explicitly.
+		"IsClampDownActive":     boolVal(false),
+		"IsMemHackKickActive":   boolVal(false),
+		"IsOnlinePenaltyActive": boolVal(false),
+		"IsHashCheckActive":     boolVal(false),
+		"IsHashKickActive":      boolVal(false),
+		"P2PKeepAliveSec":       intVal(8),
+		"PlazaFixedTimestamp":   intVal(1726452000),
 		// Same real-id subset as coopKumaWeaponsAttribute (coop_schedule.go)
 		// -- both captures carry this key here too, on every SelectVsParams
 		// response, not just CoopSchedule's own attributes.
