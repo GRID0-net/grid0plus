@@ -112,33 +112,22 @@ func TestDiscordSignsIntoTheLinkedAccountNotAMatchingUsername(t *testing.T) {
 		t.Fatal("callback replay reached provider")
 	}
 }
-func TestDiscordRegisterCreatesOneBotOwnedAccountWithoutClaimingAnExistingName(t *testing.T) {
+func TestDiscordSignInWithoutAnAccountAsksToRegisterAndCreatesNothing(t *testing.T) {
 	h := setup(t)
 	id := "123456789012345679"
 	enableDiscord(t, h, id)
 	state, c := startDiscord(t, h)
 	w := callback(h, state, c)
-	if w.Header().Get("Location") != "/#home" {
+	if w.Header().Get("Location") != "/?signin=register" {
 		t.Fatal(w.Header().Get("Location"))
 	}
-	u, err := h.store.GetUserByDiscordID(context.Background(), id)
-	if err != nil {
-		t.Fatal(err)
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == cookieName && ck.Value != "" {
+			t.Fatal("unregistered Discord user got a session")
+		}
 	}
-	if u.ID == "alice" || u.LoginUsername != "discord_"+id || u.Provisional || u.LoginPasswordHash == "" {
-		t.Fatal("registration did not preserve account defaults")
-	}
-	if _, err = h.store.GetFriendCode(context.Background(), u.ID); err != nil {
-		t.Fatal("missing friend code", err)
-	}
-	state, c = startDiscord(t, h)
-	callback(h, state, c)
-	all, err := h.store.ListUsersByDiscordID(context.Background(), id)
-	if err != nil || len(all) != 1 {
-		t.Fatal("repeat login registered another identity")
-	}
-	if h.req("GET", "/api/data", "", sessionCookie(t, w)).Code != 200 {
-		t.Fatal("new registered session cannot read its profile")
+	if all, err := h.store.ListUsersByDiscordID(context.Background(), id); err != nil || len(all) != 0 {
+		t.Fatal("sign-in created an account", len(all), err)
 	}
 }
 func TestDiscordRejectsMissingMismatchedExpiredStateAndDenialWithoutProviderCalls(t *testing.T) {

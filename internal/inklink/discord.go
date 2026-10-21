@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n-popescu/grid0plus/internal/baas"
 	"github.com/n-popescu/grid0plus/internal/db"
 )
 
@@ -111,6 +109,10 @@ func (s *Server) discordCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.discordUser(r.Context(), identity)
+	if errors.Is(err, errNotRegistered) {
+		s.oauthFailure(w, r, "register")
+		return
+	}
 	if err != nil {
 		s.oauthFailure(w, r, "account")
 		return
@@ -121,6 +123,8 @@ func (s *Server) discordCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/#home", http.StatusSeeOther)
 }
+
+var errNotRegistered = errors.New("no GRID0+ account for this Discord user")
 
 type discordIdentity struct {
 	ID         string `json:"id"`
@@ -190,42 +194,8 @@ func (s *Server) discordUser(ctx context.Context, identity discordIdentity) (db.
 	if !errors.Is(err, db.ErrNotFound) {
 		return db.User{}, err
 	}
-	// Missing primary is not proof that this Discord account has no accounts.
-	// Never create a replacement identity when an existing link is inconsistent.
-	linked, err := s.opts.Store.ListUsersByDiscordID(ctx, identity.ID)
-	if err != nil {
-		return db.User{}, err
-	}
-	if len(linked) > 0 {
-		return db.User{}, errors.New("account has no active primary")
-	}
-	password, err := randomOAuthValue()
-	if err != nil {
-		return db.User{}, err
-	}
-	nickname := strings.TrimSpace(identity.GlobalName)
-	if nickname == "" {
-		nickname = identity.Username
-	}
-	if nickname == "" {
-		nickname = "Player"
-	}
-	runes := []rune(nickname)
-	if len(runes) > 10 {
-		nickname = string(runes[:10])
-	}
-	// Reserve a collision-resistant login without ever claiming someone else's
-	// matching display name. The unknown random password can later be set via
-	// the bot if the player wants password-based console linking.
-	user, err = baas.CreateLoginUser(ctx, s.opts.Store, s.opts.Now(), 24*time.Hour, "discord_"+identity.ID, nickname, password, identity.ID, true)
-	if errors.Is(err, db.ErrConflict) {
-		user, err = s.opts.Store.GetUserByDiscordID(ctx, identity.ID)
-	}
-	if err != nil {
-		return db.User{}, fmt.Errorf("register discord account: %w", err)
-	}
-	if user.Deleted || user.Provisional || user.DiscordUserID != identity.ID {
-		return db.User{}, errors.New("inactive account")
-	}
-	return user, nil
+	// Inklink never creates an account: the bot's /register is the only way
+	// in. Creating one here made a second identity that became the person's
+	// primary before they registered, so the bot and the console disagreed.
+	return db.User{}, errNotRegistered
 }

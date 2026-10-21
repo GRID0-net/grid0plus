@@ -7,7 +7,7 @@ const rate=n=>n==null?'—':n.toFixed(1);
 const human=s=>String(s).replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' ');
 let authInfo={discord:false,demo:false};
 const signinReason=new URLSearchParams(location.search).get('signin');
-const signinMessage=({expired:'Discord sign-in expired. Please try again.',cancelled:'Discord sign-in was cancelled.',failed:'Discord could not verify your sign-in. Please try again.',account:'Your Grid0 account could not be opened. Contact your operator.'})[signinReason]||'';
+const signinMessage=({expired:'Discord sign-in expired. Please try again.',cancelled:'Discord sign-in was cancelled.',failed:'Discord could not verify your sign-in. Please try again.',register:'You have no GRID0+ account yet. Use /register in the Discord server first, then sign in again.',account:'Your Grid0 account could not be opened. Contact your operator.'})[signinReason]||'';
 if(signinReason)window.history.replaceState(null,'',location.pathname+location.hash);
 let data=null,catalog=null,route='home',mode='regular',battleFilter='latest',weaponSearch='',stageSearch='',gearKind='head',gearSearch='',loadVersion=0,loading=false,photos=[];
 const preferences=()=>{try{const v=JSON.parse(localStorage.getItem('inklink:preferences:'+data.profile.id)||'{}');return v&&typeof v==='object'&&!Array.isArray(v)?v:{}}catch{return{}}};

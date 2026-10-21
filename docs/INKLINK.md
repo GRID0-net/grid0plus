@@ -96,11 +96,12 @@ once; restarting INKLINK during authorization means starting sign-in again.
 
 Existing verified Discord links open the **primary Grid0 account**, exactly like
 the bot's commands without an account name. Display-name or username matches
-never attach accounts. New Discord users get a normal Grid0 account, friend code,
-and bot ownership link using the bot's shared creation path. Its login username
-is `discord_<Discord user ID>`. An unknown random password protects password login;
-no password is required for web access. To link a console that still needs a
-Grid0 password, set one through the existing bot command. OAuth does not silently
+never attach accounts. INKLINK never creates an account: a Discord user with
+no linked account is sent back with "use /register first", because the bot is
+the only way to create one. An account created here once became a player's
+primary before they registered with the bot, leaving the bot and their console
+on two different identities.
+OAuth does not silently
 reset an existing player's password or disconnect consoles. A future account
 selector can expose secondary linked accounts; currently the primary is used.
 
