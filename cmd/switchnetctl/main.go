@@ -776,6 +776,12 @@ func grpcServerBlock(cfg config.Config, upstream string, port int, serverNames [
     grpc_send_timeout   1h;
     client_body_timeout 1h;
     keepalive_timeout   1h;
+
+    # A stream's request body is every frame the console sends on it, and
+    # PresenceService/KeepAlive sends for the whole session: nginx's 1 MB
+    # default cut it off about 47 times a week ("client intended to send too
+    # large chunked body"). The services bound their own message sizes.
+    client_max_body_size 0;
 %s
     location / {
         grpc_pass grpc://switchnet_%s;
