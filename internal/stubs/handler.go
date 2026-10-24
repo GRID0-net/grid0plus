@@ -270,6 +270,14 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 		// cosmetic mismatch.
 		w.WriteHeader(http.StatusOK)
 
+	case strings.HasSuffix(path, "/elicenses/revoke"),
+		strings.HasSuffix(path, "/elicenses/revoke_all"):
+		// Like exercise, the real server answers success with an empty body
+		// (NintendoClients' Dragons-Servers page), not an empty object. The
+		// console was looping publish, publish, revoke several times a second
+		// against the `{}` this used to get from the default case below.
+		w.WriteHeader(http.StatusOK)
+
 	case strings.HasSuffix(path, "/elicenses/migration_state"):
 		// The path is "/{version}/elicenses/migration_state" and the client reads
 		// "$.migration_state" out of the response. Unconfirmed: whether
