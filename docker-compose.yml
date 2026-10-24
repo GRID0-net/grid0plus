@@ -70,6 +70,14 @@ services:
     network_mode: host
     cap_add:
       - NET_BIND_SERVICE
+    # nginx logs every request to stdout, and Docker keeps that forever by
+    # default: one console looping on the eLicense host filled 1.1 GB in four
+    # days. Cap it at 5 x 100 MB.
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
     volumes:
       - ./deploy/nginx.params.conf:/etc/nginx/conf.d/00_params.conf:ro
       - ./deploy/nginx.generated.conf:/etc/nginx/conf.d/switchnet.conf:ro
