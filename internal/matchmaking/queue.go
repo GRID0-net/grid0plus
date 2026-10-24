@@ -1151,7 +1151,7 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	// An odd number waiting waits for one more rather than leaving the
 	// odd one out of a match that starts without them.
 	odd := (n%2 != 0 || (waiting <= size && waiting%2 != 0)) && !isTricolorMode(mode)
-	if q.cfg.VersusGracePeriod <= 0 || n < 2 || odd {
+	if q.cfg.VersusGracePeriod <= 0 || n < minVersusPlayers(mode) || odd {
 		q.cancelGraceLocked(mode)
 		return formed
 	}
@@ -1167,6 +1167,19 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	}
 	delete(q.grace, mode)
 	return append(formed, q.formVersusSessionLocked(mode, ids))
+}
+
+// minVersusPlayers is the fewest players a versus match below its size may
+// start with. Turf War takes four: Splatoon 3 queues friends there as solo
+// tickets with group_leader_hash 0 (every regular_match_config ticket on
+// grid0 over 30 days), so two friends queuing together look like two
+// strangers, and two would start a 1v1 against each other. Other versus
+// modes keep two.
+func minVersusPlayers(mode string) int {
+	if strings.Contains(strings.ToLower(mode), "regular_match") {
+		return 4
+	}
+	return 2
 }
 
 // isTricolorTeamMode reports fest_match_tricolor_team_config, the first of
