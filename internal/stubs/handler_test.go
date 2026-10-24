@@ -213,10 +213,8 @@ func TestElicenseMigrationStateAndArchivePublishAnswerWithTheirOwnFields(t *test
 		t.Errorf("migration_state body = %v, want state=COMPLETED migration_state=NONE", state)
 	}
 
-	if rec := get(t, h, "dragons.hac.lp1.dragons.nintendo.net", "/v2/elicense_archives/publish"); rec.Code != http.StatusNotFound {
-		t.Errorf("elicense_archives/publish: status = %d, want 404", rec.Code)
-	}
 	for _, path := range []string{
+		"/v2/elicense_archives/publish",
 		"/v2/rights/publish_device_linked_elicenses",
 	} {
 		rec := get(t, h, "dragons.hac.lp1.dragons.nintendo.net", path)

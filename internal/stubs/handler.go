@@ -288,18 +288,8 @@ func (h *Handler) dragons(w http.ResponseWriter, path string) {
 			"state": "COMPLETED", "migration_state": "NONE",
 		})
 
-	case strings.HasSuffix(path, "/elicense_archives/publish"):
-		// The real answer is {"elicense_archive": "<base64>"}, an archive
-		// Nintendo signs, so GRID0+ has none to give. Answered 200 without
-		// one, nim looped publish, publish, revoke of the same licence ids
-		// around 11 times a second, all day, on every console that has any
-		// eLicenses. Suspected behind friend-list refreshes that never finish
-		// and a grey screen on going back to HOME, on those same consoles.
-		// UNCONFIRMED: that a plain 404 makes nim back off rather than retry;
-		// settled by the request rate from a looping console after deploy.
-		http.NotFound(w, nil)
-
-	case strings.HasSuffix(path, "/rights/publish_device_linked_elicenses"):
+	case strings.HasSuffix(path, "/elicense_archives/publish"),
+		strings.HasSuffix(path, "/rights/publish_device_linked_elicenses"):
 		// Same as migration_state above: the "elicense_archives" key name matches a
 		// real elicense-archive-shaped response. An empty list is still the right
 		// answer regardless -- GRID0+ has nothing to publish -- so nothing
