@@ -362,9 +362,9 @@ type NPLN struct {
 	VersusGracePeriod int `yaml:"versus_grace_period"`
 
 	// CoopGracePeriod is how many seconds a Salmon Run-shaped match waits
-	// after its second player joins, restarting on every further arrival, up
+	// after its first player joins, restarting on every further arrival, up
 	// to the mode's size (which forms immediately). Zero forms the instant
-	// two players are present. A lone player is never on this clock.
+	// one player is present.
 	CoopGracePeriod int `yaml:"coop_grace_period"`
 	// TrackMinimumSeconds holds a completed ticket before sending SUCCEEDED,
 	// measured from opening TrackMatchmakingTicket. Zero disables the hold.

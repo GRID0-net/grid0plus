@@ -14,6 +14,7 @@ import (
 func TestAPlayerSearchingIsMatchedIntoACrewsAgainLobby(t *testing.T) {
 	h := newHarnessWith(t, func(c *config.NPLN) {
 		c.CoopModes = []string{"salmon-run"}
+		c.CoopGracePeriod = 1
 		c.ModePlayers = map[string]int{"salmon-run": 4}
 	})
 	for _, u := range []string{"crew000000000001", "crew000000000002", "stranger00000001"} {
@@ -30,6 +31,10 @@ func TestAPlayerSearchingIsMatchedIntoACrewsAgainLobby(t *testing.T) {
 	second, err := client.CreateMatchmakingTicket(two, ticketFor("salmon-run"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The harness does not run the production queue sweeper.
+	if _, ok, err := h.srv.queue.ForceMatch("salmon-run"); err != nil || !ok {
+		t.Fatalf("form the initial crew: %v, %v", ok, err)
 	}
 	stream, err := client.TrackMatchmakingTicket(two, &mmpb.TrackMatchmakingTicketRequest{Name: second.GetName()})
 	if err != nil {

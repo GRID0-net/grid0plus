@@ -200,10 +200,9 @@ type Config struct {
 	VersusGracePeriod time.Duration
 
 	// CoopGracePeriod is how long a Salmon Run-shaped match waits after its
-	// SECOND player joins before forming, restarting every time another
+	// FIRST player joins before forming, restarting every time another
 	// player joins (up to the mode's size, which forms immediately: there is
 	// no point waiting out a clock for a room that cannot take anyone else).
-	// A lone player is never on this clock at all -- see formCoopLocked.
 	CoopGracePeriod time.Duration
 
 	// TicketTTL is how long a ticket waits before giving up.
@@ -755,8 +754,7 @@ func (q *Queue) ForceMatch(mode string) (Session, bool, error) {
 	if isFestMode(mode) {
 		ids = q.selectFestPlayersLocked(ids, q.playersForLocked(mode))
 	}
-	if len(ids) == 0 || (q.cfg.CoopModes[mode] && len(ids) < 2) {
-		// Salmon Run is never started for one player, not even by force.
+	if len(ids) == 0 {
 		return Session{}, false, nil
 	}
 	// Everyone waiting, not the first `size` of them: an operator forcing a
@@ -1151,7 +1149,7 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	// An odd number waiting waits for one more rather than leaving the
 	// odd one out of a match that starts without them.
 	odd := (n%2 != 0 || (waiting <= size && waiting%2 != 0)) && !isTricolorMode(mode)
-	if q.cfg.VersusGracePeriod <= 0 || n < minVersusPlayers(mode) || odd {
+	if q.cfg.VersusGracePeriod <= 0 || n < 2 || odd {
 		q.cancelGraceLocked(mode)
 		return formed
 	}
@@ -1167,19 +1165,6 @@ func (q *Queue) formVersusLocked(mode string) []Session {
 	}
 	delete(q.grace, mode)
 	return append(formed, q.formVersusSessionLocked(mode, ids))
-}
-
-// minVersusPlayers is the fewest players a versus match below its size may
-// start with. Turf War takes four: Splatoon 3 queues friends there as solo
-// tickets with group_leader_hash 0 (every regular_match_config ticket on
-// grid0 over 30 days), so two friends queuing together look like two
-// strangers, and two would start a 1v1 against each other. Other versus
-// modes keep two.
-func minVersusPlayers(mode string) int {
-	if strings.Contains(strings.ToLower(mode), "regular_match") {
-		return 4
-	}
-	return 2
 }
 
 // isTricolorTeamMode reports fest_match_tricolor_team_config, the first of
@@ -1482,8 +1467,7 @@ func bestFestPair(by map[string][]festUnit, teams []string, size int, firstOnly 
 const festStarvation = time.Minute
 
 // formCoopLocked forms a Salmon Run-shaped match: one team, no even split.
-// Nobody waits on a clock alone -- a countdown only exists once a second
-// player is present, and it restarts every time another one joins, so a
+// A countdown starts with the first player and restarts on each arrival, so a
 // trickle of arrivals does not lose the ones already waiting to a clock that
 // started before they got there. Reaching the mode's size forms immediately:
 // a full room has nobody left to wait for.
@@ -1496,10 +1480,6 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 	case len(ids) == 0:
 		q.cancelGraceLocked(mode)
 		return nil
-	case len(ids) == 1:
-		// Alone: no countdown runs at all, however long that lasts.
-		q.cancelGraceLocked(mode)
-		return nil
 	case len(ids) >= size:
 		if chosen := q.wholeSquadsLocked(ids, size); len(chosen) == size {
 			delete(q.grace, mode)
@@ -1509,11 +1489,11 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 	}
 	// Keeping whole squads in arrival order can leave one player: a solo
 	// queued ahead of a squad too big to join them. Taking the biggest
-	// squads first lets that squad play; Salmon Run never starts with one.
+	// squads first lets that squad play before the solo starts its own job.
 	if len(ids) < 2 {
 		ids = q.wholeSquadsLocked(q.biggestSquadsFirstLocked(q.liveWaitingLocked(mode)), size)
 	}
-	if len(ids) < 2 {
+	if len(ids) == 0 {
 		q.cancelGraceLocked(mode)
 		return nil
 	}
@@ -1524,7 +1504,7 @@ func (q *Queue) formCoopLocked(mode string) []Session {
 
 	g, pending := q.grace[mode]
 	if !pending || len(ids) != g.lastCount {
-		// First player past solo, or a new arrival since the clock was last
+		// First player, or a new arrival since the clock was last
 		// set: (re)start it from here.
 		q.grace[mode] = q.regraceLocked(mode, q.cfg.CoopGracePeriod, len(ids))
 		q.setModeStateLocked(mode, StatePlacing)

@@ -748,21 +748,12 @@ func TestNoVersusGracePeriodMeansOnlyFullMatches(t *testing.T) {
 	}
 }
 
-// TestCoopWaitsAloneIndefinitelyThenStartsACountdownPerJoin covers Salmon
-// Run's different rule: a lone player is on no clock at all, a second player
-// starts one, and each further arrival restarts it -- so a trickle of joiners
-// does not lose the ones already waiting to a clock that started before they
-// got there.
-func TestCoopWaitsAloneIndefinitelyThenStartsACountdownPerJoin(t *testing.T) {
+func TestCoopStartsACountdownWithTheFirstPlayer(t *testing.T) {
 	q, clock := testGraceQueue(t, 4, 0, 30*time.Second, "coop")
-
 	q.Enqueue("alice", "coop")
-	*clock = clock.Add(time.Minute) // well under the 3-minute ticket TTL
+	*clock = clock.Add(10 * time.Second)
 	if _, formed := q.Sweep(); len(formed) != 0 {
-		t.Fatalf("alice matched herself: %v", formed)
-	}
-	if got, _ := q.Get(mustGet(t, q, "alice")); got.State != StateSearching {
-		t.Errorf("alone: state = %s, want searching (no countdown at all)", got.State)
+		t.Fatalf("formed early: %v", formed)
 	}
 
 	q.Enqueue("bob", "coop")
@@ -1211,11 +1202,8 @@ func TestAnarchyOpenPutsEachSquadOnOneSide(t *testing.T) {
 	}
 }
 
-// TestSalmonRunNeverStartsWithOnePlayer: keeping squads whole used to leave
-// a solo queued ahead of a full squad as the only player picked, and the
-// grace period then started a one-player job. The squad must play, the solo
-// keep waiting, and a force-start must not start the solo alone either.
-func TestSalmonRunNeverStartsWithOnePlayer(t *testing.T) {
+// A full squad plays first even when a solo ticket arrived before it.
+func TestSalmonRunPrefersAFullSquadBeforeASolo(t *testing.T) {
 	q, clock := testGraceQueue(t, 4, 0, 30*time.Second, "coop")
 
 	q.Enqueue("solo", "coop")
@@ -1234,8 +1222,8 @@ func TestSalmonRunNeverStartsWithOnePlayer(t *testing.T) {
 			t.Fatalf("a Salmon Run job formed with %v", s.Players)
 		}
 	}
-	if _, ok, _ := q.ForceMatch("coop"); ok {
-		t.Fatal("force-start began a Salmon Run job for one player")
+	if _, ok, _ := q.ForceMatch("coop"); !ok {
+		t.Fatal("force-start refused a solo Salmon Run job")
 	}
 }
 
@@ -1326,5 +1314,18 @@ func TestSeatsDoNotMoveWhenSomebodyLeaves(t *testing.T) {
 	}
 	if back.Seat("b") != 3 {
 		t.Errorf("a returning player got seat %d, want their old 3", back.Seat("b"))
+	}
+}
+
+func TestSoloSalmonRunStartsAfterTwentySeconds(t *testing.T) {
+	q, clock := testGraceQueue(t, 4, 0, 20*time.Second, "coop")
+	q.Enqueue("solo", "coop")
+	*clock = clock.Add(19 * time.Second)
+	if _, f := q.Sweep(); len(f) != 0 {
+		t.Fatalf("started early: %v", f)
+	}
+	*clock = clock.Add(time.Second)
+	if _, f := q.Sweep(); len(f) != 1 || len(f[0].Players) != 1 {
+		t.Fatalf("want solo job: %v", f)
 	}
 }
