@@ -414,12 +414,10 @@ npln:
   # Zero turns early starts off: matches then start only when full.
   versus_grace_period: 20
 
-  # How long a Salmon Run-shaped match waits after its SECOND player joins
+  # How long a Salmon Run-shaped match waits after its FIRST player joins
   # before forming, restarting on every further arrival up to the mode's size
   # (which forms immediately -- a full room has nobody left to wait for). A
-  # lone player is never on this clock: matchmaking waits for a second player
-  # however long that takes, same as always. Zero forms the instant two
-  # players are present.
+  # solo player can start after this wait too. Zero forms immediately.
   coop_grace_period: 20
   # Both grace periods can be changed while people play: edit this file, then
   # `sudo systemctl reload switchnet-npln`. Only these two are reloaded.

@@ -59,8 +59,7 @@ A formed match's capacity is the number of players it formed with, so an early f
 full at four.
 
 `Config.ModeSizes` sets a different cap for one mode. Salmon Run is four and Tricolour is 4v2v2.
-Salmon Run-shaped modes (`CoopModes`) follow their own rule: no even split, a lone player waits on no
-clock, a second player starts `CoopGracePeriod`, every arrival restarts it and a full team forms at
+Salmon Run-shaped modes (`CoopModes`) follow their own rule: no even split, the first player starts `CoopGracePeriod`, every arrival restarts it and a full team forms at
 once. They need their size set here, or they take up to eight.
 
 Splatfest modes pick players by fest team (the vote stored with the fest entry, not the ticket's
