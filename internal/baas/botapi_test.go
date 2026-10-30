@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -603,5 +604,39 @@ func TestAMainAccountNoConsoleUsedGivesWayToTheNextRegistration(t *testing.T) {
 	}
 	if resp, body := b.call("GET", "/bot/v1/me", aliceDiscord, nil); resp.StatusCode != http.StatusOK || body["username"] != "alice.psn" {
 		t.Errorf("me = %d %v, want the played account to stay main", resp.StatusCode, body)
+	}
+}
+
+func TestSetPasswordStoresTheChosenOne(t *testing.T) {
+	b := newBotHarness(t)
+	old := b.registerDiscord(aliceDiscord, "alice")["password"].(string)
+	resp, body := b.call("POST", "/bot/v1/set-password", aliceDiscord, map[string]string{"password": "my own pass 42"})
+	if resp.StatusCode != http.StatusOK || body["username"] != "alice" {
+		t.Fatalf("set: %d %v", resp.StatusCode, body)
+	}
+	user, _ := b.store.GetUserByLoginUsername(t.Context(), "alice")
+	if bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte("my own pass 42")) != nil {
+		t.Error("the chosen password does not verify")
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.LoginPasswordHash), []byte(old)) == nil {
+		t.Error("the generated password still verifies")
+	}
+}
+
+// Only after /register, only the caller's own accounts, only a usable password.
+func TestSetPasswordRefusals(t *testing.T) {
+	b := newBotHarness(t)
+	if resp, body := b.call("POST", "/bot/v1/set-password", aliceDiscord, map[string]string{"password": "longenough"}); resp.StatusCode != http.StatusNotFound || body["code"] != "not_registered" {
+		t.Errorf("before registering: %d %v", resp.StatusCode, body)
+	}
+	b.registerDiscord(aliceDiscord, "alice")
+	b.registerDiscord(bobDiscord, "bob")
+	if resp, body := b.call("POST", "/bot/v1/set-password", aliceDiscord, map[string]string{"username": "bob", "password": "longenough"}); resp.StatusCode != http.StatusNotFound || body["code"] != "not_your_account" {
+		t.Errorf("someone else's account: %d %v", resp.StatusCode, body)
+	}
+	for _, p := range []string{"short", strings.Repeat("x", 65), "accentué1"} {
+		if resp, body := b.call("POST", "/bot/v1/set-password", aliceDiscord, map[string]string{"password": p}); resp.StatusCode != http.StatusBadRequest || body["code"] != "bad_password" {
+			t.Errorf("password %q: %d %v", p, resp.StatusCode, body)
+		}
 	}
 }

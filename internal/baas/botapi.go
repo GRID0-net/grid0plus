@@ -80,6 +80,7 @@ func (s *Server) BotHandler(opts BotAPIOptions) http.Handler {
 	mux.HandleFunc("POST /bot/v1/register", b.register)
 	mux.HandleFunc("POST /bot/v1/link", b.link)
 	mux.HandleFunc("POST /bot/v1/reset-password", b.withDiscordID(b.resetPassword))
+	mux.HandleFunc("POST /bot/v1/set-password", b.withDiscordID(b.setPassword))
 	mux.HandleFunc("GET /bot/v1/accounts", b.withDiscordID(b.accounts))
 	mux.HandleFunc("GET /bot/v1/me", b.withUser(b.me))
 	mux.HandleFunc("PUT /bot/v1/avatar", b.withUser(b.avatar))
@@ -426,6 +427,56 @@ func (b *botAPI) resetPassword(w http.ResponseWriter, r *http.Request, discordID
 	writeJSON(w, http.StatusOK, credentialsResponse{
 		UserID: user.ID, Username: user.LoginUsername, Password: password,
 	})
+}
+
+// setPassword stores a password the person chose for one of their accounts.
+//
+// Only an account that already exists: /register creates it and hands out a
+// generated password first. Consoles stay signed in -- choosing a password
+// is not a sign the account was compromised; /reset-password is for that.
+func (b *botAPI) setPassword(w http.ResponseWriter, r *http.Request, discordID string) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeBotError(w, http.StatusBadRequest, "bad_request", "unreadable body")
+		return
+	}
+	if !validChosenPassword(req.Password) {
+		writeBotError(w, http.StatusBadRequest, "bad_password", "a password is 8 to 64 printable ASCII characters")
+		return
+	}
+	user, ok := b.ownAccount(w, r, discordID, req.Username)
+	if !ok {
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		b.internal(w, "hash password", err)
+		return
+	}
+	h := string(hash)
+	if _, err := b.s.store.UpdateUser(r.Context(), user.ID, db.UserPatch{LoginPasswordHash: &h}); err != nil {
+		b.internal(w, "store password", err)
+		return
+	}
+	b.s.log.Info("botapi: password set", "user", user.ID, "login_username", user.LoginUsername)
+	writeJSON(w, http.StatusOK, map[string]string{"userId": user.ID, "username": user.LoginUsername})
+}
+
+// validChosenPassword accepts 8 to 64 printable ASCII characters: what the
+// Switch keyboard can type, and well inside bcrypt's 72-byte limit.
+func validChosenPassword(p string) bool {
+	if len(p) < 8 || len(p) > 64 {
+		return false
+	}
+	for i := 0; i < len(p); i++ {
+		if p[i] < 0x20 || p[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 // humanPasswordAlphabet leaves out 0/O and 1/l/I: the password is read off a
